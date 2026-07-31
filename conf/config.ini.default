@@ -1,0 +1,96 @@
+[LOG]
+; 關閉log功能 輸入選項 (true, True, 1) 預設 不關閉
+; LOG_DISABLE=1
+
+; logs路徑 預設 logs
+; LOG_PATH=
+
+; 關閉紀錄log檔案 輸入選項 (true, True, 1)  預設 不關閉
+; LOG_FILE_DISABLE=1
+
+; 設定紀錄log等級 DEBUG,INFO,WARNING,ERROR,CRITICAL 預設WARNING
+; LOG_LEVEL=
+
+[SETTING]
+; flask json 設定檔路徑 預設值 conf/flask.json
+; FLASK_JSON_PATH=
+
+; 後台管理頁面名稱 預設值 後台管理
+; ADMIN_TITLE=
+
+[MONGO]
+; MongoDB 連線 URI 預設 mongodb://localhost:27017
+MONGO_URI=mongodb://localhost:27017
+
+; MongoDB 資料庫名稱 預設 flask_app
+MONGO_DB=flask_app
+
+[MYSQL]
+; MySQL 主機 預設 localhost
+MYSQL_HOST=localhost
+
+; MySQL 埠號 預設 3306
+; MYSQL_PORT=3306
+
+; MySQL 使用者 預設 root
+MYSQL_USER=root
+
+; MySQL 密碼
+MYSQL_PASSWORD=
+
+; MySQL 資料庫名稱 預設 flask_app
+MYSQL_DB=flask_app
+
+[REDIS]
+; Redis 主機 預設 localhost
+REDIS_HOST=localhost
+
+; Redis 埠號 預設 6379
+; REDIS_PORT=6379
+
+; Redis 密碼（無則留空）
+; REDIS_PASSWORD=
+
+; Redis DB 編號 預設 0
+; REDIS_DB=0
+
+[GUNICORN]
+; Gunicorn 監聽主機位址，預設 0.0.0.0（監聽所有介面）
+; HOST=0.0.0.0
+
+; Gunicorn 監聽埠號，預設讀取環境變數 FLASK_PORT（未設定則為 5000）
+; PORT=5000
+
+; Worker 進程數量，預設 CPU 數 × 2 + 1（例：4 核心 → 9 個 worker）
+; WORKERS=5
+
+; Worker 類型：sync（預設）、gthread（多執行緒）、gevent（非同步）
+; 使用 gevent 需額外安裝：pip install gevent
+; WORKER_CLASS=sync
+
+; 每個 Worker 的執行緒數（WORKER_CLASS=gthread 時有效），預設 1
+; THREADS=1
+
+; Worker 逾時秒數，超過此時間無回應則自動重啟，預設 120
+; TIMEOUT=120
+
+; Keep-Alive 連線等待秒數，預設 5
+; KEEPALIVE=5
+
+; 心跳暫存目錄，Docker 環境建議設為 /dev/shm（RAM disk），留空使用系統預設
+; WORKER_TMP_DIR=/dev/shm
+
+; Access log 輸出路徑，- 代表 stdout，留空則不記錄
+; ACCESS_LOG=-
+
+; Error log 輸出路徑，- 代表 stderr
+; ERROR_LOG=-
+
+; Log 等級：debug、info、warning、error、critical，預設 info
+; LOG_LEVEL=info
+
+; 啟動前預先載入 app（節省 fork 後的記憶體複製開銷），預設 true
+; PRELOAD_APP=true
+
+; 程式碼異動時自動重載（僅建議開發環境使用），預設 false
+; RELOAD=false

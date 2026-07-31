@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>使用說明 — {{ admin_title }}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    :root { --sidebar-w: 270px; --accent: #3b82f6; }
+    body { background: #f8f9fa; color: #1e293b; }
+
+    /* ── 側欄 ── */
+    #sidebar {
+      position: fixed; top: 0; left: 0;
+      width: var(--sidebar-w); height: 100vh;
+      overflow-y: auto; background: #0f172a; color: #cbd5e1;
+      z-index: 100; padding: 0;
+    }
+    #sidebar .brand {
+      font-size: .95rem; font-weight: 700; color: #f1f5f9;
+      padding: 1.25rem 1.25rem .9rem; border-bottom: 1px solid #1e293b;
+      display: flex; align-items: center; gap: .5rem;
+    }
+    #sidebar .nav-section {
+      font-size: .65rem; font-weight: 700; letter-spacing: .1em;
+      color: #475569; padding: .9rem 1.25rem .2rem; text-transform: uppercase;
+    }
+    #sidebar .nav-link {
+      color: #94a3b8; font-size: .82rem;
+      padding: .3rem 1.25rem; display: block; text-decoration: none;
+    }
+    #sidebar .nav-link:hover { color: #f1f5f9; background: #1e293b; }
+    #sidebar .nav-link.active { color: #fff; background: var(--accent); border-radius: 0; }
+
+    /* ── 主區 ── */
+    #main {
+      margin-left: var(--sidebar-w); padding: 2rem 2.5rem 4rem;
+      max-width: 980px;
+    }
+
+    /* ── 標題 ── */
+    h2.section-title {
+      font-size: 1.3rem; font-weight: 700;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: .5rem; margin-top: 3rem; margin-bottom: 1.25rem;
+      scroll-margin-top: 1rem;
+    }
+    h3.sub-title {
+      font-size: 1rem; font-weight: 600; color: #334155;
+      margin-top: 1.5rem; margin-bottom: .6rem; scroll-margin-top: 1rem;
+    }
+
+    /* ── 步驟清單 ── */
+    .step-list { counter-reset: step; padding-left: 0; list-style: none; }
+    .step-list li {
+      counter-increment: step; padding: .35rem 0 .35rem 2.4rem; position: relative;
+      font-size: .9rem;
+    }
+    .step-list li::before {
+      content: counter(step);
+      position: absolute; left: 0; top: .35rem;
+      background: var(--accent); color: #fff;
+      width: 1.4rem; height: 1.4rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .7rem; font-weight: 700;
+    }
+
+    /* ── 提示框 ── */
+    .tip-box {
+      background: #eff6ff; border-left: 4px solid #3b82f6;
+      border-radius: 0 .5rem .5rem 0; padding: .65rem 1rem;
+      margin: .75rem 0; font-size: .875rem;
+    }
+    .warn-box {
+      background: #fffbeb; border-left: 4px solid #f59e0b;
+      border-radius: 0 .5rem .5rem 0; padding: .65rem 1rem;
+      margin: .75rem 0; font-size: .875rem;
+    }
+
+    .info-box {
+      background: #eff6ff; border-left: 4px solid #3b82f6;
+      border-radius: 0 .5rem .5rem 0; padding: .65rem 1rem;
+      margin: .75rem 0; font-size: .875rem;
+    }
+
+    /* ── URL 標籤 ── */
+    .url-pill {
+      display: inline-block; background: #1e293b; color: #7dd3fc;
+      font-family: monospace; font-size: .82rem;
+      padding: .15rem .55rem; border-radius: .3rem;
+    }
+    .method-get  { display: inline-block; background: #16a34a; color: #fff; font-family: monospace; font-size: .75rem; padding: .1rem .45rem; border-radius: .25rem; vertical-align: middle; }
+    .method-post { display: inline-block; background: #2563eb; color: #fff; font-family: monospace; font-size: .75rem; padding: .1rem .45rem; border-radius: .25rem; vertical-align: middle; }
+    .method-put  { display: inline-block; background: #d97706; color: #fff; font-family: monospace; font-size: .75rem; padding: .1rem .45rem; border-radius: .25rem; vertical-align: middle; }
+    .method-del  { display: inline-block; background: #dc2626; color: #fff; font-family: monospace; font-size: .75rem; padding: .1rem .45rem; border-radius: .25rem; vertical-align: middle; }
+
+    /* ── 表格 ── */
+    table.doc-table th { background: #f1f5f9; font-weight: 600; font-size: .82rem; }
+    table.doc-table td { font-size: .82rem; vertical-align: middle; }
+
+    /* ── Feature cards ── */
+    .fc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: 1rem; }
+    .fc {
+      border: 1px solid #e2e8f0; border-radius: .6rem;
+      padding: .85rem 1rem; background: #fff;
+    }
+    .fc .fc-title { font-weight: 600; font-size: .9rem; margin-bottom: .2rem; }
+    .fc .fc-desc  { font-size: .8rem; color: #64748b; }
+
+    /* ── Code block ── */
+    code { background: #f1f5f9; padding: .1em .35em; border-radius: .25rem; font-size: .85em; }
+    pre {
+      background: #0f172a; color: #e2e8f0;
+      border-radius: .5rem; padding: 1rem 1.25rem;
+      font-size: .83rem; overflow-x: auto; margin: .75rem 0;
+    }
+    pre code { background: none; padding: 0; font-size: inherit; }
+
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #main { margin-left: 0; padding: 1rem; }
+      .fc-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════ 側欄 ══════════════════════════ -->
+<nav id="sidebar">
+  <div class="brand"><i class="bi bi-shield-lock"></i>{{ admin_title }} 說明</div>
+
+  <div class="nav-section">入門</div>
+  <a class="nav-link" href="#overview">系統概覽</a>
+  <a class="nav-link" href="#urls">系統網址</a>
+  <a class="nav-link" href="#login">登入 / 帳號</a>
+
+  <div class="nav-section">後台管理</div>
+  <a class="nav-link" href="#admin">後台儀表板</a>
+  <a class="nav-link" href="#user-mgmt">使用者管理</a>
+  <a class="nav-link" href="#logs">操作紀錄</a>
+  <a class="nav-link" href="#settings">系統設定</a>
+
+  <div class="nav-section">API 說明</div>
+  <a class="nav-link" href="#api-auth">認證 — /auth</a>
+  <a class="nav-link" href="#api-user">使用者 — /user</a>
+  <a class="nav-link" href="#api-log">日誌 — /log</a>
+  <a class="nav-link" href="#api-sample">範例 — /sample</a>
+
+  <div class="nav-section">系統</div>
+  <a class="nav-link" href="#roles">角色與權限</a>
+  <a class="nav-link" href="#config">環境設定</a>
+  <a class="nav-link" href="#security">安全機制</a>
+  <a class="nav-link" href="#deploy">部署說明</a>
+  <a class="nav-link ps-4 small" href="#deploy-dir">目錄與權限</a>
+  <a class="nav-link ps-4 small" href="#deploy-gunicorn">Gunicorn 啟動</a>
+  <a class="nav-link ps-4 small" href="#deploy-host">主機 Nginx 部署</a>
+</nav>
+
+<!-- ══════════════════════════ 主內容 ══════════════════════════ -->
+<main id="main">
+
+  <h1 class="fw-bold mb-1">{{ admin_title }}</h1>
+  <p class="text-muted mb-0">後台使用教學文件</p>
+
+  <!-- ────────────────── 系統概覽 ────────────────── -->
+  <h2 class="section-title" id="overview">
+    <i class="bi bi-grid-1x2 me-2 text-primary"></i>系統概覽
+  </h2>
+  <div class="fc-grid">
+    <div class="fc">
+      <div class="fc-title"><i class="bi bi-shield-lock me-1 text-primary"></i>JWT 認證</div>
+      <div class="fc-desc">Token 有效期 8 小時，支援 Bearer Header 傳遞</div>
+    </div>
+    <div class="fc">
+      <div class="fc-title"><i class="bi bi-people me-1 text-success"></i>使用者管理</div>
+      <div class="fc-desc">三種角色（admin / operator / viewer），後台 CRUD 操作</div>
+    </div>
+    <div class="fc">
+      <div class="fc-title"><i class="bi bi-journal-text me-1 text-warning"></i>操作紀錄</div>
+      <div class="fc-desc">自動記錄登入、新增、修改、刪除等操作，便於稽核</div>
+    </div>
+    <div class="fc">
+      <div class="fc-title"><i class="bi bi-file-earmark-code me-1 text-info"></i>Swagger API 文件</div>
+      <div class="fc-desc">互動式文件，可直接在頁面測試所有 API 端點</div>
+    </div>
+    <div class="fc">
+      <div class="fc-title"><i class="bi bi-database me-1 text-danger"></i>多資料庫支援</div>
+      <div class="fc-desc">同時整合 MongoDB、MySQL、Redis，可依需求選用</div>
+    </div>
+    <div class="fc">
+      <div class="fc-title"><i class="bi bi-box-seam me-1 text-secondary"></i>Docker 部署</div>
+      <div class="fc-desc">提供 Docker Compose 一鍵啟動，含 Nginx、資料庫全套服務</div>
+    </div>
+  </div>
+
+  <!-- ────────────────── 系統網址 ────────────────── -->
+  <h2 class="section-title" id="urls">
+    <i class="bi bi-link-45deg me-2 text-primary"></i>系統網址
+  </h2>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th style="width:160px">功能</th><th>路徑</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>健康檢查</td><td><span class="url-pill">GET /</span></td><td>回傳 <code>ok</code>，確認服務正常運行</td></tr>
+      <tr><td>後台管理</td><td><span class="url-pill">GET /admin/</span></td><td>使用者管理與操作紀錄的後台介面</td></tr>
+      <tr><td>API 文件</td><td><span class="url-pill">GET /apidocs</span></td><td>Swagger 互動式文件，可直接測試 API</td></tr>
+      <tr><td>使用說明</td><td><span class="url-pill">GET /docs/</span></td><td>本頁面</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ────────────────── 登入 ────────────────── -->
+  <h2 class="section-title" id="login">
+    <i class="bi bi-shield-lock me-2 text-primary"></i>登入 / 帳號
+  </h2>
+  <p>後台使用 JWT Token 認證，Token 預設有效期為 <strong>8 小時</strong>。</p>
+  <ol class="step-list">
+    <li>開啟後台網址 <span class="url-pill">/admin/</span>，輸入帳號與密碼後點擊「登入」。</li>
+    <li>登入成功後 Token 自動存入瀏覽器 <code>localStorage</code>，有效期內重新整理不需重新登入。</li>
+    <li>Token 過期後會自動導回登入頁，重新輸入帳密即可。</li>
+    <li>點擊右上角「登出」可立即清除 Token。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>首次啟動：</strong>執行 <code>python run.py</code> 時系統自動建立預設管理員帳號 <code>admin</code>（密碼：<code>admin</code>），請於登入後立即修改密碼。
+  </div>
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    預設帳密僅供初始設定使用，正式上線前請務必更換為強密碼。
+  </div>
+
+  <!-- ────────────────── 後台儀表板 ────────────────── -->
+  <h2 class="section-title" id="admin">
+    <i class="bi bi-layout-sidebar me-2 text-primary"></i>後台儀表板
+  </h2>
+  <p>網址：<span class="url-pill">/admin/</span>。後台採單頁應用（SPA），透過左側選單切換功能頁面。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th style="width:160px">頁面</th><th>說明</th><th>所需角色</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><i class="bi bi-people me-1"></i>使用者管理</td>
+        <td>新增、編輯、刪除系統帳號</td>
+        <td><span class="badge bg-danger">admin</span></td>
+      </tr>
+      <tr>
+        <td><i class="bi bi-journal-text me-1"></i>操作紀錄</td>
+        <td>查看所有操作歷史紀錄</td>
+        <td><span class="badge bg-danger">admin</span> <span class="badge bg-warning text-dark">operator</span> <span class="badge bg-secondary">viewer</span></td>
+      </tr>
+      <tr>
+        <td><i class="bi bi-gear me-1"></i>系統設定</td>
+        <td>調整後台外觀（外觀模式、主題色彩、頁面背景），設定存於瀏覽器本地端</td>
+        <td><span class="badge bg-danger">admin</span> <span class="badge bg-warning text-dark">operator</span> <span class="badge bg-secondary">viewer</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    非 admin 角色登入後台後，側欄「使用者管理」項目會自動隱藏，僅顯示有權限的功能。
+  </div>
+
+  <!-- ────────────────── 使用者管理 ────────────────── -->
+  <h2 class="section-title" id="user-mgmt">
+    <i class="bi bi-people me-2 text-primary"></i>使用者管理
+  </h2>
+  <p>後台側欄 → <strong>使用者管理</strong>（需 <code>admin</code> 角色）。</p>
+
+  <h3 class="sub-title">新增使用者</h3>
+  <ol class="step-list">
+    <li>點擊右上角「＋ 新增使用者」按鈕。</li>
+    <li>填入帳號、密碼，並選擇角色（管理員 / 操作員 / 檢視者）。</li>
+    <li>再次輸入密碼確認後，點擊「儲存」。</li>
+  </ol>
+
+  <h3 class="sub-title">編輯使用者</h3>
+  <ol class="step-list">
+    <li>在使用者列表中點擊對應的「<i class="bi bi-pencil"></i> 編輯」按鈕。</li>
+    <li>可修改角色或重設密碼（密碼欄位留空則不變更）。</li>
+    <li>點擊「儲存」完成修改。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    帳號名稱建立後不可修改；若需更換帳號名稱，請新增帳號後刪除舊帳號。
+  </div>
+
+  <h3 class="sub-title">刪除使用者</h3>
+  <ol class="step-list">
+    <li>點擊「<i class="bi bi-trash"></i>」刪除按鈕。</li>
+    <li>確認彈窗後執行刪除，操作不可復原。</li>
+  </ol>
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    <strong>自己的帳號無法刪除</strong>，以防止意外失去登入權限。請至少保留一個 <code>admin</code> 帳號。
+  </div>
+
+  <!-- ────────────────── 操作紀錄 ────────────────── -->
+  <h2 class="section-title" id="logs">
+    <i class="bi bi-journal-text me-2 text-primary"></i>操作紀錄
+  </h2>
+  <p>後台側欄 → <strong>操作紀錄</strong>。記錄所有系統操作，包含登入、新增、修改、刪除。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>時間</td><td>操作發生的時間戳記</td></tr>
+      <tr><td>操作者</td><td>執行操作的帳號名稱</td></tr>
+      <tr><td>動作</td><td>操作類型，例如：login、create_user、update_user、delete_user</td></tr>
+      <tr><td>詳細</td><td>操作的補充資訊（例如被操作的帳號）</td></tr>
+      <tr><td>結果</td><td><span class="badge bg-success">成功</span> / <span class="badge bg-danger">失敗</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ────────────────── 系統設定 ────────────────── -->
+  <h2 class="section-title" id="settings">
+    <i class="bi bi-gear me-2 text-primary"></i>系統設定
+  </h2>
+  <p>後台側欄 → <strong>系統設定</strong>（所有已登入帳號皆可使用）。設定值儲存於瀏覽器 <code>localStorage</code>，不同裝置或瀏覽器需各自設定。</p>
+
+  <h3 class="sub-title">外觀模式</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th style="width:120px">模式</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><i class="bi bi-moon-stars me-1"></i>深色</td><td>固定使用深色 sidebar 與 navbar，適合低光源環境。</td></tr>
+      <tr><td><i class="bi bi-sun me-1"></i>淺色</td><td>固定使用淺色外觀，sidebar 與 navbar 背景為白色 / 淺灰。</td></tr>
+      <tr><td><i class="bi bi-circle-half me-1"></i>自動</td><td>跟隨作業系統的深色 / 淺色偏好（<code>prefers-color-scheme</code>），切換系統主題時後台自動跟著變換。</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">主題色彩</h3>
+  <p>選擇 sidebar 高亮與 active 狀態的主色調，深色與淺色模式均適用。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th style="width:80px">色票</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>藍</td><td>預設深藍色系（<code>#6384ff</code>）</td></tr>
+      <tr><td>紫</td><td>靛紫色系（<code>#a78bfa</code>）</td></tr>
+      <tr><td>綠</td><td>翠綠色系（<code>#4ade80</code>）</td></tr>
+      <tr><td>藍綠</td><td>水藍色系（<code>#38bdf8</code>）</td></tr>
+      <tr><td>灰</td><td>中性灰色系（<code>#e5e5e7</code>）</td></tr>
+      <tr><td>自訂</td><td>點擊後開啟 color picker，可選任意顏色作為高亮主色。</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">頁面背景顏色</h3>
+  <p>調整內容區（右側主體）的背景色。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th style="width:120px">選項</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>預設（重設）</td><td>跟隨外觀模式的預設背景：深色模式 <code>#f5f6fa</code>、淺色模式 <code>#eef0f5</code>。</td></tr>
+      <tr><td>色票（8 種）</td><td>藍白、淺藍白、純白、暖白、冷藍灰、暖米、深藍黑、深灰。</td></tr>
+      <tr><td>自訂</td><td>點擊後開啟 color picker，可自行選色；頁面底部有即時預覽條。</td></tr>
+    </tbody>
+  </table>
+  <div class="info-box">
+    <i class="bi bi-info-circle me-1"></i>
+    所有外觀設定僅儲存在當前瀏覽器，不影響其他使用者，也不存入資料庫。
+  </div>
+
+  <!-- ────────────────── API：認證 ────────────────── -->
+  <h2 class="section-title" id="api-auth">
+    <i class="bi bi-key me-2 text-primary"></i>API — 認證 <span class="url-pill">/auth</span>
+  </h2>
+  <p>所有需要身份驗證的 API 皆須在 HTTP Header 帶入 JWT Token：</p>
+  <pre><code>Authorization: Bearer &lt;your_token&gt;</code></pre>
+
+  <div class="warn-box">
+    <i class="bi bi-shield-exclamation me-1"></i>
+    <strong>Rate Limit：</strong><code>/auth/login</code> 每個 IP 限制 <strong>10 次 / 分鐘</strong>；<code>/auth/refresh</code> 限制 <strong>30 次 / 分鐘</strong>。超過限制回傳 <code>429 Too Many Requests</code>。
+  </div>
+
+  <h3 class="sub-title"><span class="method-post">POST</span> &nbsp;<code>/auth/login</code></h3>
+  <p>使用帳號密碼取得 JWT Token。</p>
+  <p><strong>Request Body（JSON）：</strong></p>
+  <pre><code>{
+  "username": "admin",
+  "password": "admin"
+}</code></pre>
+  <p><strong>成功回應：</strong></p>
+  <pre><code>{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "role": "admin"
+}</code></pre>
+  <table class="table doc-table table-bordered mt-2">
+    <thead><tr><th>HTTP 狀態</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>200</code></td><td>登入成功，回傳 Token 與角色</td></tr>
+      <tr><td><code>401</code></td><td>帳號或密碼錯誤</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ────────────────── API：使用者 ────────────────── -->
+  <h2 class="section-title" id="api-user">
+    <i class="bi bi-person-lines-fill me-2 text-primary"></i>API — 使用者 <span class="url-pill">/user</span>
+  </h2>
+  <p>使用者 CRUD API，需攜帶 JWT Token，且需 <code>admin</code> 角色（讀取除外）。</p>
+
+  <h3 class="sub-title"><span class="method-get">GET</span> &nbsp;<code>/user/</code> — 取得所有使用者</h3>
+  <pre><code># 需要 admin 角色
+GET /user/
+Authorization: Bearer &lt;token&gt;</code></pre>
+  <p><strong>成功回應：</strong></p>
+  <pre><code>{
+  "success": true,
+  "data": [
+    { "_id": "...", "username": "admin", "role": "admin", "created_at": "..." }
+  ]
+}</code></pre>
+
+  <h3 class="sub-title"><span class="method-post">POST</span> &nbsp;<code>/user/</code> — 新增使用者</h3>
+  <pre><code>POST /user/
+Authorization: Bearer &lt;token&gt;
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "password": "yourpassword",
+  "role": "operator"
+}</code></pre>
+  <table class="table doc-table table-bordered mt-2">
+    <thead><tr><th>欄位</th><th>類型</th><th>必填</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>username</td><td>string</td><td>✓</td><td>帳號名稱，不可重複</td></tr>
+      <tr><td>password</td><td>string</td><td>✓</td><td>密碼，以 bcrypt 雜湊儲存</td></tr>
+      <tr><td>role</td><td>string</td><td>✓</td><td><code>admin</code> / <code>operator</code> / <code>viewer</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title"><span class="method-put">PUT</span> &nbsp;<code>/user/&lt;id&gt;</code> — 修改使用者</h3>
+  <pre><code>PUT /user/&lt;user_id&gt;
+Authorization: Bearer &lt;token&gt;
+Content-Type: application/json
+
+{
+  "role": "viewer",
+  "password": "newpassword"   // 可選，留空則不修改密碼
+}</code></pre>
+
+  <h3 class="sub-title"><span class="method-del">DELETE</span> &nbsp;<code>/user/&lt;id&gt;</code> — 刪除使用者</h3>
+  <pre><code>DELETE /user/&lt;user_id&gt;
+Authorization: Bearer &lt;token&gt;</code></pre>
+  <div class="tip-box">
+    <i class="bi bi-lightbulb me-1"></i>
+    所有 API 也可透過 <span class="url-pill">/apidocs</span> Swagger 介面直接測試，點擊「Authorize」後貼上 Token 即可。
+  </div>
+
+  <!-- ────────────────── API：日誌 ────────────────── -->
+  <h2 class="section-title" id="api-log">
+    <i class="bi bi-journal-code me-2 text-primary"></i>API — 操作日誌 <span class="url-pill">/log</span>
+  </h2>
+
+  <h3 class="sub-title"><span class="method-get">GET</span> &nbsp;<code>/log/</code> — 取得操作紀錄</h3>
+  <p>需攜帶有效 JWT Token（所有角色均可查詢）。</p>
+  <pre><code>GET /log/
+Authorization: Bearer &lt;token&gt;</code></pre>
+  <p><strong>成功回應：</strong></p>
+  <pre><code>{
+  "success": true,
+  "data": [
+    {
+      "_id": "...",
+      "username": "admin",
+      "action": "login",
+      "detail": "登入成功",
+      "success": true,
+      "created_at": "2026-05-27T10:00:00"
+    }
+  ]
+}</code></pre>
+
+  <!-- ────────────────── API：範例 ────────────────── -->
+  <h2 class="section-title" id="api-sample">
+    <i class="bi bi-braces me-2 text-primary"></i>API — 範例端點 <span class="url-pill">/sample</span>
+  </h2>
+  <p>內建示範路由，展示帶有 Swagger 文件的 API 寫法。</p>
+
+  <h3 class="sub-title"><span class="method-get">GET</span> &nbsp;<code>/sample/check/&lt;domain&gt;</code> — 網域驗證</h3>
+  <pre><code>GET /sample/check/google.com</code></pre>
+  <p>回傳指定網域是否可解析，用於展示帶路徑參數的 API 範例。</p>
+  <div class="tip-box">
+    <i class="bi bi-lightbulb me-1"></i>
+    <strong>新增 Blueprint：</strong>複製 <code>app/sample/</code> 目錄結構作為新模組的起點，在 <code>app/__init__.py</code> 中以 <code>app.register_blueprint()</code> 掛載即可。
+  </div>
+
+  <!-- ────────────────── 角色與權限 ────────────────── -->
+  <h2 class="section-title" id="roles">
+    <i class="bi bi-person-badge me-2 text-primary"></i>角色與權限
+  </h2>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>角色</th><th>說明</th><th>可存取功能</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="badge bg-danger">admin</span><br><small>管理員</small></td>
+        <td>系統最高權限帳號</td>
+        <td>全部 API、使用者管理（CRUD）、操作紀錄查詢</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-warning text-dark">operator</span><br><small>操作員</small></td>
+        <td>一般操作人員</td>
+        <td>操作紀錄查詢；不可管理使用者</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-secondary">viewer</span><br><small>檢視者</small></td>
+        <td>唯讀帳號</td>
+        <td>僅能查看操作紀錄，不可執行任何寫入操作</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>在程式碼中透過 <code>@require_role()</code> 裝飾器保護端點：</p>
+  <pre><code>from src.permissions import require_role
+
+@app_user.route('/', methods=['GET'])
+@require_role('admin')               # 僅 admin 可存取
+def get_users():
+    ...
+
+@app_user.route('/', methods=['POST'])
+@require_role('admin', 'operator')   # admin 與 operator 均可
+def create_user():
+    ...</code></pre>
+
+  <!-- ────────────────── 環境設定 ────────────────── -->
+  <h2 class="section-title" id="config">
+    <i class="bi bi-sliders me-2 text-primary"></i>環境設定
+  </h2>
+
+  <h3 class="sub-title"><code>.env</code> — 環境變數</h3>
+  <p>複製 <code>.env.default</code> 為 <code>.env</code> 後修改：</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>變數名稱</th><th>預設值</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>FLASK_PORT</code></td><td><code>5000</code></td><td>Flask 服務監聽埠號</td></tr>
+      <tr><td><code>JWT_ACCESS_TOKEN_EXPIRES_HOURS</code></td><td><code>8</code></td><td>JWT Token 有效時數</td></tr>
+      <tr><td><code>ADMIN_PASSWORD</code></td><td><code>admin</code></td><td>首次啟動時建立 admin 帳號使用的密碼，<strong>正式環境務必修改</strong></td></tr>
+      <tr><td><code>MYSQL_ROOT_PASSWORD</code></td><td><code>root_password</code></td><td>MySQL root 密碼</td></tr>
+      <tr><td><code>MYSQL_DATABASE</code></td><td><code>flask_app</code></td><td>MySQL 應用程式資料庫名稱</td></tr>
+      <tr><td><code>MYSQL_USER</code></td><td><code>flask_user</code></td><td>MySQL 應用程式帳號</td></tr>
+      <tr><td><code>MYSQL_PASSWORD</code></td><td><code>flask_password</code></td><td>MySQL 應用程式帳號密碼</td></tr>
+      <tr><td><code>REDIS_PASSWORD</code></td><td><code>redis_password</code></td><td>Redis 認證密碼</td></tr>
+      <tr><td><code>NGINX_MODE</code></td><td><code>http</code></td><td>Nginx 模式：<code>http</code> / <code>cloudflare</code> / <code>https-letsencrypt</code></td></tr>
+    </tbody>
+  </table>
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    正式環境務必修改所有密碼（<code>ADMIN_PASSWORD</code>、<code>MYSQL_*</code>、<code>REDIS_PASSWORD</code>），預設值僅供本機開發使用。
+  </div>
+
+  <h3 class="sub-title"><code>conf/config.ini</code> — 資料庫設定</h3>
+  <p>複製 <code>conf/config.ini.default</code> 為 <code>conf/config.ini</code> 後修改：</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>區段</th><th>設定項目</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2"><code>[MONGO]</code></td><td><code>MONGO_URI</code></td><td>MongoDB 連線字串，預設 <code>mongodb://localhost:27017</code></td></tr>
+      <tr><td><code>MONGO_DB</code></td><td>資料庫名稱，預設 <code>flask_app</code></td></tr>
+      <tr><td rowspan="5"><code>[MYSQL]</code></td><td><code>MYSQL_HOST</code></td><td>主機位址</td></tr>
+      <tr><td><code>MYSQL_PORT</code></td><td>連接埠，預設 <code>3306</code></td></tr>
+      <tr><td><code>MYSQL_USER</code></td><td>帳號，預設 <code>root</code></td></tr>
+      <tr><td><code>MYSQL_PASSWORD</code></td><td>密碼</td></tr>
+      <tr><td><code>MYSQL_DB</code></td><td>資料庫名稱，預設 <code>flask_app</code></td></tr>
+      <tr><td rowspan="4"><code>[REDIS]</code></td><td><code>REDIS_HOST</code></td><td>主機位址，預設 <code>localhost</code></td></tr>
+      <tr><td><code>REDIS_PORT</code></td><td>連接埠，預設 <code>6379</code></td></tr>
+      <tr><td><code>REDIS_PASSWORD</code></td><td>密碼（無則留空）</td></tr>
+      <tr><td><code>REDIS_DB</code></td><td>資料庫索引，預設 <code>0</code></td></tr>
+      <tr><td><code>[SETTING]</code></td><td><code>ADMIN_TITLE</code></td><td>後台標題名稱，預設「後台管理」</td></tr>
+      <tr><td rowspan="4"><code>[LOG]</code></td><td><code>LOG_DISABLE</code></td><td>是否關閉應用程式 Log，預設 <code>false</code></td></tr>
+      <tr><td><code>LOG_PATH</code></td><td>Log 存放目錄，預設 <code>logs</code></td></tr>
+      <tr><td><code>LOG_LEVEL</code></td><td>Log 等級：<code>DEBUG</code> / <code>INFO</code> / <code>WARNING</code> / <code>ERROR</code></td></tr>
+      <tr><td><code>LOG_FILE_DISABLE</code></td><td>是否關閉寫入 Log 檔案，預設 <code>false</code></td></tr>
+      <tr><td rowspan="12"><code>[GUNICORN]</code></td><td><code>HOST</code></td><td>監聽位址，預設 <code>0.0.0.0</code></td></tr>
+      <tr><td><code>PORT</code></td><td>監聽埠號，預設讀取 <code>FLASK_PORT</code> 環境變數（5000）</td></tr>
+      <tr><td><code>WORKERS</code></td><td>Worker 進程數，預設 CPU × 2 + 1</td></tr>
+      <tr><td><code>WORKER_CLASS</code></td><td><code>sync</code>（預設）/ <code>gthread</code> / <code>gevent</code></td></tr>
+      <tr><td><code>THREADS</code></td><td>每個 Worker 的執行緒數（<code>gthread</code> 時有效），預設 <code>1</code></td></tr>
+      <tr><td><code>TIMEOUT</code></td><td>Worker 逾時秒數，預設 <code>120</code></td></tr>
+      <tr><td><code>KEEPALIVE</code></td><td>Keep-Alive 等待秒數，預設 <code>5</code></td></tr>
+      <tr><td><code>WORKER_TMP_DIR</code></td><td>心跳暫存目錄，Docker 建議 <code>/dev/shm</code></td></tr>
+      <tr><td><code>ACCESS_LOG</code></td><td>Access log 路徑，<code>-</code> 輸出至 stdout</td></tr>
+      <tr><td><code>ERROR_LOG</code></td><td>Error log 路徑，<code>-</code> 輸出至 stderr</td></tr>
+      <tr><td><code>PRELOAD_APP</code></td><td>Fork 前預先載入 app，預設 <code>true</code></td></tr>
+      <tr><td><code>RELOAD</code></td><td>程式碼異動自動重載，預設 <code>false</code>（僅開發用）</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ────────────────── 安全機制 ────────────────── -->
+  <h2 class="section-title" id="security">
+    <i class="bi bi-shield-check me-2 text-primary"></i>安全機制
+  </h2>
+
+  <h3 class="sub-title">Rate Limiting（請求頻率限制）</h3>
+  <p>使用 <strong>Flask-Limiter</strong> 搭配 Redis 儲存計數，跨多個 Gunicorn Worker 共用限額。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>端點</th><th>限制</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /auth/login</code></td><td>10 次 / 分鐘 / IP</td><td>防止密碼暴力破解</td></tr>
+      <tr><td><code>POST /auth/refresh</code></td><td>30 次 / 分鐘 / IP</td><td>防止 Token 刷新濫用</td></tr>
+    </tbody>
+  </table>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    超過限額回傳 <code>429 Too Many Requests</code>。計數器使用 <code>conf/config.ini</code> 中的 Redis 連線設定。
+  </div>
+
+  <h3 class="sub-title">Security Response Headers</h3>
+  <p>所有 API 回應自動加入以下安全標頭：</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>Header</th><th>值</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><code>X-Frame-Options</code></td><td><code>DENY</code></td><td>防止 Clickjacking（iframe 嵌入攻擊）</td></tr>
+      <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code></td><td>防止 MIME 類型嗅探</td></tr>
+      <tr><td><code>X-XSS-Protection</code></td><td><code>1; mode=block</code></td><td>舊版瀏覽器 XSS 過濾</td></tr>
+      <tr><td><code>Referrer-Policy</code></td><td><code>strict-origin-when-cross-origin</code></td><td>控制 Referrer 資訊洩漏</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">請求大小限制</h3>
+  <p>預設請求 Body 上限為 <strong>16 MB</strong>（<code>MAX_CONTENT_LENGTH</code>），超過限制 Flask 自動回傳 <code>413 Request Entity Too Large</code>，防止大型 payload DoS 攻擊。</p>
+
+  <h3 class="sub-title">MongoDB 自動建立索引</h3>
+  <p>每次應用程式啟動時（<code>run.py</code>）自動呼叫 <code>ensure_indexes()</code>，確保以下索引存在：</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>Collection</th><th>索引</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>users</code></td><td><code>username</code>（unique）</td><td>加速登入查詢，強制帳號唯一</td></tr>
+      <tr><td><code>users</code></td><td><code>template_id</code></td><td>加速模板篩選查詢</td></tr>
+      <tr><td><code>logs</code></td><td><code>created_at DESC</code></td><td>加速紀錄時間排序查詢</td></tr>
+      <tr><td><code>logs</code></td><td><code>(username, created_at DESC)</code></td><td>加速依使用者篩選紀錄</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">conf/flask.json — SECRET_KEY</h3>
+  <p><code>conf/flask.json</code> 存放 Flask 與 JWT 簽名用的 <code>SECRET_KEY</code>，具有以下保護機制：</p>
+  <ul style="font-size:.9rem">
+    <li>此檔案已加入 <code>.gitignore</code>，<strong>不會被提交至版本控制</strong>。</li>
+    <li>首次啟動 <code>run.py</code> 時若檔案不存在，自動建立並產生 32-byte 隨機金鑰。</li>
+    <li>正式環境請備份此檔案，或改以 <code>SECRET_KEY</code> 環境變數注入（需修改 <code>conf/config.py</code>）。</li>
+  </ul>
+
+  <!-- ────────────────── 部署說明 ────────────────── -->
+  <h2 class="section-title" id="deploy">
+    <i class="bi bi-rocket-takeoff me-2 text-primary"></i>部署說明
+  </h2>
+
+  <h3 class="sub-title" id="deploy-dir">部署前置：專案目錄與權限</h3>
+  <p>正式伺服器建議將專案放在 <code>/opt/</code>，並將擁有者設為 <code>www-data</code>（Nginx / Gunicorn 執行身份），避免以 <code>root</code> 直接執行。</p>
+  <ol class="step-list">
+    <li>將專案移至慣例目錄：
+      <pre class="code-block mt-1">sudo mv /root/flask-api /opt/flask-api</pre>
+    </li>
+    <li>設定目錄擁有者：
+      <pre class="code-block mt-1">sudo chown -R www-data:www-data /opt/flask-api</pre>
+    </li>
+    <li>確認目錄權限（目錄 755，設定檔 644，<code>.env</code> 建議 600）：
+      <pre class="code-block mt-1">sudo find /opt/flask-api -type d -exec chmod 755 {} \;
+sudo find /opt/flask-api -type f -exec chmod 644 {} \;
+sudo chmod 600 /opt/flask-api/.env</pre>
+    </li>
+  </ol>
+  <div class="info-box">
+    <i class="bi bi-info-circle me-1"></i>
+    若使用 Docker Compose，容器內部以容器自身使用者執行，主機目錄權限只需讓
+    <code>www-data</code> 可讀取設定掛載目錄（<code>conf/</code>、<code>logs/</code>）即可，
+    不需對整個專案遞迴 chown。
+  </div>
+
+  <h3 class="sub-title">方式一：本機直接執行（開發用）</h3>
+  <ol class="step-list">
+    <li>安裝相依套件：<code>pip install -r requirements.txt</code></li>
+    <li>複製設定檔：<code>cp conf/config.ini.default conf/config.ini</code> 並修改資料庫設定。</li>
+    <li>複製環境變數：<code>cp .env.default .env</code>。</li>
+    <li>啟動服務：<code>python run.py</code>，首次執行自動產生 <code>SECRET_KEY</code> 與預設管理員帳號。</li>
+    <li>瀏覽器開啟 <span class="url-pill">http://localhost:5000/admin/</span>。</li>
+  </ol>
+
+  <h3 class="sub-title" id="deploy-gunicorn">方式一（正式）：Gunicorn 啟動</h3>
+  <p>正式環境建議改用 Gunicorn 取代 Flask 內建伺服器，以獲得多 Worker 並發與更穩定的錯誤處理。</p>
+  <ol class="step-list">
+    <li>完成「方式一」的前三個步驟（安裝套件、複製設定檔、複製 .env）。</li>
+    <li>（選用）在 <code>conf/config.ini</code> 的 <code>[GUNICORN]</code> 區段調整 Worker 數量、逾時等參數。</li>
+    <li>啟動 Gunicorn：
+      <pre class="code-block mt-1">gunicorn -c gunicorn.py "run:app"</pre>
+    </li>
+    <li>背景執行（搭配 systemd 或 supervisor 管理 process 生命週期更佳）：
+      <pre class="code-block mt-1">gunicorn -c gunicorn.py "run:app" --daemon</pre>
+    </li>
+  </ol>
+  <table class="table doc-table table-bordered mt-2">
+    <thead><tr><th>啟動方式</th><th>適用情境</th><th>Worker 並發</th></tr></thead>
+    <tbody>
+      <tr><td><code>python run.py</code></td><td>本機開發、快速測試</td><td>單進程（Flask dev server）</td></tr>
+      <tr><td><code>gunicorn -c gunicorn.py "run:app"</code></td><td>正式環境、主機直接部署</td><td>多進程（CPU × 2 + 1）</td></tr>
+      <tr><td>Docker Compose（<code>CMD gunicorn …</code>）</td><td>容器化部署</td><td>多進程（同上）</td></tr>
+    </tbody>
+  </table>
+  <div class="info-box">
+    <i class="bi bi-info-circle me-1"></i>
+    <code>gunicorn.py</code> 位於專案根目錄，所有 Gunicorn 參數均可透過
+    <code>conf/config.ini</code> 的 <code>[GUNICORN]</code> 區段覆寫，無需修改程式碼。
+  </div>
+
+  <h3 class="sub-title">方式二：Docker Compose（推薦）</h3>
+  <ol class="step-list">
+    <li>複製設定檔：<code>cp docker-compose.yml.default docker-compose.yml</code>。</li>
+    <li>複製並修改 <code>.env</code>、<code>conf/config.ini</code> 與 Nginx 設定（位於 <code>conf/nginx/conf.d/</code>）。</li>
+    <li>啟動所有服務：<code>docker compose up -d</code>。</li>
+    <li>服務啟動後，Flask App 透過 Nginx 對外服務。</li>
+  </ol>
+  <table class="table doc-table table-bordered mt-2">
+    <thead><tr><th>服務名稱</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>nginx</code></td><td>反向代理，對外提供 HTTP/HTTPS</td></tr>
+      <tr><td><code>app</code></td><td>Flask 應用程式（Gunicorn）</td></tr>
+      <tr><td><code>mongo</code></td><td>MongoDB</td></tr>
+      <tr><td><code>mysql</code></td><td>MySQL</td></tr>
+      <tr><td><code>redis</code></td><td>Redis</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">Nginx 模式選擇</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th><code>NGINX_MODE</code></th><th>設定檔</th><th>適用情境</th></tr></thead>
+    <tbody>
+      <tr><td><code>http</code></td><td><code>default.conf.http.template</code></td><td>本機開發、無 SSL 測試環境</td></tr>
+      <tr><td><code>cloudflare</code></td><td><code>default.conf.cloudflare.template</code></td><td>使用 Cloudflare 代理（需放入 Cloudflare 憑證）</td></tr>
+      <tr><td><code>https-letsencrypt</code></td><td><code>default.conf.https-letsencrypt.template</code></td><td>自簽 Let's Encrypt SSL 憑證</td></tr>
+    </tbody>
+  </table>
+  <div class="info-box">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>容器安全：</strong>Flask App 容器（<code>python:3.13-slim</code>）以 <code>appuser</code>（UID 1001）非 root 使用者執行，降低容器逃逸風險。
+    掛載的 <code>logs/</code> 目錄若遇權限問題，可在主機執行：<code>sudo chown -R 1001:1001 logs</code>。
+  </div>
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    正式環境務必啟用 HTTPS，並修改 <code>.env</code> 中所有預設密碼，<code>conf/flask.json</code> 不可提交至版本控制。
+  </div>
+
+  <!-- ────────────────── 主機 Nginx 部署 ────────────────── -->
+  <h3 class="sub-title mt-4" id="deploy-host">
+    <i class="bi bi-hdd-rack me-1"></i>方式三：主機 Nginx（不使用容器 Nginx）
+  </h3>
+  <p>
+    若伺服器已安裝 Nginx，或不希望讓 Nginx 跑在 Docker 容器內，可以讓 Docker Compose 只啟動
+    <code>app / mongo / mysql / redis</code>，由主機的 Nginx 直接反向代理 Flask。
+    對應設定檔位於 <code>conf/nginx/host/</code>，依 SSL 需求選擇其中一份複製使用。
+  </p>
+
+  <h5 class="fw-semibold mt-3 mb-2">前置步驟</h5>
+  <ol class="step-list">
+    <li>
+      修改 <code>docker-compose.yml</code>，在 <code>app</code> 服務加上 <code>ports</code>，
+      將 Flask 綁定到主機的 <code>127.0.0.1:5000</code>：
+      <pre class="code-block mt-1">app:
+  ports:
+    - "127.0.0.1:5000:5000"   # 只允許本機 Nginx 連入，不對外暴露</pre>
+    </li>
+    <li>
+      啟動 App 與資料庫（略過 <code>nginx</code> 服務）：
+      <pre class="code-block mt-1">docker compose up -d app mongo mysql redis</pre>
+    </li>
+    <li>確認 Flask 已啟動：<code>curl http://127.0.0.1:5000/health</code>（回傳 <code>ok</code>）。</li>
+    <li>依下方模式選擇複製對應 Nginx 設定檔。</li>
+  </ol>
+
+  <h5 class="fw-semibold mt-3 mb-2">模式 A — 純 HTTP</h5>
+  <p class="text-muted small mb-2">適用：本機開發、IP 直連、或由 Cloudflare 在外層處理 HTTPS。</p>
+  <ol class="step-list">
+    <li>複製設定檔並替換域名：
+      <pre class="code-block mt-1">sudo cp conf/nginx/host/http.conf /etc/nginx/sites-available/flask-app
+sudo sed -i 's/YOUR_DOMAIN/example.com/g' /etc/nginx/sites-available/flask-app</pre>
+    </li>
+    <li>啟用設定並重載：
+      <pre class="code-block mt-1">sudo ln -s /etc/nginx/sites-available/flask-app /etc/nginx/sites-enabled/flask-app
+sudo nginx -t && sudo systemctl reload nginx</pre>
+    </li>
+  </ol>
+
+  <h5 class="fw-semibold mt-3 mb-2">模式 B — Cloudflare SSL（Origin CA）</h5>
+  <p class="text-muted small mb-2">適用：域名透過 Cloudflare Proxy，SSL/TLS 模式設為 Full (Strict)。</p>
+  <ol class="step-list">
+    <li>在 Cloudflare Dashboard → <strong>SSL/TLS → Origin Server → Create Certificate</strong> 取得憑證。</li>
+    <li>將憑證寫入伺服器：
+      <pre class="code-block mt-1">sudo mkdir -p /etc/ssl/cloudflare
+sudo nano /etc/ssl/cloudflare/origin.pem   # 貼上 Origin Certificate
+sudo nano /etc/ssl/cloudflare/origin.key   # 貼上 Private Key
+sudo chmod 600 /etc/ssl/cloudflare/origin.key</pre>
+    </li>
+    <li>複製設定檔並替換域名：
+      <pre class="code-block mt-1">sudo cp conf/nginx/host/cloudflare.conf /etc/nginx/sites-available/flask-app
+sudo sed -i 's/YOUR_DOMAIN/example.com/g' /etc/nginx/sites-available/flask-app</pre>
+    </li>
+    <li>啟用設定並重載：
+      <pre class="code-block mt-1">sudo ln -s /etc/nginx/sites-available/flask-app /etc/nginx/sites-enabled/flask-app
+sudo nginx -t && sudo systemctl reload nginx</pre>
+    </li>
+  </ol>
+
+  <h5 class="fw-semibold mt-3 mb-2">模式 C — Let's Encrypt SSL</h5>
+  <p class="text-muted small mb-2">適用：伺服器直接暴露網際網路，使用 Certbot 自動申請免費憑證。</p>
+  <ol class="step-list">
+    <li>安裝 Certbot：
+      <pre class="code-block mt-1">sudo apt install -y certbot python3-certbot-nginx</pre>
+    </li>
+    <li>先用模式 A（http.conf）讓 Nginx 跑起來，再申請憑證：
+      <pre class="code-block mt-1">sudo certbot --nginx -d example.com</pre>
+      Certbot 會自動修改 <code>/etc/nginx/sites-available/flask-app</code> 加入 SSL 設定。
+      <div class="info-box mt-1">
+        <i class="bi bi-info-circle me-1"></i>
+        若偏好手動控制，改用 webroot 方式：
+        <code>sudo certbot certonly --webroot -w /var/www/certbot -d example.com</code>，
+        再手動複製 <code>conf/nginx/host/https-letsencrypt.conf</code>。
+      </div>
+    </li>
+    <li>憑證路徑（自動申請後）：
+      <pre class="code-block mt-1">/etc/letsencrypt/live/example.com/fullchain.pem
+/etc/letsencrypt/live/example.com/privkey.pem</pre>
+    </li>
+    <li>設定自動續約（Certbot 安裝時通常已建立 systemd timer，確認即可）：
+      <pre class="code-block mt-1">sudo systemctl status certbot.timer</pre>
+    </li>
+  </ol>
+
+  <table class="table doc-table table-bordered mt-3">
+    <thead><tr><th>模式</th><th>設定檔來源</th><th>SSL 憑證位置</th></tr></thead>
+    <tbody>
+      <tr><td>A — HTTP</td><td><code>conf/nginx/host/http.conf</code></td><td>無</td></tr>
+      <tr><td>B — Cloudflare</td><td><code>conf/nginx/host/cloudflare.conf</code></td><td><code>/etc/ssl/cloudflare/</code></td></tr>
+      <tr><td>C — Let's Encrypt</td><td><code>conf/nginx/host/https-letsencrypt.conf</code></td><td><code>/etc/letsencrypt/live/&lt;domain&gt;/</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    主機 Nginx 與容器 Nginx <strong>不可同時啟用</strong>，兩者都監聽 port 80/443 會衝突。
+    請確認 <code>docker-compose.yml</code> 的 <code>nginx</code> 服務未被啟動（<code>docker compose ps</code> 確認）。
+  </div>
+
+  <div class="text-muted small mt-5 pt-3 border-top">
+    {{ admin_title }} &nbsp;|&nbsp;
+    <a href="/admin/" target="_blank">後台管理</a> &nbsp;|&nbsp;
+    <a href="/apidocs" target="_blank">API 文件</a>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // 側欄 ScrollSpy
+  const links    = document.querySelectorAll('#sidebar .nav-link[href^="#"]');
+  const sections = [...links].map(l => document.querySelector(l.getAttribute('href'))).filter(Boolean);
+
+  function onScroll() {
+    let cur = sections[0];
+    sections.forEach(s => { if (window.scrollY >= s.offsetTop - 100) cur = s; });
+    links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + cur.id));
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+</body>
+</html>

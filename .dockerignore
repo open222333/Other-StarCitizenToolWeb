@@ -1,0 +1,23 @@
+.git
+.gitignore
+.env
+.env.local
+*.md
+
+# Frontend build cache (rebuilt inside Docker)
+frontend/node_modules
+frontend/dist
+
+# Python cache
+__pycache__
+*.py[cod]
+.pytest_cache
+.coverage
+
+# Dev / local data
+logs
+docker/database
+
+# IDE
+.vscode
+.idea
