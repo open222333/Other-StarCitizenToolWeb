@@ -53,3 +53,36 @@ REDIS_HOST = config.get('REDIS', 'REDIS_HOST', fallback='localhost')
 REDIS_PORT = config.getint('REDIS', 'REDIS_PORT', fallback=6379)
 REDIS_PASSWORD = config.get('REDIS', 'REDIS_PASSWORD', fallback='')
 REDIS_DB = config.getint('REDIS', 'REDIS_DB', fallback=0)
+
+# 星際公民遊戲資料來源參數（社群 API，非官方）
+SCDATA_WIKI_API_BASE = config.get(
+    'SCDATA', 'WIKI_API_BASE', fallback='https://api.star-citizen.wiki/api').rstrip('/')
+SCDATA_UEX_API_BASE = config.get(
+    'SCDATA', 'UEX_API_BASE', fallback='https://api.uexcorp.uk/2.0').rstrip('/')
+# 每次請求間隔秒數，別把社群自費維運的 API 打爆
+SCDATA_REQUEST_DELAY = config.getfloat('SCDATA', 'REQUEST_DELAY', fallback=0.25)
+SCDATA_HTTP_TIMEOUT = config.getfloat('SCDATA', 'HTTP_TIMEOUT', fallback=60)
+SCDATA_MAX_RETRIES = config.getint('SCDATA', 'MAX_RETRIES', fallback=5)
+SCDATA_BULK_SIZE = config.getint('SCDATA', 'BULK_SIZE', fallback=500)
+# vehicles 單筆 payload 約 40KB，page size 要開小
+SCDATA_PAGE_SIZES = {
+    'items': config.getint('SCDATA', 'PAGE_SIZE_ITEMS', fallback=100),
+    'vehicles': config.getint('SCDATA', 'PAGE_SIZE_VEHICLES', fallback=5),
+    'commodities': config.getint('SCDATA', 'PAGE_SIZE_COMMODITIES', fallback=100),
+}
+# CIG 要求標示非官方；也讓 API 維運者知道流量來自誰
+SCDATA_USER_AGENT = config.get(
+    'SCDATA', 'USER_AGENT',
+    fallback='sc-tool-web/1.0 (unofficial SC fan tool; set USER_AGENT in config.ini)')
+
+# UEX API token 屬機密，只從環境變數讀，不放 config.ini
+UEX_API_TOKEN = environ.get('UEX_API_TOKEN', '').strip()
+
+# Discord bot 參數（token 屬機密，只從環境變數讀）
+DISCORD_TOKEN = environ.get('DISCORD_TOKEN', '').strip()
+DISCORD_GUILD_ID = environ.get('DISCORD_GUILD_ID', '').strip()
+# 動公會共享庫需要的 Discord 角色名稱或角色 ID；留空 = 所有人都能動
+WMS_OPERATOR_ROLE = environ.get('WMS_OPERATOR_ROLE', '').strip()
+# 庫存範圍。Web 與 Discord bot 共用同一個值才會看到同一份庫存；
+# 要讓不同公會各自獨立時才改成不同值。
+WMS_SCOPE_ID = environ.get('WMS_SCOPE_ID', 'default').strip() or 'default'

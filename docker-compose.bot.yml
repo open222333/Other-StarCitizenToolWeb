@@ -1,0 +1,16 @@
+services:
+  bot:
+    # 沿用 api 的 image（bot/ 與 src/ 都在裡面），不必另外建置
+    image: python-flask-api:latest
+    hostname: sc-tool-bot
+    command: python -m bot.main
+    env_file: .env
+    volumes:
+      - ./src:/app/src
+      - ./bot:/app/bot
+      - ./conf:/app/conf
+      - ./logs:/app/logs
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped

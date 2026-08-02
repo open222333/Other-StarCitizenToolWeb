@@ -14,4 +14,16 @@ beat_schedule = {
         'task': 'tasks.scheduled.periodic_health_check',
         'schedule': 60.0,
     },
+    # 每天凌晨 4:30 同步星際公民遊戲主檔（items / vehicles / commodities + UEX）
+    # 遊戲改版後不必等排程，可手動觸發：
+    #   docker compose exec worker python -c \
+    #     "from tasks.scdata_sync import sync_scdata; print(sync_scdata())"
+    'scdata-sync-daily': {
+        'task': 'tasks.scdata_sync.sync_scdata',
+        'schedule': crontab(hour=4, minute=30),
+    },
 }
+
+# 全量同步約 130 次外部請求、5～10 分鐘，給足時間上限避免被中途砍掉
+task_time_limit = 3600
+task_soft_time_limit = 3300

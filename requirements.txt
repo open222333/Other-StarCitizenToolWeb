@@ -13,3 +13,5 @@ gunicorn>=21.2.0
 flask-limiter[redis]>=3.5.0
 celery[redis]>=5.3.0
 flask-cors>=4.0.0
+httpx==0.27.2          # 星際公民社群 API 抓取（src/scdata.py）
+discord.py==2.4.0      # Discord bot（bot/，僅 bot 容器需要）
