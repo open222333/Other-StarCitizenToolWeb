@@ -10,8 +10,10 @@ RUN npm ci --silent
 # 複製其餘前端原始碼並打包
 COPY frontend/ ./
 
-# vite outDir = '../app/static/admin'，對應到 /build/app/static/admin
-RUN mkdir -p /build/app/static/admin && npm run build
+# vite.config.js 的 outDir = '../web-admin'，對應到 /build/web-admin。
+# 刻意輸出在 app/ 外面 —— app/ 在 docker-compose.api.yml 是 bind mount，
+# 建置產物放在裡面會被 host 的目錄整個遮住（見 app/admin/view.py 的說明）。
+RUN mkdir -p /build/web-admin && npm run build
 
 
 # ── Stage 2: Python Flask App ────────────────────────────────────
@@ -30,8 +32,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 複製所有程式碼
 COPY . .
 
-# 以 Stage 1 打包結果覆蓋空的 static/admin
-COPY --from=frontend-builder /build/app/static/admin/ ./app/static/admin/
+# 放入 Stage 1 打包好的後台前端。web-admin/ 不在任何 bind mount 之下，
+# 所以這份就是實際被服務的版本。
+COPY --from=frontend-builder /build/web-admin/ ./web-admin/
 
 # 以非 root 使用者執行（最小權限原則）
 RUN useradd -m -u 1001 appuser \

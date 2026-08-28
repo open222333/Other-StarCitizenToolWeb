@@ -7,6 +7,12 @@
 # Frontend build cache (rebuilt inside Docker)
 frontend/node_modules
 frontend/dist
+frontend/dist-web
+
+# 後台前端建置產物：一律在 Dockerfile 的 Stage 1 產生，
+# host 上如果有舊的複本不要帶進 build context
+web-admin
+app/static/admin
 
 # Python cache
 __pycache__

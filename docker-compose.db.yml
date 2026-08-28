@@ -1,7 +1,14 @@
+# ⚠️ 三個資料庫的 port 一律只綁在 127.0.0.1。
+#    Docker 的 port 發佈會直接寫 iptables、**繞過 ufw**，所以寫成
+#    "27017:27017" 等於綁 0.0.0.0 —— 主機只要有公網 IP，任何人都能連進來，
+#    而 Mongo 目前沒有開 --auth（MONGO_URI 也沒帶帳密）。
+#    要從別台機器連，請用 SSH tunnel，不要改成 0.0.0.0。
 services:
   mongo:
     image: mongo:7
     hostname: flask-api-mongo
+    ports:
+      - "${DB_BIND_HOST:-127.0.0.1}:${MONGO_PORT:-27017}:27017"
     volumes:
       - ./docker/database/mongo:/data/db
     healthcheck:
@@ -15,6 +22,8 @@ services:
   mysql:
     image: mysql:8.0
     hostname: flask-api-mysql
+    ports:
+      - "${DB_BIND_HOST:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-flask_app}
@@ -34,6 +43,8 @@ services:
   redis:
     image: redis:7-alpine
     hostname: flask-api-redis
+    ports:
+      - "${DB_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     command: redis-server --requirepass ${REDIS_PASSWORD:-redis_password}
     volumes:
       - ./docker/database/redis:/data

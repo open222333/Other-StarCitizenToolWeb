@@ -54,6 +54,36 @@ REDIS_HOST=localhost
 ; Redis DB 編號 預設 0
 ; REDIS_DB=0
 
+[SCDATA]
+; 星際公民遊戲資料來源（社群 API，非官方）。
+; 機密值（UEX_API_TOKEN）放 .env，不要寫在這裡。
+
+; Star Citizen Wiki API base，預設 https://api.star-citizen.wiki/api
+; WIKI_API_BASE=https://api.star-citizen.wiki/api
+
+; UEX Corp API base，預設 https://api.uexcorp.uk/2.0
+; UEX_API_BASE=https://api.uexcorp.uk/2.0
+
+; 每次請求間隔秒數，預設 0.25。社群 API 是自費維運的，不要調到 0
+; REQUEST_DELAY=0.25
+
+; HTTP 逾時秒數，預設 60
+; HTTP_TIMEOUT=60
+
+; 失敗重試次數（指數退避），預設 5
+; MAX_RETRIES=5
+
+; MongoDB bulk_write 批次大小，預設 500
+; BULK_SIZE=500
+
+; 每頁筆數。vehicles 單筆 payload 約 40KB，不要調大
+; PAGE_SIZE_ITEMS=100
+; PAGE_SIZE_VEHICLES=5
+; PAGE_SIZE_COMMODITIES=100
+
+; User-Agent。請改成能聯絡到你的資訊，API 維運者發現異常流量才找得到人
+; USER_AGENT=sc-tool-web/1.0 (unofficial SC fan tool; contact: you@example.com)
+
 [GUNICORN]
 ; Gunicorn 監聽主機位址，預設 0.0.0.0（監聽所有介面）
 ; HOST=0.0.0.0

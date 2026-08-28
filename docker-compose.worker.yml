@@ -1,5 +1,6 @@
 services:
   worker:
+    profiles: ["background"]
     image: python-flask-api:latest
     hostname: flask-api-worker
     command: celery -A celery_worker worker --loglevel=info --concurrency=2
@@ -20,6 +21,7 @@ services:
     restart: unless-stopped
 
   beat:
+    profiles: ["background"]
     image: python-flask-api:latest
     hostname: flask-api-beat
     command: celery -A celery_worker beat --loglevel=info --schedule=/tmp/celerybeat-schedule

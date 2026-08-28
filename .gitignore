@@ -136,3 +136,8 @@ conf/nginx/conf.d/*.conf
 # 資料庫資料目錄（bind mount，不納入版控，保留 .gitkeep 佔位）
 docker/database/**
 !docker/database/**/.gitkeep
+
+# ── 前端建置產物（一律由 Dockerfile 的 Stage 1 產生，不進版控）──
+web-admin/
+frontend/dist-web/
+app/static/admin/

@@ -2,6 +2,94 @@
   <div>
     <h4 class="fw-bold mb-4"><i class="bi bi-gear me-2"></i>系統設定</h4>
 
+    <!-- 資料同步 -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body p-4">
+        <h6 class="fw-semibold mb-1">資料同步</h6>
+        <p class="text-muted small mb-3">遊戲主檔（物品／載具／商品）由社群 API 同步而來，平常每週自動跑一次。</p>
+
+        <div class="sync-status-box text-muted small mb-3">
+          <div v-if="syncLoading && !syncStatus">載入中…</div>
+          <template v-else-if="syncStatus">
+            <div>
+              目前狀態：
+              <span class="badge" :class="stateBadgeClass">{{ stateLabel }}</span>
+            </div>
+            <div class="mt-1">
+              物品 {{ syncStatus.counts?.items ?? '—' }}
+              載具 {{ syncStatus.counts?.vehicles ?? '—' }}
+              商品 {{ syncStatus.counts?.commodities ?? '—' }}
+            </div>
+            <div class="mt-1">
+              最後同步：{{ formatTime(syncStatus.latest_run?.finished_at) }}
+              <span v-if="syncStatus.latest_run && !syncStatus.latest_run.ok" class="text-danger ms-1">
+                （上次有錯誤）
+              </span>
+            </div>
+          </template>
+          <div v-else class="text-danger">無法取得同步狀態</div>
+        </div>
+
+        <button
+          v-if="canSync"
+          class="btn btn-sm btn-primary"
+          :disabled="syncState === 'running'"
+          @click="triggerSync"
+        >
+          <span v-if="syncState === 'running'" class="spinner-border spinner-border-sm me-1"></span>
+          <i v-else class="bi bi-arrow-repeat me-1"></i>
+          立即同步
+        </button>
+
+        <!-- 自動同步排程（可在此改 cron，不用改設定檔、不用重啟 worker/beat） -->
+        <hr class="my-3">
+        <h6 class="fw-semibold mb-1">自動同步排程</h6>
+        <p class="text-muted small mb-2">
+          分 時 日 月 星期，例如：<code>30 4 * * 1</code> = 每週一 04:30。
+          時間以 <strong>{{ schedule?.timezone || 'Asia/Taipei' }}</strong> 解讀。
+          支援 <code>*</code>、<code>5</code>、<code>1-5</code>、<code>*/15</code>、<code>1,3,5</code>；
+          星期的 <code>0</code> 與 <code>7</code> 都是週日。
+        </p>
+
+        <div v-if="scheduleLoading && !schedule">載入中…</div>
+        <template v-else-if="schedule">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              style="max-width: 220px"
+              v-model="scheduleCron"
+              :disabled="!canSync"
+              placeholder="30 4 * * 1"
+            >
+            <div class="form-check form-switch mb-0">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                role="switch"
+                id="scheduleEnabled"
+                v-model="scheduleEnabled"
+                :disabled="!canSync"
+              >
+              <label class="form-check-label small" for="scheduleEnabled">啟用排程</label>
+            </div>
+            <button
+              v-if="canSync"
+              class="btn btn-sm btn-outline-primary"
+              :disabled="scheduleSaving"
+              @click="saveSchedule"
+            >
+              <span v-if="scheduleSaving" class="spinner-border spinner-border-sm me-1"></span>
+              儲存排程
+            </button>
+          </div>
+          <div v-if="scheduleError" class="text-danger small mb-2">{{ scheduleError }}</div>
+          <div v-if="scheduleSaved" class="text-success small mb-2">已儲存排程設定</div>
+        </template>
+        <div v-else class="text-danger small">無法取得排程設定</div>
+      </div>
+    </div>
+
     <!-- 外觀模式 -->
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body p-4">
@@ -145,8 +233,144 @@
 </template>
 
 <script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useThemeStore } from '@/stores/theme'
+import { useAuthStore } from '@/stores/auth'
+import { itemApi } from '@/api'
+
 const theme = useThemeStore()
+const auth = useAuthStore()
+
+// 「立即同步」只給 admin / operator，其餘角色僅唯讀顯示狀態
+const canSync = computed(() => auth.role === 'admin' || auth.role === 'operator')
+
+const syncStatus  = ref(null)
+const syncLoading = ref(false)
+const syncState   = ref('idle') // idle | running | done | error
+let pollTimer = null
+let clickedAt = 0
+
+const stateLabel = computed(() => ({
+  idle: '閒置', running: '同步中…', done: '已完成', error: '發生錯誤',
+}[syncState.value] || '閒置'))
+
+const stateBadgeClass = computed(() => ({
+  idle: 'bg-secondary', running: 'bg-primary', done: 'bg-success', error: 'bg-danger',
+}[syncState.value] || 'bg-secondary'))
+
+function formatTime(iso) {
+  if (!iso) return '尚未同步'
+  const d = new Date(iso)
+  return isNaN(d) ? iso : d.toLocaleString()
+}
+
+async function fetchSyncStatus() {
+  syncLoading.value = true
+  try {
+    const res = await itemApi.syncStatus()
+    if (res && res.ok) {
+      const body = await res.json()
+      if (body.success) {
+        syncStatus.value = body.data
+
+        // 若正在等待這次觸發的同步完成，用 finished_at 是否晚於點擊時間來判斷有沒有跑完
+        if (syncState.value === 'running') {
+          const finishedAt = body.data.latest_run?.finished_at
+          if (finishedAt && new Date(finishedAt).getTime() >= clickedAt) {
+            syncState.value = body.data.latest_run.ok ? 'done' : 'error'
+            stopPolling()
+          }
+        }
+      }
+    }
+  } finally {
+    syncLoading.value = false
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(fetchSyncStatus, 5000)
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
+async function triggerSync() {
+  if (syncState.value === 'running') return
+  clickedAt = Date.now()
+  syncState.value = 'running'
+  const res = await itemApi.syncNow()
+  if (!res || !res.ok) {
+    syncState.value = 'error'
+    return
+  }
+  startPolling()
+  fetchSyncStatus()
+}
+
+// ── 自動同步排程 ──────────────────────────────────────────────
+const schedule        = ref(null)
+const scheduleLoading = ref(false)
+const scheduleSaving  = ref(false)
+const scheduleError   = ref('')
+const scheduleSaved   = ref(false)
+const scheduleCron    = ref('')
+const scheduleEnabled = ref(true)
+
+async function fetchSyncSchedule() {
+  scheduleLoading.value = true
+  try {
+    const res = await itemApi.getSyncSchedule()
+    if (res && res.ok) {
+      const body = await res.json()
+      if (body.success) {
+        schedule.value = body.data
+        scheduleCron.value = body.data.cron
+        scheduleEnabled.value = body.data.enabled
+      }
+    }
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
+async function saveSchedule() {
+  scheduleError.value = ''
+  scheduleSaved.value = false
+  scheduleSaving.value = true
+  try {
+    const res = await itemApi.updateSyncSchedule({
+      cron: scheduleCron.value,
+      enabled: scheduleEnabled.value,
+    })
+    if (!res) {
+      scheduleError.value = '儲存失敗，請稍後再試'
+      return
+    }
+    const body = await res.json().catch(() => null)
+    if (res.status === 400) {
+      scheduleError.value = (body && body.message) || 'cron 表達式無效'
+      return
+    }
+    if (!res.ok || !body || !body.success) {
+      scheduleError.value = (body && body.message) || '儲存失敗，請稍後再試'
+      return
+    }
+    schedule.value = body.data
+    scheduleCron.value = body.data.cron
+    scheduleEnabled.value = body.data.enabled
+    scheduleSaved.value = true
+  } finally {
+    scheduleSaving.value = false
+  }
+}
+
+onMounted(() => {
+  fetchSyncStatus()
+  fetchSyncSchedule()
+})
+onUnmounted(stopPolling)
 
 const BG_SWATCHES = [
   { hex: '#f5f6fa', name: '藍白（深色預設）' },
@@ -161,6 +385,14 @@ const BG_SWATCHES = [
 </script>
 
 <style scoped>
+/* ── Sync status ── */
+.sync-status-box {
+  background: rgba(0,0,0,.03);
+  border-radius: .5rem;
+  padding: .75rem 1rem;
+  line-height: 1.6;
+}
+
 /* ── Mode ── */
 .mode-row { display: flex; gap: .75rem; flex-wrap: wrap; }
 

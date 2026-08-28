@@ -1,0 +1,21 @@
+services:
+  web:
+    # multi-stage build（見 docker/Dockerfile.web）：容器內自動跑 npm run build:web，
+    # 不需要在本機手動 build，`docker-compose up --build` 就會產生最新的靜態檔。
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    image: sc-tool-web:latest
+    hostname: flask-api-web
+    ports:
+      - "${WEB_PORT:-8090}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

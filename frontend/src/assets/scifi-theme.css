@@ -1,0 +1,508 @@
+/*
+ * 深色科幻主題 —— 給玩家端公開頁面用（登入／註冊／個人頁）。
+ * 後台管理系統有自己一套可調色的主題（見 stores/theme.js），這裡不動它，
+ * 只是額外提供一組共用 class 給 RegisterView / LoginView / PlayerLoginView /
+ * MyPlayerView 套用，讓玩家端跟 Star Citizen 官方風格（深色底＋金屬邊框＋
+ * 單一強調色）更接近。
+ *
+ * 用法：外層容器加 `scifi-page`，卡片加 `scifi-card`，主要按鈕用 `btn-scifi`。
+ */
+
+:root {
+  --sf-bg-1:       #0a0e17;
+  --sf-bg-2:       #0e1524;
+  --sf-panel:      #121a2b;
+  --sf-panel-2:    #0c1220;
+  --sf-border:     rgba(140, 180, 220, .22);
+  --sf-border-hi:  rgba(180, 210, 240, .4);
+  --sf-text:       #dce6f2;
+  /* 次要文字（表格的時間／備註欄、表單標籤、空狀態訊息）。
+   * 從 #7b8aa3（4.97:1）提亮到 9.81:1 —— 原本雖然過了 WCAG AA 的
+   * 4.5:1 但實際偏暗；提亮後清楚可讀，同時仍比主要文字
+   * (--sf-text, 13.77:1) 暗一階，保留主次層次。 */
+  --sf-text-muted: #b6c4d6;
+  /* 更弱的提示文字（placeholder、停用欄位），7.87:1 */
+  --sf-text-dim:   #9fb0c7;
+
+  /* 單一強調色：藍為主，橘做為次要/警示強調 */
+  --sf-accent:     #3ea6ff;
+  --sf-accent-rgb: 62, 166, 255;
+  --sf-accent-2:   #ff8a3d;
+  --sf-accent-2-rgb: 255, 138, 61;
+
+  /* ── 表面微調（surface tint）────────────────────────────────────
+   * 深色主題可以用「疊一層半透明白」來做輸入框底、hover 底、chip 底；
+   * 亮底不行 —— 白底疊白等於沒變。所以這些值不能寫死在規則裡，
+   * 必須是 token，由 stores/scifiTheme.js 依 mode 覆寫。
+   * 這裡的預設值是深色版（沒有 JS 時的 fallback）。 */
+  --sf-input-bg:       rgba(255, 255, 255, .03);
+  --sf-input-bg-focus: rgba(255, 255, 255, .05);
+  --sf-input-bg-off:   rgba(255, 255, 255, .015);   /* disabled */
+  --sf-hover-bg:       rgba(255, 255, 255, .04);
+  --sf-chip-bg:        rgba(255, 255, 255, .08);
+  --sf-header-bg:      rgba(255, 255, 255, .02);
+  --sf-inset:          rgba(255, 255, 255, .02);
+  --sf-shadow:         rgba(0, 0, 0, .55);
+  --sf-text-strong:    #ffffff;                     /* 對比最高的文字 */
+}
+
+.scifi-page {
+  /* dvh 才是手機瀏覽器實際可視高度；100vh 會被工具列吃掉底部一截，
+   * 在固定版面裡那一截捲不到（見審查報告 輕微-24）。vh 留作舊瀏覽器 fallback。 */
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 1rem;
+  color: var(--sf-text);
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 10%, rgba(var(--sf-accent-rgb), .10), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 90% 90%, rgba(var(--sf-accent-2-rgb), .06), transparent 60%),
+    linear-gradient(160deg, var(--sf-bg-1) 0%, var(--sf-bg-2) 100%);
+  background-attachment: fixed;
+
+  /* ── 把 Bootstrap 的顏色 token 重新指向科幻色盤 ──────────────────
+   *
+   * 為什麼需要這一段：這個主題原本只覆寫了 .form-control / .table /
+   * .nav-tabs 等「看得到的」元件，但 Bootstrap 還有一整組 utility class
+   * 是靠 CSS 變數取色的，那些變數在淺色模式下的預設值會直接漏進深色頁面。
+   *
+   * 最嚴重的是 .text-muted —— 它是 `color: var(--bs-secondary-color)
+   * !important`，而該變數預設是 rgba(33,37,41,.75)（近黑）。疊在
+   * --sf-panel (#121a2b) 上的對比只有 1.09:1，實質等於黑底黑字。
+   * MyPlayerView 裡有 22 處用到它：庫存紀錄的時間欄與備註欄整欄消失、
+   * 所有「載入中…」「目前沒有任何紀錄。」的空狀態訊息也全部隱形。
+   *
+   * 改在這裡統一映射，而不是逐個元素加 class，這樣新加的頁面只要套
+   * .scifi-page 就自動拿到正確顏色。
+   */
+  --bs-body-color:        var(--sf-text);
+  --bs-body-bg:           var(--sf-panel);
+  --bs-emphasis-color:    var(--sf-text-strong);
+  --bs-secondary-color:   var(--sf-text-muted);   /* .text-muted / .text-body-secondary */
+  --bs-tertiary-color:    var(--sf-text-muted);
+  --bs-secondary-bg:      var(--sf-panel-2);
+  --bs-tertiary-bg:       var(--sf-panel-2);
+  --bs-border-color:      var(--sf-border);
+  /* 連結是文字，要用保證對比的版本，不是原始強調色 —— 亮底上
+   * 原始強調色（例如 #3ea6ff on #fff = 2.3:1）完全不夠。 */
+  --bs-link-color:        var(--sf-accent-text, var(--sf-accent));
+  --bs-link-hover-color:  var(--sf-accent-2-text, var(--sf-accent-2));
+  --bs-heading-color:     var(--sf-text);
+
+  /* 狀態色提亮 —— Bootstrap 預設的 #198754 / #dc3545 疊在深色面板上
+   * 只有 3.84:1，低於 AA 內文標準（4.5:1）。 */
+  --bs-success-rgb:  52, 211, 153;
+  --bs-danger-rgb:   248, 113, 113;
+  --bs-warning-rgb:  251, 191, 36;
+  --bs-info-rgb:     var(--sf-accent-rgb);
+}
+
+/* 保險：舊版 Bootstrap 的 .text-muted 是寫死 #6c757d 而不是讀變數，
+ * 這條規則不依賴版本，確保時間／備註欄一定看得見。 */
+.scifi-page .text-muted,
+.scifi-page .text-body-secondary { color: var(--sf-text-muted) !important; }
+
+/* 停用欄位要看得出「不能編輯」。原本 Bootstrap 的 :disabled 灰底被
+ * .scifi-page .form-control 蓋掉，導致停用欄位跟可編輯欄位長得一樣，
+ * 玩家會點進去打字（例如「遊戲ID」那格）。 */
+.scifi-page .form-control:disabled,
+.scifi-page .form-select:disabled {
+  background: var(--sf-input-bg-off);
+  border-style: dashed;
+  color: var(--sf-text-dim);
+  cursor: not-allowed;
+}
+
+/* ── 卡片：深色面板 + 金屬感邊框 + 頂部強調線 ───────────────────── */
+.scifi-card {
+  position: relative;
+  background: linear-gradient(165deg, var(--sf-panel) 0%, var(--sf-panel-2) 100%);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px var(--sf-inset) inset,
+    0 12px 32px var(--sf-shadow),
+    0 0 28px rgba(var(--sf-accent-rgb), .08);
+  color: var(--sf-text);
+}
+.scifi-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  border-radius: 10px 10px 0 0;
+  background: linear-gradient(90deg,
+    transparent, var(--sf-accent) 30%, var(--sf-accent-2) 70%, transparent);
+  opacity: .85;
+}
+/* 四角金屬卡榫，呼應 HUD 邊框的感覺 */
+.scifi-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, var(--sf-border-hi) 0%, transparent 12%) top left / 22px 22px no-repeat,
+    linear-gradient(-45deg, var(--sf-border-hi) 0%, transparent 12%) top right / 22px 22px no-repeat,
+    linear-gradient(-135deg, var(--sf-border-hi) 0%, transparent 12%) bottom right / 22px 22px no-repeat,
+    linear-gradient(45deg, var(--sf-border-hi) 0%, transparent 12%) bottom left / 22px 22px no-repeat;
+}
+
+.scifi-card .card-header {
+  background: var(--sf-header-bg);
+  border-bottom: 1px solid var(--sf-border);
+  color: var(--sf-text);
+}
+
+/* ── 表單元件：深色輸入框 + 強調色 focus ring ────────────────────── */
+.scifi-page .form-control,
+.scifi-page .form-select {
+  background: var(--sf-input-bg);
+  border: 1px solid var(--sf-border);
+  color: var(--sf-text);
+}
+.scifi-page .form-control::placeholder { color: var(--sf-text-dim); }
+.scifi-page .form-control:focus,
+.scifi-page .form-select:focus {
+  background: var(--sf-input-bg-focus);
+  border-color: var(--sf-accent);
+  color: var(--sf-text);
+  box-shadow: 0 0 0 .2rem rgba(var(--sf-accent-rgb), .25);
+}
+.scifi-page .form-label { color: var(--sf-text-muted); letter-spacing: .02em; }
+.scifi-page .form-text  { color: var(--sf-text-muted); }
+.scifi-page .list-group-item {
+  background: var(--sf-panel);
+  border-color: var(--sf-border);
+  color: var(--sf-text);
+}
+.scifi-page .list-group-item-action:hover {
+  background: rgba(var(--sf-accent-rgb), .12);
+  color: var(--sf-text-strong);
+}
+.scifi-page table { color: var(--sf-text); }
+.scifi-page .table > :not(caption) > * > * {
+  background: transparent; color: var(--sf-text);
+  border-bottom-color: var(--sf-border);
+}
+
+/* ── 強調色按鈕（取代 btn-primary，走單一強調色＋科幻質感） ──────── */
+.btn-scifi {
+  position: relative;
+  /* 底色用強調色本身 + 一層淡黑漸層做立體感，這樣換配色時整顆按鈕
+   * 都會跟著變（原本暗端寫死 #1c5fa8，只有藍色主題才對）。
+   * 文字色 --sf-accent-ink 由 stores/scifiTheme.js 依強調色亮度算出，
+   * 所以自訂成淺黃或深紫時都不會變成看不見的低對比。 */
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, .18) 100%),
+    var(--sf-accent);
+  border: 1px solid rgba(var(--sf-accent-rgb), .6);
+  color: var(--sf-accent-ink, #041018);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  font-size: .85rem;
+  transition: box-shadow .15s, transform .15s;
+}
+.btn-scifi:hover:not(:disabled) {
+  color: var(--sf-accent-ink, #041018);
+  box-shadow: 0 0 18px rgba(var(--sf-accent-rgb), .55);
+  transform: translateY(-1px);
+}
+.btn-scifi:disabled { opacity: .55; }
+
+/* 次要強調（橘）：用在警示性但非破壞性的操作，例如「查詢」「重新整理」 */
+.btn-scifi-outline {
+  background: transparent;
+  border: 1px solid rgba(var(--sf-accent-2-rgb), .6);
+  color: var(--sf-accent-2);
+  font-weight: 600;
+  letter-spacing: .03em;
+}
+.btn-scifi-outline:hover:not(:disabled) {
+  background: rgba(var(--sf-accent-2-rgb), .12);
+  color: var(--sf-accent-2);
+}
+
+/* ── 分頁（nav-tabs）套用強調色 ─────────────────────────────────── */
+.scifi-page .nav-tabs { border-bottom-color: var(--sf-border); }
+.scifi-page .nav-tabs .nav-link {
+  color: var(--sf-text-muted);
+  border: 1px solid transparent;
+  border-radius: 0;
+}
+.scifi-page .nav-tabs .nav-link.active {
+  color: var(--sf-accent-text, var(--sf-accent));
+  background: transparent;
+  border-bottom: 2px solid var(--sf-accent);
+}
+.scifi-page .nav-tabs .nav-link:hover:not(.active) { color: var(--sf-text); }
+
+.scifi-page .badge.text-bg-secondary {
+  /* ⚠️ Bootstrap 的 .text-bg-secondary 是 `color: #fff !important`，
+   * 不加 !important 覆寫不掉 —— 亮底會變成白底白字。 */
+  background: var(--sf-chip-bg) !important;
+  color: var(--sf-text-muted) !important;
+}
+
+.scifi-page a { color: var(--sf-accent-text, var(--sf-accent)); }
+.scifi-page a:hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  全幅工具版面（參照 erkul.games 那類 Star Citizen 工具站的做法：
+ *  滿版深色、資訊密度高、不用置中的窄欄）
+ *
+ *  原本 MyPlayerView 是 `.container` + `max-width: 760px`，在桌機上
+ *  庫存表格只能用到畫面約三分之一寬，6 欄的庫存紀錄表擠在一起；
+ *  而手機上表格又沒有橫向捲動容器，會把整頁撐爆。
+ *  下面這組 class 兩邊都處理。
+ * ═══════════════════════════════════════════════════════════════════ */
+
+.scifi-app {
+  padding: 0;                       /* 內距交給 sticky bar 與 body 各自負責 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 頂端工具列：捲動時固定，讓分頁與登出永遠可及 ── */
+.scifi-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+  padding: .6rem clamp(.75rem, 2vw, 1.5rem);
+  background: rgba(var(--sf-topbar-rgb, 10, 14, 23), .82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--sf-border);
+}
+.scifi-topbar__title {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: 1.05rem; font-weight: 600; margin: 0;
+  min-width: 0;
+}
+.scifi-topbar__title span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.scifi-topbar__spacer { flex: 1 1 auto; }
+
+/* ── 分頁列：手機上改成橫向捲動的一列，不要折成 2-3 排 ── */
+.scifi-tabs {
+  position: sticky;
+  top: var(--sf-topbar-h, 52px);
+  z-index: 1020;
+  padding: 0 clamp(.75rem, 2vw, 1.5rem);
+  background: rgba(var(--sf-topbar-rgb, 10, 14, 23), .82);
+  backdrop-filter: blur(10px);
+}
+.scifi-tabs .nav-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.scifi-tabs .nav-tabs::-webkit-scrollbar { display: none; }
+.scifi-tabs .nav-tabs .nav-link {
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+
+/* ── 內容區：滿版，但超寬螢幕上仍給一個上限避免行長到難讀 ── */
+.scifi-body {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--sf-content-max, 1600px);
+  margin: 0 auto;
+  padding: clamp(.75rem, 2vw, 1.5rem);
+}
+
+/* ── 寬表格一律自己捲，頁面本體永遠不橫向捲動 ── */
+.scifi-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.scifi-scroll > table { margin-bottom: 0; }
+
+/* ── 資訊密度（由 stores/scifiTheme.js 寫在 <html data-sf-density>）── */
+:root[data-sf-density='compact'] .scifi-body { padding: .6rem .75rem; }
+:root[data-sf-density='compact'] .scifi-card { border-radius: 6px; }
+:root[data-sf-density='compact'] .table > :not(caption) > * > * {
+  padding-top: .25rem; padding-bottom: .25rem;
+}
+:root[data-sf-density='compact'] .scifi-body .card { margin-bottom: .4rem !important; }
+:root[data-sf-density='compact'] { --sf-content-max: 100%; }
+
+/* ── 按鈕的鍵盤 focus 指示 ──────────────────────────────────────────
+ * Bootstrap 的 .btn:focus-visible 會設 outline:0，改用
+ * box-shadow: var(--bs-btn-focus-box-shadow)，而那個值依賴
+ * --bs-btn-focus-shadow-rgb —— 該變數只由 .btn-primary 這類 variant
+ * class 定義，base .btn 沒有。btn-scifi 不是任何 variant，所以
+ * rgba() 算不出值、box-shadow 退回 none，而 outline:0 照樣生效
+ * → 完全沒有 focus 指示（見審查報告 嚴重-2）。
+ */
+.btn-scifi:focus-visible,
+.btn-scifi-outline:focus-visible {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 .2rem rgba(var(--sf-accent-rgb), .3);
+}
+/* 同一條規則的 color: var(--bs-btn-hover-color) 也沒定義 → 繼承成近白，
+ * 疊在漸層亮端上只有 2.05:1，focus 時反而更難讀。明確指定回來。 */
+.btn-scifi:focus-visible,
+.btn-scifi:hover { color: var(--sf-accent-ink, #041018); }
+
+/* ── Bootstrap alert 的深色版本 ──────────────────────────────────────
+ * .alert-success / -danger / -warning / -info 的預設是淺色系
+ * （--bs-alert-bg 來自 *-bg-subtle，在淺色模式下是很亮的粉彩色），
+ * 直接用在深色頁面上會變成一塊突兀的亮色磚。
+ * 這裡改成「深色底 + 彩色邊框與文字」，跟 HUD 風格一致。
+ */
+.scifi-page .alert {
+  background: var(--sf-hover-bg);
+  border: 1px solid var(--sf-border);
+  color: var(--sf-text);
+}
+.scifi-page .alert-success {
+  border-color: rgba(var(--bs-success-rgb), .5);
+  background: rgba(var(--bs-success-rgb), .1);
+  color: rgb(var(--bs-success-rgb));
+}
+.scifi-page .alert-danger {
+  border-color: rgba(var(--bs-danger-rgb), .5);
+  background: rgba(var(--bs-danger-rgb), .1);
+  color: rgb(var(--bs-danger-rgb));
+}
+.scifi-page .alert-warning {
+  border-color: rgba(var(--bs-warning-rgb), .5);
+  background: rgba(var(--bs-warning-rgb), .1);
+  color: rgb(var(--bs-warning-rgb));
+}
+.scifi-page .alert-info {
+  border-color: rgba(var(--sf-accent-rgb), .5);
+  background: rgba(var(--sf-accent-rgb), .1);
+  color: var(--sf-accent-text, var(--sf-accent));
+}
+
+/* ── 捲動表格內不要折字 ─────────────────────────────────────────────
+ * 手機上讓 6 欄表格自己橫向捲動，比把每一欄壓成 2-3 個字的細長條好讀。
+ * 備註欄允許折行（內容長度不可預期），其餘欄位保持單行。
+ */
+.scifi-scroll .table th,
+.scifi-scroll .table td { white-space: nowrap; }
+.scifi-scroll .table td.sf-wrap,
+.scifi-scroll .table th.sf-wrap { white-space: normal; min-width: 8rem; }
+
+/* 提示使用者這個表格可以左右捲（手機上才顯示） */
+@media (max-width: 767.98px) {
+  .scifi-scroll { position: relative; }
+  .scifi-scroll::after {
+    content: '← 左右滑動查看更多 →';
+    display: block;
+    font-size: .7rem;
+    color: var(--sf-text-dim);
+    text-align: center;
+    padding: .25rem 0 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  亮底模式（stores/scifiTheme.js 會在 <html> 上設 data-sf-mode）
+ *
+ *  背景與文字色由 store 直接寫成 inline style（每組底色帶完整 token），
+ *  這裡只處理「不能用單一 token 表達」的差異。
+ * ═══════════════════════════════════════════════════════════════════ */
+
+:root[data-sf-mode='light'] .scifi-page {
+  /* 狀態色要用深一階的版本 —— 前面為深底提亮過的 #34d399 / #f87171
+   * 放在白底上只有 1.7–2.5:1，等於看不見。 */
+  --bs-success-rgb:  4, 120, 87;      /* #047857 on #fff = 5.1:1 */
+  --bs-danger-rgb:   185, 28, 28;     /* #b91c1c on #fff = 6.6:1 */
+  --bs-warning-rgb:  146, 64, 14;     /* #92400e on #fff = 7.3:1 */
+}
+
+/* 卡片：亮底不需要「深色面板 + 外發光」那套，改成乾淨的白面板 +
+ * 細邊框 + 很淡的陰影。四角金屬卡榫在亮底上會顯得髒，降低不透明度。 */
+:root[data-sf-mode='light'] .scifi-card {
+  box-shadow:
+    0 0 0 1px var(--sf-inset) inset,
+    0 6px 18px var(--sf-shadow);
+}
+:root[data-sf-mode='light'] .scifi-card::after { opacity: .5; }
+
+/* 背景的兩個 radial glow 在亮底上會變成兩塊奇怪的色斑，關掉，
+ * 只留乾淨的線性漸層。 */
+:root[data-sf-mode='light'] .scifi-page {
+  background: linear-gradient(160deg, var(--sf-bg-1) 0%, var(--sf-bg-2) 100%);
+  background-attachment: fixed;
+}
+
+/* btn-scifi-outline 用的是 --sf-accent-2（預設橘），在白底上對比不足。
+ * 亮底改用主強調色並加深邊框，維持「次要按鈕」的視覺層級。 */
+:root[data-sf-mode='light'] .btn-scifi-outline {
+  border-color: rgba(var(--sf-accent-rgb), .55);
+  color: var(--sf-accent-2-text, #0b1420);
+  background: rgba(var(--sf-accent-rgb), .06);
+}
+:root[data-sf-mode='light'] .btn-scifi-outline:hover:not(:disabled) {
+  background: rgba(var(--sf-accent-rgb), .14);
+  color: var(--sf-accent-2-text, #0b1420);
+}
+
+/* 表格表頭在亮底上給一點底色，才分得出表頭與資料列 */
+:root[data-sf-mode='light'] .scifi-page .table > thead > tr > * {
+  background: var(--sf-header-bg);
+  font-weight: 600;
+}
+
+/* ── 下層分頁（倉庫／查詢底下的第二層）───────────────────────────────
+ * 刻意用 btn-group 而不是第二排 nav-tabs：兩排一樣的底線分頁在視覺上
+ * 分不出層級，使用者會以為是同一層的 9 個分頁。
+ */
+.scifi-subtabs {
+  position: sticky;
+  top: calc(var(--sf-topbar-h, 52px) + var(--sf-tabs-h, 42px));
+  z-index: 1010;
+  padding: .5rem clamp(.75rem, 2vw, 1.5rem);
+  background: rgba(var(--sf-topbar-rgb, 10, 14, 23), .82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--sf-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.scifi-subtabs::-webkit-scrollbar { display: none; }
+.scifi-subtabs .btn-group { flex-wrap: nowrap; }
+.scifi-subtabs .btn { white-space: nowrap; }
+
+/* 下層分頁按鈕。
+ *
+ * 刻意用專屬 class 而不是重用 btn-scifi / btn-scifi-outline：
+ *   1. btn-scifi-outline 用的是次要強調色（預設橘），當「未選中」狀態會
+ *      比選中的更搶眼，主次顛倒
+ *   2. 亮底模式有一條 `:root[data-sf-mode='light'] .btn-scifi-outline`
+ *      覆寫（權重 0,3,0），要用 `.scifi-subtabs .btn-scifi-outline`
+ *      （0,2,0）壓過它得再加 :root[...] 前綴 —— 那是打權重戰，不如另開 class
+ */
+.btn-subtab {
+  border: 1px solid var(--sf-border);
+  background: transparent;
+  color: var(--sf-text-muted);
+  font-weight: 500;
+}
+.btn-subtab:hover:not(.active) {
+  border-color: var(--sf-border-hi);
+  background: var(--sf-hover-bg);
+  color: var(--sf-text);
+}
+.btn-subtab.active {
+  background: rgba(var(--sf-accent-rgb), .16);
+  border-color: var(--sf-accent);
+  color: var(--sf-accent-text, var(--sf-accent));
+  font-weight: 600;
+}
+.btn-subtab:focus-visible {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 2px;
+}

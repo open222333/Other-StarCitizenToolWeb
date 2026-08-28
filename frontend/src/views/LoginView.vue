@@ -1,11 +1,11 @@
 <template>
-  <div class="login-bg d-flex align-items-center justify-content-center vh-100">
-    <div class="card shadow-lg login-card">
+  <div class="scifi-page login-bg d-flex align-items-center justify-content-center vh-100">
+    <div class="card scifi-card login-card">
       <div class="card-body p-4">
 
         <div class="text-center mb-4">
-          <i class="bi bi-shield-lock fs-1 text-primary"></i>
-          <h5 class="mt-2 fw-bold">後台管理</h5>
+          <i :class="`bi ${appIcon} fs-1`" style="color: var(--sf-accent)"></i>
+          <h5 class="mt-2 fw-bold">{{ appTitle }}</h5>
         </div>
 
         <Transition name="alert-slide">
@@ -27,11 +27,17 @@
             <input v-model="form.remember_me" class="form-check-input" type="checkbox" id="cb-remember">
             <label class="form-check-label small" for="cb-remember">記住我（30 天）</label>
           </div>
-          <button type="submit" class="btn btn-primary w-100" :disabled="loading">
+          <button type="submit" class="btn btn-scifi w-100" :disabled="loading">
             <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
             {{ loading ? '登入中...' : '登入' }}
           </button>
         </form>
+
+        <!-- 只有「星際公民工具」這個 build 開放玩家自助註冊，管理後台不顯示 -->
+        <div v-if="showRegisterLink" class="text-center mt-3">
+          <span class="small text-muted">還沒有帳號？</span>
+          <RouterLink to="/register" class="small">前往註冊</RouterLink>
+        </div>
 
       </div>
     </div>
@@ -48,6 +54,11 @@ const auth    = useAuthStore()
 const loading = ref(false)
 const error   = ref('')
 const form    = reactive({ username: '', password: '', remember_me: false })
+
+// 兩套 build 的站名不同，見 DashboardLayout.vue 同樣的判斷
+const appTitle = import.meta.env.VITE_APP_TITLE || '管理後台'
+const appIcon  = appTitle === '管理後台' ? 'bi-shield-lock' : 'bi-rocket-takeoff'
+const showRegisterLink = appTitle !== '管理後台'
 
 async function handleLogin() {
   loading.value = true
@@ -74,12 +85,8 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-.login-bg {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-}
 .login-card {
   width: min(360px, 92vw);
-  border: none;
   border-radius: 12px;
 }
 .alert-slide-enter-active { transition: all .2s ease; }

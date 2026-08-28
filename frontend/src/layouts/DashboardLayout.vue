@@ -9,7 +9,7 @@
           <i class="bi bi-list fs-5"></i>
         </button>
         <span class="navbar-brand fw-bold mb-0" style="color: var(--nb-brand)">
-          <i class="bi bi-shield-lock me-2"></i>後台管理
+          <i :class="`bi ${appIcon} me-2`"></i>{{ appTitle }}
         </span>
       </div>
       <div class="d-flex align-items-center gap-2">
@@ -39,6 +39,20 @@
             <i class="bi bi-x-lg"></i>
           </button>
         </div>
+
+        <div class="nav-section">Star Citizen 工具</div>
+        <RouterLink class="nav-link" to="/players" @click="sidebarOpen = false">
+          <i class="bi bi-person-badge"></i>玩家
+        </RouterLink>
+        <RouterLink class="nav-link" to="/blueprints" @click="sidebarOpen = false">
+          <i class="bi bi-journal-bookmark"></i>藍圖
+        </RouterLink>
+        <RouterLink class="nav-link" to="/loot" @click="sidebarOpen = false">
+          <i class="bi bi-bag"></i>戰利品
+        </RouterLink>
+        <RouterLink class="nav-link" to="/inventory" @click="sidebarOpen = false">
+          <i class="bi bi-box-seam"></i>庫存
+        </RouterLink>
 
         <div class="nav-section">管理</div>
         <RouterLink v-if="auth.isAdmin"
@@ -79,6 +93,11 @@ const router      = useRouter()
 const auth        = useAuthStore()
 const theme       = useThemeStore()
 const sidebarOpen = ref(false)
+
+// 兩套 build 的站名不同：vite.config.js（/admin/）define 成「管理後台」，
+// vite.config.web.js（/）define 成「星際公民工具」，見兩份設定檔的註解
+const appTitle = import.meta.env.VITE_APP_TITLE || '管理後台'
+const appIcon  = appTitle === '管理後台' ? 'bi-shield-lock' : 'bi-rocket-takeoff'
 
 
 const ROLE_LABELS = { admin: '管理員', operator: '操作員', viewer: '檢視者' }

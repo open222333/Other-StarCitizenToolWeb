@@ -1,0 +1,1439 @@
+<!--
+  玩家個人頁（需要玩家登入，不是後台登入）。滿版版面，4 個主分頁：
+
+  - 倉庫（我自己的物品，看現況也在這裡動）
+      · 物品庫存：目前登記了哪些物品。上方有篩選區（物品／地點，預設全部）
+      · 新增：一次登記多筆「還沒有的物品」
+      · 庫存異動：對已登記的物品增減數量，每列各自可選「＋增加」或「－減少」
+      · 庫存紀錄：增加／減少的歷史。上方同樣有篩選區
+  - 藍圖：自己的藍圖名冊，可增刪。**只能從主檔選**，不接受自由輸入
+    （見 src/models/blueprint.py 與 app/player/view.py 的 add_my_blueprint）。
+    玩家端不顯示也不選「狀態」—— 登記的意思就是「我有這張圖」，一律送
+    obtained（已取得）。後端與後台管理頁仍保留完整的 UNLOCK_STATUSES，
+    管理員設過的非 obtained 狀態在「查詢 › 持有藍圖」還是會標出來。
+  - 查詢（別人的東西，唯讀）
+      · 物品庫存：一個關鍵字同時搜物品名稱／地點／玩家暱稱／玩家遊戲ID
+        （公會庫＋所有玩家個人庫，見 app/inventory/view.py 的 search_stock）
+      · 持有藍圖：某張藍圖誰登記了
+  - 個人資料：暱稱／Discord／備註可以自己改，遊戲ID（star_citizen_id）不開放修改
+    （它同時是 inventory.player / discord_bindings.handle 的鍵值，改了個人庫存會對不起來）
+
+  Discord 有一個「公開給其他玩家」的勾選（discord_public，預設 false）。
+  勾了之後別人在「查詢」的結果裡才看得到聯絡方式，用意是「找到有這張圖的人
+  去問他能不能幫做」。遮蔽是在**後端**做的（見 Player.display_names_by_scid
+  與 Blueprint._redact_contact），前端只判斷「有沒有拿到值」，不自己解讀旗標。
+
+  「新增」與「庫存異動」的分界是**有沒有這個物品**，不是方向：新增是「我多了
+  一個原本沒登記的東西」，庫存異動是「已經登記過的東西數量變了」。所以庫存異動
+  兩個方向都能選，新增只有增加。後端沒有帶正負號的 delta API，增減分別是
+  /player/inventory/add 與 /remove 兩支，逐列由 endpointFor 決定（見 submitRows）。
+
+  兩者的**地點都是整批共用的一份，放在表單最上面**（depositLocation /
+  withdrawLocation），送出後刻意不清空 —— 這兩件事實際上都是「站在某個據點前面
+  一次處理完這裡的東西」，地點只需要選一次。所以 row 身上沒有地點欄位，
+  submitRows 收的是一個 location 字串而不是逐列的 getter。
+
+  兩張查詢表格的「持有者」都顯示成「暱稱（遊戲ID）」（見 holderLabel）。
+  物品那張的 nickname 是後端 /inventory/where 補的 ——
+  inventory.player 只存 RSI handle，沒有暱稱（見 Player.display_names_by_scid）。
+
+  欄位的固定說明一律做成標題後面的「?」（components/FieldHint.vue），
+  hover 或點一下才展開，不佔版面高度。會隨狀態變的訊息（「以下 3 筆都會登記到
+  Area18」、「顯示 2 / 3 筆」、選中物品的綠色勾勾）留在原地常駐顯示。
+
+  藍圖刻意獨立在頂層，不塞進倉庫：它是布林狀態的名冊（有／沒有這張圖），
+  跟數量會變動的庫存物品不是同一種東西（見 src/models/blueprint.py 的開頭說明）。
+  它跟「查詢 › 持有藍圖」的分界是**資料範圍**：這裡是我的、可寫入，
+  查詢那邊是全部玩家的、唯讀。
+
+  版面：.scifi-app（滿版）+ sticky 頂端工具列 + 橫向捲動的分頁列 + 下層分頁，
+  配色由 stores/scifiTheme.js 管，玩家可自行更換（ScifiThemePicker）。
+  分頁狀態同步在 URL 的 ?tab= 與 ?sub=。
+-->
+<template>
+  <div class="scifi-page scifi-app">
+    <!-- ══════════ 頂端工具列（捲動時固定） ══════════ -->
+    <header class="scifi-topbar">
+      <h1 class="scifi-topbar__title h6">
+        <i class="bi bi-person-badge" style="color: var(--sf-accent)"></i>
+        <span>{{ player?.nickname || '個人資料' }}</span>
+      </h1>
+
+      <span v-if="player?.star_citizen_id" class="badge text-bg-secondary d-none d-md-inline">
+        {{ player.star_citizen_id }}
+      </span>
+
+      <span class="scifi-topbar__spacer"></span>
+
+      <ScifiThemePicker />
+
+      <button class="btn btn-scifi-outline btn-sm" aria-label="登出" title="登出" @click="logout">
+        <i class="bi bi-box-arrow-right"></i>
+        <span class="d-none d-sm-inline ms-1">登出</span>
+      </button>
+    </header>
+
+    <!-- ══════════ 分頁列（手機上橫向捲動，不折行） ══════════ -->
+    <nav class="scifi-tabs">
+      <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item" v-for="tab in tabs" :key="tab.key" role="presentation">
+          <button
+            class="nav-link"
+            :class="{ active: activeTab === tab.key }"
+            role="tab"
+            :aria-selected="activeTab === tab.key"
+            :aria-controls="`panel-${tab.key}`"
+            :id="`tab-${tab.key}`"
+            @click="setTab(tab.key)"
+          >
+            <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
+          </button>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- ══════════ 下層分頁（倉庫／查詢才有） ══════════ -->
+    <nav v-if="subTabsOf(activeTab).length" class="scifi-subtabs">
+      <div class="btn-group btn-group-sm" role="tablist">
+        <button
+          v-for="sub in subTabsOf(activeTab)"
+          :key="sub.key"
+          class="btn btn-subtab"
+          :class="{ active: activeSub === sub.key }"
+          role="tab"
+          :aria-selected="activeSub === sub.key"
+          :aria-controls="`panel-${activeTab}-${sub.key}`"
+          :id="`subtab-${activeTab}-${sub.key}`"
+          @click="setSub(sub.key)"
+        >{{ sub.label }}</button>
+      </div>
+    </nav>
+
+    <!-- ══════════ 內容區（滿版） ══════════ -->
+    <div class="scifi-body">
+    <div v-if="loadingPlayer" class="text-muted small mb-3">載入中…</div>
+    <div v-else-if="playerError" class="alert alert-danger">{{ playerError }}</div>
+
+    <!-- ══════════ 倉庫 › 新增（登記還沒有的物品） ══════════ -->
+    <div v-show="activeTab === 'warehouse' && activeSub === 'add'" role="tabpanel"
+         id="panel-warehouse-add" aria-labelledby="subtab-warehouse-add">
+      <Transition name="alert-slide">
+        <div v-if="depositSuccess" class="alert alert-success py-2">{{ depositSuccess }}</div>
+      </Transition>
+      <Transition name="alert-slide">
+        <div v-if="depositError" class="alert alert-danger py-2">{{ depositError }}</div>
+      </Transition>
+
+      <!-- 地點是整張表單共用的一份，放在最上面：一次新增通常是「剛回到某個
+           據點，把身上的東西全部登記進去」，地點只需要選一次。
+           送出後刻意**不清空**地點，方便繼續在同一個地點加下一批。 -->
+      <div class="card scifi-card mb-3">
+        <div class="card-body py-3">
+          <div class="row g-2">
+            <div class="col-12 col-md-6 position-relative">
+              <label class="form-label small fw-semibold mb-1">地點</label>
+              <FieldHint text="先選地點，下面的物品都會登記到這裡。送出後地點會保留，方便繼續在同一個地點新增。" />
+              <input v-model="depositLocation.location"
+                @input="filterRowLocations(depositLocation)" @focus="filterRowLocations(depositLocation)"
+                @blur="closeRowLocations(depositLocation)"
+                type="text" class="form-control form-control-sm" placeholder="輸入或選擇地點…" autocomplete="off">
+              <ul v-if="depositLocation.locationOpen" class="list-group position-absolute w-100 shadow-sm"
+                  style="z-index: 30; max-height: 220px; overflow-y: auto;">
+                <li v-for="loc in depositLocation.locationResults" :key="loc"
+                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
+                    @mousedown.prevent="pickRowLocation(depositLocation, loc)">
+                  {{ locLabel(loc) }}
+                </li>
+                <li v-if="!depositLocation.locationResults.length"
+                    class="list-group-item py-1 px-2 small text-muted">
+                  沒有符合的地點，直接輸入即可新增
+                </li>
+              </ul>
+              <div v-if="depositLocation.location.trim()" class="form-text text-success py-0">
+                <i class="bi bi-geo-alt"></i> 以下 {{ depositRows.length }} 筆都會登記到
+                {{ locLabel(depositLocation.location.trim()) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-for="(row, idx) in depositRows" :key="row.key" class="card scifi-card mb-2">
+        <div class="card-body py-3">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <span class="badge text-bg-secondary">第 {{ idx + 1 }} 筆</span>
+            <button v-if="depositRows.length > 1" class="btn btn-sm btn-link text-danger p-0"
+              @click="depositRows.splice(idx, 1)">移除</button>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-12 col-md-9 position-relative">
+              <label class="form-label small fw-semibold mb-1">物品</label>
+              <input v-model="row.itemQuery" @input="searchRowItems(row)" @focus="searchRowItems(row)"
+                type="text" class="form-control form-control-sm" placeholder="輸入物品名稱…" autocomplete="off">
+              <ul v-if="row.itemResults.length" class="list-group position-absolute w-100 shadow-sm"
+                  style="z-index: 20; max-height: 220px; overflow-y: auto;">
+                <li v-for="it in row.itemResults" :key="it._id"
+                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
+                    @click="pickRowItem(row, it)">
+                  {{ it.name }}<span v-if="it.name_zh">（{{ it.name_zh }}）</span>
+                  <span class="text-muted" v-if="it.type">（{{ it.type }}）</span>
+                </li>
+              </ul>
+              <div v-if="row.selectedItem" class="form-text text-success py-0">
+                <i class="bi bi-check-circle"></i> {{ row.selectedItem.name }}
+                <span v-if="row.selectedItem.name_zh">（{{ row.selectedItem.name_zh }}）</span>
+              </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <label class="form-label small fw-semibold mb-1">數量</label>
+              <input v-model.number="row.quantity" type="number" min="1" class="form-control form-control-sm">
+            </div>
+          </div>
+
+          <div v-if="row.error" class="text-danger small mt-2">{{ row.error }}</div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between mb-4">
+        <button class="btn btn-scifi-outline btn-sm" @click="depositRows.push(makeRow(false))">
+          <i class="bi bi-plus-lg me-1"></i>再加一筆
+        </button>
+        <button class="btn btn-scifi" :disabled="depositSubmitting" @click="submitDepositRows">
+          <span v-if="depositSubmitting" class="spinner-border spinner-border-sm me-1"></span>
+          全部新增
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════ 倉庫 › 庫存異動（對已登記的物品增減數量） ══════════ -->
+    <div v-show="activeTab === 'warehouse' && activeSub === 'adjust'" role="tabpanel"
+         id="panel-warehouse-adjust" aria-labelledby="subtab-warehouse-adjust">
+      <Transition name="alert-slide">
+        <div v-if="withdrawSuccess" class="alert alert-success py-2">{{ withdrawSuccess }}</div>
+      </Transition>
+      <Transition name="alert-slide">
+        <div v-if="withdrawError" class="alert alert-danger py-2">{{ withdrawError }}</div>
+      </Transition>
+
+      <!-- 地點跟「新增」一樣是整批共用的一份，放在最上面：盤點通常是
+           「站在某個據點前面，把這裡的庫存一次對完」，地點只需要選一次。
+           送出後刻意不清空，方便繼續在同一個地點調下一批。 -->
+      <div class="card scifi-card mb-3">
+        <div class="card-body py-3">
+          <div class="row g-2">
+            <div class="col-12 col-md-6 position-relative">
+              <label class="form-label small fw-semibold mb-1">地點</label>
+              <FieldHint text="先選地點，下面的增減都會套用到這裡。送出後地點會保留，方便繼續調同一個地點的庫存。" />
+              <input v-model="withdrawLocation.location"
+                @input="filterRowLocations(withdrawLocation)" @focus="filterRowLocations(withdrawLocation)"
+                @blur="closeRowLocations(withdrawLocation)"
+                type="text" class="form-control form-control-sm" placeholder="輸入或選擇地點…" autocomplete="off">
+              <ul v-if="withdrawLocation.locationOpen" class="list-group position-absolute w-100 shadow-sm"
+                  style="z-index: 30; max-height: 220px; overflow-y: auto;">
+                <li v-for="loc in withdrawLocation.locationResults" :key="loc"
+                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
+                    @mousedown.prevent="pickRowLocation(withdrawLocation, loc)">
+                  {{ locLabel(loc) }}
+                </li>
+                <li v-if="!withdrawLocation.locationResults.length"
+                    class="list-group-item py-1 px-2 small text-muted">
+                  沒有符合的地點，直接輸入即可新增
+                </li>
+              </ul>
+              <div v-if="withdrawLocation.location.trim()" class="form-text text-success py-0">
+                <i class="bi bi-geo-alt"></i> 以下 {{ withdrawRows.length }} 筆都會異動
+                {{ locLabel(withdrawLocation.location.trim()) }} 的庫存
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-for="(row, idx) in withdrawRows" :key="row.key" class="card scifi-card mb-2">
+        <div class="card-body py-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge text-bg-secondary">第 {{ idx + 1 }} 筆</span>
+              <!-- 方向做成每列各自可選，而不是整張表單一個開關：
+                   同一次送出常常是「這個 +5、那個 -2」的盤點調整 -->
+              <div class="btn-group btn-group-sm" role="group" aria-label="異動方向">
+                <button type="button" class="btn btn-subtab"
+                  :class="{ active: row.direction === 'in' }"
+                  @click="row.direction = 'in'">＋ 增加</button>
+                <button type="button" class="btn btn-subtab"
+                  :class="{ active: row.direction === 'out' }"
+                  @click="row.direction = 'out'">－ 減少</button>
+              </div>
+            </div>
+            <button v-if="withdrawRows.length > 1" class="btn btn-sm btn-link text-danger p-0"
+              @click="withdrawRows.splice(idx, 1)">移除</button>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-12 col-md-9 position-relative">
+              <label class="form-label small fw-semibold mb-1">物品</label>
+              <input v-model="row.itemQuery" @input="searchRowItems(row)" @focus="searchRowItems(row)"
+                type="text" class="form-control form-control-sm" placeholder="輸入物品名稱…" autocomplete="off">
+              <ul v-if="row.itemResults.length" class="list-group position-absolute w-100 shadow-sm"
+                  style="z-index: 20; max-height: 220px; overflow-y: auto;">
+                <li v-for="it in row.itemResults" :key="it._id"
+                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
+                    @click="pickRowItem(row, it)">
+                  {{ it.name }}<span v-if="it.name_zh">（{{ it.name_zh }}）</span>
+                  <span class="text-muted" v-if="it.type">（{{ it.type }}）</span>
+                </li>
+              </ul>
+              <div v-if="row.selectedItem" class="form-text text-success py-0">
+                <i class="bi bi-check-circle"></i> {{ row.selectedItem.name }}
+                <span v-if="row.selectedItem.name_zh">（{{ row.selectedItem.name_zh }}）</span>
+              </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <label class="form-label small fw-semibold mb-1">數量</label>
+              <input v-model.number="row.quantity" type="number" min="1" class="form-control form-control-sm">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small fw-semibold mb-1">備註（選填，記錄異動原因）</label>
+              <input v-model="row.note" type="text" class="form-control form-control-sm"
+                :placeholder="row.direction === 'out'
+                  ? '例如：分給公會、任務用掉…'
+                  : '例如：打怪撿到、盤點補回…'">
+            </div>
+          </div>
+
+          <div v-if="row.error" class="text-danger small mt-2">{{ row.error }}</div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between mb-4">
+        <button class="btn btn-scifi-outline btn-sm" @click="withdrawRows.push(makeRow(true))">
+          <i class="bi bi-plus-lg me-1"></i>再加一筆
+        </button>
+        <button class="btn btn-scifi" :disabled="withdrawSubmitting" @click="submitWithdrawRows">
+          <span v-if="withdrawSubmitting" class="spinner-border spinner-border-sm me-1"></span>
+          全部送出
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════ 查詢 › 物品庫存 ══════════ -->
+    <div v-show="activeTab === 'search' && activeSub === 'items'" role="tabpanel"
+         id="panel-search-items" aria-labelledby="subtab-search-items">
+      <div class="card scifi-card mb-3">
+        <div class="card-body py-3">
+          <label class="form-label small fw-semibold mb-1">搜尋</label>
+          <FieldHint text="一個關鍵字同時比對物品名稱（中英文）、地點（中英文）、玩家暱稱、玩家遊戲ID。例如打「Area18」看那裡放了什麼，打某人的暱稱看他有什麼。" />
+          <input v-model="whoQuery" @input="searchStock" type="text" class="form-control form-control-sm"
+            placeholder="物品名稱／地點／玩家暱稱／遊戲ID…" autocomplete="off">
+        </div>
+      </div>
+
+      <div v-if="loadingWho" class="text-muted small">查詢中…</div>
+      <div v-else-if="!whoQuery.trim()" class="text-muted small">
+        輸入關鍵字開始搜尋。
+      </div>
+      <div v-else-if="!whoRows.length" class="text-muted small">
+        找不到符合「{{ whoQuery.trim() }}」的庫存。
+      </div>
+      <div v-else>
+        <p class="small text-muted mb-2">
+          共 {{ whoRows.length }} 筆
+          <span v-if="whoMatched">
+            （比對到 {{ whoMatched.items }} 種物品、{{ whoMatched.players }} 位玩家、{{ whoMatched.locations }} 個地點）
+          </span>
+        </p>
+        <div class="scifi-scroll">
+        <table class="table table-sm">
+          <thead>
+            <tr><th>物品</th><th>持有者</th><th>地點</th><th class="text-end">數量</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, i) in whoRows" :key="i">
+              <td>
+                {{ row.item_name }}<span v-if="row.item_name_zh" class="text-muted">（{{ row.item_name_zh }}）</span>
+                <i v-if="row.item_retired" class="bi bi-exclamation-triangle text-warning ms-1"
+                   title="這個物品已在新版本移除"></i>
+              </td>
+              <td>
+                <span v-if="row.owner_type === 'guild'">公會共享庫</span>
+                <template v-else>
+                  {{ holderLabel(row.nickname, row.player_name, row.player) }}
+                  <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
+                  <span v-if="discordLabel(row)" class="d-block small text-muted">
+                    <i class="bi bi-discord"></i> {{ discordLabel(row) }}
+                  </span>
+                </template>
+              </td>
+              <td>{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
+              <td class="text-end">{{ row.quantity }}</td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ 查詢 › 持有藍圖 ══════════ -->
+    <!-- 這裡查的是「誰登記了這張藍圖」，也就是別人的名冊 ——
+         跟頂層的「藍圖」分頁（自己的名冊，可增刪）是不同的資料範圍。 -->
+    <div v-show="activeTab === 'search' && activeSub === 'blueprints'" role="tabpanel"
+         id="panel-search-blueprints" aria-labelledby="subtab-search-blueprints">
+      <div class="card scifi-card mb-3">
+        <div class="card-body py-3">
+          <label class="form-label small fw-semibold mb-1">藍圖名稱</label>
+          <FieldHint text="顯示有登記這張藍圖的人。" />
+          <input v-model="bpHolderQuery" @input="searchBlueprintHolders"
+            type="text" class="form-control form-control-sm" autocomplete="off"
+            placeholder="輸入藍圖名稱的一部分，留空則列出全部">
+        </div>
+      </div>
+
+      <div v-if="loadingBpHolders" class="text-muted small">查詢中…</div>
+      <div v-else-if="!bpHolders.length" class="text-muted small">
+        沒有人登記符合的藍圖。
+      </div>
+      <div v-else class="scifi-scroll">
+        <table class="table table-sm">
+          <thead>
+            <tr><th>藍圖</th><th>持有人數</th><th class="sf-wrap">持有者</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="group in bpHolders" :key="group._id">
+              <td>
+                {{ group.name }}
+                <i v-if="!group.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
+                   title="自由輸入，沒有對應到遊戲配方"></i>
+              </td>
+              <td>{{ group.holder_count }}</td>
+              <td class="small sf-wrap">
+                <span v-for="(h, i) in group.holders" :key="i" class="d-block">
+                  {{ holderLabel(h.nickname, h.player_name, h.star_citizen_id) }}
+                  <!-- 只有管理員設過非「已取得」的狀態才標出來，見 blueprintStatusLabel -->
+                  <span v-if="blueprintStatusLabel(h.unlock_status)" class="text-muted">
+                    {{ blueprintStatusLabel(h.unlock_status) }}
+                  </span>
+                  <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
+                  <span v-if="discordLabel(h)" class="text-muted ms-1">
+                    <i class="bi bi-discord"></i> {{ discordLabel(h) }}
+                  </span>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════ 倉庫 › 物品庫存 ══════════ -->
+    <div v-show="activeTab === 'warehouse' && activeSub === 'stock'" role="tabpanel"
+         id="panel-warehouse-stock" aria-labelledby="subtab-warehouse-stock">
+      <InventoryFilterBar
+        :rows="myInventory" :matched="filteredInventory.length" :loc-label="locLabel"
+        v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
+
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-sm btn-link p-0" @click="loadMyInventory">重新整理</button>
+      </div>
+      <div v-if="loadingInventory" class="text-muted small">載入中…</div>
+      <div v-else-if="!myInventory.length" class="text-muted small">目前沒有登記任何物品。</div>
+      <div v-else-if="!filteredInventory.length" class="text-muted small">
+        沒有符合篩選條件的物品。
+      </div>
+      <div v-else class="scifi-scroll">
+      <table class="table table-sm">
+        <thead>
+          <tr><th>物品</th><th>地點</th><th class="text-end">數量</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in filteredInventory" :key="row.item_id + row.location + (row.container || '')">
+            <td>{{ row.item_name }}<span v-if="row.item_name_zh" class="text-muted">（{{ row.item_name_zh }}）</span></td>
+            <td>{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
+            <td class="text-end">{{ row.quantity }}</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- ══════════ 倉庫 › 庫存紀錄 ══════════ -->
+    <div v-show="activeTab === 'warehouse' && activeSub === 'history'" role="tabpanel"
+         id="panel-warehouse-history" aria-labelledby="subtab-warehouse-history">
+      <InventoryFilterBar
+        :rows="history" :matched="filteredHistory.length" :loc-label="locLabel"
+        v-model:item="historyFilter.item" v-model:location="historyFilter.location" />
+
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-sm btn-link p-0" @click="loadHistory">重新整理</button>
+      </div>
+      <div v-if="loadingHistory" class="text-muted small">載入中…</div>
+      <div v-else-if="!history.length" class="text-muted small">目前沒有任何紀錄。</div>
+      <div v-else-if="!filteredHistory.length" class="text-muted small">
+        沒有符合篩選條件的紀錄。
+      </div>
+      <div v-else class="scifi-scroll">
+      <table class="table table-sm">
+        <thead>
+          <tr><th>時間</th><th>動作</th><th>物品</th><th>地點</th><th class="text-end">數量</th><th class="sf-wrap">備註</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, i) in filteredHistory" :key="i">
+            <td class="small text-muted">{{ formatTs(row.ts) }}</td>
+            <td>
+              <span v-if="row.delta > 0" class="badge text-bg-success">增加</span>
+              <span v-else class="badge text-bg-danger">減少</span>
+            </td>
+            <td>{{ row.item_name }}<span v-if="row.item_name_zh" class="text-muted">（{{ row.item_name_zh }}）</span></td>
+            <td>{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
+            <td class="text-end">{{ row.delta > 0 ? '+' : '' }}{{ row.delta }}</td>
+            <td class="small text-muted sf-wrap">{{ row.note || '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
+    <div v-show="activeTab === 'blueprints'" role="tabpanel"
+         id="panel-blueprints" aria-labelledby="tab-blueprints">
+      <Transition name="alert-slide">
+        <div v-if="blueprintError" class="alert alert-danger py-2">{{ blueprintError }}</div>
+      </Transition>
+      <Transition name="alert-slide">
+        <div v-if="blueprintSuccess" class="alert alert-success py-2">{{ blueprintSuccess }}</div>
+      </Transition>
+
+      <div class="card scifi-card mb-3">
+        <div class="card-body py-3">
+          <div class="row g-2">
+            <div class="col-12 col-md-6 position-relative">
+              <label class="form-label small fw-semibold mb-1">藍圖</label>
+
+              <!-- 主檔還沒同步時給明確指示，而不是一個永遠搜不到東西的輸入框 -->
+              <div v-if="masterCount === 0" class="alert alert-warning py-2 mb-0 small">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                藍圖主檔尚未同步，目前無法登記。請聯絡管理員執行遊戲資料同步。
+              </div>
+
+              <template v-else>
+                <input v-model="bpQuery"
+                  @input="searchBlueprintMaster" @focus="searchBlueprintMaster"
+                  @blur="closeBlueprintResults"
+                  type="text" class="form-control form-control-sm" autocomplete="off"
+                  placeholder="搜尋藍圖名稱（中英文皆可）">
+                <ul v-if="bpOpen" class="list-group position-absolute w-100 shadow-sm"
+                    style="z-index: 20; max-height: 240px; overflow-y: auto;">
+                  <li v-for="bp in bpResults" :key="bp._id"
+                      class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
+                      @mousedown.prevent="pickBlueprintMaster(bp)">
+                    {{ bp.name }}<span v-if="bp.name_zh">（{{ bp.name_zh }}）</span>
+                    <span class="text-muted" v-if="bp.output_type_label">（{{ bp.output_type_label }}）</span>
+                    <span class="text-muted" v-if="bp.ingredient_count"> · {{ bp.ingredient_count }} 種材料</span>
+                  </li>
+                  <li v-if="!bpResults.length" class="list-group-item py-1 px-2 small text-muted">
+                    <template v-if="bpQuery.trim().length < 2">請至少輸入 2 個字</template>
+                    <template v-else>找不到「{{ bpQuery }}」。只能登記主檔裡有的藍圖。</template>
+                  </li>
+                </ul>
+
+                <div v-if="blueprintForm.blueprint_uuid" class="form-text text-success py-0">
+                  <i class="bi bi-check-circle"></i> {{ blueprintForm.name }}
+                  <button class="btn btn-link btn-sm p-0 ms-1" @click="clearBlueprintMaster">清除</button>
+                </div>
+              </template>
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-semibold mb-1">備註</label>
+              <input v-model="blueprintForm.notes" type="text" class="form-control form-control-sm">
+            </div>
+          </div>
+          <div class="text-end mt-2">
+            <button class="btn btn-scifi btn-sm"
+              :disabled="blueprintSubmitting || !blueprintForm.blueprint_uuid"
+              :title="blueprintForm.blueprint_uuid ? '' : '請先從清單選擇藍圖'"
+              @click="submitBlueprint">
+              <span v-if="blueprintSubmitting" class="spinner-border spinner-border-sm me-1"></span>
+              登記藍圖
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-sm btn-link p-0" @click="loadBlueprints">重新整理</button>
+      </div>
+      <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
+      <div v-else-if="!blueprints.length" class="text-muted small">目前沒有登記任何藍圖。</div>
+      <div v-else class="scifi-scroll">
+      <table class="table table-sm">
+        <thead>
+          <tr><th>名稱</th><th>產出類型</th><th>製作時間</th><th>材料</th><th class="sf-wrap">備註</th><th></th></tr>
+        </thead>
+        <tbody>
+          <template v-for="bp in blueprints" :key="bp._id">
+          <tr>
+            <td>
+              {{ bp.name }}
+              <span v-if="bp.master?.name_zh" class="text-muted">（{{ bp.master.name_zh }}）</span>
+              <i v-if="!bp.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
+                 title="自由輸入，沒有對應到遊戲配方"></i>
+            </td>
+            <td class="small">{{ bp.master?.output_type_label || '—' }}</td>
+            <td class="small">{{ bp.master?.craft_time_label || '—' }}</td>
+            <td class="small">
+              <button v-if="bp.blueprint_uuid" class="btn btn-link btn-sm p-0"
+                @click="showRecipe(bp)">{{ bp.master?.ingredient_count ?? '?' }} 種</button>
+              <span v-else class="text-muted">—</span>
+            </td>
+            <td class="small text-muted sf-wrap">{{ bp.notes || '—' }}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-link text-danger p-0" @click="removeBlueprint(bp)">刪除</button>
+            </td>
+          </tr>
+          <tr v-if="recipeFor === bp._id">
+            <!-- colspan 要跟 thead 的欄數一致（移除「狀態」欄後是 6） -->
+            <td colspan="6" class="small">
+              <div v-if="loadingRecipe" class="text-muted">載入配方…</div>
+              <div v-else-if="recipe">
+                <strong>{{ recipe.name }}</strong>
+                <span v-if="recipe.craft_time_label" class="text-muted">（{{ recipe.craft_time_label }}）</span>
+                <ul class="mb-1 mt-1">
+                  <li v-for="(ing, i) in recipe.ingredients" :key="i">
+                    {{ ing.name }} ×
+                    <span v-if="ing.quantity != null">{{ ing.quantity }}</span>
+                    <span v-else-if="ing.quantity_scu != null">{{ ing.quantity_scu }} SCU</span>
+                    <span v-else>?</span>
+                  </li>
+                </ul>
+                <div v-if="recipe.dismantle_returns?.length" class="text-muted">
+                  拆解可回收：{{ recipe.dismantle_returns.map(r => `${r.name} ${r.quantity_scu} SCU`).join('、') }}
+                </div>
+              </div>
+            </td>
+          </tr>
+          </template>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- ══════════ 個人資料 ══════════ -->
+    <div v-show="activeTab === 'profile'" role="tabpanel" id="panel-profile" :aria-labelledby="'tab-profile'">
+      <Transition name="alert-slide">
+        <div v-if="profileError" class="alert alert-danger py-2">{{ profileError }}</div>
+      </Transition>
+      <Transition name="alert-slide">
+        <div v-if="profileSuccess" class="alert alert-success py-2">已更新</div>
+      </Transition>
+
+      <div v-if="player" class="card scifi-card">
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">遊戲ID（Star Citizen ID）</label>
+            <FieldHint text="遊戲ID 不可自行更改，需要換的話請聯絡管理員。它同時是個人庫存與 Discord 綁定用的鍵值，改了會對不起來。" />
+            <input :value="player.star_citizen_id" type="text" class="form-control" disabled>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">暱稱</label>
+            <input v-model="profileForm.nickname" type="text" class="form-control">
+          </div>
+          <!-- Discord 兩個欄位放在同一張卡裡，公開勾選就在下面 ——
+               勾選管的是這兩個欄位，分開放會看不出關聯。 -->
+          <div class="card scifi-card mb-3">
+            <div class="card-body py-3">
+              <div class="row g-2">
+                <div class="col-12 col-md-6">
+                  <label class="form-label small fw-semibold mb-1">Discord 名稱</label>
+                  <input v-model="profileForm.discord_name" type="text" class="form-control form-control-sm">
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label small fw-semibold mb-1">Discord ID</label>
+                  <input v-model="profileForm.discord_id" type="text" class="form-control form-control-sm">
+                </div>
+              </div>
+
+              <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" id="discord-public"
+                  v-model="profileForm.discord_public">
+                <label class="form-check-label small" for="discord-public">
+                  公開給其他玩家
+                  <FieldHint text="勾選後，別人在「查詢」的結果裡看到你時會一併看到你的 Discord，方便直接找你詢問。不勾就完全不顯示（預設不公開）。" />
+                </label>
+              </div>
+              <div class="form-text py-0">
+                <template v-if="profileForm.discord_public">
+                  <i class="bi bi-eye text-warning"></i>
+                  其他玩家查到你持有的物品或藍圖時，會看到你的 Discord。
+                </template>
+                <template v-else>
+                  <i class="bi bi-eye-slash"></i>
+                  目前不公開，只有你和管理員看得到。
+                </template>
+              </div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">備註</label>
+            <textarea v-model="profileForm.notes" class="form-control" rows="2"></textarea>
+          </div>
+          <button class="btn btn-scifi" :disabled="savingProfile" @click="saveProfile">
+            <span v-if="savingProfile" class="spinner-border spinner-border-sm me-1"></span>
+            儲存
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { usePlayerAuthStore } from '@/stores/playerAuth'
+import { useScifiThemeStore } from '@/stores/scifiTheme'
+import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
+import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
+import FieldHint from '@/components/FieldHint.vue'
+// 社群繁中化包（cosmo-chang-1701/sc-translation-pack）萃取出來的地點中文對照，
+// 純靜態查表，不會隨遊戲改版自動更新，見 src/sc_zh.py 的說明
+import locationNamesZh from '@/assets/sc-locations-zh.json'
+
+const router     = useRouter()
+const playerAuth = usePlayerAuthStore()
+const scifiTheme = useScifiThemeStore()
+
+function locZh(en) { return locationNamesZh[en] || '' }
+function locLabel(en) { const zh = locZh(en); return zh ? `${en}（${zh}）` : en }
+
+/** 持有者顯示成「暱稱（遊戲ID）」。
+ *
+ * 暱稱是選填的，玩家也可能是舊資料／已被軟刪除而查不到名冊，所以要層層退回：
+ * 暱稱 → player_name → 只剩遊戲ID 就單獨顯示它，絕不輸出「（TomLi_SC）」
+ * 這種前面空一塊的字串。遊戲ID 本身缺失時（理論上不該發生）回 '—'。
+ */
+/** 持有者的 Discord 聯絡方式，沒公開就回 ''。
+ *
+ * 後端已經按 discord_public 遮蔽過（見 src/models/player.py 的
+ * display_names_by_scid 與 src/models/blueprint.py 的 _redact_contact），
+ * 所以這裡拿到值就代表本人同意公開，前端不用再判斷旗標 —— 也刻意不接收
+ * discord_public，避免哪天前端自己解讀旗標卻跟後端規則不一致。
+ *
+ * 兩個欄位都有時只顯示名稱：ID 是一串數字，人看了也不會拿去找人。
+ */
+function discordLabel(row) {
+  const name = (row?.discord_name || '').trim()
+  const id   = (row?.discord_id || '').trim()
+  return name || id
+}
+
+function holderLabel(nickname, playerName, scid) {
+  const id = (scid || '').trim()
+  const name = (nickname || '').trim() || (playerName || '').trim()
+  if (!id) return name || '—'
+  return name ? `${name}（${id}）` : id
+}
+
+// 主分頁。「倉庫」與「查詢」各自有下層分頁（subTabs），
+// 這樣頂層只有 5 個項目，手機上一列放得下。
+const tabs = [
+  {
+    key: 'warehouse', label: '倉庫',   icon: 'bi bi-box-seam',
+    subTabs: [
+      { key: 'stock',      label: '物品庫存' },
+      { key: 'add',        label: '新增' },
+      { key: 'adjust',     label: '庫存異動' },
+      { key: 'history',    label: '庫存紀錄' },
+    ],
+  },
+  { key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3' },
+  {
+    key: 'search',    label: '查詢',   icon: 'bi bi-search',
+    subTabs: [
+      { key: 'items',      label: '物品庫存' },
+      { key: 'blueprints', label: '持有藍圖' },
+    ],
+  },
+  { key: 'profile',   label: '個人資料', icon: 'bi bi-person-gear' },
+]
+
+/** 某個主分頁的下層分頁清單（沒有就回空陣列）。 */
+function subTabsOf(key) {
+  return tabs.find(t => t.key === key)?.subTabs || []
+}
+// 分頁狀態同步到 URL 的 ?tab= —— 這樣重新整理、手機切回瀏覽器、
+// 分享連結給隊友都會停在同一個分頁，瀏覽器的返回鍵也會退回上一個分頁
+// 而不是直接離開 /me。
+const route = useRoute()
+const validTabs = tabs.map(t => t.key)
+const activeTab = ref(
+  validTabs.includes(route.query.tab) ? route.query.tab : 'warehouse'
+)
+
+/** 某個主分頁的預設下層分頁（沒有下層就回 ''）。 */
+function defaultSub(tabKey) {
+  return subTabsOf(tabKey)[0]?.key || ''
+}
+
+function validSub(tabKey, sub) {
+  return subTabsOf(tabKey).some(t => t.key === sub)
+}
+
+const activeSub = ref(
+  validSub(activeTab.value, route.query.sub)
+    ? route.query.sub
+    : defaultSub(activeTab.value)
+)
+
+function syncUrl() {
+  const query = { ...route.query, tab: activeTab.value }
+  if (activeSub.value) query.sub = activeSub.value
+  else delete query.sub
+  // replace 而不是 push：切分頁不該在歷史紀錄裡堆一堆項目，
+  // 但仍然讓「重新整理後留在同一分頁」成立。
+  router.replace({ query })
+}
+
+function setTab(key) {
+  if (!validTabs.includes(key)) return
+  activeTab.value = key
+  // 切主分頁時回到它的第一個下層分頁（沒有下層就清空）
+  activeSub.value = defaultSub(key)
+  syncUrl()
+}
+
+function setSub(key) {
+  if (!validSub(activeTab.value, key)) return
+  activeSub.value = key
+  syncUrl()
+}
+
+// 某些分頁的資料是進去才載入的，刻意不在 onMounted 全部預載 ——
+// 多數玩家不會用到這些分頁，沒必要每次開頁都多打幾次 API。
+//
+// 用具名函式而不是把邏輯寫在 watch 裡，是因為 onMounted 也要呼叫一次：
+// syncUrl() 會把分頁寫進 ?tab=，所以「在藍圖分頁按重新整理」「把連結貼給隊友」
+// 都會直接以該分頁開場，此時 watch 不會觸發（值沒變過），資料就永遠不會載。
+// 不用 { immediate: true } 是因為 masterCount / bpHolders 宣告在下面，
+// 立即執行會踩到 const 的 TDZ。
+function loadForTab(tab, sub) {
+  if (tab === 'search' && sub === 'blueprints' && !bpHolders.value.length) {
+    loadBlueprintHolders()
+  }
+  // 進「藍圖」才查主檔筆數（決定要不要顯示「尚未同步」提示）
+  if (tab === 'blueprints' && masterCount.value === null) {
+    loadMasterCount()
+  }
+}
+
+watch([activeTab, activeSub], ([tab, sub]) => loadForTab(tab, sub))
+
+// 使用者直接改網址（或按上一頁）時，畫面要跟著走
+watch(() => [route.query.tab, route.query.sub], ([tab, sub]) => {
+  if (validTabs.includes(tab) && tab !== activeTab.value) {
+    activeTab.value = tab
+    activeSub.value = validSub(tab, sub) ? sub : defaultSub(tab)
+  } else if (validSub(activeTab.value, sub) && sub !== activeSub.value) {
+    activeSub.value = sub
+  }
+})
+
+function formatTs(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ts
+  return d.toLocaleString('zh-TW', { hour12: false })
+}
+
+// ── 玩家名冊資料 ──────────────────────────────────────────────
+const player        = ref(null)
+const loadingPlayer  = ref(true)
+const playerError    = ref('')
+const profileForm    = reactive({ nickname: '', discord_name: '', discord_id: '',
+                                  discord_public: false, notes: '' })
+const savingProfile  = ref(false)
+const profileError   = ref('')
+const profileSuccess = ref(false)
+
+async function loadPlayer() {
+  loadingPlayer.value = true
+  const res = await playerAuth.playerFetch('/player/me')
+  loadingPlayer.value = false
+  if (!res) { playerError.value = '網路錯誤，請稍後再試'; return }
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) {
+    player.value = data.data
+    profileForm.nickname     = data.data.nickname || ''
+    profileForm.discord_name = data.data.discord_name || ''
+    profileForm.discord_id   = data.data.discord_id || ''
+    profileForm.notes        = data.data.notes || ''
+    profileForm.discord_public = !!data.data.discord_public
+  } else {
+    playerError.value = data?.message || '無法載入資料，請重新登入'
+  }
+}
+
+async function saveProfile() {
+  profileError.value = ''
+  profileSuccess.value = false
+  savingProfile.value = true
+  try {
+    const res = await playerAuth.playerFetch('/player/me', {
+      method: 'PUT',
+      body: JSON.stringify({ ...profileForm }),
+    })
+    if (!res) { profileError.value = '網路錯誤，請稍後再試'; return }
+    const data = await res.json().catch(() => null)
+    if (res.ok && data?.success) {
+      profileSuccess.value = true
+      loadPlayer()
+    } else {
+      profileError.value = data?.message || '更新失敗，請稍後再試'
+    }
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+function logout() {
+  playerAuth.clearAuth()
+  router.push('/player-login')
+}
+
+// ── 地點清單（給新增物品的地點下拉選單用） ─────────────────────
+// 來源有兩個：資料庫裡已經用過的地點（/inventory/locations），加上
+// 星際公民官方地名中文對照表裡已知的地點（即使還沒有人登記過庫存也能選）。
+const knownLocations = Object.keys(locationNamesZh).sort()
+const locations = ref([...knownLocations])
+async function loadLocations() {
+  const res = await playerAuth.playerFetch('/inventory/locations')
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) {
+    const used = data.data || []
+    locations.value = [...new Set([...used, ...knownLocations])].sort()
+  }
+}
+
+// ── 新增／庫存異動（多筆，共用同一套 row 結構） ──────────────────
+//
+// 「新增」= 登記還沒有的物品，一律是增加，所以沒有 direction。
+// 「庫存異動」= 對已登記的物品調整數量，每列各自可選增加或減少
+//   （direction 只有 withNote 的那組會用到，見 submitRows 的 endpointFor）。
+let rowKeySeq = 0
+function makeRow(withNote = false) {
+  return {
+    key: ++rowKeySeq,
+    itemQuery: '', itemResults: [], selectedItem: null,
+    quantity: 1,
+    // row 不帶地點欄位：新增與庫存異動的地點都是整批共用的一份
+    // （depositLocation / withdrawLocation），放在表單最上面。
+    note: withNote ? '' : undefined,
+    // 預設「減少」：庫存異動是從原本的「取出」演化來的，
+    // 多數情境還是扣庫存，增加的情境有專門的「新增」分頁。
+    direction: withNote ? 'out' : 'in',
+    error: '',
+  }
+}
+const depositRows       = reactive([makeRow(false)])
+const depositSubmitting = ref(false)
+const depositSuccess    = ref('')
+const depositError      = ref('')
+
+// 「新增」共用的地點。刻意做成跟 row 一樣的形狀（location /
+// locationResults / locationOpen），這樣 filterRowLocations、
+// closeRowLocations、pickRowLocation 三個 helper 可以原封不動重用。
+const depositLocation = reactive({ location: '', locationResults: [], locationOpen: false })
+
+// 一填了地點就把「請先選地點」的錯誤收掉。不收的話畫面上會同時出現
+// 紅色的「請先在最上面輸入或選擇地點」跟它下面綠色的「以下 3 筆都會登記到
+// Area18」，互相矛盾。
+watch(() => depositLocation.location, (v) => {
+  if (v.trim()) depositError.value = ''
+})
+
+const withdrawRows       = reactive([makeRow(true)])
+const withdrawSubmitting = ref(false)
+const withdrawSuccess    = ref('')
+const withdrawError      = ref('')
+
+// 「庫存異動」共用的地點，跟 depositLocation 同樣的形狀與理由
+const withdrawLocation = reactive({ location: '', locationResults: [], locationOpen: false })
+
+watch(() => withdrawLocation.location, (v) => {
+  if (v.trim()) withdrawError.value = ''
+})
+
+const searchTimers = new Map()
+
+function searchRowItems(row) {
+  row.selectedItem = null
+  clearTimeout(searchTimers.get(row.key))
+  const q = row.itemQuery.trim()
+  if (!q) { row.itemResults = []; return }
+  searchTimers.set(row.key, setTimeout(async () => {
+    const res = await playerAuth.playerFetch(`/item/search?q=${encodeURIComponent(q)}`)
+    if (!res) return
+    const data = await res.json().catch(() => null)
+    row.itemResults = (res.ok && data?.success) ? (data.data || []) : []
+  }, 300))
+}
+
+function pickRowItem(row, it) {
+  row.selectedItem = it
+  row.itemQuery = it.name
+  row.itemResults = []
+}
+
+function filterRowLocations(row) {
+  const q = row.location.trim().toLowerCase()
+  // 同時比對英文（loc 本身）跟中文對照（locZh），方便直接打中文搜尋地點
+  row.locationResults = q
+    ? locations.value.filter(loc =>
+        loc.toLowerCase().includes(q) || locZh(loc).includes(row.location.trim())
+      ).slice(0, 20)
+    : locations.value.slice(0, 20)
+  row.locationOpen = true
+}
+
+function closeRowLocations(row) {
+  // 延遲關閉，讓點擊選項的 click/mousedown 先觸發（不然 blur 會比 click 早跑，選不到）
+  setTimeout(() => { row.locationOpen = false }, 150)
+}
+
+function pickRowLocation(row, loc) {
+  row.location = loc
+  row.locationResults = []
+  row.locationOpen = false
+}
+
+// endpointFor 是 function 而不是固定字串：庫存異動同一次送出可能有幾列增加、
+// 幾列減少，端點要逐列決定（後端沒有「帶正負號的 delta」這種 API，
+// 增減是 /player/inventory/add 與 /remove 兩支，見 app/player/view.py）。
+async function submitRows(rows, {
+  endpointFor, verbFor, location, resultRef, submittingRef, withNote, makeNextRow,
+}) {
+  resultRef.value = ''
+  // 地點是整批共用的一份，兩個呼叫端都已經在表單層級擋掉空值
+  // （才不會在每一列都印一次同樣的訊息）。這裡只是不信任呼叫端的保險。
+  if (!location) return
+  let ok = 0
+  const successNames = []
+
+  for (const row of rows) {
+    row.error = ''
+    if (!row.selectedItem) { row.error = '請先從搜尋結果選擇物品'; continue }
+    if (!row.quantity || row.quantity <= 0) { row.error = '數量必須大於 0'; continue }
+  }
+  if (rows.some(r => r.error)) return
+
+  submittingRef.value = true
+  try {
+    for (const row of rows) {
+      const body = {
+        item: row.selectedItem._id,
+        quantity: row.quantity,
+        location,
+      }
+      if (withNote) body.note = (row.note || '').trim()
+
+      const res = await playerAuth.playerFetch(endpointFor(row), {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if (!res) { row.error = '網路錯誤，請稍後再試'; continue }
+      const data = await res.json().catch(() => null)
+      if (res.ok && data?.success) {
+        ok += 1
+        const d = data.data.delta
+        successNames.push(
+          `${data.data.item_name} ${d > 0 ? '+' : '-'}${Math.abs(d)} @ ${data.data.location}`)
+      } else {
+        row.error = data?.message || `${verbFor(row)}失敗`
+      }
+    }
+  } finally {
+    submittingRef.value = false
+  }
+
+  if (ok) {
+    resultRef.value = `已處理 ${ok} 筆：${successNames.join('；')}`
+    // 只清掉成功的那幾筆，失敗的留著讓玩家修正
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (!rows[i].error) rows.splice(i, 1)
+    }
+    if (!rows.length) rows.push(makeNextRow())
+    loadMyInventory()
+    loadLocations()
+    loadHistory()
+  }
+}
+
+// 倉庫 › 新增：一律是增加，沒有方向可選；地點是整批共用的一份
+function submitDepositRows() {
+  depositError.value = ''
+  const loc = depositLocation.location.trim()
+  if (!loc) {
+    depositError.value = '請先在最上面輸入或選擇地點。'
+    return
+  }
+  return submitRows(depositRows, {
+    endpointFor: () => '/player/inventory/add',
+    verbFor:     () => '新增',
+    location:    loc,
+    // 刻意不清掉 depositLocation，方便在同一個地點繼續加下一批
+    makeNextRow: () => makeRow(false),
+    resultRef: depositSuccess, submittingRef: depositSubmitting, withNote: false,
+  })
+}
+
+// 倉庫 › 庫存異動：地點整批共用，方向逐列各自選
+function submitWithdrawRows() {
+  withdrawError.value = ''
+  const loc = withdrawLocation.location.trim()
+  if (!loc) {
+    withdrawError.value = '請先在最上面輸入或選擇地點。'
+    return
+  }
+  return submitRows(withdrawRows, {
+    endpointFor: (row) => row.direction === 'in'
+      ? '/player/inventory/add'
+      : '/player/inventory/remove',
+    verbFor:     (row) => row.direction === 'in' ? '增加' : '減少',
+    location:    loc,
+    // 同樣不清掉 withdrawLocation，方便繼續調同一個地點的下一批
+    makeNextRow: () => makeRow(true),
+    resultRef: withdrawSuccess, submittingRef: withdrawSubmitting, withNote: true,
+  })
+}
+
+// ── 篩選區（倉庫 › 物品庫存／庫存紀錄 各自一份狀態）────────────────
+//
+// 兩份刻意分開：在庫存頁篩「Laranite @ Area18」之後切到紀錄頁，
+// 通常是想看全部歷史，不是延續同一組條件。共用一份會很煩。
+// '' = 全部。用 item_id 比對而不是名稱，見 InventoryFilterBar 的說明。
+const stockFilter   = reactive({ item: '', location: '' })
+const historyFilter = reactive({ item: '', location: '' })
+
+function applyFilter(rows, f) {
+  return rows.filter(r =>
+    (!f.item     || r.item_id  === f.item) &&
+    (!f.location || r.location === f.location)
+  )
+}
+
+// ── 我的個人庫 ────────────────────────────────────────────────
+const myInventory      = ref([])
+const loadingInventory = ref(false)
+const filteredInventory = computed(() => applyFilter(myInventory.value, stockFilter))
+
+async function loadMyInventory() {
+  loadingInventory.value = true
+  const res = await playerAuth.playerFetch('/player/inventory')
+  loadingInventory.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) myInventory.value = data.data || []
+}
+
+// ── 庫存紀錄（增加／減少歷史） ────────────────────────────────
+const history        = ref([])
+const loadingHistory  = ref(false)
+const filteredHistory = computed(() => applyFilter(history.value, historyFilter))
+
+async function loadHistory() {
+  loadingHistory.value = true
+  const res = await playerAuth.playerFetch('/player/inventory/history?limit=100')
+  loadingHistory.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) history.value = data.data || []
+}
+
+// ── 藍圖（規格書第 5 節，跟 inventory 分開的獨立名冊） ────────────
+// 玩家自助只填藍圖與備註。「狀態」不開放給玩家選 —— 登記的意思本來就是
+// 「我有這張圖」，所以一律送 obtained（已取得）。「取得方式」「取得地點」
+// 同理：欄位還留在後端模型跟後台管理頁（BlueprintFormModal.vue），
+// 管理員仍可設定其他狀態，玩家端只是不顯示、也不送。
+const PLAYER_BLUEPRINT_STATUS = 'obtained'
+
+const blueprints           = ref([])
+const loadingBlueprints    = ref(false)
+// blueprint_uuid 對應遊戲藍圖主檔（blueprint_master）。
+// 有值＝從自動完成選的，名稱以主檔為準；空值＝自由輸入。
+const blueprintForm        = reactive({ name: '', notes: '', blueprint_uuid: '' })
+const blueprintSubmitting  = ref(false)
+const blueprintError       = ref('')
+const blueprintSuccess     = ref('')
+
+// 標籤留著：管理員從後台設過其他狀態的紀錄，在「查詢 › 持有藍圖」還是要看得懂。
+const BLUEPRINT_STATUS_LABELS = {
+  locked: '🔒 未取得', obtained: '📘 已取得', unlocked: '✅ 已解鎖',
+  unconfirmed: '❓ 未確認', outdated: '⚠️ 已過時',
+}
+/** 只在狀態不是預設的 obtained 時回標籤，否則回 ''。
+ *
+ * 玩家登記的一律是 obtained，每一列都印「📘 已取得」等於整欄同一個值，
+ * 是純噪音；但管理員設過的 locked／outdated 仍然值得標出來。 */
+function blueprintStatusLabel(v) {
+  if (!v || v === PLAYER_BLUEPRINT_STATUS) return ''
+  return BLUEPRINT_STATUS_LABELS[v] || v
+}
+
+async function loadBlueprints() {
+  loadingBlueprints.value = true
+  const res = await playerAuth.playerFetch('/player/blueprints')
+  loadingBlueprints.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) blueprints.value = data.data || []
+}
+
+async function submitBlueprint() {
+  blueprintError.value = ''
+  blueprintSuccess.value = ''
+  if (!blueprintForm.blueprint_uuid) {
+    blueprintError.value = '請先從清單中選擇藍圖'
+    return
+  }
+  const name = blueprintForm.name.trim()
+
+  blueprintSubmitting.value = true
+  try {
+    const res = await playerAuth.playerFetch('/player/blueprints', {
+      method: 'POST',
+      body: JSON.stringify({
+        // blueprint_uuid 是後端唯一認的欄位（見 app/player/view.py 的
+        // add_my_blueprint）—— 名稱一律以主檔為準，不看這裡傳什麼，
+        // 但還是一起送出方便看 network log 對照。
+        blueprint_uuid: blueprintForm.blueprint_uuid,
+        name,
+        // 玩家端不開放選狀態，一律「已取得」
+        unlock_status: PLAYER_BLUEPRINT_STATUS,
+        notes: blueprintForm.notes,
+      }),
+    })
+    if (!res) { blueprintError.value = '網路錯誤，請稍後再試'; return }
+    const data = await res.json().catch(() => null)
+    if (res.ok && data?.success) {
+      blueprintSuccess.value = `已登記「${name}」`
+      // 一併清掉 blueprint_uuid 與搜尋框，否則登記成功後綠色勾勾還留著、
+      // 「登記藍圖」按鈕仍可按，會重複送出同一張圖。
+      clearBlueprintMaster()
+      blueprintForm.notes = ''
+      loadBlueprints()
+    } else {
+      blueprintError.value = data?.message || '登記失敗，請稍後再試'
+    }
+  } finally {
+    blueprintSubmitting.value = false
+  }
+}
+
+// ── 藍圖選擇器（blueprint_master，1,600+ 筆遊戲配方）─────────────────
+//
+// 這裡刻意**只能從主檔選**，不接受自由輸入。原因是同一張藍圖若每個人
+// 自己打字，就會出現「Omnisky III」「omnisky 3」好幾種寫法，
+// 「誰有這張圖」（查詢 › 持有藍圖）就分不成同一組。
+//
+// 因此搜尋框的文字（bpQuery）跟實際要送出的值（blueprintForm.name /
+// blueprint_uuid）是**分開的兩份狀態** —— 使用者在搜尋框打的字不會直接
+// 變成登記的名稱，只有點選清單項目才會寫進 form。
+const bpQuery      = ref('')
+const bpResults    = ref([])
+const bpOpen       = ref(false)
+let bpSearchTimer  = null
+
+// 主檔筆數。0 表示還沒同步過 —— 這時候給明確提示，
+// 而不是一個永遠搜不到東西的輸入框。null = 還沒查。
+const masterCount = ref(null)
+
+async function loadMasterCount() {
+  const res = await playerAuth.playerFetch('/blueprint/master?limit=1')
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) masterCount.value = data.total ?? 0
+}
+
+function searchBlueprintMaster() {
+  const q = bpQuery.value.trim()
+  bpOpen.value = true
+
+  clearTimeout(bpSearchTimer)
+  if (q.length < 2) { bpResults.value = []; return }
+
+  bpSearchTimer = setTimeout(async () => {
+    const res = await playerAuth.playerFetch(
+      `/blueprint/master/search?q=${encodeURIComponent(q)}&limit=20`)
+    if (!res) return
+    const data = await res.json().catch(() => null)
+    bpResults.value = (res.ok && data?.success) ? (data.data || []) : []
+  }, 300)
+}
+
+function closeBlueprintResults() {
+  // 延遲關閉，否則 blur 會搶在清單項目的 mousedown 之前把清單收掉
+  setTimeout(() => { bpOpen.value = false }, 150)
+}
+
+function pickBlueprintMaster(bp) {
+  blueprintForm.name = bp.name
+  blueprintForm.blueprint_uuid = bp._id
+  bpQuery.value = bp.name
+  bpResults.value = []
+  bpOpen.value = false
+}
+
+function clearBlueprintMaster() {
+  blueprintForm.blueprint_uuid = ''
+  blueprintForm.name = ''
+  bpQuery.value = ''
+  bpResults.value = []
+}
+
+// ── 展開某張藍圖的完整配方（點「N 種」材料時才抓，不預載）──────────
+const recipeFor     = ref(null)
+const recipe        = ref(null)
+const loadingRecipe = ref(false)
+
+async function showRecipe(bp) {
+  // 再點一次收起來
+  if (recipeFor.value === bp._id) {
+    recipeFor.value = null
+    recipe.value = null
+    return
+  }
+  recipeFor.value = bp._id
+  recipe.value = null
+  loadingRecipe.value = true
+
+  const res = await playerAuth.playerFetch(`/blueprint/master/${bp.blueprint_uuid}`)
+  loadingRecipe.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) recipe.value = data.data
+}
+
+// ── 查詢 › 持有藍圖：誰登記了這張藍圖 ──────────────────────────
+// 這是藍圖版的 /inventory/where —— 查的是別人的名冊，不是自己的。
+const bpHolderQuery    = ref('')
+const bpHolders        = ref([])
+const loadingBpHolders = ref(false)
+let bpHolderTimer      = null
+
+async function loadBlueprintHolders() {
+  loadingBpHolders.value = true
+  const q = encodeURIComponent(bpHolderQuery.value.trim())
+  const res = await playerAuth.playerFetch(`/blueprint/holders?q=${q}&limit=100`)
+  loadingBpHolders.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  bpHolders.value = (res.ok && data?.success) ? (data.data || []) : []
+}
+
+function searchBlueprintHolders() {
+  clearTimeout(bpHolderTimer)
+  bpHolderTimer = setTimeout(loadBlueprintHolders, 300)
+}
+
+async function removeBlueprint(bp) {
+  const res = await playerAuth.playerFetch(`/player/blueprints/${bp._id}`, { method: 'DELETE' })
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) loadBlueprints()
+}
+
+// ── 查詢 › 物品庫存：一個關鍵字同時搜物品／地點／玩家 ────────────────
+//
+// 舊版是「先 autocomplete 選一個物品 → 再打 /inventory/where/<id>」，
+// 兩步。現在直接打 /inventory/search?q=，後端會把那串字分別去比對物品主檔、
+// 玩家名冊、地點清單，取聯集回傳（見 app/inventory/view.py 的 search_stock）。
+const whoQuery   = ref('')
+const whoRows    = ref([])
+const whoMatched = ref(null)
+const loadingWho = ref(false)
+let whoSearchTimer = null
+// 每次搜尋遞增。慢的舊請求回來時若序號已過期就丟掉 ——
+// 不做這件事的話「打 Lar 再補成 Laranite」有機會被先發出的 Lar 覆蓋。
+let whoSeq = 0
+
+function searchStock() {
+  clearTimeout(whoSearchTimer)
+  const q = whoQuery.value.trim()
+  if (!q) {
+    whoRows.value = []
+    whoMatched.value = null
+    loadingWho.value = false
+    return
+  }
+  whoSearchTimer = setTimeout(async () => {
+    const seq = ++whoSeq
+    loadingWho.value = true
+    const res = await playerAuth.playerFetch(
+      `/inventory/search?q=${encodeURIComponent(q)}&limit=200`)
+    if (seq !== whoSeq) return          // 已經有更新的搜尋在跑了
+    loadingWho.value = false
+    if (!res) return
+    const data = await res.json().catch(() => null)
+    if (res.ok && data?.success) {
+      whoRows.value = data.data || []
+      whoMatched.value = data.matched || null
+    } else {
+      whoRows.value = []
+      whoMatched.value = null
+    }
+  }, 300)
+}
+
+// sticky 分頁列的 top 偏移必須等於上方固定元素的實際高度：
+//   主分頁列 top = 工具列高度
+//   下層分頁 top = 工具列 + 主分頁列高度
+// 兩者在窄螢幕都會變（工具列會折行），所以不能寫死 —— 用 ResizeObserver 量。
+let stickyObserver = null
+
+function trackStickyHeights() {
+  if (typeof ResizeObserver === 'undefined') return
+  const bar = document.querySelector('.scifi-topbar')
+  const tabsEl = document.querySelector('.scifi-tabs')
+  if (!bar) return
+
+  const sync = () => {
+    const root = document.documentElement
+    root.style.setProperty(
+      '--sf-topbar-h', `${Math.round(bar.getBoundingClientRect().height)}px`)
+    if (tabsEl) {
+      root.style.setProperty(
+        '--sf-tabs-h', `${Math.round(tabsEl.getBoundingClientRect().height)}px`)
+    }
+  }
+  sync()
+  stickyObserver = new ResizeObserver(sync)
+  stickyObserver.observe(bar)
+  if (tabsEl) stickyObserver.observe(tabsEl)
+}
+
+onMounted(() => {
+  scifiTheme.apply()      // 套用這位玩家自己存的配色（localStorage）
+  trackStickyHeights()
+  loadPlayer()
+  loadLocations()
+  loadMyInventory()
+  loadHistory()
+  loadBlueprints()
+  // 直接以 ?tab=blueprints / ?tab=search&sub=blueprints 開場時補載
+  loadForTab(activeTab.value, activeSub.value)
+})
+
+onBeforeUnmount(() => {
+  stickyObserver?.disconnect()
+})
+</script>
+
+<style scoped>
+.alert-slide-enter-active { transition: all .2s ease; }
+.alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
+.nav-tabs .nav-link { cursor: pointer; }
+</style>

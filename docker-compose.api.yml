@@ -10,9 +10,15 @@ services:
       FLASK_PORT: "${FLASK_PORT:-5000}"
     expose:
       - "${FLASK_PORT:-5000}"
+    # ⚠️ 這些 mount 讓 Python 程式碼改動不必重 build image 就生效。
+    #    但**不要**把後台前端的建置產物放進這些目錄底下 —— host 的目錄會把
+    #    Dockerfile 在容器裡建好的檔案整個遮住，而且完全沒有錯誤訊息。
+    #    後台前端輸出在專案根目錄的 web-admin/，刻意不掛 mount，
+    #    所以 `docker compose build api` 建出來的版本就是實際被服務的版本。
     volumes:
       - ./app:/app/app
       - ./src:/app/src
+      - ./tasks:/app/tasks
       - ./run.py:/app/run.py
       - ./conf:/app/conf
       - ./logs:/app/logs

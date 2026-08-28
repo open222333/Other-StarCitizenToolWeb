@@ -13,6 +13,10 @@ from app.admin.view import app_admin
 from app.log.view import app_log
 from app.docs.view import app_docs
 from app.device.view import app_device
+from app.item.view import app_item
+from app.inventory.view import app_inventory
+from app.player.view import app_player
+from app.blueprint.view import app_blueprint
 from src import FLASK_JSON_PATH
 from src.limiter import limiter
 
@@ -91,6 +95,10 @@ def create_app(config_object=None):
     app.register_blueprint(blueprint=app_log, url_prefix='/log')
     app.register_blueprint(blueprint=app_device, url_prefix='/device')
     app.register_blueprint(blueprint=app_docs, url_prefix='/docs')
+    app.register_blueprint(blueprint=app_item, url_prefix='/item')
+    app.register_blueprint(blueprint=app_inventory, url_prefix='/inventory')
+    app.register_blueprint(blueprint=app_player, url_prefix='/player')
+    app.register_blueprint(blueprint=app_blueprint, url_prefix='/blueprint')
     if config_object:
         app.config.from_object(config_object)
     return app
