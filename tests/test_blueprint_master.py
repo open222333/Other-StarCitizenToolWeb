@@ -577,3 +577,28 @@ def test_player_registration_defaults_to_obtained(client, player_headers, seeded
 
     rows = client.get('/player/blueprints', headers=player_headers).get_json()['data']
     assert rows[0]['unlock_status'] == DEFAULT_UNLOCK_STATUS == 'obtained'
+
+
+@pytest.mark.parametrize('sneaky', ['locked', 'unlocked', 'unconfirmed', 'outdated'])
+def test_player_cannot_set_unlock_status(client, player_headers, seeded_master, sneaky):
+    """前端不給選狀態只是前端 —— 直接打 API 帶 unlock_status 必須被忽略。
+
+    帶 locked 可以讓自己從「誰有這張藍圖」消失，帶 unlocked 可以誤導別人來問，
+    兩種都違背「登記＝我有」的設計。
+    """
+    resp = client.post('/player/blueprints', headers=player_headers,
+                       json={'blueprint_uuid': API_ROW['uuid'], 'unlock_status': sneaky})
+    assert resp.status_code in (200, 201), resp.get_json()
+
+    rows = client.get('/player/blueprints', headers=player_headers).get_json()['data']
+    assert rows[0]['unlock_status'] == DEFAULT_UNLOCK_STATUS, \
+        f'玩家帶了 {sneaky} 卻寫進去了'
+
+
+def test_player_cannot_hide_self_from_holders(client, player_headers, seeded_master):
+    """上一支的實際後果：帶 locked 不該讓自己從「誰有這張藍圖」消失。"""
+    client.post('/player/blueprints', headers=player_headers,
+                json={'blueprint_uuid': API_ROW['uuid'], 'unlock_status': 'locked'})
+
+    groups = BlueprintModel.find_holders(query='omnisky')
+    assert len(groups) == 1 and groups[0]['holder_count'] == 1

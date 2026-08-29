@@ -7,7 +7,7 @@
 字串，兩邊共用同一個值，不建立額外的外鍵對應。
 """
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 from flask_jwt_extended import (
     create_access_token, create_refresh_token,
     get_jwt, get_jwt_identity, jwt_required,
@@ -15,11 +15,12 @@ from flask_jwt_extended import (
 
 from src import WMS_SCOPE_ID
 from src.limiter import limiter
-from src.models.blueprint import ACQUISITION_METHODS, UNLOCK_STATUSES, Blueprint as BlueprintModel
+from src.models.blueprint import (ACQUISITION_METHODS, DEFAULT_UNLOCK_STATUS,
+                                  UNLOCK_STATUSES, Blueprint as BlueprintModel)
 from src.models.inventory import OWNER_PLAYER, Inventory, InventoryLog, StockError
 from src.models.item import BlueprintMaster, ItemMaster
 from src.models.player import Player, PlayerError
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api
+from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api
 
 app_player = Blueprint('app_player', __name__)
 
@@ -31,6 +32,19 @@ def handle_stock_error(err):
 
 PLAYER_IDENTITY_PREFIX = 'player:'
 
+# 標記「這是玩家自助 token」的 claim 名稱。
+#
+# ⚠️ 千萬不要用 'type' —— 那是 flask-jwt-extended 自己的保留 claim，它用
+#    type='access' / type='refresh' 來區分兩種 token。之前這裡傳
+#    additional_claims={'type': 'player'} 把它蓋掉了，造成兩個問題：
+#      1. /player/refresh 永遠回 422「Only refresh tokens are allowed」，
+#         玩家 8 小時後一律被登出，refresh 功能等於不存在。
+#      2. 更糟：access 與 refresh token 的 type 都變成 'player'，而
+#         verify_token_type() 對非 refresh 端點只擋 type == 'refresh'。
+#         於是**30 天有效的 refresh token 可以直接當 access token 用**，
+#         短效 access token 的意義完全消失。
+
+
 
 def _player_identity(star_citizen_id: str) -> str:
     """玩家 JWT 的 identity 字串，跟後台 users 的 identity（username 本身）區隔開，
@@ -38,16 +52,45 @@ def _player_identity(star_citizen_id: str) -> str:
     return f'{PLAYER_IDENTITY_PREFIX}{star_citizen_id}'
 
 
+def _scid_from_identity():
+    """玩家 token 的 star_citizen_id；不是玩家 token 就回 None。"""
+    identity = get_jwt_identity() or ''
+    if not identity.startswith(PLAYER_IDENTITY_PREFIX):
+        return None
+    return identity[len(PLAYER_IDENTITY_PREFIX):] or None
+
+
 def player_required(fn):
-    """比照 jwt_required()，但額外檢查這個 token 是玩家自己的（additional_claims.type == 'player'）。"""
+    """比照 jwt_required()，但額外檢查這個 token 是玩家自己的
+    （additional_claims.type == 'player'），而且那個帳號現在還存在。
+
+    為什麼要多查一次 DB：JWT 一旦簽出去就無法撤銷，access token 8 小時、
+    refresh token 30 天。只看 claim 的話，管理員把某個玩家軟刪除之後，
+    那個人在 token 到期前照樣能讀寫自己的個人庫存，「移除成員」等於沒有效果。
+
+    這件事之前只有 /player/me 與 /player/blueprints 做到（它們本來就要撈
+    player doc），四支個人庫存端點沒做 —— 同一個檔案裡兩套標準。集中在這裡
+    做，之後新增端點就不會再漏。
+
+    代價是每個請求多一次 players 的 indexed find_one（star_citizen_id 有
+    unique index），對這個規模的公會工具可以忽略。
+    """
     from functools import wraps
 
     @wraps(fn)
     @jwt_required()
     def wrapper(*args, **kwargs):
-        claims = get_jwt()
-        if claims.get('type') != 'player':
+        if not get_jwt().get(PLAYER_CLAIM):
             return jsonify({'success': False, 'message': '此 token 不是玩家帳號'}), 403
+
+        scid = _scid_from_identity()
+        player = Player.find_by_star_citizen_id(scid) if scid else None
+        if not player:
+            return jsonify({'success': False, 'message': '這個帳號已不存在，請重新登入'}), 403
+
+        # 存進 request context 讓 _self_player_doc() 直接取用，
+        # 否則需要 player doc 的端點會在同一個請求裡查第二次。
+        g.player_doc = player
         return fn(*args, **kwargs)
     return wrapper
 
@@ -211,7 +254,7 @@ def login_player():
         return jsonify({'success': False, 'message': '遊戲ID 或密碼錯誤'}), 401
 
     identity = _player_identity(star_citizen_id)
-    claims = {'type': 'player'}
+    claims = {PLAYER_CLAIM: True}
     resp = {
         'success':         True,
         'token':           create_access_token(identity=identity, additional_claims=claims),
@@ -230,9 +273,16 @@ def refresh_player():
     identity = get_jwt_identity()
     if not identity.startswith(PLAYER_IDENTITY_PREFIX):
         return jsonify({'success': False, 'message': '此 refresh token 不是玩家帳號'}), 403
+
+    # refresh token 有 30 天，這裡不查 DB 的話，被移除的玩家可以一路換發新的
+    # access token 到 refresh token 過期為止 —— 等於「移除成員」要一個月後才生效。
+    scid = _scid_from_identity()
+    if not scid or not Player.find_by_star_citizen_id(scid):
+        return jsonify({'success': False, 'message': '這個帳號已不存在，請重新登入'}), 403
+
     return jsonify({
         'success': True,
-        'token':   create_access_token(identity=identity, additional_claims={'type': 'player'}),
+        'token':   create_access_token(identity=identity, additional_claims={PLAYER_CLAIM: True}),
     })
 
 
@@ -491,7 +541,14 @@ def my_inventory_history():
 # ═══════════════════════════════════════════
 
 def _self_player_doc() -> dict:
-    """取得目前登入玩家自己的名冊資料（含 _id），找不到就丟 StockError（400 給前端看）。"""
+    """目前登入玩家自己的名冊資料（含 _id）。
+
+    player_required 已經查過並放進 g.player_doc，這裡直接取用，不重查。
+    g 沒有值代表這支端點沒掛 player_required（不該發生），退回自己查一次。
+    """
+    player = getattr(g, 'player_doc', None)
+    if player:
+        return player
     player = Player.find_by_star_citizen_id(_self_star_citizen_id())
     if not player:
         raise StockError('找不到玩家資料，請重新登入。')
@@ -555,7 +612,6 @@ def add_my_blueprint():
           required: [blueprint_uuid]
           properties:
             blueprint_uuid:         {type: string, description: "藍圖主檔 uuid，從 /blueprint/master/search 選出來的。必填"}
-            unlock_status:          {type: string, enum: [locked, obtained, unlocked, unconfirmed, outdated]}
             notes:                  {type: string}
             acquisition_method:     {type: string}
             acquisition_location:   {type: string}
@@ -595,7 +651,14 @@ def add_my_blueprint():
         player_id=player['_id'],
         acquisition_method=(data.get('acquisition_method') or '').strip(),
         acquisition_location=(data.get('acquisition_location') or '').strip(),
-        unlock_status=(data.get('unlock_status') or 'obtained').strip(),
+        # 狀態刻意**不看** client 傳什麼，一律寫死。
+        #
+        # 玩家端「登記」的語意就是「我有這張圖」，所以沒有其他狀態可選 ——
+        # 前端也已經不顯示狀態欄位。但只做在前端等於沒做：直接打 API 帶
+        # {"unlock_status": "locked"} 就能讓自己從「誰有這張藍圖」的結果裡
+        # 消失（HOLDER_HIDDEN_STATUSES 會濾掉 locked），或帶 "unlocked"
+        # 誤導別人來問。要改狀態一律走後台 PUT /blueprint/<id>。
+        unlock_status=DEFAULT_UNLOCK_STATUS,
         notes=(data.get('notes') or '').strip(),
         blueprint_uuid=blueprint_uuid,
     )

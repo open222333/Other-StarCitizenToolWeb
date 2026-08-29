@@ -504,6 +504,99 @@ def test_updating_other_fields_does_not_reset_discord_public(client, seed_master
     assert doc['discord_public'] is True
 
 
+# ── 軟刪除的玩家不能再用手上的 token ────────────────────────────
+#
+# JWT 簽出去就撤不回來（access 8 小時、refresh 30 天）。只看 claim 不查 DB 的話，
+# 管理員「移除成員」對個人庫存子系統完全無效。
+
+@pytest.fixture
+def deleted_player_headers(client, seed_master):
+    """註冊 → 登入拿 token → 把帳號軟刪除，回傳 (headers, refresh_headers)。"""
+    from src.models.player import Player
+    client.post('/player/register', json={
+        'nickname': '要被踢的', 'star_citizen_id': 'Ghost', 'password': 'pw-123456'})
+    login = client.post('/player/login', json={
+        'star_citizen_id': 'Ghost', 'password': 'pw-123456'}).get_json()
+
+    pid = Player.find_by_star_citizen_id('Ghost')['_id']
+    Player.soft_delete(pid)
+
+    return ({'Authorization': f"Bearer {login['token']}"},
+            {'Authorization': f"Bearer {login['refresh_token']}"})
+
+
+def test_soft_deleted_player_cannot_use_inventory(client, deleted_player_headers):
+    headers, _ = deleted_player_headers
+    for method, path, payload in [
+        ('get',  '/player/inventory',         None),
+        ('get',  '/player/inventory/history', None),
+        ('post', '/player/inventory/add',     {'item': 'item-big', 'quantity': 1, 'location': 'Area18'}),
+        ('post', '/player/inventory/remove',  {'item': 'item-big', 'quantity': 1, 'location': 'Area18'}),
+        ('get',  '/player/me',                None),
+        ('get',  '/player/blueprints',        None),
+    ]:
+        resp = getattr(client, method)(path, headers=headers, json=payload)
+        assert resp.status_code == 403, f'{method.upper()} {path} 應該擋掉已刪除的玩家'
+
+
+def test_soft_deleted_player_cannot_refresh(client, deleted_player_headers):
+    """不擋的話，被移除的人可以一路續發 access token 到 refresh token 過期。"""
+    _, refresh_headers = deleted_player_headers
+    assert client.post('/player/refresh', headers=refresh_headers).status_code == 403
+
+
+def test_refresh_token_cannot_be_used_as_access_token(client, seed_master):
+    """refresh token（30 天）不可以直接拿去打一般端點。
+
+    這條之前是破的：玩家 token 用 additional_claims={'type': 'player'} 蓋掉了
+    flask-jwt-extended 自己的保留 claim（access / refresh），導致兩種 token 的
+    type 都變成 'player'，而 verify_token_type() 對非 refresh 端點只擋
+    type == 'refresh' —— 於是 30 天的 refresh token 等同 access token 可用。
+    """
+    client.post('/player/register', json={
+        'nickname': 'R', 'star_citizen_id': 'RefreshMe', 'password': 'pw-123456'})
+    login = client.post('/player/login', json={
+        'star_citizen_id': 'RefreshMe', 'password': 'pw-123456'}).get_json()
+    refresh_headers = {'Authorization': f"Bearer {login['refresh_token']}"}
+
+    for path in ('/player/me', '/player/inventory', '/player/blueprints'):
+        assert client.get(path, headers=refresh_headers).status_code == 422, \
+            f'{path} 接受了 refresh token'
+
+
+def test_player_token_claims_do_not_clobber_reserved_type(client, seed_master):
+    """直接檢查 claim：access 要是 access、refresh 要是 refresh。"""
+    import jwt as pyjwt
+    client.post('/player/register', json={
+        'nickname': 'C', 'star_citizen_id': 'ClaimCheck', 'password': 'pw-123456'})
+    b = client.post('/player/login', json={
+        'star_citizen_id': 'ClaimCheck', 'password': 'pw-123456'}).get_json()
+
+    access = pyjwt.decode(b['token'], options={'verify_signature': False})
+    refresh = pyjwt.decode(b['refresh_token'], options={'verify_signature': False})
+    assert access['type'] == 'access'
+    assert refresh['type'] == 'refresh'
+    # 玩家身分改用不會撞名的 claim
+    assert access.get('is_player') is True
+    assert refresh.get('is_player') is True
+
+
+def test_active_player_still_works(client, seed_master):
+    """對照組：沒被刪除的玩家一切照常（確認上面的檢查沒有擋錯人）。"""
+    client.post('/player/register', json={
+        'nickname': '正常人', 'star_citizen_id': 'Alive', 'password': 'pw-123456'})
+    login = client.post('/player/login', json={
+        'star_citizen_id': 'Alive', 'password': 'pw-123456'}).get_json()
+    headers = {'Authorization': f"Bearer {login['token']}"}
+
+    assert client.get('/player/me', headers=headers).status_code == 200
+    assert client.get('/player/inventory', headers=headers).status_code == 200
+    assert client.post('/player/inventory/add', headers=headers, json={
+        'item': 'item-big', 'quantity': 3, 'location': 'Area18'}).status_code in (200, 201)
+    assert client.post('/player/refresh', headers={
+        'Authorization': f"Bearer {login['refresh_token']}"}).status_code == 200
+
+
 def test_display_names_by_scid_empty_input(client):
     """空輸入不該打 DB，也不該炸。"""
     from src.models.player import Player

@@ -163,7 +163,7 @@
           <div class="d-flex justify-content-between align-items-start mb-2">
             <span class="badge text-bg-secondary">第 {{ idx + 1 }} 筆</span>
             <button v-if="depositRows.length > 1" class="btn btn-sm btn-link text-danger p-0"
-              @click="depositRows.splice(idx, 1)">移除</button>
+              :disabled="depositSubmitting" @click="depositRows.splice(idx, 1)">移除</button>
           </div>
 
           <div class="row g-2">
@@ -197,7 +197,8 @@
       </div>
 
       <div class="d-flex justify-content-between mb-4">
-        <button class="btn btn-scifi-outline btn-sm" @click="depositRows.push(makeRow(false))">
+        <button class="btn btn-scifi-outline btn-sm" :disabled="depositSubmitting"
+          @click="depositRows.push(makeRow(false))">
           <i class="bi bi-plus-lg me-1"></i>再加一筆
         </button>
         <button class="btn btn-scifi" :disabled="depositSubmitting" @click="submitDepositRows">
@@ -268,7 +269,7 @@
               </div>
             </div>
             <button v-if="withdrawRows.length > 1" class="btn btn-sm btn-link text-danger p-0"
-              @click="withdrawRows.splice(idx, 1)">移除</button>
+              :disabled="withdrawSubmitting" @click="withdrawRows.splice(idx, 1)">移除</button>
           </div>
 
           <div class="row g-2">
@@ -310,7 +311,8 @@
       </div>
 
       <div class="d-flex justify-content-between mb-4">
-        <button class="btn btn-scifi-outline btn-sm" @click="withdrawRows.push(makeRow(true))">
+        <button class="btn btn-scifi-outline btn-sm" :disabled="withdrawSubmitting"
+          @click="withdrawRows.push(makeRow(true))">
           <i class="bi bi-plus-lg me-1"></i>再加一筆
         </button>
         <button class="btn btn-scifi" :disabled="withdrawSubmitting" @click="submitWithdrawRows">
@@ -1023,16 +1025,27 @@ async function submitRows(rows, {
   let ok = 0
   const successNames = []
 
-  for (const row of rows) {
+  // 先拍快照再驗證與送出。
+  //
+  // 不拍快照的話 `for...of` 迭代的是 reactive 陣列本身，而迭代器每次 next()
+  // 都重讀 length —— 使用者在某一列還在 await 時按「再加一筆」，那個從未經過
+  // 驗證的空白列會被同一個迴圈掃到，`row.selectedItem._id` 對 null 取屬性丟出
+  // TypeError。而 Vue 3 的 callWithAsyncErrorHandling 會把它 .catch() 掉降級成
+  // console.error，所以畫面上**完全沒有徵兆**：前幾筆其實已經寫進後端了，
+  // 但成功訊息沒出現、列也沒被清掉，使用者幾乎一定會再按一次造成重複入庫。
+  // （下面的按鈕也一併 disabled，這裡的快照是第二道防線。）
+  const batch = [...rows]
+
+  for (const row of batch) {
     row.error = ''
     if (!row.selectedItem) { row.error = '請先從搜尋結果選擇物品'; continue }
     if (!row.quantity || row.quantity <= 0) { row.error = '數量必須大於 0'; continue }
   }
-  if (rows.some(r => r.error)) return
+  if (batch.some(r => r.error)) return
 
   submittingRef.value = true
   try {
-    for (const row of rows) {
+    for (const row of batch) {
       const body = {
         item: row.selectedItem._id,
         quantity: row.quantity,
@@ -1061,9 +1074,14 @@ async function submitRows(rows, {
 
   if (ok) {
     resultRef.value = `已處理 ${ok} 筆：${successNames.join('；')}`
-    // 只清掉成功的那幾筆，失敗的留著讓玩家修正
+    // 只清掉「這一批裡送成功的」，失敗的留著讓玩家修正。
+    //
+    // 判斷條件必須同時看「有沒有在 batch 裡」和「有沒有 error」：只看 error 的話，
+    // 送出期間才被加進來、根本沒被處理過的空白列（error 也是空的）會被當成
+    // 成功而清掉，使用者剛打的東西就這樣消失。
+    const done = new Set(batch.filter(r => !r.error))
     for (let i = rows.length - 1; i >= 0; i--) {
-      if (!rows[i].error) rows.splice(i, 1)
+      if (done.has(rows[i])) rows.splice(i, 1)
     }
     if (!rows.length) rows.push(makeNextRow())
     loadMyInventory()

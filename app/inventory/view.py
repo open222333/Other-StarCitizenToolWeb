@@ -20,7 +20,8 @@ from src.models.inventory import (OWNER_GUILD, OWNER_PLAYER, Inventory, Inventor
 from src.models.item import ItemMaster, VehicleMaster
 from src.models.log import Log
 from src.models.player import Player
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, require_role
+from src.permissions import (PLAYER_CLAIM, READ_ROLES, WRITE_ROLES,
+                             admin_api, require_role)
 from src.sc_zh import location_name_zh
 
 app_inventory = Blueprint('app_inventory', __name__)
@@ -51,7 +52,7 @@ def _paging() -> tuple:
 
 def _self_player_scid():
     """若這是玩家自助 token，回傳它的 star_citizen_id；後台 token 回 None。"""
-    if get_jwt().get('type') != 'player':
+    if not get_jwt().get(PLAYER_CLAIM):
         return None
     identity = get_jwt_identity() or ''
     if not identity.startswith(PLAYER_IDENTITY_PREFIX):

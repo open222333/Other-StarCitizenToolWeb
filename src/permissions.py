@@ -3,7 +3,7 @@
 ⚠️ 為什麼 `@jwt_required()` 單獨用是不夠的：
 
 本專案有兩套身分體系 —— 後台帳號（app/auth/view.py，identity = username）與玩家
-自助帳號（app/player/view.py，identity = `player:<scid>`，額外帶 claim `type='player'`）。
+自助帳號（app/player/view.py，identity = `player:<scid>`，額外帶 claim `is_player=True`）。
 兩者**共用同一把 JWT 金鑰**（conf/config.py 把 SECRET_KEY 同時指派給 JWT_SECRET_KEY），
 而 `@jwt_required()` 只驗簽章 —— 它不看 identity 格式，也不看自訂 claim。
 
@@ -18,6 +18,13 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from src.models.user import User
 
+# 標記「這是玩家自助 token」的 claim 名稱。定義在這裡（而不是 app/player/view.py）
+# 是為了避免循環 import —— app 藍圖本來就都 import 這個模組。
+#
+# ⚠️ 不可以叫 'type'：那是 flask-jwt-extended 的保留 claim（access / refresh），
+#    蓋掉它會讓 refresh token 跟 access token 無法區分。詳見 app/player/view.py。
+PLAYER_CLAIM = 'is_player'
+
 ROLE_LEVELS = {'admin': 3, 'operator': 2, 'viewer': 1}
 
 # 後台路由的兩組標準角色，避免各藍圖各自寫一份字串 tuple
@@ -27,7 +34,7 @@ WRITE_ROLES = ('admin', 'operator')
 
 def _player_token_rejection():
     """玩家自助 token 一律不得進入後台 API。回傳 response tuple 或 None。"""
-    if get_jwt().get('type') == 'player':
+    if get_jwt().get(PLAYER_CLAIM):
         return jsonify({'success': False, 'message': '此 token 不是後台帳號'}), 403
     return None
 
