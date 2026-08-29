@@ -174,6 +174,32 @@ app/inventory/view.py     bot/cogs/
 > 這一節是**當下為真的環境現狀**。環境有變動（換版本、開 port、加金鑰）時要當場更新。
 > 依規定不記錄任何密碼、token、私鑰內容。
 
+### 主機規格（sctw｜星際公民工具網站）
+
+| 項目 | 最低限度 | 建議舒適 |
+|---|---|---|
+| vCPU | 1 | 2 |
+| RAM | 1 GB | 2 GB |
+| Disk | 15 GB | 25 GB |
+| Swap | 1 GB | 2 GB |
+
+一整套會跑起 **9 個容器**（nginx、web、api、worker、beat、bot、mongo、mysql、redis），
+所以「最低限度」那一欄的 swap **不是選配**，是必要的 —— MySQL 8 光是預設的
+buffer pool 就會吃掉好幾百 MB。
+
+在 1～2 vCPU 的機器上，記得壓 Gunicorn 的 worker 數。`gunicorn.py` 的預設是
+`(vCPU × 2) + 1`，2 vCPU 就會開 5 個 worker，每個都是完整的 Python 行程
+（Flask + pymongo 各載一份），光 api 就可能吃掉 400–600 MB：
+
+```bash
+# .env
+WORKERS=2      # 小機器建議 2，不要用預設值
+```
+
+Disk 的大宗是 Docker image（多階段建置後 api image 約數百 MB）與 MongoDB 的
+遊戲主檔 —— `item_master` 一萬多筆、`blueprint_master` 一千多筆，且同步策略是
+**只標記 `is_current=False` 不刪除**，所以會隨遊戲改版單調成長，長期要留餘裕。
+
 ### 服務版本
 
 | 服務 | 版本 | 來源 | 關鍵設定事實 |
