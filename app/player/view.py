@@ -19,6 +19,7 @@ from src.models.blueprint import (ACQUISITION_METHODS, DEFAULT_UNLOCK_STATUS,
                                   UNLOCK_STATUSES, Blueprint as BlueprintModel)
 from src.models.inventory import OWNER_PLAYER, Inventory, InventoryLog, StockError
 from src.models.item import BlueprintMaster, ItemMaster
+from src.models.log import Log
 from src.models.player import Player, PlayerError
 from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api
 
@@ -195,6 +196,51 @@ def delete_player(player_id):
     return jsonify({'success': True})
 
 
+@app_player.route('/<player_id>/password', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_player_password(player_id):
+    """後台直接設定／重設某玩家的登入密碼，不需要知道原密碼。
+
+    獨立成一支路由，不跟 update_player() 共用 _serialize_form()：那條路徑是
+    「字串欄位原樣寫進 DB」，密碼要先 bcrypt hash 過，混在一起容易漏做雜湊
+    或誤把明碼存進 DB。也順便涵蓋「玩家是後台 create_player() 建立、從來
+    沒設過密碼」的情況 —— 那種玩家在這支路由跑之前完全無法登入。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          required: [new_password]
+          properties:
+            new_password: {type: string, description: "至少 6 個字元"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 密碼太短
+      404:
+        description: 玩家不存在
+    """
+    player = Player.find_by_id(player_id)
+    if not player:
+        return jsonify({'success': False, 'message': '找不到玩家'}), 404
+
+    data = request.get_json(silent=True) or {}
+    new_password = data.get('new_password') or ''
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'message': '新密碼至少需要 6 個字元'}), 400
+
+    Player.set_password(player['_id'], new_password)
+
+    username = get_jwt_identity()
+    Log.create(username, 'reset_player_password',
+               f'重設玩家密碼：{player.get("player_name")}（{player.get("star_citizen_id")}）',
+               success=True)
+    return jsonify({'success': True})
+
+
 # ═══════════════════════════════════════════
 #  公開自助註冊（不需要登入）
 # ═══════════════════════════════════════════
@@ -345,6 +391,51 @@ def update_current_player():
         return jsonify({'success': True})
 
     Player.update(player['_id'], **fields)
+    return jsonify({'success': True})
+
+
+@app_player.route('/me/password', methods=['PUT'])
+@player_required
+@limiter.limit('10 per minute')
+def change_my_password():
+    """玩家自己更改登入密碼，需先驗證目前密碼。
+
+    跟後台的 set_player_password() 不同：這裡是本人操作，沒有 role 當作
+    背書，所以一定要先核對 current_password 才能改，避免一個沒鎖螢幕的
+    分頁或外流的 access token 被拿來直接把密碼換掉、永久鎖死本人。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          required: [current_password, new_password]
+          properties:
+            current_password: {type: string}
+            new_password:      {type: string, description: "至少 6 個字元"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 目前密碼錯誤，或新密碼太短
+    """
+    data = request.get_json(silent=True) or {}
+    current_password = data.get('current_password') or ''
+    new_password     = data.get('new_password') or ''
+
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'message': '新密碼至少需要 6 個字元'}), 400
+
+    # g.player_doc（player_required 存的）用的是預設的 find_by_star_citizen_id()，
+    # 沒帶 include_password=True，password 欄位在 _serialize() 就被拿掉了 ——
+    # 這裡要驗證目前密碼，得帶 include_password=True 重查一次。
+    scid = _self_star_citizen_id()
+    player = Player.find_by_star_citizen_id(scid, include_password=True)
+    if not player or not Player.check_password(current_password, player.get('password')):
+        return jsonify({'success': False, 'message': '目前密碼不正確'}), 400
+
+    Player.set_password(player['_id'], new_password)
     return jsonify({'success': True})
 
 

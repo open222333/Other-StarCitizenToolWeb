@@ -6,6 +6,7 @@ from flask_cors import CORS
 from flasgger import Swagger
 from flask_jwt_extended import JWTManager
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 from app.sample.view import app_sample
 from app.auth.view import app_auth
 from app.user.view import app_user
@@ -21,6 +22,21 @@ from src import FLASK_JSON_PATH
 from src.limiter import limiter
 
 app = Flask(__name__)
+
+# ⚠️ 只信任「一層」反向代理 —— nginx／web 容器是唯一會直接連到這個
+# Flask/gunicorn 的角色（api 服務在 docker-compose.api.yml 只有 expose:，
+# 沒有 ports:，不會發布到 host，外部連線一定先經過 nginx 或 web 容器；
+# 兩邊的 nginx conf 也都正確設定了 X-Forwarded-For / X-Real-IP）。
+#
+# 沒有這行，Flask-Limiter 的 get_remote_address()（決定「同一個人」的 key）
+# 拿到的是 request.remote_addr，也就是 nginx 容器在 docker network 裡的
+# 內部 IP —— 對 Flask 來說每個訪客長得都一樣，所有 rate limit
+# （/player/login、/player/register、/player/me/password 的「10 per minute」等）
+# 變成整個公會共用同一份額度，而不是每人各自 10 次：一個人多按幾次，
+# 或剛好幾個成員同時登入，就會讓其他人平白被 429 擋下來，看起來像是
+# 「密碼突然不對」；同時也讓 rate limit 完全失去「擋單一來源暴力破解」的意義。
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 template = {
     "swagger": "2.0",
     # "openapi": "3.0.0",

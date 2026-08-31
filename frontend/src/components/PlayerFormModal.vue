@@ -55,6 +55,26 @@
             <label class="form-label small fw-semibold">備註</label>
             <textarea v-model="form.notes" class="form-control" rows="2"></textarea>
           </div>
+
+          <template v-if="editId">
+            <hr>
+            <label class="form-label small fw-semibold">重設密碼</label>
+            <div class="input-group">
+              <input v-model="newPassword" type="password" class="form-control" minlength="6"
+                autocomplete="new-password" placeholder="留空表示不變更，至少 6 個字元">
+              <button type="button" class="btn btn-outline-secondary"
+                :disabled="resettingPassword || newPassword.length < 6" @click="resetPassword">
+                <span v-if="resettingPassword" class="spinner-border spinner-border-sm me-1"></span>
+                更新密碼
+              </button>
+            </div>
+            <div v-if="passwordMsg" :class="`form-text ${passwordOk ? 'text-success' : 'text-danger'}`">
+              {{ passwordMsg }}
+            </div>
+            <div class="form-text">
+              玩家登入「個人資料」頁面用的密碼。忘記密碼時可以在這裡直接設定新的，不需要知道原密碼。
+            </div>
+          </template>
         </div>
 
         <div class="modal-footer">
@@ -87,6 +107,14 @@ const form = reactive({
   player_name: '', star_citizen_id: '', nickname: '', discord_name: '', discord_id: '', notes: '',
 })
 
+// ── 重設密碼：獨立於上面的 save()，打的是專門的 API（見 app/player/view.py
+//    set_player_password()），不跟一般欄位共用同一個提交按鈕 —— 密碼失敗
+//    不該連帶讓暱稱／Discord 這些已經改好的欄位也存不進去。
+const newPassword       = ref('')
+const resettingPassword = ref(false)
+const passwordMsg       = ref('')
+const passwordOk        = ref(false)
+
 onMounted(() => { bsModal = new Modal(modalEl.value) })
 
 function open(player = null) {
@@ -98,6 +126,8 @@ function open(player = null) {
   form.discord_name      = player?.discord_name    || ''
   form.discord_id        = player?.discord_id      || ''
   form.notes             = player?.notes           || ''
+  newPassword.value      = ''
+  passwordMsg.value      = ''
   bsModal.show()
 }
 
@@ -120,6 +150,31 @@ async function save() {
     else { error.value = data.message || '儲存失敗' }
   } finally {
     saving.value = false
+  }
+}
+
+async function resetPassword() {
+  if (newPassword.value.length < 6) {
+    passwordOk.value  = false
+    passwordMsg.value = '密碼至少需要 6 個字元'
+    return
+  }
+  resettingPassword.value = true
+  passwordMsg.value = ''
+  try {
+    const res = await playerApi.setPassword(editId.value, newPassword.value)
+    if (!res) { passwordOk.value = false; passwordMsg.value = '網路錯誤，請稍後再試'; return }
+    const data = await res.json().catch(() => null)
+    if (data?.success) {
+      passwordOk.value  = true
+      passwordMsg.value = '密碼已更新'
+      newPassword.value = ''
+    } else {
+      passwordOk.value  = false
+      passwordMsg.value = data?.message || '更新失敗'
+    }
+  } finally {
+    resettingPassword.value = false
   }
 }
 

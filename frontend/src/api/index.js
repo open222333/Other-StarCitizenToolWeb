@@ -53,6 +53,11 @@ export const playerApi = {
   create: (data)      => apiFetch('/player/',      { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data)  => apiFetch(`/player/${id}`, { method: 'PUT',  body: JSON.stringify(data) }),
   remove: (id)        => apiFetch(`/player/${id}`, { method: 'DELETE' }),
+  // 後台重設玩家密碼：不需要舊密碼（role 本身就是背書），獨立路由、
+  // 不走 update() —— 詳見 app/player/view.py 的 set_player_password()。
+  setPassword: (id, newPassword) => apiFetch(`/player/${id}/password`, {
+    method: 'PUT', body: JSON.stringify({ new_password: newPassword }),
+  }),
 }
 
 // ── 玩家自助註冊 / 登入（公開，不需要登入）────────────────────────

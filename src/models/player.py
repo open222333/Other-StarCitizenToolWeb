@@ -160,10 +160,16 @@ class Player:
     @classmethod
     def set_password(cls, player_id: str, password: str) -> bool:
         hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        result = cls._col().update_one(
-            {'_id': ObjectId(player_id), 'deleted_at': None},
-            {'$set': {'password': hashed, 'updated_at': datetime.utcnow()}},
-        )
+        try:
+            result = cls._col().update_one(
+                {'_id': ObjectId(player_id), 'deleted_at': None},
+                {'$set': {'password': hashed, 'updated_at': datetime.utcnow()}},
+            )
+        except Exception:
+            # player_id 格式不對（不是合法的 ObjectId）—— 呼叫端只需要知道
+            # 「沒改到」，不必是 500。呼叫端目前都是後台／玩家自助改密碼，
+            # id 來源是 URL 參數或 JWT identity，格式錯就等同「找不到」。
+            return False
         return result.matched_count > 0
 
     @classmethod

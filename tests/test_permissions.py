@@ -91,6 +91,7 @@ ADMIN_ROUTES = [
     ('POST',   '/player/',            WRITE_ROLES),
     ('PUT',    f'/player/{_OID}',     WRITE_ROLES),
     ('DELETE', f'/player/{_OID}',     WRITE_ROLES),
+    ('PUT',    f'/player/{_OID}/password', WRITE_ROLES),
     # 藍圖名冊（後台端）
     ('GET',    '/blueprint/',         READ_ROLES),
     ('GET',    f'/blueprint/{_OID}',  READ_ROLES),
@@ -385,3 +386,105 @@ def test_player_token_inventory_query_is_scoped_to_self(client, player_headers):
     assert resp2.get_json()['player'] == 'TestPilot', (
         '玩家 token 查到了別人的個人庫容量'
     )
+
+
+# ═══════════════════════════════════════════════════════════
+#  更改密碼：玩家自助（需驗證目前密碼）與後台重設（不需要）
+# ═══════════════════════════════════════════════════════════
+
+def test_player_can_change_own_password(client):
+    """驗證目前密碼正確後，新密碼立刻生效、舊密碼立刻失效。"""
+    reg = client.post('/player/register', json={
+        'nickname': 'PwChanger', 'star_citizen_id': 'PwChanger', 'password': 'old-pw-123',
+    })
+    assert reg.status_code == 201, reg.get_json()
+    login = client.post('/player/login', json={
+        'star_citizen_id': 'PwChanger', 'password': 'old-pw-123',
+    })
+    assert login.status_code == 200, login.get_json()
+    headers = {'Authorization': f"Bearer {login.get_json()['token']}"}
+
+    resp = client.put('/player/me/password', headers=headers, json={
+        'current_password': 'old-pw-123', 'new_password': 'new-pw-456',
+    })
+    assert resp.status_code == 200, resp.get_json()
+
+    relogin = client.post('/player/login', json={
+        'star_citizen_id': 'PwChanger', 'password': 'new-pw-456',
+    })
+    assert relogin.status_code == 200, '新密碼登入失敗'
+
+    stale = client.post('/player/login', json={
+        'star_citizen_id': 'PwChanger', 'password': 'old-pw-123',
+    })
+    assert stale.status_code == 401, '舊密碼理應失效，卻還能登入'
+
+
+def test_player_password_change_rejects_wrong_current_password(client):
+    """目前密碼打錯就該被擋下來，而且密碼不能被悄悄改掉。"""
+    client.post('/player/register', json={
+        'nickname': 'PwGuard', 'star_citizen_id': 'PwGuard', 'password': 'right-pw-1',
+    })
+    login = client.post('/player/login', json={
+        'star_citizen_id': 'PwGuard', 'password': 'right-pw-1',
+    })
+    headers = {'Authorization': f"Bearer {login.get_json()['token']}"}
+
+    resp = client.put('/player/me/password', headers=headers, json={
+        'current_password': 'wrong-pw', 'new_password': 'new-pw-999',
+    })
+    assert resp.status_code == 400, resp.get_json()
+
+    still_old = client.post('/player/login', json={
+        'star_citizen_id': 'PwGuard', 'password': 'right-pw-1',
+    })
+    assert still_old.status_code == 200, '密碼在驗證失敗的情況下被改掉了'
+
+
+def test_player_password_change_enforces_min_length(client, player_headers):
+    resp = client.put('/player/me/password', headers=player_headers, json={
+        'current_password': 'player-pw-123', 'new_password': '123',
+    })
+    assert resp.status_code == 400
+
+
+def test_admin_can_reset_player_password(client, auth_headers):
+    """後台重設密碼不需要舊密碼 —— 也涵蓋『後台建的玩家從沒設過密碼』這種情況。"""
+    created = client.post('/player/', headers=auth_headers, json={
+        'player_name': 'ResetMe', 'star_citizen_id': 'ResetMeSC',
+    })
+    assert created.status_code == 201, created.get_json()
+    player_id = created.get_json()['id']
+
+    # 後台建立的玩家沒有密碼欄位，重設之前完全無法登入
+    before = client.post('/player/login', json={
+        'star_citizen_id': 'ResetMeSC', 'password': 'anything',
+    })
+    assert before.status_code == 401
+
+    resp = client.put(f'/player/{player_id}/password', headers=auth_headers, json={
+        'new_password': 'admin-set-pw-1',
+    })
+    assert resp.status_code == 200, resp.get_json()
+
+    login = client.post('/player/login', json={
+        'star_citizen_id': 'ResetMeSC', 'password': 'admin-set-pw-1',
+    })
+    assert login.status_code == 200, '後台設定的密碼無法登入'
+
+
+def test_admin_password_reset_enforces_min_length(client, auth_headers):
+    created = client.post('/player/', headers=auth_headers, json={
+        'player_name': 'Short', 'star_citizen_id': 'ShortPwSC',
+    })
+    player_id = created.get_json()['id']
+
+    resp = client.put(f'/player/{player_id}/password', headers=auth_headers,
+                      json={'new_password': '123'})
+    assert resp.status_code == 400
+
+
+def test_admin_password_reset_404_for_missing_player(client, auth_headers):
+    resp = client.put(f'/player/{_OID}/password', headers=auth_headers,
+                      json={'new_password': 'longenough1'})
+    assert resp.status_code == 404

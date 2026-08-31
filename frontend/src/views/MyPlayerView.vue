@@ -687,6 +687,38 @@
           </button>
         </div>
       </div>
+
+      <div v-if="player" class="card scifi-card mt-3">
+        <div class="card-body">
+          <h6 class="fw-semibold mb-3"><i class="bi bi-key me-1"></i>更改密碼</h6>
+          <Transition name="alert-slide">
+            <div v-if="pwError" class="alert alert-danger py-2">{{ pwError }}</div>
+          </Transition>
+          <Transition name="alert-slide">
+            <div v-if="pwSuccess" class="alert alert-success py-2">密碼已更新</div>
+          </Transition>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">目前密碼</label>
+            <input v-model="pwForm.current_password" type="password" class="form-control"
+              autocomplete="current-password">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">新密碼</label>
+            <input v-model="pwForm.new_password" type="password" class="form-control" minlength="6"
+              placeholder="至少 6 個字元" autocomplete="new-password">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">確認新密碼</label>
+            <input v-model="pwForm.confirm_password" type="password" class="form-control" minlength="6"
+              placeholder="再輸入一次新密碼" autocomplete="new-password">
+          </div>
+          <button class="btn btn-scifi" :disabled="changingPassword" @click="changePassword">
+            <span v-if="changingPassword" class="spinner-border spinner-border-sm me-1"></span>
+            更改密碼
+          </button>
+        </div>
+      </div>
     </div>
   </div>
   </div>
@@ -860,6 +892,14 @@ const savingProfile  = ref(false)
 const profileError   = ref('')
 const profileSuccess = ref(false)
 
+// ── 更改密碼：獨立的表單／狀態，跟上面的個人資料儲存分開送出 ──────
+// 這樣密碼打錯不會連帶蓋掉「暱稱／Discord 已經存好了」的成功訊息，
+// 反之亦然。
+const pwForm = reactive({ current_password: '', new_password: '', confirm_password: '' })
+const changingPassword = ref(false)
+const pwError   = ref('')
+const pwSuccess = ref(false)
+
 async function loadPlayer() {
   loadingPlayer.value = true
   const res = await playerAuth.playerFetch('/player/me')
@@ -897,6 +937,37 @@ async function saveProfile() {
     }
   } finally {
     savingProfile.value = false
+  }
+}
+
+async function changePassword() {
+  pwError.value = ''
+  pwSuccess.value = false
+
+  const current = pwForm.current_password
+  const next     = pwForm.new_password
+  if (!current)         { pwError.value = '請輸入目前密碼'; return }
+  if (next.length < 6)  { pwError.value = '新密碼至少需要 6 個字元'; return }
+  if (next !== pwForm.confirm_password) { pwError.value = '兩次輸入的新密碼不一致'; return }
+
+  changingPassword.value = true
+  try {
+    const res = await playerAuth.playerFetch('/player/me/password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: current, new_password: next }),
+    })
+    if (!res) { pwError.value = '網路錯誤，請稍後再試'; return }
+    const data = await res.json().catch(() => null)
+    if (res.ok && data?.success) {
+      pwSuccess.value = true
+      pwForm.current_password = ''
+      pwForm.new_password = ''
+      pwForm.confirm_password = ''
+    } else {
+      pwError.value = data?.message || '更改密碼失敗，請稍後再試'
+    }
+  } finally {
+    changingPassword.value = false
   }
 }
 
