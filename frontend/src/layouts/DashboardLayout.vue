@@ -86,6 +86,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { ADMIN_LOGIN_PATH } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 
@@ -107,7 +108,7 @@ const roleColor = computed(() => ROLE_COLORS[auth.role] || 'secondary')
 
 function logout() {
   auth.clearAuth()
-  router.push('/login')
+  router.push(ADMIN_LOGIN_PATH)
 }
 </script>
 

@@ -65,7 +65,7 @@
         </form>
 
         <div class="text-center mt-3">
-          <RouterLink to="/player-login" class="small">已經有帳號？前往登入</RouterLink>
+          <RouterLink :to="PLAYER_LOGIN_PATH" class="small">已經有帳號？前往登入</RouterLink>
         </div>
       </div>
     </div>
@@ -75,6 +75,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { registerPlayer } from '@/api'
+import { PLAYER_LOGIN_PATH } from '@/router'
 
 const form = reactive({ nickname: '', star_citizen_id: '', password: '', password_confirm: '' })
 const submitting = ref(false)

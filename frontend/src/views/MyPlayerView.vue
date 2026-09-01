@@ -728,6 +728,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
+import { PLAYER_LOGIN_PATH } from '@/router'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
@@ -973,7 +974,7 @@ async function changePassword() {
 
 function logout() {
   playerAuth.clearAuth()
-  router.push('/player-login')
+  router.push(PLAYER_LOGIN_PATH)
 }
 
 // ── 地點清單（給新增物品的地點下拉選單用） ─────────────────────

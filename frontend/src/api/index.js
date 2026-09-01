@@ -1,5 +1,5 @@
 import { useAuthStore } from '@/stores/auth'
-import router from '@/router'
+import router, { ADMIN_LOGIN_PATH } from '@/router'
 
 /**
  * 帶 JWT 的 fetch，401 時自動嘗試用 Refresh Token 換發後重試一次。
@@ -21,7 +21,7 @@ export async function apiFetch(path, options = {}, _retry = true) {
     const ok = await auth.tryRefresh()
     if (ok) return apiFetch(path, options, false)
     auth.clearAuth()
-    router.push('/login')
+    router.push(ADMIN_LOGIN_PATH)
     return null
   }
   return res

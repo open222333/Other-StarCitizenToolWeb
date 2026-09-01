@@ -39,6 +39,13 @@
           <RouterLink to="/register" class="small">前往註冊</RouterLink>
         </div>
 
+        <!-- 這裡是「後台管理員」登入，玩家常常點錯頁面跑來這裡輸入遊戲ID／密碼
+             結果收到帳號或密碼錯誤——加一個明顯的指引導去真正的玩家登入頁。 -->
+        <div v-if="showRegisterLink" class="text-center mt-2">
+          <span class="small text-muted">你是玩家，不是公會管理員？</span>
+          <RouterLink :to="PLAYER_LOGIN_PATH" class="small">前往玩家登入</RouterLink>
+        </div>
+
       </div>
     </div>
   </div>
@@ -48,6 +55,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { PLAYER_LOGIN_PATH } from '@/router'
 
 const router  = useRouter()
 const auth    = useAuthStore()
