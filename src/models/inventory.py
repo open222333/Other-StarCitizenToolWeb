@@ -130,7 +130,17 @@ class Inventory:
             {'$limit': limit},
             {'$project': {'_id': 0, 'item': 0}},
         ]
-        rows = list(cls._col().aggregate(pipeline))
+        # allowDiskUse：`item_name` 是 $lookup + $addFields 之後才生出來的欄位，
+        # 不存在於 inventory 上，所以這個 $sort 不可能走索引 —— 一定是
+        # blocking in-memory sort。MongoDB 的記憶體排序上限是 100MB，超過就
+        # **直接噴 Sort exceeded memory limit**（整支 GET /inventory/ 打不開，
+        # 不是變慢）。允許溢寫磁碟至少讓它還能回應。
+        #
+        # 這只是保險，不是根治：真正的解法是排序改用 inventory 自己有索引的
+        # 欄位（location / item_id），或在 Inventory.adjust() 寫入時就把
+        # item_name 反正規化存進文件才能建索引 —— 兩者都會改變顯示順序或
+        # 需要資料回填，等到規模真的接近時再處理。
+        rows = list(cls._col().aggregate(pipeline, allowDiskUse=True))
         for row in rows:
             row['total_scu'] = uscu_to_scu(row.get('total_uscu'))
         return rows, total
@@ -182,7 +192,9 @@ class Inventory:
                     {'$gt': [{'$ifNull': ['$item.volume_uscu', 0]}, 0]}, 0, 1]}},
             }},
         ]
-        rows = list(cls._col().aggregate(pipeline))
+        # 這支沒有 $limit（要算整個庫的總量），$lookup + $group 一樣受
+        # 100MB 記憶體上限限制，理由同 list_stock。
+        rows = list(cls._col().aggregate(pipeline, allowDiskUse=True))
         if not rows:
             return {'total_scu': 0.0, 'units': 0, 'lines': 0, 'unknown_volume': 0}
 

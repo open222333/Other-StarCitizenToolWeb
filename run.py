@@ -28,22 +28,27 @@ from conf.config import TestingConfig
 from src.models.user import User
 from src.models.user_template import UserTemplate
 from src.mongo import ensure_indexes
-from src import FLASK_PORT
+from src import FLASK_PORT, MYSQL_PASSWORD, REDIS_PASSWORD
+from src.secret_guard import collect_weak_secrets, format_startup_error
 
-# ── fail-closed：ADMIN_PASSWORD 沒設或還是範本值就拒絕啟動 ──
-# .env.default 是公開的，所以「ADMIN_PASSWORD=admin」等於後台沒有密碼 ——
-# 任何人打一次 POST /auth/login {"username":"admin","password":"admin"} 就取得
-# admin token，可讀寫全部使用者、玩家名冊、庫存與稽核日誌。
+# ── fail-closed：機密值還是範本值就拒絕啟動 ──
+# .env.default 與 conf/config.ini.default 都是公開在版控裡的範本，所以
+# 「ADMIN_PASSWORD=admin」等於後台沒有密碼（任何人打一次
+# POST /auth/login {"username":"admin","password":"admin"} 就取得 admin token）、
+# 「REDIS_PASSWORD=redis_password」等於 Rate Limiting 與 Celery broker
+# 對主機上任何人開放。判斷邏輯在 src/secret_guard.py（那邊有測試）。
+#
 # 這段刻意放在連資料庫之前，讓設定錯誤在第一秒就失敗。
+# MYSQL_PASSWORD 用 required=False：本專案沒有任何程式用到 MySQL，
+# 留空是正常狀態；但一旦填了就不接受範本值。
 _admin_password = environ.get('ADMIN_PASSWORD', '')
-_WEAK_ADMIN_PASSWORDS = {'', 'admin', 'password', 'changeme', '123456'}
-if _admin_password.strip().lower() in _WEAK_ADMIN_PASSWORDS:
-    raise SystemExit(
-        '[init] 拒絕啟動：環境變數 ADMIN_PASSWORD 未設定或使用了預設／弱密碼。\n'
-        '        請在 .env 設定一組強密碼後再啟動，例如用這行產生：\n'
-        "        python3 -c \"import secrets,string;a=string.ascii_letters+string.digits;"
-        "print(''.join(secrets.choice(a) for _ in range(24)))\""
-    )
+_problems = collect_weak_secrets([
+    ('ADMIN_PASSWORD', _admin_password, True),
+    ('REDIS_PASSWORD', REDIS_PASSWORD, True),
+    ('MYSQL_PASSWORD', MYSQL_PASSWORD, False),
+])
+if _problems:
+    raise SystemExit(format_startup_error(_problems))
 
 app = create_app(config_object=TestingConfig)
 ensure_indexes()

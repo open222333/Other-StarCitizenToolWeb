@@ -47,9 +47,6 @@
         <RouterLink class="nav-link" to="/blueprints" @click="sidebarOpen = false">
           <i class="bi bi-journal-bookmark"></i>藍圖
         </RouterLink>
-        <RouterLink class="nav-link" to="/loot" @click="sidebarOpen = false">
-          <i class="bi bi-bag"></i>戰利品
-        </RouterLink>
         <RouterLink class="nav-link" to="/inventory" @click="sidebarOpen = false">
           <i class="bi bi-box-seam"></i>庫存
         </RouterLink>

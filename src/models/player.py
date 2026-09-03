@@ -46,11 +46,16 @@ class Player:
         return [cls._serialize(r) for r in rows]
 
     @classmethod
-    def find_by_id(cls, player_id: str) -> dict | None:
+    def find_by_id(cls, player_id: str, include_deleted: bool = False) -> dict | None:
+        """`include_deleted=True` 才看得到軟刪除的玩家（給還原用）。"""
+        query = {'_id': None}
         try:
-            doc = cls._col().find_one({'_id': ObjectId(player_id), 'deleted_at': None})
+            query = {'_id': ObjectId(player_id)}
         except Exception:
             return None
+        if not include_deleted:
+            query['deleted_at'] = None
+        doc = cls._col().find_one(query)
         return cls._serialize(doc) if doc else None
 
     @classmethod
@@ -206,4 +211,35 @@ class Player:
             )
         except Exception:
             return False
+        return result.matched_count > 0
+
+    @classmethod
+    def restore(cls, player_id: str) -> bool:
+        """把軟刪除的玩家救回來（`deleted_at` 清成 None）。
+
+        為什麼需要這支：軟刪除本來就是為了「移除成員但保留資料」，但先前
+        沒有任何還原路徑 —— 誤刪之後只能進資料庫手改。而個人庫存是用
+        `star_citizen_id` 字串對應的（不是 player 文件的 _id），所以還原之後
+        那個人原本的庫存與藍圖會自動回到他名下，不需要另外搬資料。
+
+        會擋住「同一個遊戲ID已經有一筆使用中的玩家」的情況：那通常代表對方
+        在被移除之後又自助註冊了一次新帳號。這時候把舊的救回來會有兩筆
+        使用中的同ID文件（partialFilterExpression 的唯一索引也會拒絕），
+        所以這裡先明確擋掉並給出可讀的訊息，而不是讓它變成 500。
+        """
+        doc = cls.find_by_id(player_id, include_deleted=True)
+        if not doc or doc.get('deleted_at') is None:
+            return False
+
+        scid = doc.get('star_citizen_id') or ''
+        if scid and cls.find_by_star_citizen_id(scid):
+            raise PlayerError(
+                f'遊戲ID「{scid}」已經有一筆使用中的玩家資料，'
+                '請先處理那一筆（例如改名或移除）再還原這筆'
+            )
+
+        result = cls._col().update_one(
+            {'_id': ObjectId(player_id), 'deleted_at': {'$ne': None}},
+            {'$set': {'deleted_at': None, 'updated_at': datetime.utcnow()}},
+        )
         return result.matched_count > 0

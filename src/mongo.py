@@ -1,9 +1,30 @@
+import logging
+
 from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo.errors import OperationFailure
+
 from src import MONGO_URI, MONGO_DB
 
 
 _client = None
 _db = None
+
+# players.star_citizen_id 的唯一索引名稱。
+#
+# 刻意取一個跟預設 `star_citizen_id_1` 不同的名字：舊環境裡那個名字的索引是
+# **非 partial** 的版本，換名字才能讓「舊索引存在 → 砍掉重建」這件事有明確
+# 的判斷依據（同名不同 options 的 create_index 在 MongoDB 會直接報
+# IndexOptionsConflict）。
+_PLAYER_SCID_INDEX = 'players_scid_active_unique'
+
+# 只對「還沒被軟刪除」的玩家做唯一性檢查。
+#
+# 為什麼要 partial：軟刪除（deleted_at 有值）的文件在非 partial 的唯一索引下
+# 仍然佔著這個遊戲ID，導致成員被移除之後那個ID永久卡死 ——
+# 註冊前的檢查（會過濾 deleted_at）說「可以用」，接著 insert 撞唯一索引，
+# 使用者看到「這個遊戲ID已經被註冊過了」，但後台名冊上查不到這個人，
+# 沒有人能解釋、也沒有人能修。
+_PLAYER_SCID_PARTIAL = {'deleted_at': None}
 
 
 def get_db():
@@ -12,6 +33,41 @@ def get_db():
         _client = MongoClient(MONGO_URI)
         _db = _client[MONGO_DB]
     return _db
+
+
+def _ensure_player_scid_index(db):
+    """建立／遷移 players.star_citizen_id 的 partial 唯一索引。
+
+    舊環境會有一個非 partial 的 `star_citizen_id_1`，必須先砍掉 —— 兩個索引
+    同時存在的話，舊的那個照樣會擋住「軟刪除玩家的ID重新註冊」，等於這次修正
+    完全沒效果。這裡刻意做成 idempotent（每次啟動都跑，第二次以後什麼都不做），
+    因為 ensure_indexes() 是 run.py 每次啟動都呼叫的。
+
+    drop 舊索引期間如果剛好有人註冊，最壞情況是短暫沒有唯一性保護；
+    這個規模的公會工具（啟動瞬間、數十人）可以接受，換來的是不需要停機遷移。
+    """
+    try:
+        existing = db['players'].index_information()
+    except Exception:  # mongomock 之類的環境可能不支援，直接建就好
+        existing = {}
+
+    for name, spec in list(existing.items()):
+        if name in ('_id_', _PLAYER_SCID_INDEX):
+            continue
+        keys = [k for k, _ in spec.get('key', [])]
+        if keys == ['star_citizen_id'] and spec.get('unique'):
+            # 舊的非 partial 唯一索引（或設定不一致的版本）—— 砍掉重建
+            if spec.get('partialFilterExpression') == _PLAYER_SCID_PARTIAL:
+                continue
+            try:
+                db['players'].drop_index(name)
+                logging.info('[index] 已移除舊的 players 唯一索引 %s（要換成 partial 版本）', name)
+            except OperationFailure as e:
+                logging.warning('[index] 移除舊索引 %s 失敗：%s', name, e)
+
+    db['players'].create_index(
+        'star_citizen_id', unique=True, name=_PLAYER_SCID_INDEX,
+        partialFilterExpression=_PLAYER_SCID_PARTIAL)
 
 
 def ensure_indexes():
@@ -64,7 +120,7 @@ def ensure_indexes():
     # ── 玩家名冊 ──────────────────────────────────────────────────────
     # star_citizen_id 就是 inventory/discord_bindings 用的 RSI handle 字串，
     # 唯一索引在這裡做，DuplicateKeyError 由 src/models/player.py 轉成 PlayerError
-    db['players'].create_index('star_citizen_id', unique=True)
+    _ensure_player_scid_index(db)
     db['players'].create_index('player_name')
 
     # ── 藍圖名冊 ──────────────────────────────────────────────────────

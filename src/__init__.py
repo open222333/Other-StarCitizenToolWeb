@@ -41,17 +41,31 @@ JWT_REFRESH_TOKEN_EXPIRES_DAYS = int(environ.get('JWT_REFRESH_TOKEN_EXPIRES_DAYS
 MONGO_URI = config.get('MONGO', 'MONGO_URI', fallback='mongodb://localhost:27017')
 MONGO_DB = config.get('MONGO', 'MONGO_DB', fallback='flask_app')
 
-# MySQL 連線參數
+
+def _secret(env_key: str, section: str, ini_key: str) -> str:
+    """機密值：**環境變數（.env）優先**，config.ini 只當舊設定的相容 fallback。
+
+    conf/config.ini 有納入版控（生產機靠 git pull 拿到它），密碼寫在那裡
+    等於輪替之後就把真密碼提交進 git，而且同一組密碼要在 .env（給容器用）
+    與 config.ini（給 Python 用）維護兩份、對不上就是連不上。
+    所以現在一律以 .env 為單一來源，config.ini 裡的密碼欄位已經註解掉；
+    這個 fallback 只是為了讓還沒更新 config.ini 的舊環境不會突然壞掉。
+    """
+    return (environ.get(env_key) or config.get(section, ini_key, fallback='')).strip()
+
+
+# MySQL 連線參數（本專案目前沒有任何程式用到 MySQL，docker-compose 也已把
+# mysql 服務改成 profile 才啟用，見 docker-compose.db.yml 的說明）
 MYSQL_HOST = config.get('MYSQL', 'MYSQL_HOST', fallback='localhost')
 MYSQL_PORT = config.getint('MYSQL', 'MYSQL_PORT', fallback=3306)
 MYSQL_USER = config.get('MYSQL', 'MYSQL_USER', fallback='root')
-MYSQL_PASSWORD = config.get('MYSQL', 'MYSQL_PASSWORD', fallback='')
+MYSQL_PASSWORD = _secret('MYSQL_PASSWORD', 'MYSQL', 'MYSQL_PASSWORD')
 MYSQL_DB = config.get('MYSQL', 'MYSQL_DB', fallback='flask_app')
 
 # Redis 連線參數
 REDIS_HOST = config.get('REDIS', 'REDIS_HOST', fallback='localhost')
 REDIS_PORT = config.getint('REDIS', 'REDIS_PORT', fallback=6379)
-REDIS_PASSWORD = config.get('REDIS', 'REDIS_PASSWORD', fallback='')
+REDIS_PASSWORD = _secret('REDIS_PASSWORD', 'REDIS', 'REDIS_PASSWORD')
 REDIS_DB = config.getint('REDIS', 'REDIS_DB', fallback=0)
 
 # 星際公民遊戲資料來源參數（社群 API，非官方）

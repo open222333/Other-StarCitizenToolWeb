@@ -23,6 +23,7 @@ from src.models.player import Player
 from src.permissions import (PLAYER_CLAIM, READ_ROLES, WRITE_ROLES,
                              admin_api, require_role)
 from src.sc_zh import location_name_zh
+from app._shared import attach_item_names
 
 app_inventory = Blueprint('app_inventory', __name__)
 
@@ -378,16 +379,8 @@ def history():
         item_id=(request.args.get('item_id') or '').strip(),
     )
 
-    # 補上物品名稱，前端不必再逐筆查
-    names: dict = {}
-    for row in rows:
-        item_id = row.get('item_id')
-        if item_id and item_id not in names:
-            item = ItemMaster.get(item_id)
-            names[item_id] = (item or {}).get('name') or item_id
-        row['item_name'] = names.get(item_id)
-
-    return jsonify({'success': True, 'data': rows})
+    # 補上物品名稱，前端不必再逐筆查（單一 $in 批次查，見 app/_shared.py）
+    return jsonify({'success': True, 'data': attach_item_names(rows)})
 
 
 # ─────────────────────────────────────────────────────── 異動（需 admin/operator）

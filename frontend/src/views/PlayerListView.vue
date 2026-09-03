@@ -3,7 +3,15 @@
   <div>
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0 fw-bold"><i class="bi bi-people me-2 text-primary"></i>玩家</h5>
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-2 align-items-center">
+        <!-- 已移除的玩家預設不顯示，但要有辦法看到他們才能還原：
+             誤刪之後那個人在名冊上等於消失，而他的遊戲ID重新註冊時
+             又會被擋（同ID已有使用中資料），沒有這個開關就沒人能修。 -->
+        <div class="form-check form-check-inline mb-0 small text-nowrap">
+          <input class="form-check-input" type="checkbox" id="cb-include-deleted"
+            :checked="store.includeDeleted" @change="toggleDeleted($event.target.checked)">
+          <label class="form-check-label" for="cb-include-deleted">顯示已移除</label>
+        </div>
         <SearchBox v-model="keyword" placeholder="搜尋玩家名稱 / SCID..." />
         <button class="btn btn-primary btn-sm" @click="playerModalRef.open()">
           <i class="bi bi-plus-lg me-1"></i>新增玩家
@@ -38,18 +46,30 @@
                 <td colspan="5" class="text-center py-4 text-muted">尚無玩家資料</td>
               </tr>
               <template v-else>
-                <tr v-for="p in filtered" :key="p._id" class="cursor-pointer" @click="goDetail(p._id)">
-                  <td class="ps-3 fw-semibold">{{ p.player_name }}</td>
+                <tr v-for="p in filtered" :key="p._id"
+                  :class="['cursor-pointer', { 'row-deleted': p.deleted_at }]"
+                  @click="goDetail(p._id)">
+                  <td class="ps-3 fw-semibold">
+                    {{ p.player_name }}
+                    <span v-if="p.deleted_at" class="badge bg-secondary ms-1">已移除</span>
+                  </td>
                   <td class="small text-muted">{{ p.star_citizen_id }}</td>
                   <td class="small">{{ p.discord_name || '—' }}</td>
                   <td class="text-muted small">{{ fmtDate(p.created_at) }}</td>
                   <td class="pe-3" @click.stop>
-                    <button class="btn btn-sm btn-outline-secondary me-1" @click="playerModalRef.open(p)">
-                      <i class="bi bi-pencil"></i> 編輯
+                    <!-- 已移除的玩家只留「還原」一個動作：編輯／再刪一次都沒有意義 -->
+                    <button v-if="p.deleted_at" class="btn btn-sm btn-outline-success"
+                      @click="handleRestore(p)">
+                      <i class="bi bi-arrow-counterclockwise"></i> 還原
                     </button>
-                    <button class="btn btn-sm btn-outline-danger" @click="handleDelete(p)">
-                      <i class="bi bi-trash"></i>
-                    </button>
+                    <template v-else>
+                      <button class="btn btn-sm btn-outline-secondary me-1" @click="playerModalRef.open(p)">
+                        <i class="bi bi-pencil"></i> 編輯
+                      </button>
+                      <button class="btn btn-sm btn-outline-danger" @click="handleDelete(p)">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </template>
                   </td>
                 </tr>
               </template>
@@ -99,16 +119,36 @@ function flash(text, type = 'danger') {
 
 async function onSaved() { await store.load() }
 
+function toggleDeleted(checked) { store.load(checked) }
+
 async function handleDelete(p) {
   const ok = await confirmModalRef.value.confirm(
-    `確定要刪除玩家 <strong>${escHtml(p.player_name)}</strong>？`
+    `確定要移除玩家 <strong>${escHtml(p.player_name)}</strong>？<br>`
+    + '<span class="small text-muted">資料會保留，之後可以用「顯示已移除」找回來。</span>'
   )
   if (!ok) return
   const res = await playerApi.remove(p._id)
   if (!res) return
   const data = await res.json()
   if (data.success) store.load()
-  else flash(data.message || '刪除失敗')
+  else flash(data.message || '移除失敗')
+}
+
+async function handleRestore(p) {
+  const ok = await confirmModalRef.value.confirm(
+    `確定要還原玩家 <strong>${escHtml(p.player_name)}</strong>？<br>`
+    + '<span class="small text-muted">他原本的庫存與藍圖會一併回到名下。</span>'
+  )
+  if (!ok) return
+  const res = await playerApi.restore(p._id)
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (data?.success) {
+    flash(`已還原 ${p.player_name}`, 'success')
+    store.load()
+  } else {
+    flash(data?.message || '還原失敗')
+  }
 }
 
 function escHtml(str) {
@@ -120,6 +160,8 @@ onMounted(() => store.load())
 
 <style scoped>
 .cursor-pointer { cursor: pointer; }
+/* 已移除的玩家：整列淡化，跟使用中的名冊一眼分得開 */
+.row-deleted > td { opacity: .55; }
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
 </style>

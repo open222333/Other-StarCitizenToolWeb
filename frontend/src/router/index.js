@@ -93,11 +93,6 @@ const router = createRouter({
           component: () => import('@/views/BlueprintListView.vue'),
         },
         {
-          path: 'loot',
-          name: 'loot',
-          component: () => import('@/views/LootListView.vue'),
-        },
-        {
           path: 'inventory',
           name: 'inventory',
           component: () => import('@/views/InventoryListView.vue'),

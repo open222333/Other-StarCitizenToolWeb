@@ -22,6 +22,7 @@ from src.models.item import BlueprintMaster, ItemMaster
 from src.models.log import Log
 from src.models.player import Player, PlayerError
 from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api
+from app._shared import attach_item_names
 
 app_player = Blueprint('app_player', __name__)
 
@@ -130,8 +131,15 @@ def _serialize_form(data: dict, *, partial: bool = False) -> dict:
 @app_player.route('/', methods=['GET'])
 @admin_api(*READ_ROLES)
 def list_players():
-    """列出所有玩家（不含已軟刪除）。"""
-    return jsonify({'success': True, 'data': Player.find_all()})
+    """列出所有玩家。
+
+    `?include_deleted=1` 會一併回傳已軟刪除的玩家（回傳的文件帶 `deleted_at`）。
+    後台需要看得到他們才能還原 —— 否則誤刪的成員在畫面上等於消失，
+    而他的遊戲ID在自助註冊時又會出現「已經被註冊過了」，沒有人能解釋。
+    """
+    include_deleted = request.args.get('include_deleted') in ('1', 'true', 'True')
+    return jsonify({'success': True,
+                    'data': Player.find_all(include_deleted=include_deleted)})
 
 
 @app_player.route('/<player_id>', methods=['GET'])
@@ -190,9 +198,49 @@ def update_player(player_id):
 @app_player.route('/<player_id>', methods=['DELETE'])
 @admin_api(*WRITE_ROLES)
 def delete_player(player_id):
-    """軟刪除玩家（開發原則：重要資料不做永久刪除）。"""
+    """軟刪除玩家（開發原則：重要資料不做永久刪除）。可用 /restore 還原。"""
+    player = Player.find_by_id(player_id)
     if not Player.soft_delete(player_id):
         return jsonify({'success': False, 'message': '玩家不存在'}), 404
+
+    Log.create(get_jwt_identity(), 'delete_player',
+               f'移除玩家：{(player or {}).get("player_name")}'
+               f'（{(player or {}).get("star_citizen_id")}）', success=True)
+    return jsonify({'success': True})
+
+
+@app_player.route('/<player_id>/restore', methods=['POST'])
+@admin_api(*WRITE_ROLES)
+def restore_player(player_id):
+    """還原被軟刪除的玩家。
+
+    個人庫存與藍圖是用 star_citizen_id 字串對應的，所以還原之後原本的資料
+    會自動回到他名下，不需要另外搬。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 已還原
+      404:
+        description: 找不到這筆已移除的玩家
+      409:
+        description: 這個遊戲ID已經有一筆使用中的玩家資料
+    """
+    player = Player.find_by_id(player_id, include_deleted=True)
+
+    try:
+        ok = Player.restore(player_id)
+    except PlayerError as e:
+        return jsonify({'success': False, 'message': str(e)}), 409
+
+    if not ok:
+        return jsonify({'success': False, 'message': '找不到這筆已移除的玩家'}), 404
+
+    Log.create(get_jwt_identity(), 'restore_player',
+               f'還原玩家：{(player or {}).get("player_name")}'
+               f'（{(player or {}).get("star_citizen_id")}）', success=True)
     return jsonify({'success': True})
 
 
@@ -608,21 +656,8 @@ def my_inventory_history():
 
     rows = InventoryLog.recent_for_owner(WMS_SCOPE_ID, OWNER_PLAYER, scid, limit=limit)
 
-    # 補上物品名稱／中文名稱，前端不用再逐筆查
-    names: dict = {}
-    for row in rows:
-        item_id = row.get('item_id')
-        if item_id and item_id not in names:
-            item = ItemMaster.get(item_id)
-            names[item_id] = {
-                'name': (item or {}).get('name') or item_id,
-                'name_zh': (item or {}).get('name_zh'),
-            }
-        info = names.get(item_id) or {}
-        row['item_name'] = info.get('name')
-        row['item_name_zh'] = info.get('name_zh')
-
-    return jsonify({'success': True, 'data': rows})
+    # 補上物品名稱／中文名稱，前端不用再逐筆查（單一 $in 批次查，見 app/_shared.py）
+    return jsonify({'success': True, 'data': attach_item_names(rows)})
 
 
 # ═══════════════════════════════════════════

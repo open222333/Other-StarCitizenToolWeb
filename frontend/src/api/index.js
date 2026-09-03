@@ -48,11 +48,17 @@ export const logApi = {
 // ── 玩家 API ─────────────────────────────────────────────────────
 // 對應規格書第 15.1 節 players 資料表；後端 Flask blueprint 待實作（建議路由 /player/）
 export const playerApi = {
-  list:   ()         => apiFetch('/player/'),
+  // includeDeleted=true 會一併帶回已移除的玩家（文件上有 deleted_at），
+  // 後台要看得到他們才能還原 —— 見 app/player/view.py 的 list_players()。
+  list:   (includeDeleted = false) =>
+    apiFetch(`/player/${includeDeleted ? '?include_deleted=1' : ''}`),
   get:    (id)        => apiFetch(`/player/${id}`),
   create: (data)      => apiFetch('/player/',      { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data)  => apiFetch(`/player/${id}`, { method: 'PUT',  body: JSON.stringify(data) }),
   remove: (id)        => apiFetch(`/player/${id}`, { method: 'DELETE' }),
+  // 還原被移除的玩家。庫存與藍圖是用 star_citizen_id 對應的，所以還原後
+  // 原本的資料會自動回到他名下。
+  restore: (id)       => apiFetch(`/player/${id}/restore`, { method: 'POST' }),
   // 後台重設玩家密碼：不需要舊密碼（role 本身就是背書），獨立路由、
   // 不走 update() —— 詳見 app/player/view.py 的 set_player_password()。
   setPassword: (id, newPassword) => apiFetch(`/player/${id}/password`, {
@@ -113,19 +119,11 @@ export const blueprintApi = {
   masterForItem:  (itemUuid) => apiFetch(`/blueprint/master/for-item/${itemUuid}`),
 }
 
-// ── 戰利品（Loot）API ────────────────────────────────────────────
-// 對應規格書第 15.4 節 loot_records 資料表；後端待實作（建議路由 /loot/）
-export const lootApi = {
-  list:       (params)  => apiFetch(`/loot/${qs(params)}`),
-  get:        (id)       => apiFetch(`/loot/${id}`),
-  create:     (data)     => apiFetch('/loot/',      { method: 'POST', body: JSON.stringify(data) }),
-  update:     (id, data) => apiFetch(`/loot/${id}`, { method: 'PUT',  body: JSON.stringify(data) }),
-  remove:     (id)       => apiFetch(`/loot/${id}`, { method: 'DELETE' }),
-  // 第 6.6 節：戰利品分配
-  distribute: (id, data) => apiFetch(`/loot/${id}/distribute`, { method: 'POST', body: JSON.stringify(data) }),
-  // 第 12.1 節：全域搜尋（跨玩家／藍圖／Loot）
-  search:     (keyword)  => apiFetch(`/loot/search${qs({ q: keyword })}`),
-}
+// ⚠️ 這裡原本有一整套 lootApi（/loot/*）—— 後端從來沒有實作過那個藍圖，
+//    所以每一支都是打到 SPA fallback、回 HTML 的死路徑。前端那一整套
+//    （LootListView / LootFormModal / stores/loot.js / RarityTag）已一併移除。
+//    「誰有什麼東西」目前是由庫存（/inventory/*）與藍圖（/blueprint/*）
+//    這兩套實際存在的 API 表達，要重新引入戰利品分配功能請先實作後端。
 
 // ── 庫存 API ─────────────────────────────────────────────────────
 // 對應 app/inventory/view.py，管理主控台可操作任何歸屬（guild／player），

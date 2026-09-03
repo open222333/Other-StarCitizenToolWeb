@@ -23,9 +23,10 @@ services:
       - ./conf:/app/conf
       - ./logs:/app/logs
     depends_on:
+      # mysql 不在這裡 —— 專案沒有任何程式 import src.mysql，
+      # 而 mysql 服務已改成要 --profile mysql 才啟用（見 docker-compose.db.yml）。
+      # 留著 depends_on 會讓預設啟動因為「依賴一個沒啟用的服務」而失敗。
       mongo:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy

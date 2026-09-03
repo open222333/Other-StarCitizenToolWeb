@@ -36,6 +36,27 @@ class _MasterBase:
         return cls._col().find_one({'_id': doc_id})
 
     @classmethod
+    def names_by_ids(cls, doc_ids) -> dict:
+        """一次查多個 uuid 的顯示名稱，回傳 `{uuid: {'name':…, 'name_zh':…}}`。
+
+        給「異動紀錄要補上物品名稱」這類清單用。原本兩支 /history 端點是
+        逐筆 `find_one`（一頁最多 200 筆就是最多 200 次往返），而且
+        `get()` 沒有 projection —— 每次把完整文件連 `raw`（整包 API 原始
+        JSON）撈回來，只為了取兩個字串。這裡改成單一 `$in` + projection：
+        往返從 N 次變 1 次，傳輸量少一到兩個數量級。
+
+        不過濾 is_current：紀錄可能指向舊 patch 移除的物品，藏起來會讓
+        使用者以為紀錄壞了（跟 get() / ids_matching() 的理由一致）。
+        """
+        ids = [i for i in {str(i) for i in doc_ids if i} if i]
+        if not ids:
+            return {}
+        rows = cls._col().find({'_id': {'$in': ids}},
+                               {'_id': 1, 'name': 1, 'name_zh': 1})
+        return {r['_id']: {'name': r.get('name'), 'name_zh': r.get('name_zh')}
+                for r in rows}
+
+    @classmethod
     def ids_matching(cls, query: str, limit: int = 300) -> list:
         """名稱（英文或中文）含 query 的所有 uuid，給複合搜尋當 join key 用。
 

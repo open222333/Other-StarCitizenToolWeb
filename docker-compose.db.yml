@@ -19,21 +19,32 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # ⚠️ mysql 預設不啟動 —— 全專案沒有任何程式 import src.mysql（已 grep 確認），
+  #    它是從 Flask 模板繼承下來的服務。跑一個沒人用、又帶著範本密碼
+  #    （`root_password` / `flask_password` 是公開在 .env.default 裡的）的資料庫
+  #    只是白送一個攻擊面，所以改成要明確指定 profile 才會起：
+  #
+  #        docker compose --profile mysql up -d mysql
+  #
+  #    真的要用的時候，.env 的三個 MYSQL_* 密碼必須先填好 —— 下面用
+  #    `${VAR:?訊息}` 而不是 `${VAR:-範本值}`，沒填就直接讓 compose 報錯中止，
+  #    不會再默默地用公開範本值把資料庫跑起來。
   mysql:
+    profiles: ["mysql"]
     image: mysql:8.0
     hostname: flask-api-mysql
     ports:
       - "${DB_BIND_HOST:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?啟用 mysql profile 前請先在 .env 設定 MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-flask_app}
       MYSQL_USER: ${MYSQL_USER:-flask_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-flask_password}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?啟用 mysql profile 前請先在 .env 設定 MYSQL_PASSWORD}
     volumes:
       - ./docker/database/mysql:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root",
-             "--password=${MYSQL_ROOT_PASSWORD:-root_password}"]
+             "--password=${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,11 +56,13 @@ services:
     hostname: flask-api-redis
     ports:
       - "${DB_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_password}
+    # 同樣用 `${VAR:?訊息}`：REDIS_PASSWORD 沒設就中止，不要 fallback 到
+    # 公開範本值 `redis_password`（Rate Limiting 與 Celery broker 都在這台上）。
+    command: redis-server --requirepass ${REDIS_PASSWORD:?請先在 .env 設定 REDIS_PASSWORD}
     volumes:
       - ./docker/database/redis:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

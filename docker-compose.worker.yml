@@ -12,11 +12,10 @@ services:
       - ./conf:/app/conf
       - ./logs:/app/logs
     depends_on:
+      # mysql 見 docker-compose.api.yml 同位置的說明
       redis:
         condition: service_healthy
       mongo:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
     restart: unless-stopped
 

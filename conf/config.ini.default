@@ -35,7 +35,8 @@ MYSQL_HOST=localhost
 ; MySQL 使用者 預設 root
 MYSQL_USER=root
 
-; MySQL 密碼
+; MySQL 密碼 —— 機密值一律從 .env 讀（見 src/__init__.py 的 _secret），
+; 這裡留空就好。填在這裡的話，輪替密碼時兩邊要記得一起改。
 MYSQL_PASSWORD=
 
 ; MySQL 資料庫名稱 預設 flask_app
@@ -48,7 +49,7 @@ REDIS_HOST=localhost
 ; Redis 埠號 預設 6379
 ; REDIS_PORT=6379
 
-; Redis 密碼（無則留空）
+; Redis 密碼 —— 同上，一律從 .env 的 REDIS_PASSWORD 讀，這裡不用填。
 ; REDIS_PASSWORD=
 
 ; Redis DB 編號 預設 0
