@@ -21,7 +21,8 @@ __all__ = [
     'ping', 'init_indexes', 'search_items', 'get_item', 'resolve_item',
     'search_vehicles', 'resolve_vehicle', 'item_prices', 'list_stock',
     'find_item_locations', 'capacity', 'distinct_locations', 'adjust_stock',
-    'move_stock', 'recent_log', 'get_binding', 'bind_handle', 'unbind_handle',
+    'move_stock', 'recent_log', 'recent_log_for_owner', 'item_names',
+    'get_binding', 'bind_handle', 'unbind_handle',
     'require_handle', 'latest_sync', 'game_versions',
 ]
 
@@ -105,7 +106,25 @@ async def distinct_locations(limit: int = 200) -> list:
 
 
 async def recent_log(limit: int = 20) -> list:
+    """整個 scope 的異動紀錄（含所有人的個人庫）。
+
+    ⚠️ 這支沒有歸屬過濾，**不要直接拿去回給使用者** —— 那會把別人個人庫的
+    品項、數量、地點全部外洩（bot 的 /history 曾經就是這樣）。
+    要給人看的一律用 recent_log_for_owner()。
+    """
     return await _run(InventoryLog.recent, SCOPE_ID, limit)
+
+
+async def recent_log_for_owner(owner_type: str, player: Optional[str],
+                               limit: int = 20) -> list:
+    """指定歸屬的異動紀錄：公會庫（player=None）或某個人的個人庫。"""
+    return await _run(InventoryLog.recent_for_owner, SCOPE_ID, owner_type, player, limit)
+
+
+async def item_names(item_ids) -> dict:
+    """`{uuid: 顯示名稱}` —— 一次 $in 批次查，不要逐筆 get_item()。"""
+    names = await _run(ItemMaster.names_by_ids, list(item_ids))
+    return {uuid: (info.get('name') or uuid) for uuid, info in names.items()}
 
 
 # ─────────────────────────────────────────────────────────── 庫存異動
@@ -132,8 +151,11 @@ async def get_binding(discord_id: str) -> Optional[dict]:
     return await _run(DiscordBinding.get, discord_id)
 
 
-async def bind_handle(discord_id: str, handle: str, discord_name: str = '') -> dict:
-    return await _run(DiscordBinding.bind, discord_id, handle, SCOPE_ID, discord_name)
+async def bind_handle(discord_id: str, handle: str, discord_name: str = '',
+                      code: str = '') -> dict:
+    """綁定需要玩家在網頁自助頁產生的綁定碼，見 DiscordBinding.bind()。"""
+    return await _run(DiscordBinding.bind, discord_id, handle, SCOPE_ID,
+                      discord_name, code)
 
 
 async def unbind_handle(discord_id: str) -> bool:

@@ -338,7 +338,7 @@ MongoDB 是獨立節點這件事會直接影響移庫的一致性保證，見[�
 | `CF_CERT_DIR` | Cloudflare Origin CA 憑證目錄 |
 | 🔑 `UEX_API_TOKEN` | UEX Corp API token；留空則跳過 UEX 同步。取得方式見下方[金鑰與憑證盤點](#金鑰與憑證盤點) |
 | `WMS_SCOPE_ID` | 庫存範圍。**Web 與 bot 必須相同才會看到同一份庫存** |
-| `WMS_OPERATOR_ROLE` | 動公會共享庫需要的 Discord 角色；留空 = 所有人都能動 |
+| `WMS_OPERATOR_ROLE` | 動公會共享庫需要的 Discord 角色；留空 = 退回要求 Manage Server 權限 |
 | 🔑 `DISCORD_TOKEN` | Discord bot token；留空則 bot 容器直接結束 |
 | `DISCORD_GUILD_ID` | Discord 伺服器 ID；留空則註冊全域指令 |
 
@@ -991,7 +991,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 
 | 指令 | 說明 |
 |---|---|
-| `/bind <handle>` | 綁定 RSI handle，操作個人庫前必做 |
+| `/bind <handle> <code>` | 綁定 RSI handle，操作個人庫前必做。`code` 要先在玩家網頁「我的資料 → 產生 Discord 綁定碼」取得（8 碼，10 分鐘有效）|
 | `/unbind` · `/whoami` | 解除綁定 / 看綁定狀態與資料同步時間 |
 | `/stock [scope] [location] [item]` | 查庫存，有上下頁按鈕 |
 | `/find <query>` | 搜物品主檔（遊戲裡有哪些物品，不是庫存） |
@@ -1021,7 +1021,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 | 公會共享庫 | `WMS_OPERATOR_ROLE` 角色，或有 Manage Server 權限的人 | 公開 |
 | 個人庫 | 只有本人 | ephemeral（只有自己看得到） |
 
-`WMS_OPERATOR_ROLE` 留空 = 所有人都能動公會庫。所有異動都寫進 `inventory_log`，
+`WMS_OPERATOR_ROLE` 留空時退回要求 Manage Server 權限。所有異動都寫進 `inventory_log`，
 記錄操作者的 Discord ID 與 RSI handle。
 
 ### Web 與 bot 的分工

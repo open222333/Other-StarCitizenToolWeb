@@ -442,6 +442,39 @@ def update_current_player():
     return jsonify({'success': True})
 
 
+@app_player.route('/me/discord-code', methods=['POST'])
+@player_required
+@limiter.limit('5 per minute')
+def issue_my_discord_code():
+    """產生一組 10 分鐘有效的 Discord 綁定碼，拿去 Discord 打 `/bind`。
+
+    Discord 帳號與遊戲帳號之間沒有可信連結，所以「證明你是這個遊戲ID的人」
+    這件事只能在需要密碼的地方做 —— 也就是這裡。詳見
+    src/models/inventory.py 的 DiscordBinding.bind()。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 回傳 code 與 expires_at
+      404:
+        description: 找不到玩家
+    """
+    player = _self_player_doc()
+    issued = Player.issue_discord_code(player['_id'])
+    if not issued:
+        return jsonify({'success': False, 'message': '找不到玩家資料，請重新登入'}), 404
+
+    # 綁定碼本身不寫進稽核日誌（等同一次性密碼），只記「有產生」這件事
+    Log.create(f'player:{player.get("star_citizen_id")}', 'issue_discord_code',
+               f'產生 Discord 綁定碼：{player.get("star_citizen_id")}', success=True)
+    return jsonify({'success': True,
+                    'code': issued['code'],
+                    'expires_at': issued['expires_at'].isoformat() + 'Z',
+                    'star_citizen_id': player.get('star_citizen_id')})
+
+
 @app_player.route('/me/password', methods=['PUT'])
 @player_required
 @limiter.limit('10 per minute')

@@ -13,6 +13,8 @@ Unofficial Star Citizen fan tool. Not affiliated with the Cloud Imperium group o
 
 import logging
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable, Iterator, Optional
 
 import httpx
@@ -48,8 +50,37 @@ def build_client(token: str = '') -> httpx.Client:
     return httpx.Client(timeout=SCDATA_HTTP_TIMEOUT, headers=headers, follow_redirects=True)
 
 
+def _retry_after_seconds(raw: str, fallback: float) -> float:
+    """解析 Retry-After。RFC 9110 允許「秒數」或「HTTP-date」兩種格式。
+
+    只認秒數的話，回傳 HTTP-date 的上游會讓 float() 丟 ValueError ——
+    而那個例外在舊版沒被 except 攔到，等於整輪同步直接掛掉。
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return fallback
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return fallback
+    if when is None:
+        return fallback
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
 def get_json(client: httpx.Client, url: str, params: Optional[dict] = None) -> dict:
-    """帶指數退避的 GET。429 / 5xx / 連線錯誤都會重試。"""
+    """帶指數退避的 GET。429 / 5xx / 連線錯誤 / 非 JSON 回應都會重試。
+
+    回傳一定是 dict —— 上游若回 JSON 陣列或純字串，呼叫端的
+    `payload.get('data')` 會炸在很遠的地方（AttributeError），
+    所以在這裡就當成「回應格式不對」處理並重試。
+    """
     delay = 1.0
     last_err = None
 
@@ -58,7 +89,8 @@ def get_json(client: httpx.Client, url: str, params: Optional[dict] = None) -> d
             resp = client.get(url, params=params)
 
             if resp.status_code == 429:
-                wait = float(resp.headers.get('Retry-After', delay))
+                wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
+                last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
                 logger.warning('scdata: 429 rate limited, 等 %.1fs 重試 (%d/%d)',
                                wait, attempt, SCDATA_MAX_RETRIES)
                 time.sleep(wait)
@@ -66,6 +98,7 @@ def get_json(client: httpx.Client, url: str, params: Optional[dict] = None) -> d
                 continue
 
             if resp.status_code >= 500:
+                last_err = f'HTTP {resp.status_code}'
                 logger.warning('scdata: HTTP %d, 等 %.1fs 重試 (%d/%d)',
                                resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
                 time.sleep(delay)
@@ -73,9 +106,14 @@ def get_json(client: httpx.Client, url: str, params: Optional[dict] = None) -> d
                 continue
 
             resp.raise_for_status()
-            return resp.json()
+            payload = resp.json()
+            if not isinstance(payload, dict):
+                raise ValueError(f'預期 JSON object，收到 {type(payload).__name__}')
+            return payload
 
-        except (httpx.TransportError, httpx.HTTPStatusError) as err:
+        # ValueError 涵蓋 json.JSONDecodeError（維護頁面回 200 + HTML 就是這種）
+        # 與上面自己拋的格式檢查 —— 舊版沒攔它，所以那兩種情況一次都不重試。
+        except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as err:
             last_err = err
             logger.warning('scdata: 請求失敗 %s: %s (%d/%d)',
                            url, err, attempt, SCDATA_MAX_RETRIES)

@@ -719,6 +719,40 @@
           </button>
         </div>
       </div>
+
+      <!-- Discord 綁定碼：Discord 帳號沒辦法自己證明它屬於哪個遊戲帳號，
+           所以「證明」這一步只能放在需要密碼登入的這一頁。 -->
+      <div v-if="player" class="card scifi-card mt-3">
+        <div class="card-body">
+          <h6 class="fw-semibold mb-3"><i class="bi bi-discord me-1"></i>Discord 綁定</h6>
+          <p class="small mb-3" style="color: var(--sf-text-muted)">
+            按下按鈕產生一組 8 碼，10 分鐘內到 Discord 輸入
+            <code>/bind</code> 完成綁定。綁定後才能用 Discord 指令操作自己的個人庫。
+          </p>
+
+          <Transition name="alert-slide">
+            <div v-if="bindError" class="alert alert-danger py-2">{{ bindError }}</div>
+          </Transition>
+
+          <div v-if="bindCode" class="mb-3">
+            <div class="p-3 rounded" style="background: var(--sf-panel-2, rgba(255,255,255,.06))">
+              <div class="small mb-1" style="color: var(--sf-text-muted)">在 Discord 貼上這一行：</div>
+              <code class="d-block" style="user-select: all; word-break: break-all">
+                /bind handle:{{ player.star_citizen_id }} code:{{ bindCode }}
+              </code>
+            </div>
+            <div class="small mt-2" style="color: var(--sf-text-muted)">
+              有效期限至 {{ fmtTime(bindCodeExpiresAt) }}（過期就再產生一組）。
+              這組碼等同一次性密碼，不要貼在公開頻道以外的地方給別人。
+            </div>
+          </div>
+
+          <button class="btn btn-scifi" :disabled="issuingCode" @click="issueDiscordCode">
+            <span v-if="issuingCode" class="spinner-border spinner-border-sm me-1"></span>
+            {{ bindCode ? '重新產生綁定碼' : '產生 Discord 綁定碼' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
   </div>
@@ -969,6 +1003,39 @@ async function changePassword() {
     }
   } finally {
     changingPassword.value = false
+  }
+}
+
+// ── Discord 綁定碼 ────────────────────────────────────────────
+// 碼只在這一次回應裡出現（後端不會再回傳它，玩家名冊 API 也一律把它濾掉），
+// 所以存在元件狀態就好，不要寫進 localStorage。
+const bindCode          = ref('')
+const bindCodeExpiresAt = ref('')
+const issuingCode       = ref(false)
+const bindError         = ref('')
+
+function fmtTime(value) {
+  if (!value) return '—'
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('zh-TW')
+}
+
+async function issueDiscordCode() {
+  bindError.value = ''
+  issuingCode.value = true
+  try {
+    const res = await playerAuth.playerFetch('/player/me/discord-code', { method: 'POST' })
+    if (!res) { bindError.value = '網路錯誤，請稍後再試'; return }
+    const data = await res.json().catch(() => null)
+    if (res.ok && data?.success) {
+      bindCode.value = data.code
+      bindCodeExpiresAt.value = data.expires_at
+    } else {
+      bindError.value = data?.message
+        || (res.status === 429 ? '產生太頻繁，請稍等一分鐘再試' : '產生綁定碼失敗')
+    }
+  } finally {
+    issuingCode.value = false
   }
 }
 

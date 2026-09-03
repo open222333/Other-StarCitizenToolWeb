@@ -9,9 +9,16 @@ export async function apiFetch(path, options = {}, _retry = true) {
   const auth = useAuthStore()
   let res
   try {
+    // ⚠️ headers 要在展開 options 之後再合併：反過來寫的話，呼叫端自帶
+    // headers 就會把整欄蓋掉、Authorization 跟著消失 → 認證靜默失效。
+    const { headers: extraHeaders, ...rest } = options
     res = await fetch(path, {
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.token}` },
-      ...options,
+      ...rest,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${auth.token}`,
+        ...(extraHeaders || {}),
+      },
     })
   } catch {
     return null

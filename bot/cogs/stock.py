@@ -39,9 +39,10 @@ class Stock(commands.Cog):
             return db.OWNER_PLAYER, actor, actor
 
         if not is_operator(interaction.user):
+            need = (f'`{WMS_OPERATOR_ROLE}` 角色' if WMS_OPERATOR_ROLE
+                    else 'Manage Server 權限（管理員可設定 WMS_OPERATOR_ROLE 改成指定角色）')
             raise StockError(
-                f'動公會共享庫需要 `{WMS_OPERATOR_ROLE}` 角色。'
-                f'你可以改用 `scope: 我的個人庫`。')
+                f'動公會共享庫需要 {need}。你可以改用 `scope: 我的個人庫`。')
         return db.OWNER_GUILD, None, actor
 
     # ─────────────────────────────────────────────────────── /add
@@ -166,37 +167,52 @@ class Stock(commands.Cog):
     # ─────────────────────────────────────────────────────── /history
 
     @app_commands.command(name='history', description='最近的庫存異動紀錄')
-    @app_commands.describe(limit='要看幾筆（1～25）')
+    @app_commands.describe(limit='要看幾筆（1～25）', scope='要看公會共享庫或自己的個人庫')
     @app_commands.guild_only()
     async def history(self, interaction: discord.Interaction,
-                      limit: app_commands.Range[int, 1, 25] = 10) -> None:
-        await interaction.response.defer()
+                      limit: app_commands.Range[int, 1, 25] = 10,
+                      scope: Scope = '公會共享庫') -> None:
+        """⚠️ 一定要按歸屬過濾。
 
-        rows = await db.recent_log(limit=limit)
-        embed = base_embed('🧾 最近異動')
+        舊版直接呼叫 `recent_log(limit)`，那支不帶 owner_type/player 條件，
+        撈的是整個 scope 的紀錄 —— 而且回覆不是 ephemeral。所以任何成員打
+        一次 `/history` 就會把別人個人庫的品項、數量、地點、操作者
+        全部貼在頻道上。個人庫的異動只有本人看得到（ephemeral），
+        公會庫的紀錄本來就是共同資訊，留在頻道可見。
+        """
+        personal = scope == '我的個人庫'
+        await interaction.response.defer(ephemeral=personal)
+
+        if personal:
+            handle = await db.require_handle(str(interaction.user.id))
+            rows = await db.recent_log_for_owner(db.OWNER_PLAYER, handle, limit=limit)
+            title = f'🧾 最近異動 · {owner_label(db.OWNER_PLAYER, handle)}'
+        else:
+            rows = await db.recent_log_for_owner(db.OWNER_GUILD, None, limit=limit)
+            title = f'🧾 最近異動 · {owner_label(db.OWNER_GUILD, None)}'
+
+        embed = base_embed(title)
 
         if not rows:
             embed.description = '還沒有任何異動紀錄。'
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=personal)
             return
 
         icons = {'add': '📥', 'remove': '📤', 'move': '🔀', 'move_rollback_failed': '🚨'}
-        names: dict = {}
+        # 一次批次查完所有物品名稱（舊版是逐筆 await，25 筆就是 25 次往返）
+        names = await db.item_names(row.get('item_id', '') for row in rows)
         lines = []
 
         for row in rows:
             item_id = row.get('item_id', '')
-            if item_id not in names:
-                item = await db.get_item(item_id)
-                names[item_id] = (item or {}).get('name') or item_id
             lines.append(
-                f"{icons.get(row.get('action'), '•')} **{names[item_id]}** "
+                f"{icons.get(row.get('action'), '•')} **{names.get(item_id) or item_id}** "
                 f"{row.get('delta', 0):+,} → {row.get('quantity_after', 0):,}\n"
                 f"　{loc_label(row.get('location'), row.get('container'))}"
                 f" · {row.get('actor') or '?'} · {rel_time(row.get('ts'))}")
 
         embed.description = '\n'.join(lines)
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, ephemeral=personal)
 
 
 async def setup(bot: commands.Bot) -> None:

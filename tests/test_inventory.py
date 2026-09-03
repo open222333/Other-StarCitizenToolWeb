@@ -271,16 +271,29 @@ def test_failed_change_is_not_logged(seed_items):
 
 # ─────────────────────────────────────────────────────────── Discord 綁定
 
+def _bind_code(star_citizen_id: str) -> str:
+    """幫測試準備一組合法的綁定碼（正式流程是玩家在網頁上按按鈕產生）。
+
+    綁定現在需要玩家自己證明身分 —— 詳見 tests/test_discord_bind.py 的說明。
+    """
+    from src.models.player import Player
+    player = Player.find_by_star_citizen_id(star_citizen_id)
+    if not player:
+        player = Player.find_by_id(
+            Player.create(player_name=star_citizen_id, star_citizen_id=star_citizen_id))
+    return Player.issue_discord_code(player['_id'])['code']
+
+
 def test_binding_lifecycle():
     assert DiscordBinding.get('111') is None
     with pytest.raises(StockError, match='bind'):
         DiscordBinding.require_handle('111')
 
-    DiscordBinding.bind('111', ACTOR, SCOPE)
+    DiscordBinding.bind('111', ACTOR, SCOPE, code=_bind_code(ACTOR))
     assert DiscordBinding.require_handle('111') == ACTOR
 
     # 重複綁定是更新，不會產生第二筆
-    DiscordBinding.bind('111', 'TomLi2', SCOPE)
+    DiscordBinding.bind('111', 'TomLi2', SCOPE, code=_bind_code('TomLi2'))
     assert get_db()['discord_bindings'].count_documents({'discord_id': '111'}) == 1
     assert DiscordBinding.require_handle('111') == 'TomLi2'
 
@@ -290,6 +303,15 @@ def test_binding_lifecycle():
 
 def test_binding_rejects_bad_handle():
     with pytest.raises(StockError):
-        DiscordBinding.bind('111', 'x', SCOPE)
+        DiscordBinding.bind('111', 'x', SCOPE, code=_bind_code(ACTOR))
     with pytest.raises(StockError):
-        DiscordBinding.bind('111', 'y' * 61, SCOPE)
+        DiscordBinding.bind('111', 'y' * 61, SCOPE, code=_bind_code(ACTOR))
+
+
+def test_binding_requires_a_code():
+    """沒有綁定碼就不能宣稱任何 handle —— 這是本專案最嚴重的一個授權漏洞，
+    完整說明與各種繞過嘗試見 tests/test_discord_bind.py。"""
+    _bind_code(ACTOR)   # 就算真的存在一組有效碼，沒帶也不能過
+    with pytest.raises(StockError):
+        DiscordBinding.bind('111', ACTOR, SCOPE)
+    assert DiscordBinding.get('111') is None

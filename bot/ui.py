@@ -64,11 +64,18 @@ def owner_label(owner_type: str, player: Optional[str]) -> str:
 
 
 def is_operator(member: Union[discord.Member, discord.User]) -> bool:
-    """動公會共享庫的權限。沒設 WMS_OPERATOR_ROLE 就一律放行。"""
-    if not WMS_OPERATOR_ROLE:
-        return True
+    """動公會共享庫的權限。
+
+    ⚠️ 沒設 WMS_OPERATOR_ROLE 時**退回要求 Manage Server**，不是一律放行 ——
+    `.env.default` 的 WMS_OPERATOR_ROLE 預設是空的，所以舊行為等於
+    「開箱即用的設定下，伺服器裡任何人都能 /add /remove /move 公會共享庫」，
+    而公會庫是整個公會的共同財產。fail-closed 的代價只是管理員得多設一個
+    環境變數（訊息裡會講），而 fail-open 的代價是有人可以把倉庫清空。
+    """
     if not isinstance(member, discord.Member):
         return False
+    if not WMS_OPERATOR_ROLE:
+        return bool(member.guild_permissions.manage_guild)
     if member.guild_permissions.manage_guild:
         return True
     return any(

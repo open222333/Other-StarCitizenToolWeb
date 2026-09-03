@@ -27,8 +27,18 @@ class DeviceToken:
         )
 
     @classmethod
-    def unregister(cls, token: str) -> bool:
-        result = cls._col().delete_one({'token': token})
+    def unregister(cls, token: str, username: str = '') -> bool:
+        """移除裝置 token。
+
+        `username` 一定要帶（呼叫端用 JWT identity）—— 只用 token 當條件的話，
+        任何登入者（包含玩家自助 token）只要知道／猜到別人的推播 token
+        就能把對方的裝置解除註冊，對方從此收不到通知而且完全無感。
+        token 本身會出現在 App 日誌、崩潰回報等地方，不能當成秘密。
+        """
+        query = {'token': token}
+        if username:
+            query['username'] = username
+        result = cls._col().delete_one(query)
         return result.deleted_count > 0
 
     @classmethod

@@ -416,13 +416,35 @@ class DiscordBinding:
 
     @classmethod
     def bind(cls, discord_id: str, handle: str, scope_id: str,
-             discord_name: str = '') -> dict:
+             discord_name: str = '', code: str = '') -> dict:
+        """把 Discord 帳號綁到某個遊戲ID —— **需要該玩家在網頁產生的綁定碼**。
+
+        為什麼要碼：Discord 帳號跟遊戲帳號之間沒有任何可信連結，所以舊版
+        「handle 由使用者自由輸入、直接寫進 DB」等於任何人都能宣稱自己是
+        別人 —— 綁完就能用 `/stock scope:我的個人庫` 看光那個人的個人庫、
+        用 `/remove` 把它清空（紀錄上的 player 還是被害者）。
+        碼由玩家在需要密碼登入的自助頁產生（見 Player.issue_discord_code），
+        密碼登入就是那個「證明」。
+
+        綁定成功後會刪掉同一個 handle 在其他 Discord 帳號上的舊綁定：
+        一個遊戲ID同時掛在兩個 Discord 帳號上沒有合理用途，
+        而且會讓「誰動了我的庫存」查不清楚。
+        """
+        from src.models.player import Player   # 延遲 import，避免循環依賴
+
         handle = (handle or '').strip()
         if not 2 <= len(handle) <= 60:
             raise StockError('RSI handle 長度看起來不對（2～60 字元）。')
 
+        player = Player.consume_discord_code(handle, code)
+        if not player:
+            raise StockError(
+                '綁定碼不正確或已過期。請到玩家網頁的「我的資料」按「產生 Discord 綁定碼」，'
+                '並確認遊戲ID大小寫與網頁上顯示的一致（碼 10 分鐘內有效）。'
+            )
+
         now = datetime.utcnow()
-        return cls._col().find_one_and_update(
+        doc = cls._col().find_one_and_update(
             {'discord_id': str(discord_id)},
             {'$set': {'handle': handle, 'scope_id': str(scope_id),
                       'discord_name': discord_name, 'updated_at': now},
@@ -430,6 +452,9 @@ class DiscordBinding:
             upsert=True, return_document=ReturnDocument.AFTER,
             projection={'_id': 0},
         )
+        cls._col().delete_many({'handle': handle, 'scope_id': str(scope_id),
+                                'discord_id': {'$ne': str(discord_id)}})
+        return doc
 
     @classmethod
     def unbind(cls, discord_id: str) -> bool:

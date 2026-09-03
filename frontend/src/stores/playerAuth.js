@@ -36,28 +36,51 @@ export const usePlayerAuthStore = defineStore('playerAuth', () => {
     Object.values(KEYS).forEach(k => localStorage.removeItem(k))
   }
 
+  // 進行中的 refresh。多個請求同時 401 時共用同一個 promise，
+  // 否則畫面上七八支 API 一起過期就會送出七八個 /player/refresh ——
+  // 那支端點有「30 per minute」限速，同一個 NAT 底下開幾個分頁就會撞到
+  // 429，tryRefresh 全部回 false，使用者被無故登出。
+  let refreshing = null
+
   async function tryRefresh() {
     if (!refreshToken.value) return false
-    try {
-      const res = await fetch('/player/refresh', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${refreshToken.value}` },
-      })
-      if (!res.ok) return false
-      const data = await res.json()
-      if (!data.success) return false
-      token.value = data.token
-      localStorage.setItem(KEYS.token, data.token)
-      return true
-    } catch { return false }
+    if (refreshing) return refreshing
+
+    refreshing = (async () => {
+      try {
+        const res = await fetch('/player/refresh', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${refreshToken.value}` },
+        })
+        if (!res.ok) return false
+        const data = await res.json()
+        if (!data.success) return false
+        token.value = data.token
+        localStorage.setItem(KEYS.token, data.token)
+        return true
+      } catch {
+        return false
+      } finally {
+        refreshing = null
+      }
+    })()
+    return refreshing
   }
 
   async function playerFetch(path, options = {}, _retry = true) {
     let res
     try {
+      // ⚠️ headers 要在展開 options 之後再合併：反過來寫的話，呼叫端只要
+      // 自帶 headers（例如上傳檔案時改 Content-Type）就會整欄蓋掉，
+      // Authorization 跟著消失 → 認證靜默失效，兩次 401 後直接被登出。
+      const { headers: extraHeaders, ...rest } = options
       res = await fetch(path, {
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
-        ...options,
+        ...rest,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token.value}`,
+          ...(extraHeaders || {}),
+        },
       })
     } catch {
       return null

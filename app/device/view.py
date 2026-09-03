@@ -57,5 +57,6 @@ def unregister_device():
     if not token:
         return jsonify({'success': False, 'message': 'token 不得為空'}), 400
 
-    DeviceToken.unregister(token)
+    # 一定要帶 username：否則知道別人 token 的人就能解除對方的裝置註冊
+    DeviceToken.unregister(token, username=get_jwt_identity())
     return jsonify({'success': True})

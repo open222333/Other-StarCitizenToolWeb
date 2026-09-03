@@ -13,12 +13,18 @@ class Binding(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name='bind', description='綁定你的 RSI handle，之後才能操作個人庫存')
-    @app_commands.describe(handle='你的 RSI handle（遊戲內名稱，大小寫要一致）')
+    @app_commands.describe(
+        handle='你的 RSI handle（遊戲內名稱，大小寫要跟網頁上一致）',
+        code='玩家網頁「我的資料 → 產生 Discord 綁定碼」給的 8 碼（10 分鐘內有效）',
+    )
     @app_commands.guild_only()
-    async def bind(self, interaction: discord.Interaction, handle: str) -> None:
+    async def bind(self, interaction: discord.Interaction, handle: str, code: str) -> None:
+        """綁定需要綁定碼 —— Discord 帳號無法自己證明它屬於哪個遊戲帳號，
+        沒有這道驗證的話，任何人打 `/bind handle:別人的ID` 就能讀寫、
+        甚至清空別人的個人庫存。碼由需要密碼登入的網頁產生。"""
         existing = await db.get_binding(str(interaction.user.id))
         doc = await db.bind_handle(str(interaction.user.id), handle,
-                                  discord_name=interaction.user.name)
+                                   discord_name=interaction.user.name, code=code)
 
         verb = '已更新綁定' if existing else '綁定完成'
         embed = base_embed(f'✅ {verb}', color=COLOR_OK)
@@ -36,7 +42,8 @@ class Binding(commands.Cog):
     @app_commands.guild_only()
     async def unbind(self, interaction: discord.Interaction) -> None:
         removed = await db.unbind_handle(str(interaction.user.id))
-        message = ('已解除綁定。庫存紀錄仍保留，重新 `/bind` 同一個 handle 就看得到。'
+        message = ('已解除綁定。庫存紀錄仍保留 —— 重新綁定需要再去玩家網頁的'
+                   '「我的資料」產生一組綁定碼。'
                    if removed else '你本來就沒有綁定。')
         await interaction.response.send_message(
             embed=base_embed('綁定狀態', description=message), ephemeral=True)
@@ -52,7 +59,9 @@ class Binding(commands.Cog):
             embed.add_field(name='綁定時間', value=rel_time(binding.get('created_at')),
                             inline=True)
         else:
-            embed.description = '尚未綁定，用 `/bind` 設定你的 RSI handle。'
+            embed.description = ('尚未綁定。先到玩家網頁的「我的資料」按'
+                                '「產生 Discord 綁定碼」，再用 '
+                                '`/bind handle:<你的遊戲ID> code:<綁定碼>`。')
 
         run = await db.latest_sync()
         if run:

@@ -191,12 +191,25 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
     written += _flush(collection_name, main_ops)
     _flush(history_name, history_ops)
 
-    # ⚠️ 上游回空清單時**不要**下架 —— 否則一次失敗的抓取就會把整個主檔
-    #    標成已下架，所有查詢（都過濾 is_current=True）瞬間變空。
-    #    這種情況當成錯誤往上拋，讓這輪記成失敗並走 backoff 重試。
-    if seen == 0:
+    # ⚠️ 上游資料「短少」時**不要**下架 —— 否則一次不完整的抓取就會把主檔
+    #    大半標成已下架，所有查詢（都過濾 is_current=True）瞬間變空。
+    #
+    #    原本只擋 seen == 0，但真正會發生的情況比那個更陰險：Wiki API 是
+    #    跟著 links.next 走分頁的，只要某次回應少了 links.next（上游出錯、
+    #    中間有快取代理、或剛好 deploy），迴圈就會提早結束 —— seen=100
+    #    而實際有 20,000 筆，然後把其餘 19,900 筆全部下架，這輪還記成成功。
+    #    症狀是物品搜尋、bot autocomplete、庫存名稱 join 全部變空，
+    #    而且要等下一次成功的完整同步才會恢復。
+    #
+    #    所以改成跟「上次同步後還在架上的筆數」比：少於 80% 就當成抓取不完整
+    #    往上拋，讓這輪記成失敗並走 backoff 重試，主檔維持原狀。
+    #    首次同步（before == 0）沒有基準，只要有資料就放行。
+    before_current = db[collection_name].count_documents({'is_current': {'$ne': False}})
+    floor = int(before_current * 0.8)
+    if seen == 0 or (before_current and seen < floor):
         raise ScDataError(
-            f'{resource}: 上游回傳 0 筆資料，跳過下架步驟以免清空主檔')
+            f'{resource}: 上游只回傳 {seen} 筆，低於原有上架筆數 {before_current} 的 80%'
+            f'（門檻 {floor}），判定抓取不完整，跳過下架步驟以免清空主檔')
 
     # 這輪沒碰到的 → 目前 patch 已不存在，但保留紀錄
     retired = db[collection_name].update_many(

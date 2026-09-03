@@ -70,15 +70,23 @@ class Blueprint:
             doc['player_id'] = str(doc['player_id'])
         return doc
 
+    # 沒帶 player_id 時（後台「列出全部藍圖」）的硬上限。
+    # 原本完全沒有 limit：整個 collection 每次都被撈出來並序列化成 JSON，
+    # 隨著登記數成長會變成一次幾 MB 的回應。這個規模的公會短期不會踩到，
+    # 但沒有防護的查詢遲早會在最忙的時候變成問題。
+    FIND_ALL_MAX = 500
+
     @classmethod
-    def find_all(cls, player_id: str = '', include_deleted: bool = False) -> list:
+    def find_all(cls, player_id: str = '', include_deleted: bool = False,
+                 limit: int = 0) -> list:
         query: dict = {} if include_deleted else {'deleted_at': None}
         if player_id:
             try:
                 query['player_id'] = ObjectId(player_id)
             except Exception:
                 return []
-        rows = cls._col().find(query).sort('name', 1)
+        cap = limit if limit and limit > 0 else cls.FIND_ALL_MAX
+        rows = cls._col().find(query).sort('name', 1).limit(cap)
         return [cls._serialize(r) for r in rows]
 
     @classmethod
@@ -116,7 +124,13 @@ class Blueprint:
     def update(cls, blueprint_id: str, **fields) -> bool:
         set_fields = {k: v for k, v in fields.items() if v is not None}
         if 'player_id' in set_fields:
-            set_fields['player_id'] = ObjectId(set_fields['player_id']) if set_fields['player_id'] else None
+            # ObjectId() 對亂字串會丟 InvalidId —— 放在 try 外面的話，
+            # 前端傳了壞掉的 player_id 就是 500，而這是使用者輸入錯誤（400/404）
+            try:
+                set_fields['player_id'] = (ObjectId(set_fields['player_id'])
+                                           if set_fields['player_id'] else None)
+            except Exception:
+                return False
         if not set_fields:
             return False
         set_fields['updated_at'] = datetime.utcnow()
@@ -203,7 +217,11 @@ class Blueprint:
     @classmethod
     def soft_delete(cls, blueprint_id: str, player_id: str = '') -> bool:
         """開發原則：重要資料不永久刪除。傳 player_id 時會檢查歸屬（玩家自助刪除用）。"""
-        query = {'_id': ObjectId(blueprint_id), 'deleted_at': None}
+        # 同 update()：ObjectId() 要包在 try 裡，否則 DELETE /blueprint/abc 是 500
+        try:
+            query = {'_id': ObjectId(blueprint_id), 'deleted_at': None}
+        except Exception:
+            return False
         if player_id:
             try:
                 query['player_id'] = ObjectId(player_id)

@@ -11,7 +11,8 @@
 """
 
 import re
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 
 import bcrypt
 from bson import ObjectId
@@ -22,6 +23,20 @@ from src.mongo import get_db
 
 class PlayerError(Exception):
     """預期中的使用者錯誤（例如遊戲ID重複），訊息可直接顯示給使用者。"""
+
+
+# ── Discord 綁定碼 ────────────────────────────────────────────────
+#
+# Discord 那邊的 /bind 沒有辦法自己證明「你就是這個遊戲ID的人」——
+# Discord 帳號跟遊戲帳號之間沒有任何可信連結。所以流程改成：
+# 玩家先在網頁（要輸入密碼登入）產生一組短效綁定碼，再拿去 /bind。
+# 密碼登入就是那個「證明」，Discord 端只負責核對碼。
+#
+# 字母表刻意排除 I L O 0 1（在 Discord 的字體下容易看錯），
+# 8 碼 × 31 種字元 ≈ 8.5×10^11 組合，配上 10 分鐘有效期，暴力猜不可行。
+_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+DISCORD_CODE_LENGTH = 8
+DISCORD_CODE_TTL = timedelta(minutes=10)
 
 
 class Player:
@@ -37,6 +52,11 @@ class Player:
         doc['_id'] = str(doc['_id'])
         if not include_password:
             doc.pop('password', None)
+        # 綁定碼等同一次性密碼：任何 API 回應都不該帶出去（包含後台
+        # 玩家列表與 /player/me），否則看得到名冊的人就能綁走別人的
+        # Discord。它只在 issue_discord_code() 的回傳值裡出現一次。
+        doc.pop('discord_bind_code', None)
+        doc.pop('discord_bind_code_expires_at', None)
         return doc
 
     @classmethod
@@ -212,6 +232,53 @@ class Player:
         except Exception:
             return False
         return result.matched_count > 0
+
+    # ── Discord 綁定碼 ───────────────────────────────────────────
+
+    @classmethod
+    def issue_discord_code(cls, player_id: str) -> dict | None:
+        """產生一組短效 Discord 綁定碼，回傳 `{'code':…, 'expires_at':…}`。
+
+        同一個玩家重新產生會直接覆蓋舊碼（舊碼立即失效），這是刻意的：
+        玩家看不到自己之前產過什麼，留著多組有效碼只會擴大猜中的機會。
+        """
+        code = ''.join(secrets.choice(_CODE_ALPHABET) for _ in range(DISCORD_CODE_LENGTH))
+        expires_at = datetime.utcnow() + DISCORD_CODE_TTL
+        try:
+            result = cls._col().update_one(
+                {'_id': ObjectId(player_id), 'deleted_at': None},
+                {'$set': {'discord_bind_code': code,
+                          'discord_bind_code_expires_at': expires_at}},
+            )
+        except Exception:
+            return None
+        if not result.matched_count:
+            return None
+        return {'code': code, 'expires_at': expires_at}
+
+    @classmethod
+    def consume_discord_code(cls, star_citizen_id: str, code: str) -> dict | None:
+        """核對綁定碼並立即作廢，成功回傳該玩家文件；失敗回 None。
+
+        用單一 `find_one_and_update` 做「核對 + 作廢」，所以是原子的：
+        同一組碼被兩個 Discord 帳號同時送出，只有一個會成功。
+        如果分成先查再更新，兩邊都會讀到有效碼而雙雙綁定成功。
+        """
+        code = (code or '').strip().upper().replace('-', '')
+        scid = (star_citizen_id or '').strip()
+        if not code or not scid:
+            return None
+
+        doc = cls._col().find_one_and_update(
+            {
+                'star_citizen_id': scid,
+                'deleted_at': None,
+                'discord_bind_code': code,
+                'discord_bind_code_expires_at': {'$gt': datetime.utcnow()},
+            },
+            {'$unset': {'discord_bind_code': '', 'discord_bind_code_expires_at': ''}},
+        )
+        return cls._serialize(doc) if doc else None
 
     @classmethod
     def restore(cls, player_id: str) -> bool:
