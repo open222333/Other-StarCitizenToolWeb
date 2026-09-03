@@ -26,9 +26,15 @@ services:
   #
   #        docker compose --profile mysql up -d mysql
   #
-  #    真的要用的時候，.env 的三個 MYSQL_* 密碼必須先填好 —— 下面用
-  #    `${VAR:?訊息}` 而不是 `${VAR:-範本值}`，沒填就直接讓 compose 報錯中止，
-  #    不會再默默地用公開範本值把資料庫跑起來。
+  #    真的要用的時候，.env 的 MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD 必須先填好。
+  #
+  # ⚠️ 這裡刻意**不用** `${VAR:?訊息}`（required variable）語法，即使它看起來
+  #    比較嚴謹：compose 的變數內插發生在 profile 過濾**之前**，所以只要
+  #    .env 沒填 MYSQL_*，連 `docker compose ps` / `up -d`（完全不含 mysql）
+  #    都會直接報 "required variable ... is missing a value" 而中止 ——
+  #    等於一個沒在跑的服務把整個 stack 卡住（已實測確認）。
+  #    留空的把關交給 mysql image 自己：沒有密碼它會拒絕初始化並印出原因，
+  #    而且只有真的啟用 profile 時才會發生。
   mysql:
     profiles: ["mysql"]
     image: mysql:8.0
@@ -36,10 +42,10 @@ services:
     ports:
       - "${DB_BIND_HOST:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?啟用 mysql profile 前請先在 .env 設定 MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-flask_app}
       MYSQL_USER: ${MYSQL_USER:-flask_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?啟用 mysql profile 前請先在 .env 設定 MYSQL_PASSWORD}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - ./docker/database/mysql:/var/lib/mysql
     healthcheck:

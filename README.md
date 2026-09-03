@@ -19,6 +19,95 @@ Vue 3 後台、MongoDB / MySQL / Redis、Celery worker + beat、Rate Limiting、
 
 ---
 
+## 部署步驟（正式站，先看這裡）
+
+正式站在 `/opt/sctw`，用 `docker compose`（根目錄的 `docker-compose.yml` 以
+`include:` 併入 db / api / worker / bot / web / nginx 六個檔案）。
+第一次部署請直接看 [Docker 部署](#docker-部署)；下面是**日常更新**的流程。
+
+### 1. 判斷這次要做到哪一步
+
+改了什麼決定要不要 build。判斷錯的後果是「明明改了卻沒生效」：
+
+| 這次改了什麼 | 要執行 | 為什麼 |
+|---|---|---|
+| 只有後端（`app/` `src/` `tasks/` `run.py` `conf/`） | `docker compose restart api worker` | 這些目錄是 bind mount，容器裡的檔案已經是新的；但 gunicorn 有 `preload_app`，不重啟不會重新 import |
+| 前端（`frontend/`） | `docker compose build web api && docker compose up -d web api` | 前端編譯結果**不是** bind mount（刻意的，否則會蓋掉 image 內建置好的檔案），一定要重 build |
+| `.env` | `docker compose up -d`（不是 `restart`） | 環境變數只在建立容器時注入，`restart` 不會重讀 |
+| `docker-compose*.yml` | `docker compose up -d` | 同上，需要重建容器 |
+| 只有 `README.md` / 文件 | 不用做任何事 | |
+
+### 2. 標準更新流程
+
+```bash
+cd /opt/sctw
+
+# ① 先確認工作區乾淨，再拉取
+git status --short          # 有本機修改先處理，pull 撞衝突會停在半路
+git pull
+
+# ② 依上表選一種（前端有改就用這行，它涵蓋後端）
+docker compose build web api && docker compose up -d
+
+# ③ 確認容器狀態：api / mongo / redis / nginx / web 應為 Up (healthy)
+docker compose ps
+
+# ④ 驗證（任一步失敗就看下面「出問題時」）
+curl -sf http://127.0.0.1:8080/ && echo ' ← Flask 健康檢查 OK'
+curl -sf http://127.0.0.1:8090/nginx-health && echo ' ← 玩家站 nginx OK'
+docker compose logs --tail=50 api | grep -i "error\|拒絕啟動" || echo '啟動日誌沒有錯誤'
+```
+
+完整的部署後驗證清單（含登入取得 token、後台 UI、bot、同步狀態）在
+[Docker 部署 → 驗證清單](#4-驗證清單部署後立即執行全過才算完成)，
+回滾步驟在[同一節的「回滾」](#5-回滾)。
+
+### 3. ⚠️ 這一版（2026-09）第一次部署前必做
+
+`.env` 的機密值現在是 **fail-closed**：偵測到範本值或未設定就**拒絕啟動**
+（`src/secret_guard.py`，api 與 worker 都會檢查）。所以要先改 `.env` 再部署，
+否則 api 起不來：
+
+```bash
+# ① 產生一組強密碼
+python3 -c "import secrets,string;a=string.ascii_letters+string.digits;print(''.join(secrets.choice(a) for _ in range(24)))"
+
+# ② 編輯 .env
+#    REDIS_PASSWORD=<貼上剛才產生的>     ← 必填，範本值 redis_password 會被拒絕
+#    MYSQL_ROOT_PASSWORD=                ← 留空即可（見下）
+#    MYSQL_PASSWORD=                     ← 留空即可
+vim .env
+
+# ③ .env 有改 → 用 up -d 重建容器（restart 不會重讀環境變數）
+docker compose up -d
+```
+
+- **Redis 密碼一定要改**：Rate Limiting 與 Celery broker 都在這台 Redis 上，
+  而範本值是公開在版控裡的。
+- **MySQL 留空就好**：全專案沒有任何程式用到 MySQL，`mysql` 服務已改成
+  `profiles: ["mysql"]`（預設不啟動）。真的要用再填密碼並
+  `docker compose --profile mysql up -d mysql`。
+- 機密值一律以 `.env` 為準，**不要寫回 `conf/config.ini`** —— 程式已改成
+  環境變數優先，config.ini 裡的密碼欄位保持註解狀態即可。
+- 玩家名冊的索引遷移（`star_citizen_id` 改為 partial 唯一索引）會在 api
+  啟動時自動完成，不需要手動下指令。
+
+### 4. 出問題時
+
+```bash
+# api 起不來 → 先看是不是被機密值檢查擋住（訊息會直接指出哪個變數）
+docker compose logs --tail=80 api
+
+# 前端改了卻沒生效 → 幾乎都是漏了 build，或瀏覽器拿到舊的 index.html
+docker compose build web api && docker compose up -d web api
+# index.html 已設 no-store，仍看到舊畫面請用無痕視窗確認一次
+
+# 想確認容器裡跑的是不是最新程式
+docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec api ls -l app/
+```
+
+---
+
 ## 本地服務入口
 
 本專案有**兩個前端**，分別在不同的埠號上，別搞混：
@@ -38,17 +127,20 @@ Vue 3 後台、MongoDB / MySQL / Redis、Celery worker + beat、Rate Limiting、
 | **管理後台** | http://localhost:8080/admin/ | 使用者／玩家／藍圖／庫存管理、操作紀錄、系統設定（含資料同步排程）。需後台帳號登入 |
 | 後台登入 | http://localhost:8080/admin/login | 預設帳號 `admin`，密碼見 `.env` 的 `ADMIN_PASSWORD`（**必須改掉，否則 api 會拒絕啟動**） |
 | 玩家自助註冊 | http://localhost:8090/register | 公開，不需登入 |
-| 玩家登入 | http://localhost:8090/player-login | 跟後台是分開的身分體系 |
+| **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
 | **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／查詢／我的資料 |
-| 玩家站根路徑 | http://localhost:8090/ | ⚠️ 目前會導到 `/players`（後台頁面），未登入者最後落在**後台**登入頁 `:8090/login`。給玩家的網址請直接發 `/player-login` 或 `/register` |
+| 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
+| 玩家站上的後台登入 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面。管理員平常請走 8080 |
 
+> **兩個登入頁是不同的身分體系，用錯頁面會一直顯示帳號或密碼錯誤**：
+> 玩家用 `/login`（查 `players` 集合），後台管理員用 `/admin/login`（查 `users` 集合）。
+> 兩頁互相有導引連結，路徑定義在 `frontend/src/router/index.js` 的
+> `PLAYER_LOGIN_PATH` / `ADMIN_LOGIN_PATH`（會依 build 自動切換：
+> 管理後台那個 build 的 base 本來就是 `/admin/`，所以它的後台登入頁
+> 就是 `:8080/admin/login`，玩家登入頁則是 `:8080/admin/player-login`）。
+>
 > 玩家站的頁面在 8080 也連得到（同一份 SPA），但 base path 是 `/admin/`，
 > 所以路徑會變成 `http://localhost:8080/admin/me`。正式使用請走 8090。
->
-> 根路徑的導向是 `frontend/src/router/index.js` 的 `HOME_REDIRECT`：
-> web build 導到 `/players`，該路由掛在 `requiresAuth` 的 DashboardLayout 底下，
-> 所以 guard 會把未登入者送到 `/login`（後台登入頁，不是 `/player-login`）。
-> 這是待修的 UX 問題，不是設計如此。
 
 ### API 與文件
 
@@ -72,7 +164,7 @@ Docker 的 port 發佈會直接寫 iptables、繞過 ufw，綁 0.0.0.0 等於對
 
 | 服務 | 位址 | 說明 |
 |------|-----|------|
-| MySQL | `127.0.0.1:3306` | root 密碼見 `.env` 的 `MYSQL_ROOT_PASSWORD`；DB 名稱 `MYSQL_DATABASE`；埠號可用 `MYSQL_PORT` 覆寫 |
+| MySQL | `127.0.0.1:3306` | **預設不啟動**（`profiles: ["mysql"]`）—— 專案沒有任何程式用到它。要用：填好 `.env` 的 `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` 後 `docker compose --profile mysql up -d mysql` |
 | MongoDB | `127.0.0.1:27017` | **無 auth**。DB 名稱見 `conf/config.ini` 的 `[MONGO] MONGO_DB`（預設 `flask_app`，**不是** `.env` 的 `MYSQL_DATABASE`）；埠號可用 `MONGO_PORT` 覆寫 |
 | Redis | `127.0.0.1:6379` | 密碼見 `.env` 的 `REDIS_PASSWORD`；埠號可用 `REDIS_PORT` 覆寫。DB 0 給 rate limit，DB 1 給 Celery broker |
 
@@ -80,6 +172,7 @@ Docker 的 port 發佈會直接寫 iptables、繞過 ufw，綁 0.0.0.0 等於對
 
 ## 目錄
 
+- [部署步驟（正式站，先看這裡）](#部署步驟正式站先看這裡)
 - [本地服務入口](#本地服務入口)
 - [專案結構](#專案結構)
 - [環境事實](#環境事實)
@@ -183,9 +276,10 @@ app/inventory/view.py     bot/cogs/
 | Disk | 15 GB | 25 GB |
 | Swap | 1 GB | 2 GB |
 
-一整套會跑起 **9 個容器**（nginx、web、api、worker、beat、bot、mongo、mysql、redis），
-所以「最低限度」那一欄的 swap **不是選配**，是必要的 —— MySQL 8 光是預設的
-buffer pool 就會吃掉好幾百 MB。
+一整套會跑起 **8 個容器**（nginx、web、api、worker、beat、bot、mongo、redis；
+mysql 預設不啟動），所以「最低限度」那一欄的 swap **不是選配**，是必要的 ——
+mongo 加上兩個 Python 容器就會把 1 GB 記憶體用得很緊。
+（若額外啟用 mysql profile，MySQL 8 光預設 buffer pool 就會再吃掉好幾百 MB。）
 
 在 1～2 vCPU 的機器上，記得壓 Gunicorn 的 worker 數。`gunicorn.py` 的預設是
 `(vCPU × 2) + 1`，2 vCPU 就會開 5 個 worker，每個都是完整的 Python 行程
@@ -370,8 +464,10 @@ cp .env.default .env
 cp conf/config.ini.default conf/config.ini
 ```
 
-編輯 `.env`：**至少要改掉 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD`、`REDIS_PASSWORD`、
-`ADMIN_PASSWORD`**（範本值是公開的），並填入 `DISCORD_TOKEN`（不用 bot 就留空）。
+編輯 `.env`：**`ADMIN_PASSWORD` 與 `REDIS_PASSWORD` 一定要填強密碼**
+（範本值是公開的，填了範本值或留空 api / worker 會直接拒絕啟動，
+見 `src/secret_guard.py`），並填入 `DISCORD_TOKEN`（不用 bot 就留空）。
+`MYSQL_*` 留空即可 —— mysql 服務預設不啟動。
 
 ### 2. 調整 config.ini（主機名稱改為 Docker 服務名稱）
 
@@ -383,13 +479,16 @@ MONGO_DB=flask_app
 [MYSQL]
 MYSQL_HOST=mysql
 MYSQL_USER=flask_user
-MYSQL_PASSWORD=<與 .env 的 MYSQL_PASSWORD 一致>
 MYSQL_DB=flask_app
 
 [REDIS]
 REDIS_HOST=redis
-REDIS_PASSWORD=<與 .env 的 REDIS_PASSWORD 一致>
 ```
+
+⚠️ **密碼不要寫進 config.ini** —— 這個檔案裡只放主機名稱之類的非機密設定。
+機密值一律從 `.env` 讀（`src/__init__.py` 的 `_secret`：環境變數優先，
+config.ini 只是舊環境的相容 fallback）。原本兩邊都要維護同一組密碼，
+對不上就是連不上，而且輪替之後很容易把真密碼提交進版控。
 
 ### 3. 首次部署
 
@@ -409,8 +508,9 @@ docker compose up -d --build
 ```bash
 # ① 所有服務健康
 docker compose ps
-#    api / mongo / mysql / redis / nginx 應為 Up (healthy)
+#    api / mongo / redis / nginx / web 應為 Up (healthy)
 #    worker / beat / bot 為 Up（這三個沒有 healthcheck）
+#    mysql 不會出現 —— 它在 profiles: ["mysql"] 裡，預設不啟動
 
 # ② 健康端點
 curl -f http://localhost/ && echo                    # 預期 ok
@@ -473,7 +573,7 @@ docker compose up -d --build
 | `beat` | 同 `api` image | Celery beat（排程） |
 | `bot` | 同 `api` image | Discord bot |
 | `mongo` | mongo:7 | 主檔 + 庫存 + 使用者 + 日誌 |
-| `mysql` | mysql:8.0 | 選用 |
+| `mysql` | mysql:8.0 | **預設不啟動**（`profiles: ["mysql"]`），專案沒有程式用到 |
 | `redis` | redis:7-alpine | Rate Limiting + Celery broker |
 
 | 服務 | 網址 |

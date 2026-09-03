@@ -55,7 +55,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { PLAYER_LOGIN_PATH } from '@/router'
+import { ADMIN_HOME, PLAYER_LOGIN_PATH } from '@/router'
 
 const router  = useRouter()
 const auth    = useAuthStore()
@@ -80,7 +80,9 @@ async function handleLogin() {
     const data = await res.json()
     if (data.success) {
       auth.setAuth({ ...data, username: form.username })
-      router.push('/')
+      // 不是 '/' —— 玩家站的 '/' 導到玩家頁 /me，會把剛登入的管理員
+      // 直接彈到玩家登入頁（見 router/index.js 的 HOME_REDIRECT 說明）
+      router.push(ADMIN_HOME)
     } else {
       error.value = data.message || '帳號或密碼錯誤'
     }

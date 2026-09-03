@@ -5,7 +5,24 @@ import { usePlayerAuthStore } from '@/stores/playerAuth'
 // admin build（vite.config.js）沒設定這個變數時，維持原本的 /admin/ 前綴；
 // web build（vite.config.web.js）會把它 define 成 '/'，讓路由掛在根路徑。
 const ROUTER_BASE = import.meta.env.VITE_ROUTER_BASE || '/admin/'
-const HOME_REDIRECT = ROUTER_BASE === '/' ? '/players' : '/users'
+
+// 這個 build 是不是玩家站（web build，掛在網域根路徑）
+const PLAYER_BUILD = ROUTER_BASE === '/'
+
+// 後台登入成功後要去哪。玩家站上也有完整的後台頁面（同一份 SPA），
+// 所以兩套 build 都要有一個「後台首頁」，不能用 '/'（見下面 HOME_REDIRECT）。
+export const ADMIN_HOME = PLAYER_BUILD ? '/players' : '/users'
+
+// 根路徑導向。
+//
+// ⚠️ 玩家站的根路徑導到 /me（玩家自己的頁面），不是後台首頁 ——
+// 原本兩套 build 都導到後台頁面（/players），而那個路由掛在 requiresAuth 底下，
+// 所以任何人打開 https://<玩家網域>/ 都會被 guard 丟到**後台登入頁**。
+// 玩家站的訪客十個有九個是玩家，讓他們第一眼看到管理員登入畫面是錯的
+// （這也是 README 先前標註的待修 UX 問題）。
+// 現在：未登入的玩家 → /me → requiresPlayerAuth → 玩家登入頁；
+//       管理員請直接走 /admin/login（兩個登入頁互相有連結）。
+const HOME_REDIRECT = PLAYER_BUILD ? '/me' : '/users'
 
 // 後台登入頁的路徑：createWebHistory 的 base 會直接接在路徑前面，
 // admin build 的 base 已經是 /admin/，路徑維持 '/login' 最終網址就是
@@ -108,8 +125,9 @@ router.beforeEach((to) => {
   // 尚未登入 → 導向登入頁
   if (to.meta.requiresAuth && !auth.isLoggedIn) return ADMIN_LOGIN_PATH
 
-  // 已登入卻訪問 guest-only 頁面 → 首頁
-  if (to.meta.guest && auth.isLoggedIn) return '/'
+  // 已登入卻訪問 guest-only 頁面（後台登入頁）→ 後台首頁。
+  // 不能用 '/'：玩家站的 '/' 現在導到 /me，會把已登入的管理員丟到玩家登入頁。
+  if (to.meta.guest && auth.isLoggedIn) return ADMIN_HOME
 
   // 需要 admin 但不是 admin → 操作紀錄（最低權限頁）
   if (to.meta.requiresAdmin && !auth.isAdmin) return '/logs'
