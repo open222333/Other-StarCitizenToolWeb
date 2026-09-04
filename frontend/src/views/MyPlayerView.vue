@@ -623,6 +623,19 @@
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->
+    <!-- ══════════ 藍圖材料試算 ══════════ -->
+    <div v-show="activeTab === 'craft'" role="tabpanel" id="panel-craft"
+      :aria-labelledby="'tab-craft'">
+      <p class="small mb-3" style="color: var(--sf-text-muted)">
+        選一張藍圖後填入現有材料數量，會算出最多可以做幾個、卡在哪一種材料，
+        以及做到目標數量還缺多少。「從我的個人庫帶入」會把你個人庫現有的量填進去。
+      </p>
+      <!-- 元件跟後台「材料試算」頁共用，差別只在帶進去的身分與庫存來源 -->
+      <BlueprintCalculator :fetcher="playerAuth.playerFetch"
+        :stock-loader="loadMyStock" stock-label="我的個人庫"
+        card-class="card scifi-card" />
+    </div>
+
     <div v-show="activeTab === 'profile'" role="tabpanel" id="panel-profile" :aria-labelledby="'tab-profile'">
       <Transition name="alert-slide">
         <div v-if="profileError" class="alert alert-danger py-2">{{ profileError }}</div>
@@ -766,6 +779,7 @@ import { PLAYER_LOGIN_PATH } from '@/router'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
+import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import FieldHint from '@/components/FieldHint.vue'
 // 社群繁中化包（cosmo-chang-1701/sc-translation-pack）萃取出來的地點中文對照，
 // 純靜態查表，不會隨遊戲改版自動更新，見 src/sc_zh.py 的說明
@@ -819,6 +833,7 @@ const tabs = [
     ],
   },
   { key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3' },
+  { key: 'craft',      label: '試算',  icon: 'bi bi-calculator' },
   {
     key: 'search',    label: '查詢',   icon: 'bi bi-search',
     subTabs: [
@@ -1004,6 +1019,17 @@ async function changePassword() {
   } finally {
     changingPassword.value = false
   }
+}
+
+// ── 藍圖材料試算的庫存來源 ────────────────────────────────────
+//
+// 個人庫的清單一次就撈得完（後端 limit 200，一般玩家遠低於此），
+// 所以不像後台那頁需要逐材料查詢。回傳原始庫存列，換算交給
+// utils/craftCalc.js 的 stockToHaveMap（同一份邏輯兩邊共用）。
+async function loadMyStock() {
+  const res = await playerAuth.playerFetch('/player/inventory')
+  const data = res ? await res.json().catch(() => null) : null
+  return data?.success ? (data.data || []) : []
 }
 
 // ── Discord 綁定碼 ────────────────────────────────────────────

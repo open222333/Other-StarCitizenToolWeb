@@ -128,7 +128,8 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 後台登入 | http://localhost:8080/admin/login | 預設帳號 `admin`，密碼見 `.env` 的 `ADMIN_PASSWORD`（**必須改掉，否則 api 會拒絕啟動**） |
 | 玩家自助註冊 | http://localhost:8090/register | 公開，不需登入 |
 | **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
-| **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／查詢／我的資料 |
+| **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
+| 藍圖材料試算 | http://localhost:8090/me?tab=craft ／ 後台 `/admin/blueprint-calc` | 填現有材料算最多可做幾個。同一個元件，玩家版帶個人庫、後台版帶公會共享庫 |
 | 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
 | 玩家站上的後台登入 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面。管理員平常請走 8080 |
 
@@ -180,6 +181,7 @@ Docker 的 port 發佈會直接寫 iptables、繞過 ufw，綁 0.0.0.0 等於對
 - [Docker 部署](#docker-部署)
 - [域名部署（HTTPS）](#域名部署https)
 - [主機 nginx 部署](#主機-nginx-部署)
+- [藍圖材料試算](#藍圖材料試算)
 - [遊戲資料同步](#遊戲資料同步)
 - [Discord bot](#discord-bot)
 - [API 說明](#api-說明)
@@ -795,6 +797,41 @@ sudo systemctl reload nginx                          # 重載（不中斷連線�
 sudo tail -f /var/log/nginx/flask-app-error.log      # 錯誤日誌
 sudo tail -f /var/log/nginx/flask-app-access.log     # 訪問日誌
 sudo certbot renew --dry-run                         # 測試自動續約
+```
+
+---
+
+## 藍圖材料試算
+
+`/admin/blueprint-calc`（後台側邊欄「材料試算」）與玩家頁的「試算」分頁是
+**同一個元件**（`frontend/src/components/BlueprintCalculator.vue`），差別只在
+帶進去的身分與庫存來源：
+
+| 掛載點 | 身分 | 「帶入」按鈕的來源 |
+|---|---|---|
+| 後台 `views/BlueprintCalcView.vue` | `apiFetch`（後台 token） | 公會共享庫 |
+| 玩家頁 `MyPlayerView` 的 craft 分頁 | `playerFetch`（玩家 token） | 自己的個人庫 |
+
+用法：搜尋並選一張藍圖 → 畫面列出它需要的每種材料 → 在「我現有」填數量
+→ 即時算出最多可做幾個、哪一種材料是瓶頸、做完各材料剩多少；填了「我想做 N 個」
+之後每一列會顯示還缺多少。
+
+### 幾個資料上的細節
+
+- **兩種單位**：`blueprint_master.ingredients` 的每一項可能是 `quantity`（個數，
+  對得上 `item_master`）或 `quantity_scu`（體積，礦石之類的原料通常只有
+  `resource_type_uuid`）。兩種不能混算，所以每一列自己帶單位；只有前者能從庫存
+  自動帶入，後者畫面會標「原料類，庫存無法自動對應」。
+- **需求未知不當成 0**：材料明細只在同步時帶 `include` 參數才有內容，個別項目也
+  可能兩個數量欄位都空。那種情況會標成「未知」並排除在瓶頸計算外，同時在摘要
+  提示「實際可做數量可能更少」—— 當成 0 會算出可以做無限個。
+- **後台帶入是逐材料查詢**（不是撈整個庫存再比對）：庫存列表有 200 筆上限，
+  整撈在公會庫變大後會漏，而漏掉的後果是**靜默高估**可做數量。
+
+計算邏輯在 `frontend/src/utils/craftCalc.js`（純函式），有 23 項測試：
+
+```bash
+cd frontend && npm run test:calc
 ```
 
 ---

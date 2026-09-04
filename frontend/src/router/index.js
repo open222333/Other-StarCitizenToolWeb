@@ -110,6 +110,12 @@ const router = createRouter({
           component: () => import('@/views/BlueprintListView.vue'),
         },
         {
+          // 藍圖材料試算（同一個元件也掛在玩家頁的「試算」分頁）
+          path: 'blueprint-calc',
+          name: 'blueprint-calc',
+          component: () => import('@/views/BlueprintCalcView.vue'),
+        },
+        {
           path: 'inventory',
           name: 'inventory',
           component: () => import('@/views/InventoryListView.vue'),

@@ -8,7 +8,8 @@
     "preview":     "vite preview",
     "dev:web":     "vite --config vite.config.web.js",
     "build:web":   "vite build --config vite.config.web.js",
-    "preview:web": "vite preview --config vite.config.web.js"
+    "preview:web": "vite preview --config vite.config.web.js",
+    "test:calc":   "node src/utils/craftCalc.test.mjs"
   },
   "dependencies": {
     "bootstrap":       "^5.3.3",
