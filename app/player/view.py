@@ -824,6 +824,82 @@ def add_my_blueprint():
     return jsonify({'success': True, 'id': blueprint_id}), 201
 
 
+#: 一次批量登記的上限。
+#
+#  1,600+ 張主檔全勾起來送出並不是合理操作（畫面一頁最多 200 筆），
+#  而沒有上限的話一個請求就能塞爆 insert_many 與回應大小。
+MAX_BULK_BLUEPRINTS = 200
+
+
+@app_player.route('/blueprints/bulk', methods=['POST'])
+@player_required
+@limiter.limit('20 per minute')
+def add_my_blueprints_bulk():
+    """一次登記多張藍圖（畫面上勾選後送出）。
+
+    跟單筆登記同樣的規則：只能登記主檔裡存在的 uuid、名稱一律取自主檔、
+    狀態一律寫死。已經登記過的會被**跳過**而不是新增第二筆 —— 回應會分別
+    列出實際新增與跳過的數量，讓畫面能誠實說「新增 12 張、跳過 3 張」。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          required: [blueprint_uuids]
+          properties:
+            blueprint_uuids:      {type: array, items: {type: string}, description: "主檔 uuid 清單，最多 200 筆"}
+            acquisition_method:   {type: string}
+            acquisition_location: {type: string}
+            notes:                {type: string}
+    responses:
+      200:
+        description: 成功（含 added / skipped / not_found 統計）
+      400:
+        description: 沒有帶 uuid、或超過單次上限
+    """
+    player = _self_player_doc()
+    data = request.get_json(silent=True) or {}
+    raw = data.get('blueprint_uuids')
+    if not isinstance(raw, list) or not raw:
+        raise StockError('請先勾選要登記的藍圖。')
+
+    uuids = [str(u).strip() for u in raw if str(u or '').strip()]
+    # 去重後才算數量，否則使用者看到的「已選 N 張」跟這裡的上限對不起來
+    uuids = list(dict.fromkeys(uuids))
+    if len(uuids) > MAX_BULK_BLUEPRINTS:
+        raise StockError(f'一次最多只能登記 {MAX_BULK_BLUEPRINTS} 張，'
+                         f'目前勾選了 {len(uuids)} 張。')
+
+    # 一次 $in 批次查主檔，順便拿到名稱（不接受 client 傳來的名稱）
+    names = BlueprintMaster.names_by_ids(uuids)
+    items = [{'uuid': uuid, 'name': (names.get(uuid) or {}).get('name') or ''}
+             for uuid in uuids if (names.get(uuid) or {}).get('name')]
+    not_found = [uuid for uuid in uuids
+                 if not (names.get(uuid) or {}).get('name')]
+
+    result = BlueprintModel.bulk_create_for_player(
+        player['_id'], items,
+        acquisition_method=(data.get('acquisition_method') or '').strip(),
+        acquisition_location=(data.get('acquisition_location') or '').strip(),
+        notes=(data.get('notes') or '').strip(),
+    )
+
+    Log.create(f'player:{player.get("star_citizen_id")}', 'bulk_add_blueprints',
+               f'批量登記藍圖：新增 {len(result["added"])} 張、'
+               f'跳過 {len(result["skipped"])} 張、'
+               f'主檔查不到 {len(not_found)} 張', success=True)
+
+    return jsonify({
+        'success': True,
+        'added': len(result['added']),
+        'skipped': len(result['skipped']),
+        'not_found': len(not_found),
+        'added_uuids': result['added'],
+    })
+
+
 @app_player.route('/blueprints/<blueprint_id>', methods=['DELETE'])
 @player_required
 def delete_my_blueprint(blueprint_id):

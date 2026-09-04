@@ -141,3 +141,6 @@ docker/database/**
 web-admin/
 frontend/dist-web/
 app/static/admin/
+
+# Claude 傳到這台電腦的截圖／輸出（桌面 App 自動建立的資料夾，不納入版控）
+Claude outputs/

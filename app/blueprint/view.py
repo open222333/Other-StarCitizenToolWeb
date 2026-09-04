@@ -130,6 +130,7 @@ def list_master():
     security:
       - Bearer: []
     parameters:
+      - {in: query, name: q,           type: string, description: "名稱關鍵字（中英文都比對）"}
       - {in: query, name: output_type, type: string, description: "依產出物類型過濾（見 /blueprint/master/types）"}
       - {in: query, name: available,   type: integer, description: "1 = 只看預設就能用的（不需解鎖任務）"}
       - {in: query, name: limit,       type: integer, default: 50, description: "最多 200"}
@@ -143,6 +144,7 @@ def list_master():
         limit=limit, offset=offset,
         output_type=(request.args.get('output_type') or '').strip(),
         available_only=request.args.get('available') == '1',
+        query=(request.args.get('q') or '').strip(),
     )
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset})

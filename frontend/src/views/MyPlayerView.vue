@@ -499,8 +499,8 @@
     </div>
 
     <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
-    <div v-show="activeTab === 'blueprints'" role="tabpanel"
-         id="panel-blueprints" aria-labelledby="tab-blueprints">
+    <div v-show="activeTab === 'blueprints' && activeSub === 'mine'" role="tabpanel"
+         id="panel-blueprints-mine" aria-labelledby="subtab-blueprints-mine">
       <Transition name="alert-slide">
         <div v-if="blueprintError" class="alert alert-danger py-2">{{ blueprintError }}</div>
       </Transition>
@@ -623,6 +623,17 @@
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->
+    <!-- ══════════ 藍圖批量登記 ══════════ -->
+    <div v-show="activeTab === 'blueprints' && activeSub === 'bulk'" role="tabpanel"
+         id="panel-blueprints-bulk" aria-labelledby="subtab-blueprints-bulk">
+      <p class="small mb-3" style="color: var(--sf-text-muted)">
+        直接從遊戲藍圖主檔裡勾選，一次登記多張 —— 不用一張一張搜尋。
+        已經登記過的會標示「已登記」且不能重複勾選。
+      </p>
+      <BlueprintBulkRegister ref="bulkRegisterRef" :fetcher="playerAuth.playerFetch"
+        card-class="card scifi-card" @registered="onBulkRegistered" />
+    </div>
+
     <!-- ══════════ 藍圖材料試算 ══════════ -->
     <div v-show="activeTab === 'craft'" role="tabpanel" id="panel-craft"
       :aria-labelledby="'tab-craft'">
@@ -780,6 +791,7 @@ import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
+import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import FieldHint from '@/components/FieldHint.vue'
 // 社群繁中化包（cosmo-chang-1701/sc-translation-pack）萃取出來的地點中文對照，
 // 純靜態查表，不會隨遊戲改版自動更新，見 src/sc_zh.py 的說明
@@ -832,7 +844,13 @@ const tabs = [
       { key: 'history',    label: '庫存紀錄' },
     ],
   },
-  { key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3' },
+  {
+    key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
+    subTabs: [
+      { key: 'mine',   label: '我的藍圖' },
+      { key: 'bulk',   label: '批量登記' },
+    ],
+  },
   { key: 'craft',      label: '試算',  icon: 'bi bi-calculator' },
   {
     key: 'search',    label: '查詢',   icon: 'bi bi-search',
@@ -1019,6 +1037,14 @@ async function changePassword() {
   } finally {
     changingPassword.value = false
   }
+}
+
+// ── 藍圖批量登記 ──────────────────────────────────────────────
+const bulkRegisterRef = ref(null)
+
+/** 批量登記完成後，把「我的藍圖」那一頁的清單也更新（否則要手動重新整理）。 */
+async function onBulkRegistered() {
+  await loadBlueprints()
 }
 
 // ── 藍圖材料試算的庫存來源 ────────────────────────────────────

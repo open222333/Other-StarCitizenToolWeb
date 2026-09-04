@@ -121,6 +121,83 @@ class Blueprint:
         return str(result.inserted_id)
 
     @classmethod
+    def registered_uuids_for_player(cls, player_id: str, uuids=None) -> set:
+        """這個玩家已經登記過哪些主檔 uuid（不含已刪除的）。
+
+        給「批量登記」用：畫面要把已登記的標出來並禁止再勾，送出時也要再擋
+        一次（畫面資料可能已經過時，或有人直接打 API）。
+        `uuids` 給定時只查那幾筆，否則查全部。
+        """
+        try:
+            query = {'player_id': ObjectId(player_id), 'deleted_at': None,
+                     'blueprint_uuid': {'$ne': None}}
+        except Exception:
+            return set()
+        if uuids is not None:
+            wanted = [u for u in {str(u) for u in uuids if u} if u]
+            if not wanted:
+                return set()
+            query['blueprint_uuid'] = {'$in': wanted}
+
+        return {row['blueprint_uuid'] for row in
+                cls._col().find(query, {'blueprint_uuid': 1, '_id': 0})
+                if row.get('blueprint_uuid')}
+
+    @classmethod
+    def bulk_create_for_player(cls, player_id: str, items,
+                               acquisition_method: str = '',
+                               acquisition_location: str = '',
+                               notes: str = '') -> dict:
+        """一次登記多張藍圖，回傳 `{'added': [...], 'skipped': [...]}`。
+
+        `items` 是 `[{'uuid':…, 'name':…}, …]`（名稱一律由呼叫端從主檔取，
+        不接受 client 傳來的名稱 —— 理由見 app/player/view.py 的說明）。
+
+        **已登記的會被跳過而不是變成第二筆**：`blueprints` 沒有
+        (player_id, blueprint_uuid) 的唯一索引，單筆登記本來就能重複建立，
+        而批量登記讓這件事一次放大 50 倍 —— 使用者手滑按兩下就會多出
+        一整批重複資料，而「誰有這張圖」的統計會跟著失真。
+
+        `unlock_status` 一律寫死 DEFAULT_UNLOCK_STATUS，跟單筆登記同一個
+        理由（玩家端「登記」的語意就是「我有這張圖」）。
+        """
+        pairs = [(str(item.get('uuid') or '').strip(), item.get('name') or '')
+                 for item in (items or [])]
+        pairs = [(uuid, name) for uuid, name in pairs if uuid and name]
+        if not pairs:
+            return {'added': [], 'skipped': []}
+
+        already = cls.registered_uuids_for_player(player_id, [u for u, _ in pairs])
+        # 同一次請求裡的重複 uuid 也要去掉，否則一次就寫進兩筆
+        seen = set()
+        fresh = []
+        for uuid, name in pairs:
+            if uuid in already or uuid in seen:
+                continue
+            seen.add(uuid)
+            fresh.append((uuid, name))
+
+        if not fresh:
+            return {'added': [], 'skipped': [u for u, _ in pairs]}
+
+        now = datetime.utcnow()
+        docs = [{
+            'name':                 name,
+            'player_id':            ObjectId(player_id),
+            'acquisition_method':   acquisition_method,
+            'acquisition_location': acquisition_location,
+            'unlock_status':        DEFAULT_UNLOCK_STATUS,
+            'notes':                notes,
+            'blueprint_uuid':       uuid,
+            'created_at':           now,
+            'updated_at':           now,
+            'deleted_at':           None,
+        } for uuid, name in fresh]
+        cls._col().insert_many(docs)
+
+        return {'added': [uuid for uuid, _ in fresh], 'skipped': sorted(already)}
+
+    @classmethod
     def update(cls, blueprint_id: str, **fields) -> bool:
         set_fields = {k: v for k, v in fields.items() if v is not None}
         if 'player_id' in set_fields:

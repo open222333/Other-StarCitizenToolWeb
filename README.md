@@ -130,6 +130,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
 | **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
 | 藍圖材料試算 | http://localhost:8090/me?tab=craft ／ 後台 `/admin/blueprint-calc` | 填現有材料算最多可做幾個。同一個元件，玩家版帶個人庫、後台版帶公會共享庫 |
+| 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
 | 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
 | 玩家站上的後台登入 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面。管理員平常請走 8080 |
 
@@ -181,6 +182,7 @@ Docker 的 port 發佈會直接寫 iptables、繞過 ufw，綁 0.0.0.0 等於對
 - [Docker 部署](#docker-部署)
 - [域名部署（HTTPS）](#域名部署https)
 - [主機 nginx 部署](#主機-nginx-部署)
+- [藍圖批量登記](#藍圖批量登記)
 - [藍圖材料試算](#藍圖材料試算)
 - [遊戲資料同步](#遊戲資料同步)
 - [Discord bot](#discord-bot)
@@ -798,6 +800,33 @@ sudo tail -f /var/log/nginx/flask-app-error.log      # 錯誤日誌
 sudo tail -f /var/log/nginx/flask-app-access.log     # 訪問日誌
 sudo certbot renew --dry-run                         # 測試自動續約
 ```
+
+---
+
+## 藍圖批量登記
+
+玩家頁「藍圖 → 批量登記」（`components/BlueprintBulkRegister.vue`）。
+原本只能用搜尋框一張一張登記，遊戲一次解鎖十幾張圖時要重複十幾次；
+現在直接列出主檔（名稱關鍵字／產出類型／只看免解鎖三種篩選＋分頁），
+勾選後一次送出。
+
+- 已登記的整列淡化、標示「已登記」且不能再勾。
+- 勾選狀態**跨頁保留**：翻頁去看其他類型再回來，勾過的不會消失。
+- 「取得方式」會套用到這批全部（可留空）。
+- 送出後誠實回報「新增 N 張、跳過 M 張（已登記）、K 張主檔查不到」，
+  不會把跳過的講成成功。
+
+後端 `POST /player/blueprints/bulk`（`app/player/view.py`）：
+
+- 單次上限 200 張（`MAX_BULK_BLUEPRINTS`），限速 20 次/分鐘。
+- 名稱一律取自主檔、`unlock_status` 一律寫死，跟單筆登記同一套規則。
+- **已登記的一律跳過而不是新增第二筆**：`blueprints` 沒有
+  (player_id, blueprint_uuid) 唯一索引，單筆登記本來就能重複建立，
+  批量登記會把這件事一次放大 —— 手滑按兩下就多一整批重複資料，
+  而「誰有這張圖」的統計會跟著失真。同一次請求裡的重複 uuid 也會去重。
+
+測試在 `tests/test_blueprint_bulk.py`（19 項，含雙擊送出、跨玩家隔離、
+軟刪後可重新登記、名稱篩選的 regex escape）。
 
 ---
 

@@ -298,12 +298,25 @@ class BlueprintMaster(_MasterBase):
 
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0,
-                 output_type: str = '', available_only: bool = False) -> tuple:
+                 output_type: str = '', available_only: bool = False,
+                 query: str = '') -> tuple:
+        """分頁列出藍圖主檔。
+
+        `query` 是名稱關鍵字（中英文都比對）。有這個參數，前端「瀏覽整份清單
+        並勾選」才能一邊篩名稱一邊翻頁 —— search() 只回前 25 筆、沒有分頁，
+        當清單有 1,600 筆時不夠用。
+        """
         filt: dict = {'is_current': True}
         if (output_type or '').strip():
             filt['output_type'] = output_type.strip()
         if available_only:
             filt['is_available_by_default'] = True
+        if (query or '').strip():
+            pattern = escape_regex(query)
+            filt['$or'] = [
+                {'name_lower': {'$regex': pattern.lower()}},
+                {'name_zh': {'$regex': pattern}},
+            ]
 
         total = cls._col().count_documents(filt)
         rows = list(cls._col().find(filt, cls.PROJECTION)
