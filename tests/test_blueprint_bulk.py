@@ -212,3 +212,83 @@ def test_master_list_combines_name_and_type_filter(client, auth_headers, master)
     rows = client.get('/blueprint/master?q=e&output_type=consumable',
                       headers=auth_headers).get_json()
     assert [row['_id'] for row in rows['data']] == ['bp-2']
+
+
+# ── 這一輪安全性複查補上的防護 ────────────────────────────────
+
+def test_unique_index_catches_the_concurrent_race(client, headers, master):
+    """並發送出兩批相同的藍圖時，唯一索引要擋住第二筆並歸類成 skipped。
+
+    「先查已登記、再 insert_many」是 read-then-write，不是原子操作：
+    兩個分頁同時送出（或 client 對慢回應重試）會同時讀到「都還沒登記」
+    然後雙雙寫入。這裡用 monkeypatch 讓已登記查詢回空集合，
+    模擬「讀到的是過時狀態」那一瞬間。
+    """
+    from src.mongo import ensure_indexes
+    ensure_indexes()
+
+    player = Player.find_by_star_citizen_id('Tom_SC')
+    BlueprintModel.bulk_create_for_player(
+        player['_id'], [{'uuid': 'bp-1', 'name': 'Laser Cannon S1'}])
+
+    original = BlueprintModel.registered_uuids_for_player.__func__
+    BlueprintModel.registered_uuids_for_player = classmethod(
+        lambda cls, pid, uuids=None: set())
+    try:
+        result = BlueprintModel.bulk_create_for_player(
+            player['_id'], [{'uuid': 'bp-1', 'name': 'Laser Cannon S1'},
+                            {'uuid': 'bp-2', 'name': 'Medical Pen'}])
+    finally:
+        BlueprintModel.registered_uuids_for_player = classmethod(original)
+
+    # bp-1 撞索引 → 算 skipped；bp-2 照樣寫進去（ordered=False）
+    assert result['added'] == ['bp-2']
+    assert 'bp-1' in result['skipped']
+    assert len(BlueprintModel.find_all(player_id=player['_id'])) == 2
+
+
+def test_unique_index_still_allows_free_text_blueprints(master):
+    """後台可以自由輸入名稱（blueprint_uuid 為 null），那種重複是允許的。"""
+    from src.mongo import ensure_indexes
+    ensure_indexes()
+
+    pid = Player.create(player_name='Bob', star_citizen_id='Bob_SC')
+    BlueprintModel.create(name='自己打的名字', player_id=pid)
+    BlueprintModel.create(name='自己打的名字', player_id=pid)
+    assert len(BlueprintModel.find_all(player_id=pid)) == 2
+
+
+def test_oversized_payload_is_rejected_before_processing(client, headers):
+    """上限要在逐項處理**之前**檢查 —— 否則 150 萬筆的 body 會先被
+    str()/strip() 掃過一遍才被擋，單一請求就吃掉上百 MB 記憶體。"""
+    from app.player.view import MAX_BULK_BLUEPRINTS
+    resp = client.post('/player/blueprints/bulk', headers=headers, json={
+        'blueprint_uuids': ['bp-1'] * (MAX_BULK_BLUEPRINTS + 50)})
+    assert resp.status_code == 400
+    assert '這次送出了' in resp.get_json()['message']
+
+
+def test_absurdly_long_uuids_do_not_500(client, headers, master):
+    """超長字串會組出超過 Mongo 16MB 命令上限的 $in → DocumentTooLarge → 500。
+    現在會被長度檢查濾掉，當成查不到處理。"""
+    resp = client.post('/player/blueprints/bulk', headers=headers, json={
+        'blueprint_uuids': ['bp-1', 'x' * 70_000]})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['added'] == 1
+    assert len(_mine()) == 1
+
+
+def test_player_blueprint_list_is_not_truncated_at_500(client, headers, master):
+    """批量登記頁靠這支端點判斷「哪些已登記」。被 500 截斷的話，
+    後面的圖會顯示成可勾選 —— 畫面說謊。"""
+    player = Player.find_by_star_citizen_id('Tom_SC')
+    get_db()['blueprints'].insert_many([{
+        'name': f'BP {i}', 'player_id': __import__('bson').ObjectId(player['_id']),
+        'blueprint_uuid': f'uuid-{i:04d}', 'unlock_status': 'obtained',
+        'deleted_at': None, 'notes': '', 'acquisition_method': '',
+        'acquisition_location': '',
+    } for i in range(600)])
+
+    rows = client.get('/player/blueprints', headers=headers).get_json()['data']
+    assert len(rows) == 600

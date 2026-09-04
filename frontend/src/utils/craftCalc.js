@@ -47,14 +47,19 @@ export function toAmount(value) {
  */
 export function normalizeIngredients(recipe) {
   const list = (recipe && recipe.ingredients) || []
-  return list.map((ing, index) => {
+  const merged = []
+  const byKey = new Map()
+
+  list.forEach((ing, index) => {
     const hasCount = ing.quantity !== null && ing.quantity !== undefined
     const hasScu = ing.quantity_scu !== null && ing.quantity_scu !== undefined
     const unit = hasCount ? UNIT_COUNT : (hasScu ? UNIT_SCU : null)
     const need = hasCount ? Number(ing.quantity) : (hasScu ? Number(ing.quantity_scu) : null)
+    const id = ing.item_uuid || ing.resource_type_uuid || ''
 
-    return {
-      key: ing.item_uuid || ing.resource_type_uuid || `${ing.name || 'ingredient'}#${index}`,
+    const row = {
+      // 同一種材料的兩筆要合併，所以 key 要含單位：個數與 SCU 不能相加
+      key: id ? `${id}|${unit || '?'}` : `${ing.name || 'ingredient'}#${index}`,
       name: ing.name || '（未命名材料）',
       kind: ing.kind || '',
       itemUuid: ing.item_uuid || '',
@@ -65,7 +70,27 @@ export function normalizeIngredients(recipe) {
       // 只有對得上 item_master 的材料才可能從庫存自動帶入
       canPrefill: Boolean(ing.item_uuid),
     }
+
+    // ⚠️ 同一種材料在 ingredients 裡出現兩次時要**把需求相加**。
+    //
+    // 上游的 ingredients 是原封不動複製過來的（見 src/scdata.py 的
+    // map_blueprint），同一個 item_uuid 出現兩筆是可能的。舊版把它們當成
+    // 兩個獨立的限制（各自 key 相同還會互相蓋掉），而「從庫存帶入」又會
+    // 把同一批庫存填進兩列 —— 結果是**靜默高估**：需要 2+3 個、庫存有 10 個
+    // 的材料會算成「可以做 6 個」，實際只能做 2 個，而且畫面標記為資料可靠。
+    const existing = id ? byKey.get(row.key) : null
+    if (existing) {
+      // 其中一邊需求未知就整體視為未知（不能只加已知的那邊）
+      existing.need = (existing.need === null || row.need === null)
+        ? null
+        : existing.need + row.need
+      return
+    }
+    if (id) byKey.set(row.key, row)
+    merged.push(row)
   })
+
+  return merged
 }
 
 /**

@@ -34,24 +34,38 @@ import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
  * 算出偏低的可做數量 —— 那比慢幾百毫秒糟糕得多。材料種類通常不到 10，
  * 而且是並行送出的。
  */
-async function loadGuildStock(rows) {
-  const targets = rows.filter(row => row.itemUuid)
-  if (!targets.length) return []
+const STOCK_CONCURRENCY = 6
 
-  const responses = await Promise.all(targets.map(row =>
-    apiFetch(`/inventory/?owner_type=guild&item_id=${encodeURIComponent(row.itemUuid)}&limit=200`)))
+async function loadGuildStock(rows) {
+  // 同一個 item_uuid 只查一次：配方裡同一種材料可能出現兩筆
+  // （craftCalc 會把需求合併），查兩次會讓同一批庫存被累加兩遍 → 靜默高估。
+  const targets = [...new Map(
+    rows.filter(row => row.itemUuid).map(row => [row.itemUuid, row]),
+  ).values()]
+  if (!targets.length) return { rows: [], failed: 0 }
 
   const stockRows = []
-  for (let i = 0; i < targets.length; i++) {
-    const res = responses[i]
-    if (!res) continue
-    const data = await res.json().catch(() => null)
-    if (!data?.success) continue
-    // 只收「這次查的那個材料」的列。後端本來就會按 item_id 過濾，這裡再擋一次
-    // 是因為漏掉的後果是**靜默高估**：同一批列被多次累加，畫面會說可以做
-    // 更多個，而使用者要到實際製造時才發現材料不夠。
-    stockRows.push(...(data.data || []).filter(stock => stock.item_id === targets[i].itemUuid))
+  let failed = 0
+
+  // 分批送出而不是一次 Promise.all：材料多的配方（上限 200 種）會一次開出
+  // 200 個請求，把瀏覽器的連線數與後端都打滿。
+  for (let i = 0; i < targets.length; i += STOCK_CONCURRENCY) {
+    const batch = targets.slice(i, i + STOCK_CONCURRENCY)
+    const responses = await Promise.all(batch.map(row =>
+      apiFetch(`/inventory/?owner_type=guild&item_id=${encodeURIComponent(row.itemUuid)}&limit=200`)))
+
+    for (let j = 0; j < batch.length; j++) {
+      const res = responses[j]
+      const data = res ? await res.json().catch(() => null) : null
+      // ⚠️ 讀失敗一定要算進 failed 並回報給呼叫端。
+      //    靜默跳過的話那個材料的數量會留空 → 視為 0 → 「最多可做 0 個」
+      //    並把它標成瓶頸，而畫面仍顯示資料可靠 —— 使用者無從得知是讀取失敗。
+      if (!data?.success) { failed += 1; continue }
+      // 只收「這次查的那個材料」的列（後端本來就會過濾，這裡再擋一次）
+      stockRows.push(...(data.data || [])
+        .filter(stock => stock.item_id === batch[j].itemUuid))
+    }
   }
-  return stockRows
+  return { rows: stockRows, failed }
 }
 </script>

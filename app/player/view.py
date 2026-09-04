@@ -727,7 +727,12 @@ def list_my_blueprints():
         description: 成功
     """
     player = _self_player_doc()
-    rows = BlueprintModel.find_all(player_id=player['_id'])
+    # limit 要蓋過 find_all 的預設 500：那個上限是為了「列出全部玩家的藍圖」
+    # 才存在的，套到「單一玩家自己的清單」上會出事 —— 遊戲主檔有 1,600+ 張，
+    # 登記超過 500 張的玩家會拿到被截斷的清單，而批量登記頁靠這支端點判斷
+    # 「哪些已登記」，於是已登記的圖會顯示成可勾選（畫面說謊）。
+    rows = BlueprintModel.find_all(player_id=player['_id'],
+                                   limit=BlueprintModel.PLAYER_MAX)
 
     # 有連到主檔的補上遊戲資料（產出物、製作時間、材料數）。
     # 一次 $in 批次查，不要逐筆 find_one —— 玩家可能登記幾十張藍圖。
@@ -865,12 +870,24 @@ def add_my_blueprints_bulk():
     if not isinstance(raw, list) or not raw:
         raise StockError('請先勾選要登記的藍圖。')
 
-    uuids = [str(u).strip() for u in raw if str(u or '').strip()]
-    # 去重後才算數量，否則使用者看到的「已選 N 張」跟這裡的上限對不起來
-    uuids = list(dict.fromkeys(uuids))
-    if len(uuids) > MAX_BULK_BLUEPRINTS:
+    # ⚠️ 先看**原始長度**再做任何逐項處理。
+    #
+    # 舊版是「去重後才檢查上限」，所以 `['bp-1'] * 1500000` 這種 body
+    # （12MB，還在 MAX_CONTENT_LENGTH 16MB 之內）會先跑完 150 萬次
+    # str()/strip() 與一次 dict.fromkeys 才被擋下 —— 實測單一請求峰值
+    # 多吃 114MB 記憶體、耗時 1 秒，而限速是 20 次/分鐘，一個帳號就能
+    # 讓 gunicorn worker 反覆配置 GB 級記憶體。
+    if len(raw) > MAX_BULK_BLUEPRINTS:
         raise StockError(f'一次最多只能登記 {MAX_BULK_BLUEPRINTS} 張，'
-                         f'目前勾選了 {len(uuids)} 張。')
+                         f'這次送出了 {len(raw)} 筆。')
+
+    # uuid 是 36 字元的 GUID，給到 64 已經很寬鬆。不設上限的話 200 筆
+    # 超長字串會組出超過 Mongo 16MB 命令上限的 $in 查詢 → DocumentTooLarge
+    # → 未攔截的 500（StockError 之外的例外都是 500）。
+    uuids = [u for u in (str(item).strip() for item in raw)
+             if u and len(u) <= 64]
+    # 去重後才算「實際要處理幾筆」，跟畫面上的「已選 N 張」一致
+    uuids = list(dict.fromkeys(uuids))
 
     # 一次 $in 批次查主檔，順便拿到名稱（不接受 client 傳來的名稱）
     names = BlueprintMaster.names_by_ids(uuids)

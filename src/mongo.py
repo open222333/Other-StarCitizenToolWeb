@@ -70,6 +70,60 @@ def _ensure_player_scid_index(db):
         partialFilterExpression=_PLAYER_SCID_PARTIAL)
 
 
+_BLUEPRINT_UNIQUE_INDEX = 'blueprints_player_uuid_unique'
+
+# 同一個玩家不該有兩筆「同一張主檔藍圖」的使用中登記。
+#
+# 只約束「有對應主檔 uuid、且未刪除」的文件：
+#   - blueprint_uuid 為 null 的是後台自由輸入的名稱（刻意允許重複）
+#   - 軟刪除的要能留著，而且刪掉之後可以重新登記
+_BLUEPRINT_UNIQUE_PARTIAL = {
+    'deleted_at': None,
+    'blueprint_uuid': {'$type': 'string'},
+}
+
+
+def _ensure_blueprint_unique_index(db):
+    """建立 (player_id, blueprint_uuid) 的 partial 唯一索引。
+
+    為什麼需要：批量登記是「先查已登記、再 insert_many」的 read-then-write，
+    不是原子操作。兩個並發請求（兩個分頁、或 client 對慢回應重試）會同時
+    讀到「都還沒登記」然後雙雙寫入 —— 應用層的跳過邏輯擋不住，只有唯一索引擋得住。
+
+    ⚠️ 舊資料可能已經有重複（單筆登記從來沒有防護過）。那種情況建索引會失敗，
+    這裡**不會**自動刪資料 —— 改成印出清楚的警告與重複筆數，讓管理員自己決定
+    要保留哪一筆。應用層的跳過邏輯在沒有索引時仍然有效（只是擋不住並發）。
+    """
+    try:
+        db['blueprints'].create_index(
+            [('player_id', ASCENDING), ('blueprint_uuid', ASCENDING)],
+            unique=True, name=_BLUEPRINT_UNIQUE_INDEX,
+            partialFilterExpression=_BLUEPRINT_UNIQUE_PARTIAL)
+    except OperationFailure as e:
+        dupes = _count_blueprint_duplicates(db)
+        logging.warning(
+            '[index] 無法建立 %s：%s\n'
+            '        目前有 %d 組 (玩家, 藍圖) 重複登記，請先清掉多餘的那幾筆'
+            '（保留最早的一筆即可），再重啟讓索引建立。'
+            ' 在此之前批量登記仍會跳過已登記的，但擋不住並發重複。',
+            _BLUEPRINT_UNIQUE_INDEX, e, dupes)
+
+
+def _count_blueprint_duplicates(db) -> int:
+    """有幾組 (player_id, blueprint_uuid) 出現一次以上（給上面的警告用）。"""
+    try:
+        rows = list(db['blueprints'].aggregate([
+            {'$match': {'deleted_at': None, 'blueprint_uuid': {'$type': 'string'}}},
+            {'$group': {'_id': {'p': '$player_id', 'b': '$blueprint_uuid'},
+                        'n': {'$sum': 1}}},
+            {'$match': {'n': {'$gt': 1}}},
+            {'$count': 'groups'},
+        ], allowDiskUse=True))
+        return rows[0]['groups'] if rows else 0
+    except Exception:
+        return -1
+
+
 def ensure_indexes():
     db = get_db()
     db['users'].create_index('username', unique=True)
@@ -128,6 +182,7 @@ def ensure_indexes():
     db['blueprints'].create_index('name')
     # 玩家名冊指向藍圖主檔的外鍵（可為空 —— 仍允許自由輸入名稱）
     db['blueprints'].create_index('blueprint_uuid')
+    _ensure_blueprint_unique_index(db)
 
     # ── 製造藍圖主檔（API 同步，見 src/scdata.py 的 map_blueprint）──
     # 「做出這個物品的所有配方」是主要查詢路徑

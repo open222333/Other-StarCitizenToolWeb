@@ -13,6 +13,7 @@ UEX 那些系統互相對應。
 from datetime import datetime
 
 from bson import ObjectId
+from pymongo.errors import BulkWriteError
 
 from src.mongo import get_db
 
@@ -34,6 +35,10 @@ DEFAULT_UNLOCK_STATUS = 'obtained'
 # unconfirmed / outdated 刻意**保留**：那些人確實登記過這張圖，只是不確定
 # 或版本較舊，仍然值得問一聲。前端會在名字後面標出狀態讓人自己判斷。
 HOLDER_HIDDEN_STATUSES = ['locked']
+
+# 「誰有這張藍圖」每一組最多回傳幾位持有者。
+# 總人數另外用 holder_count 帶出去（在 $group 就算好，不受這個截斷影響）。
+HOLDERS_PER_GROUP = 50
 
 
 def _redact_contact(holder: dict) -> dict:
@@ -75,6 +80,11 @@ class Blueprint:
     # 隨著登記數成長會變成一次幾 MB 的回應。這個規模的公會短期不會踩到，
     # 但沒有防護的查詢遲早會在最忙的時候變成問題。
     FIND_ALL_MAX = 500
+
+    # 「某一位玩家自己的清單」的上限。遊戲主檔有 1,600+ 張，一個熱衷玩家
+    # 全部登記完是有可能的，所以這裡要放到主檔規模以上 —— 用 500 會讓
+    # 批量登記頁的「已登記」標記漏掉後面的圖（畫面顯示成可勾選）。
+    PLAYER_MAX = 5000
 
     @classmethod
     def find_all(cls, player_id: str = '', include_deleted: bool = False,
@@ -193,9 +203,43 @@ class Blueprint:
             'updated_at':           now,
             'deleted_at':           None,
         } for uuid, name in fresh]
-        cls._col().insert_many(docs)
 
-        return {'added': [uuid for uuid, _ in fresh], 'skipped': sorted(already)}
+        # ordered=False：讓沒撞到唯一索引的那些照樣寫進去。
+        #
+        # 上面的「查已登記再跳過」是 read-then-write，不是原子操作 ——
+        # 兩個並發請求（兩個分頁、或送出後 client 重試）會同時讀到「都還沒登記」
+        # 然後雙雙寫入，正是這支函式想避免的重複。真正的保證來自
+        # src/mongo.py 的 (player_id, blueprint_uuid) partial 唯一索引，
+        # 撞到的那幾筆在這裡被歸類成 skipped。
+        # ordered=True 的話一撞就整批中止，前面成功的還留著、呼叫端卻收到例外。
+        added = [uuid for uuid, _ in fresh]
+        try:
+            cls._col().insert_many(docs, ordered=False)
+        except BulkWriteError as err:
+            write_errors = err.details.get('writeErrors', [])
+            # 撞唯一索引的不算新增，改列進 skipped；其他錯誤照樣往上拋
+            if any(e.get('code') != 11000 for e in write_errors):
+                raise
+
+            # ⚠️ 用 writeError 的 `index`（這筆是 docs 裡的第幾個）回推 uuid，
+            #    不要靠 `keyValue` —— 那是 MongoDB 4.2 以後才有的欄位，
+            #    舊版與 mongomock 都不提供。實測過：只看 keyValue 的話，
+            #    duplicated 會是空集合，於是「沒寫進去的那筆」被回報成
+            #    added（畫面顯示新增 1 張，實際上一筆都沒進去）。
+            duplicated = set()
+            for e in write_errors:
+                pos = e.get('index')
+                if isinstance(pos, int) and 0 <= pos < len(docs):
+                    duplicated.add(docs[pos]['blueprint_uuid'])
+                else:   # 沒有 index 時退回 keyValue（新版 MongoDB 有）
+                    uuid = (e.get('keyValue') or {}).get('blueprint_uuid')
+                    if uuid:
+                        duplicated.add(uuid)
+
+            added = [uuid for uuid in added if uuid not in duplicated]
+            already = set(already) | duplicated
+
+        return {'added': added, 'skipped': sorted(already)}
 
     @classmethod
     def update(cls, blueprint_id: str, **fields) -> bool:
@@ -285,8 +329,18 @@ class Blueprint:
             }},
             {'$sort': {'holder_count': -1, 'name': 1}},
             {'$limit': max(1, min(limit, 200))},
+            # holders 陣列本身也要有上限。
+            #
+            # 上面的 $limit 限制的是「幾組藍圖」，不是每組裡有幾個人 ——
+            # 一張人人都有的熱門藍圖，公會 200 人就會 $push 出 200 筆
+            # （每筆還帶 Discord 欄位）。這裡截到 50 人並保留總數
+            # （holder_count 在 $group 就算好了，不受這個截斷影響），
+            # 前端顯示「50 人以上」就夠用了。
+            {'$addFields': {'holders': {'$slice': ['$holders', HOLDERS_PER_GROUP]}}},
         ]
-        groups = list(cls._col().aggregate(pipeline))
+        # allowDiskUse：$group 會把所有 holders 累在記憶體裡，理由同
+        # src/models/inventory.py 的 list_stock
+        groups = list(cls._col().aggregate(pipeline, allowDiskUse=True))
         for group in groups:
             group['holders'] = [_redact_contact(h) for h in group.get('holders') or []]
         return groups

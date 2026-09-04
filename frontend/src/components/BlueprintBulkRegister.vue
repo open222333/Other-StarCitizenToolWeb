@@ -67,6 +67,17 @@
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中…
                 </td>
               </tr>
+              <!-- 讀取失敗要跟「真的沒有資料」分開講。同一句「沒有符合條件」
+                   同時代表 500、連線斷掉、token 過期的話，使用者只會以為
+                   自己篩錯條件，而不會想到重試。 -->
+              <tr v-else-if="loadFailed">
+                <td colspan="5" class="text-center py-4">
+                  <span class="text-warning">
+                    <i class="bi bi-exclamation-triangle me-1"></i>讀取藍圖清單失敗。
+                  </span>
+                  <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
+                </td>
+              </tr>
               <tr v-else-if="!rows.length">
                 <td colspan="5" class="text-center py-4 hint">
                   {{ keyword || outputType || availableOnly
@@ -163,6 +174,8 @@ const total = ref(0)
 const limit = ref(50)
 const offset = ref(0)
 const loading = ref(false)
+/** 上一次載入是不是失敗（跟「查詢結果為空」要分開顯示） */
+const loadFailed = ref(false)
 const types = ref([])
 
 const keyword = ref('')
@@ -215,9 +228,11 @@ async function reload(nextOffset = 0) {
   if (data?.success) {
     rows.value = data.data || []
     total.value = data.total ?? rows.value.length
+    loadFailed.value = false
   } else {
     rows.value = []
     total.value = 0
+    loadFailed.value = true
     flash(data?.message || '讀取藍圖清單失敗，請稍後再試', 'alert-warning')
   }
   loading.value = false
@@ -232,7 +247,12 @@ function onKeywordInput() {
 async function loadRegistered() {
   const res = await props.fetcher('/player/blueprints')
   const data = res ? await res.json().catch(() => null) : null
-  if (!data?.success) return
+  if (!data?.success) {
+    // 靜默失敗的後果是「已登記」標記全部消失 → 使用者會重複勾一次已經有的
+    flash('讀不到你已登記的藍圖，「已登記」標記可能不完整，請重新整理。',
+          'alert-warning')
+    return
+  }
   registered.clear()
   for (const row of data.data || []) {
     if (row.blueprint_uuid) registered.add(row.blueprint_uuid)

@@ -333,8 +333,13 @@ function onSearchBlur() {
 
 // ── 載入配方 ──────────────────────────────────────────────────
 
+// 載入配方也要有過期回應防護：先點 A（慢）再點 B（快）的話，
+// A 的回應晚到會蓋掉 B 的配方 —— 畫面標題顯示 B、材料表卻是 A 的。
+let recipeSeq = 0
+
 async function selectBlueprint(bp) {
   if (!bp) return
+  const mine = ++recipeSeq
   showResults.value = false
   keyword.value = bp.name_zh || bp.name || ''
   loadError.value = ''
@@ -344,14 +349,16 @@ async function selectBlueprint(bp) {
 
   try {
     const res = await props.fetcher(`/blueprint/master/${bp._id}`)
+    if (mine !== recipeSeq) return          // 已經有更新的一次選取
     const data = res ? await res.json().catch(() => null) : null
+    if (mine !== recipeSeq) return
     if (data?.success) {
       recipe.value = data.data
     } else {
       loadError.value = data?.message || '讀取配方失敗，請稍後再試'
     }
   } finally {
-    loadingRecipe.value = false
+    if (mine === recipeSeq) loadingRecipe.value = false
   }
 }
 
@@ -364,11 +371,21 @@ async function fillFromStock() {
   loadingStock.value = true
   loadError.value = ''
   try {
-    const stockRows = await props.stockLoader(rows.value)
-    const found = stockToHaveMap(rows.value, stockRows || [])
+    // loader 可以回陣列（舊契約）或 { rows, failed }。failed 一定要講出來 ——
+    // 靜默跳過讀取失敗的材料會讓它留空、被當成 0，畫面就會顯示
+    // 「最多可做 0 個」並把它標成瓶頸，而使用者完全不知道那只是讀取失敗。
+    const loaded = await props.stockLoader(rows.value)
+    const stockRows = Array.isArray(loaded) ? loaded : (loaded?.rows || [])
+    const failed = Array.isArray(loaded) ? 0 : (loaded?.failed || 0)
+
+    const found = stockToHaveMap(rows.value, stockRows)
     // 只覆蓋庫存裡真的有的材料，其他保留使用者自己填的值
     Object.entries(found).forEach(([key, value]) => { amounts[key] = value })
-    if (!Object.keys(found).length) {
+
+    if (failed) {
+      loadError.value = `有 ${failed} 種材料的${props.stockLabel}數量讀取失敗，`
+        + '那幾列請手動確認後再看試算結果。'
+    } else if (!Object.keys(found).length) {
       loadError.value = `${props.stockLabel}裡沒有這張藍圖需要的任何材料，請手動填入。`
     }
   } catch {

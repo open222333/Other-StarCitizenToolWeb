@@ -178,8 +178,12 @@ def list_vehicles():
     query = (request.args.get('q') or '').strip()
 
     if query:
+        # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
+        #    照舊回 len(rows) 的話 total == limit，前端算出「只有一頁」，
+        #    使用者永遠翻不到第二頁（而且不會有任何錯誤徵兆）。
+        #    回 None 讓前端知道「總數未知」，分頁改用「本頁滿了就還有下一頁」。
         rows = VehicleMaster.search(query, limit=limit)
-        total = len(rows)
+        total = None
     else:
         rows, total = VehicleMaster.list_all(limit=limit, offset=offset)
 
@@ -209,8 +213,9 @@ def list_commodities():
     query = (request.args.get('q') or '').strip()
 
     if query:
+        # 同上：搜尋模式沒有總數，回 None 而不是騙人的 len(rows)
         rows = CommodityMaster.search(query, limit=limit)
-        total = len(rows)
+        total = None
     else:
         rows, total = CommodityMaster.list_all(limit=limit, offset=offset)
 
