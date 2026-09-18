@@ -40,6 +40,7 @@
           <i v-else class="bi bi-arrow-repeat me-1"></i>
           立即同步
         </button>
+        <div v-if="syncMessage" class="text-danger small mt-2">{{ syncMessage }}</div>
 
         <!-- 自動同步排程（可在此改 cron，不用改設定檔、不用重啟 worker/beat） -->
         <hr class="my-3">
@@ -296,13 +297,24 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 }
 
+const syncMessage = ref('')
+
 async function triggerSync() {
   if (syncState.value === 'running') return
   clickedAt = Date.now()
   syncState.value = 'running'
+  syncMessage.value = ''
   const res = await itemApi.syncNow()
   if (!res || !res.ok) {
     syncState.value = 'error'
+    // 後端對「已有一輪同步進行中」正確回 409，這裡要分辨出來，
+    // 不能一律顯示成籠統的「發生錯誤」，否則使用者會誤以為同步失敗了。
+    if (res && res.status === 409) {
+      const body = await res.json().catch(() => null)
+      syncMessage.value = (body && body.message) || '已有同步進行中，請稍後再試'
+    } else {
+      syncMessage.value = '觸發同步失敗，請稍後再試'
+    }
     return
   }
   startPolling()
