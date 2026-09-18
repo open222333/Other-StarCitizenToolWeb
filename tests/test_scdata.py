@@ -160,6 +160,26 @@ def test_pagination_follows_links_next(monkeypatch):
     assert client.calls[1][1] is None
 
 
+def test_pagination_stops_on_repeated_next_link(monkeypatch, caplog):
+    """links.next 指回已經抓過的 URL（upstream 分頁在 total 邊界附近的已知問題，
+    blueprints 這種帶 include 的大分頁實測遇過）不能造成無窮迴圈 —— 整輪同步
+    會卡死不逾時也不報錯，比起直接失敗更難發現。偵測到重複 URL 就停止分頁，
+    保留已經抓到的資料。"""
+    monkeypatch.setattr(scdata, 'SCDATA_REQUEST_DELAY', 0)
+    client = _FakeClient()
+    # 把第 2 頁的 links.next 改成指回第 1 頁本身（模擬卡死的分頁迴圈）
+    client.pages[client.BASE + '?page=2']['links']['next'] = client.BASE
+
+    with caplog.at_level('ERROR'):
+        rows = list(scdata.wiki_rows(client, 'items'))
+
+    # 前兩頁的資料還是要保留，不能因為偵測到迴圈就整批丟掉
+    assert [r['uuid'] for r in rows] == ['a', 'b']
+    # 沒有被迴圈卡住：只打了頁 1、頁 2，沒有再打回頁 1
+    assert len(client.calls) == 2
+    assert '分頁迴圈' in caplog.text
+
+
 def test_uex_doc_id():
     assert scdata.uex_doc_id({'id': 42}, ['id']) == '42'
     assert scdata.uex_doc_id({'id_item': 7, 'id_terminal': 149},

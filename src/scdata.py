@@ -137,6 +137,13 @@ def wiki_rows(client: httpx.Client, resource: str) -> Iterator[dict]:
     """走訪 Wiki API 分頁（Laravel JSON:API 風格 page[size] / page[number]）。
 
     直接跟著 links.next 走，不自己算頁數 —— 總筆數會在同步途中變動。
+
+    ⚠️ 只信任 links.next 也有代價：blueprints 這種帶 include 的大分頁，實測
+    遇過上游回的 links.next 指回「剛剛已經抓過的那個 URL」（simplePaginate
+    型態的分頁在 total 邊界附近本來就容易出這種問題，不是我們自己重複組出
+    page[number]，但效果一樣 —— 迴圈會卡在同一頁，永遠抓不完，整輪同步
+    卡死不會逾時也不會報錯）。所以額外記錄已經拿過的 URL，重複就視為分頁
+    結束並記一筆錯誤，而不是照著上游的指示一直繞下去。
     """
     url = f'{SCDATA_WIKI_API_BASE}/{resource}'
     params = {
@@ -145,7 +152,16 @@ def wiki_rows(client: httpx.Client, resource: str) -> Iterator[dict]:
         **WIKI_QUERY_EXTRA.get(resource, {}),
     }
 
+    seen_urls: set = set()
     while url:
+        if url in seen_urls:
+            logger.error(
+                'scdata: %s 分頁 links.next 指回已抓過的 URL，判定分頁迴圈，'
+                '停止並保留已抓到的 %s',
+                resource, url)
+            break
+        seen_urls.add(url)
+
         payload = get_json(client, url, params)
         params = None  # links.next 已含查詢字串
 
