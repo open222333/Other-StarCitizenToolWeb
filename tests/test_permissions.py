@@ -108,6 +108,7 @@ ADMIN_ROUTES = [
     ('GET',    '/inventory/history',  READ_ROLES),
     # 遊戲資料同步（後台設定頁專用，玩家端不會用到）
     ('GET',    '/item/sync-status',   READ_ROLES),
+    ('GET',    '/item/sync-runs',     READ_ROLES),
     ('GET',    '/item/sync-schedule', READ_ROLES),
     ('POST',   '/item/sync',          WRITE_ROLES),
     ('PUT',    '/item/sync-schedule', WRITE_ROLES),

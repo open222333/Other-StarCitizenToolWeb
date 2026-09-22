@@ -53,6 +53,9 @@
         <RouterLink class="nav-link" to="/inventory" @click="sidebarOpen = false">
           <i class="bi bi-box-seam"></i>庫存
         </RouterLink>
+        <RouterLink class="nav-link" to="/mining" @click="sidebarOpen = false">
+          <i class="bi bi-gem"></i>礦物
+        </RouterLink>
 
         <div class="nav-section">管理</div>
         <RouterLink v-if="auth.isAdmin"

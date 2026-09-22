@@ -816,6 +816,68 @@ def test_sync_status(client, auth_headers, seed_master):
     assert body['data']['counts']['vehicles'] == 1
     assert body['data']['latest_run']['ok'] is True
     assert 'stats' not in body['data']['latest_run'], 'stats 太大，列表不該回傳'
+    assert body['data']['is_running'] is False, '沒有鎖存在時不該顯示成執行中'
+
+
+def test_sync_status_reflects_held_lock(client, auth_headers):
+    """worker 沒開時任務只是卡在佇列，latest_run 不會變——is_running 得看鎖，
+    不能只看 latest_run，不然畫面上完全看不出「其實根本沒在跑」。"""
+    import tasks.scdata_sync as sync_mod
+
+    with sync_mod.sync_lock('run-in-progress') as acquired:
+        assert acquired is True
+        body = client.get('/item/sync-status', headers=auth_headers).get_json()
+        assert body['data']['is_running'] is True
+
+    body = client.get('/item/sync-status', headers=auth_headers).get_json()
+    assert body['data']['is_running'] is False, '離開 lock 之後應該解鎖'
+
+
+def test_sync_runs_returns_recent_history(client, auth_headers):
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    get_db()['sync_runs'].insert_many([
+        {'_id': 'run-old', 'started_at': now - timedelta(days=1),
+         'finished_at': now - timedelta(days=1), 'ok': True, 'errors': [],
+         'stats': [{'resource': 'items', 'seen': 10, 'written': 2, 'retired': 0}]},
+        {'_id': 'run-new', 'started_at': now, 'finished_at': now,
+         'ok': False, 'errors': ['items: boom'],
+         'stats': [{'resource': 'items', 'seen': 10, 'written': 0, 'retired': 0}]},
+    ])
+
+    body = client.get('/item/sync-runs', headers=auth_headers).get_json()
+    assert body['success'] is True
+    ids = [r['_id'] for r in body['data']]
+    assert ids == ['run-new', 'run-old'], '應該依 started_at 新到舊排序'
+    assert all('stats' not in r for r in body['data']), '歷史列表不該帶逐資源明細'
+    assert body['data'][0]['ok'] is False
+    assert body['data'][0]['errors'] == ['items: boom']
+
+
+def test_sync_runs_limit_is_capped(client, auth_headers):
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    get_db()['sync_runs'].insert_many([
+        {'_id': f'run-{i}', 'started_at': now - timedelta(minutes=i),
+         'finished_at': now - timedelta(minutes=i), 'ok': True, 'errors': [], 'stats': []}
+        for i in range(150)
+    ])
+
+    body = client.get('/item/sync-runs?limit=9999', headers=auth_headers).get_json()
+    assert len(body['data']) == 100, 'limit 應被夾到上限 100'
+
+
+def test_sync_schedule_includes_next_run(client, auth_headers):
+    """後台排程頁要顯示「下次執行時間」，GET/PUT 都得回這個欄位。"""
+    body = client.get('/item/sync-schedule', headers=auth_headers).get_json()
+    assert body['success'] is True
+    assert 'next_run' in body['data']
+    assert body['data']['next_run'] is not None, '預設排程是啟用的，應該算得出下次執行時間'
+
+    put_body = client.put('/item/sync-schedule', headers=auth_headers,
+                           json={'cron': '0 4 * * *', 'enabled': False}).get_json()
+    assert put_body['success'] is True
+    assert put_body['data']['next_run'] is None, '停用排程後不該有下次執行時間'
 
 
 def test_paging_limit_is_capped(client, auth_headers, seed_master):

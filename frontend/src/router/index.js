@@ -92,6 +92,12 @@ const router = createRouter({
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
         },
+        {
+          // 資料同步狀態／自動排程／歷史紀錄（原本擠在 settings 頁裡，太長了獨立出來）
+          path: 'sync-schedule',
+          name: 'sync-schedule',
+          component: () => import('@/views/SyncScheduleView.vue'),
+        },
 
         // ── 玩家／藍圖／戰利品管理（規格書第 4、5、6 節）───────────
         {

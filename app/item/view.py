@@ -235,12 +235,18 @@ def sync_status():
       200:
         description: 成功
     """
+    from tasks.scdata_sync import is_sync_running
+
     run = SyncRun.latest()
     if run:
         run.pop('stats', None)
 
     return jsonify({'success': True, 'data': {
         'latest_run': run,
+        # 真正決定「現在是否有一輪在跑」的是 Redis 鎖，不是 latest_run——
+        # worker 沒開的話任務只是卡在佇列裡，鎖根本沒被拿到，latest_run
+        # 也不會變，畫面上得靠這個欄位才看得出「其實沒有在跑」。
+        'is_running': is_sync_running(),
         'game_versions': ItemMaster.game_versions(),
         'counts': {
             'items': ItemMaster.count_current(),
@@ -248,6 +254,31 @@ def sync_status():
             'commodities': CommodityMaster.count_current(),
         },
     }})
+
+
+@app_item.route('/sync-runs', methods=['GET'])
+@admin_api(*READ_ROLES)
+def sync_runs():
+    """最近幾輪同步的執行紀錄（給「同步排程」頁面顯示歷史用）。
+
+    刻意不含 stats 逐資源明細（跟 /sync-status 的 latest_run 一樣），
+    列表只需要看得出「這輪跑了多久、成功了沒、涵蓋哪些資源」。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - in: query
+        name: limit
+        type: integer
+        default: 20
+    responses:
+      200:
+        description: 成功
+    """
+    limit = request.args.get('limit', 20, type=int)
+    limit = max(1, min(limit, 100))
+    return jsonify({'success': True, 'data': SyncRun.recent(limit=limit)})
 
 
 @app_item.route('/sync', methods=['POST'])
@@ -274,6 +305,7 @@ def trigger_sync():
           properties:
             resources: {type: array, items: {type: string}, description: "預設全部：items/vehicles/commodities"}
             with_uex:  {type: boolean, default: true}
+            with_scunpacked: {type: boolean, default: true, description: "是否同步礦物回波參考表"}
     responses:
       202:
         description: 已排入同步佇列
@@ -295,8 +327,10 @@ def trigger_sync():
     data = request.get_json(silent=True) or {}
     resources = data.get('resources') or None
     with_uex = data.get('with_uex', True)
+    with_scunpacked = data.get('with_scunpacked', True)
 
-    async_result = sync_scdata.delay(resources=resources, with_uex=with_uex)
+    async_result = sync_scdata.delay(
+        resources=resources, with_uex=with_uex, with_scunpacked=with_scunpacked)
     return jsonify({'success': True, 'task_id': async_result.id,
                     'message': '已排入同步佇列，稍後可用 /item/sync-status 查看結果'}), 202
 
@@ -314,6 +348,7 @@ def get_sync_schedule():
         description: 成功
     """
     schedule = SyncSchedule.get()
+    schedule['next_run'] = SyncSchedule.next_run()
     return jsonify({'success': True, 'data': schedule})
 
 
@@ -360,4 +395,5 @@ def update_sync_schedule():
     except SyncScheduleError as err:
         return jsonify({'success': False, 'message': str(err)}), 400
 
+    schedule['next_run'] = SyncSchedule.next_run()
     return jsonify({'success': True, 'data': schedule})
