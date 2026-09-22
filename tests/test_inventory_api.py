@@ -472,6 +472,86 @@ def test_search_by_location_chinese_name(client, auth_headers, seed_search):
     assert {r['location'] for r in body['data']} == {'Lorville'}
 
 
+# ── 分欄位搜尋（item_id／item_type／location／player_id，AND 交集）──
+#
+# 「查詢 › 物品庫存」拆分欄位自動完成版：跟上面 q（OR 取聯集）是不同語意，
+# 見 search_stock() 與 Inventory.search_filtered() 各自的說明。
+
+def _search_filtered(client, auth_headers, **params):
+    from urllib.parse import urlencode
+    resp = client.get(f'/inventory/search?{urlencode(params)}', headers=auth_headers)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return resp.get_json()
+
+
+def test_search_filtered_by_item_id(client, auth_headers, seed_search):
+    body = _search_filtered(client, auth_headers, item_id='item-big')
+    assert {r['item_id'] for r in body['data']} == {'item-big'}
+    assert {r['owner_type'] for r in body['data']} == {'guild', 'player'}
+    assert body['matched'] is None
+
+
+def test_search_filtered_by_item_type(client, auth_headers, seed_search):
+    """item-small 的 type 是 Cooler，item-big 是 Commodity —— 只篩得到 item-small。"""
+    body = _search_filtered(client, auth_headers, item_type='Cooler')
+    assert {r['item_id'] for r in body['data']} == {'item-small'}
+
+
+def test_search_filtered_item_type_no_match_returns_empty(client, auth_headers, seed_search):
+    body = _search_filtered(client, auth_headers, item_type='NoSuchType')
+    assert body['data'] == []
+
+
+def test_search_filtered_item_id_takes_precedence_over_item_type(client, auth_headers, seed_search):
+    """兩個都給的話用 item_id——item_type='Cooler' 篩不到 item-big，
+    但 item_id 已經是精確值，不該再被 item_type 限縮掉。"""
+    body = _search_filtered(client, auth_headers, item_id='item-big', item_type='Cooler')
+    assert {r['item_id'] for r in body['data']} == {'item-big'}
+
+
+def test_search_filtered_by_location(client, auth_headers, seed_search):
+    body = _search_filtered(client, auth_headers, location='Lorville')
+    assert {r['location'] for r in body['data']} == {'Lorville'}
+
+
+def test_search_filtered_by_player_id(client, auth_headers, seed_search):
+    body = _search_filtered(client, auth_headers, player_id='TomLi')
+    assert {r['player'] for r in body['data']} == {'TomLi'}
+    assert {r['item_id'] for r in body['data']} == {'item-big'}
+
+
+def test_search_filtered_is_and_not_or(client, auth_headers, seed_search):
+    """item_type='Commodity'（只有 item-big）AND location='Lorville'（只有 item-small）
+    ——兩個條件同時成立的交集是空的，不能因為任一個有命中就回東西。"""
+    body = _search_filtered(client, auth_headers, item_type='Commodity', location='Lorville')
+    assert body['data'] == []
+
+
+def test_search_filtered_narrows_with_multiple_conditions(client, auth_headers, seed_search):
+    """item_type='Commodity'（item-big，公會庫 100 + TomLi 40）AND player_id='TomLi'
+    ——同時成立的只剩 TomLi 那一筆。"""
+    body = _search_filtered(client, auth_headers, item_type='Commodity', player_id='TomLi')
+    assert len(body['data']) == 1
+    assert body['data'][0]['player'] == 'TomLi'
+    assert body['data'][0]['item_id'] == 'item-big'
+
+
+def test_search_filtered_ignores_q_when_present(client, auth_headers, seed_search):
+    """新版參數存在時走 AND 模式，q 被忽略，不會混用兩種語意。"""
+    body = _search_filtered(client, auth_headers, item_id='item-big', q='zzz-nothing-matches')
+    assert {r['item_id'] for r in body['data']} == {'item-big'}
+
+
+def test_search_filtered_with_no_criteria_returns_empty_at_model_layer(client, seed_search):
+    """直接呼叫模型層：什麼條件都沒給要回空，不能被誤判成撈全部。"""
+    assert Inventory.search_filtered(WMS_SCOPE_ID) == []
+
+
+def test_search_filtered_item_ids_empty_list_means_no_match(client, seed_search):
+    """item_ids 傳空陣列（篩了但沒有物品符合）要跟『沒有篩物品』區分開。"""
+    assert Inventory.search_filtered(WMS_SCOPE_ID, item_ids=[]) == []
+
+
 # ── Discord 公開勾選（discord_public）─────────────────────────
 #
 # 這組測試守的是隱私不變式：沒勾公開的人，Discord 絕不能出現在
@@ -680,6 +760,18 @@ def test_item_search_escapes_regex(client, auth_headers, seed_master):
     resp = client.get('/item/search?q=.*', headers=auth_headers)
     assert resp.status_code == 200
     assert resp.get_json()['data'] == []
+
+
+def test_item_search_matches_chinese_name(client, auth_headers, seed_master):
+    """打中文名也要找得到——之前只比對英文 name_lower／class_name，
+    跟 BlueprintMaster.search() 已經在比對 name_zh 不一致（見那邊的說明）。
+    「查詢」頁的「物品名稱」自動完成欄位需要中英文都找得到。"""
+    from src.mongo import get_db
+    get_db()['item_master'].update_one(
+        {'_id': 'item-big'}, {'$set': {'name_zh': '阿格瑞西姆'}})
+    body = client.get('/item/search?q=阿格瑞西姆', headers=auth_headers).get_json()
+    assert [r['name'] for r in body['data']] == ['Agricium']
+    assert body['data'][0]['name_zh'] == '阿格瑞西姆'
 
 
 def test_item_detail_hides_raw_by_default(client, auth_headers):

@@ -265,36 +265,66 @@ def _locations_matching(query: str) -> list:
 @app_inventory.route('/search', methods=['GET'])
 @jwt_required()
 def search_stock():
-    """一個關鍵字同時搜物品名稱、地點、玩家暱稱、玩家遊戲ID。
+    """物品庫存查詢——兩種模式。
 
-    給玩家站「查詢 › 物品庫存」用。跟 /inventory/where/<item_id> 的差別是
-    那支要先知道確切的 item_id（前端得先跑一次 autocomplete 讓人選），
-    這支讓使用者直接打字：打物品名就看到誰有、打暱稱就看到那個人有什麼、
-    打地點就看到那裡放了什麼。
+    舊版（單一關鍵字 q，OR 取聯集）：一個關鍵字同時比對物品名稱、地點、
+    玩家暱稱、玩家遊戲ID，三種來源取聯集——使用者打一串字時心裡只有一個
+    意圖，但猜不到是哪一種，所以三種都試、命中就回。跟 /inventory/where/
+    <item_id> 的差別是那支要先知道確切的 item_id（前端得先跑一次
+    autocomplete 讓人選），這支讓使用者直接打字。
 
-    三種來源取聯集而不是交集：使用者打一串字時心裡只有一個意圖，
-    但我們猜不到是哪一種，所以三種都試、命中就回。
+    新版（item_id／item_type／location／player_id，AND 交集）：「查詢 ›
+    物品庫存」分欄位自動完成版用——每個欄位各自的自動完成選出精確值，
+    這裡要求全部有填的條件同時成立才算符合。只要 item_id／item_type／
+    location／player_id 任一個有值就會走這個模式（q 會被忽略，兩種模式
+    不會混用）；四個都沒給、q 也沒給才是 400。
+
+    item_id 跟 item_type 同時有給的話用 item_id（已經是精確值，item_type
+    不會再限縮，重複篩沒意義）。
     ---
     tags: [Inventory]
     security:
       - Bearer: []
     parameters:
-      - {in: query, name: q, type: string, required: true, description: "物品名稱／地點／玩家暱稱／遊戲ID"}
+      - {in: query, name: q, type: string, description: "物品名稱／地點／玩家暱稱／遊戲ID（舊版單一關鍵字模式）"}
+      - {in: query, name: item_id, type: string, description: "精確物品 uuid（新版分欄位模式，來自「物品名稱」欄位自動完成）"}
+      - {in: query, name: item_type, type: string, description: "精確物品類型（新版分欄位模式，來自「物品類型」欄位自動完成）"}
+      - {in: query, name: location, type: string, description: "精確地點（新版分欄位模式，來自「物品地點」欄位自動完成）"}
+      - {in: query, name: player_id, type: string, description: "精確玩家遊戲ID（新版分欄位模式，來自「玩家id」或「玩家暱稱」欄位自動完成）"}
       - {in: query, name: limit, type: integer, default: 100, description: "最多 300"}
     responses:
       200:
         description: 成功
       400:
-        description: 缺少 q
+        description: 兩種模式的篩選條件都沒給
     """
-    q = (request.args.get('q') or '').strip()
-    if not q:
-        return jsonify({'success': False, 'message': '缺少搜尋關鍵字 q'}), 400
+    item_id        = (request.args.get('item_id') or '').strip()
+    item_type      = (request.args.get('item_type') or '').strip()
+    location_exact = (request.args.get('location') or '').strip()
+    player_id      = (request.args.get('player_id') or '').strip()
 
     try:
         limit = int(request.args.get('limit', 100))
     except ValueError:
         limit = 100
+
+    if item_id or item_type or location_exact or player_id:
+        item_ids = None
+        if item_id:
+            item_ids = [item_id]
+        elif item_type:
+            item_ids = ItemMaster.ids_of_type(item_type)
+
+        rows = Inventory.search_filtered(
+            WMS_SCOPE_ID, item_ids=item_ids, location=location_exact,
+            player_scid=player_id, limit=limit,
+        )
+        _add_holder_info(rows)
+        return jsonify({'success': True, 'data': rows, 'matched': None})
+
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'success': False, 'message': '缺少搜尋關鍵字 q'}), 400
 
     item_ids  = ItemMaster.ids_matching(q)
     players   = Player.scids_matching(q)

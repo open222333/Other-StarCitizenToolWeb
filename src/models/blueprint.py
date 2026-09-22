@@ -347,7 +347,8 @@ class Blueprint:
         return result.matched_count > 0
 
     @classmethod
-    def find_holders(cls, query: str = '', limit: int = 50) -> list:
+    def find_holders(cls, query: str = '', limit: int = 50,
+                     blueprint_uuids=None, player_scid: str = '') -> list:
         """依名稱搜尋「誰登記了這張藍圖」，同一張藍圖的持有者聚在一起。
 
         這是藍圖版的 `Inventory.find_item_locations()`（`/inventory/where`）——
@@ -360,13 +361,30 @@ class Blueprint:
         回傳的欄位刻意不含 `notes` —— 那是玩家寫給自己的備註，不該給別人看。
 
         標成「未取得」的紀錄不會出現在結果裡，理由見 HOLDER_HIDDEN_STATUSES。
+
+        blueprint_uuids：呼叫端（app/blueprint/view.py 的 blueprint_holders）
+        用「藍圖類型」欄位先解析出來的一組 uuid（見
+        BlueprintMaster.uuids_of_type()）。傳 None 代表沒有篩類型；傳空
+        陣列代表篩了但那個類型下沒有藍圖，要回空結果——跟
+        Inventory.search_filtered() 的 item_ids 是同一套 None/[] 約定，
+        呼叫端要留意。自由輸入、沒有 blueprint_uuid 的登記篩類型時天生篩
+        不到，是預期行為。
+
+        player_scid：只看這個人登記的（比對 players.star_citizen_id），
+        給「查詢」頁的「玩家id」「玩家暱稱」欄位篩選用——兩個欄位選出的
+        候選都帶 star_citizen_id，呼叫端一律換算成這個參數，不需要這裡
+        另外處理暱稱比對。
         """
-        pipeline: list = [
-            {'$match': {
-                'deleted_at': None,
-                'unlock_status': {'$nin': HOLDER_HIDDEN_STATUSES},
-            }},
-        ]
+        match: dict = {
+            'deleted_at': None,
+            'unlock_status': {'$nin': HOLDER_HIDDEN_STATUSES},
+        }
+        if blueprint_uuids is not None:
+            if not blueprint_uuids:
+                return []
+            match['blueprint_uuid'] = {'$in': list(blueprint_uuids)}
+
+        pipeline: list = [{'$match': match}]
         if (query or '').strip():
             import re
             pipeline.append({'$match': {
@@ -386,6 +404,11 @@ class Blueprint:
                 {'player': {'$exists': False}},
                 {'player.deleted_at': None},
             ]}},
+        ]
+        if (player_scid or '').strip():
+            pipeline.append({'$match': {'player.star_citizen_id': player_scid.strip()}})
+
+        pipeline += [
             {'$group': {
                 '_id': {
                     '$ifNull': ['$blueprint_uuid', {'$toLower': '$name'}],

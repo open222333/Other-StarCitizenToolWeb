@@ -112,6 +112,37 @@ class Player:
         return [r['star_citizen_id'] for r in rows if r.get('star_citizen_id')]
 
     @classmethod
+    def search_basic(cls, query: str, limit: int = 20) -> list:
+        """暱稱／玩家名稱／遊戲ID 任一含 query 的玩家，回傳基本顯示欄位。
+
+        給「查詢」頁的「玩家id」「玩家暱稱」兩個自動完成欄位用——使用者打字時
+        要看到候選名單（含 id 跟暱稱一起顯示，才知道自己選到哪一個，同名
+        暱稱的情況下尤其重要），選一個代入查詢欄位。
+
+        跟 scids_matching() 的差別：那支只回 star_citizen_id 字串（當
+        join key 用），這支要顯示給使用者看，所以多帶 nickname／player_name。
+        故意不帶 Discord 欄位——這支對任何登入玩家開放，Discord 公開與否
+        要看對方設定，乾脆完全不查、不帶，比逐筆遮蔽更不會漏（比照
+        find_holders() 的 _redact_contact 用途不同：這裡連查都不查）。
+        """
+        q = (query or '').strip()
+        if not q:
+            return []
+        pattern = re.escape(q)
+        rows = cls._col().find(
+            {
+                'deleted_at': None,
+                '$or': [
+                    {'nickname':        {'$regex': pattern, '$options': 'i'}},
+                    {'player_name':     {'$regex': pattern, '$options': 'i'}},
+                    {'star_citizen_id': {'$regex': pattern, '$options': 'i'}},
+                ],
+            },
+            {'star_citizen_id': 1, 'nickname': 1, 'player_name': 1, '_id': 0},
+        ).sort('nickname', 1).limit(max(1, min(limit, 50)))
+        return list(rows)
+
+    @classmethod
     def display_names_by_scid(cls, star_citizen_ids) -> dict:
         """一次查多個遊戲ID的顯示資訊，回傳
         {star_citizen_id: {nickname, player_name, discord_name, discord_id}}。

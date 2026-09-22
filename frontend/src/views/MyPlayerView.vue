@@ -327,27 +327,61 @@
          id="panel-search-items" aria-labelledby="subtab-search-items">
       <div class="card scifi-card mb-3">
         <div class="card-body py-3">
-          <label class="form-label small fw-semibold mb-1">搜尋</label>
-          <FieldHint text="一個關鍵字同時比對物品名稱（中英文）、地點（中英文）、玩家暱稱、玩家遊戲ID。例如打「Area18」看那裡放了什麼，打某人的暱稱看他有什麼。" />
-          <input v-model="whoQuery" @input="searchStock" type="text" class="form-control form-control-sm"
-            placeholder="物品名稱／地點／玩家暱稱／遊戲ID…" autocomplete="off">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <label class="form-label small fw-semibold mb-0">搜尋條件</label>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+              @click="clearItemsFilters">清除全部</button>
+          </div>
+          <FieldHint text="打字選一個候選代入（不是子字串比對），5 個欄位都填的話要同時符合才會出現在結果裡。物品名稱／物品類型只能擇一——選了名稱等於已經鎖定單一物品，類型會被忽略。" />
+          <div class="row g-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small mb-1" for="items-name">物品名稱</label>
+              <AutocompleteField id="items-name" v-model="itemsNameText"
+                :search="searchItemNames" :get-label="itemNameLabel"
+                aria-label="物品名稱" placeholder="輸入物品名稱…" :min-chars="1"
+                @select="onItemsNameSelect" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small mb-1" for="items-type">物品類型</label>
+              <AutocompleteField id="items-type" v-model="itemsTypeText"
+                :search="searchItemTypesLocal" :get-label="c => c"
+                aria-label="物品類型" placeholder="點一下看全部類型…" :min-chars="0" :debounce-ms="0"
+                @select="onItemsTypeSelect" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1" for="items-location">物品地點</label>
+              <AutocompleteField id="items-location" v-model="itemsLocationText"
+                :search="searchStockLocationsLocal" :get-label="locLabel"
+                aria-label="物品地點" placeholder="點一下看全部地點…" :min-chars="0" :debounce-ms="0"
+                @select="onItemsLocationSelect" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1" for="items-player-id">玩家id</label>
+              <AutocompleteField id="items-player-id" v-model="itemsPlayerIdText"
+                :search="searchPlayersBasic" :get-label="c => c.star_citizen_id"
+                aria-label="玩家id" placeholder="輸入遊戲ID…" :min-chars="1"
+                @select="onItemsPlayerIdSelect" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1" for="items-player-nickname">玩家暱稱</label>
+              <AutocompleteField id="items-player-nickname" v-model="itemsPlayerNicknameText"
+                :search="searchPlayersBasic" :get-label="playerCandidateLabel"
+                aria-label="玩家暱稱" placeholder="輸入暱稱…" :min-chars="1"
+                @select="onItemsPlayerNicknameSelect" />
+            </div>
+          </div>
         </div>
       </div>
 
       <div v-if="loadingWho" class="text-muted small">查詢中…</div>
-      <div v-else-if="!whoQuery.trim()" class="text-muted small">
-        輸入關鍵字開始搜尋。
+      <div v-else-if="!hasStockFilter" class="text-muted small">
+        至少選擇一個篩選條件開始搜尋。
       </div>
       <div v-else-if="!whoRows.length" class="text-muted small">
-        找不到符合「{{ whoQuery.trim() }}」的庫存。
+        找不到符合條件的庫存。
       </div>
       <div v-else>
-        <p class="small text-muted mb-2">
-          共 {{ whoRows.length }} 筆
-          <span v-if="whoMatched">
-            （比對到 {{ whoMatched.items }} 種物品、{{ whoMatched.players }} 位玩家、{{ whoMatched.locations }} 個地點）
-          </span>
-        </p>
+        <p class="small text-muted mb-2">共 {{ whoRows.length }} 筆</p>
         <div class="scifi-scroll">
         <table class="table table-sm">
           <thead>
@@ -386,11 +420,42 @@
          id="panel-search-blueprints" aria-labelledby="subtab-search-blueprints">
       <div class="card scifi-card mb-3">
         <div class="card-body py-3">
-          <label class="form-label small fw-semibold mb-1">藍圖名稱</label>
-          <FieldHint text="顯示有登記這張藍圖的人。" />
-          <input v-model="bpHolderQuery" @input="searchBlueprintHolders"
-            type="text" class="form-control form-control-sm" autocomplete="off"
-            placeholder="輸入藍圖名稱的一部分，留空則列出全部">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <label class="form-label small fw-semibold mb-0">搜尋條件</label>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+              @click="clearBpFilters">清除全部</button>
+          </div>
+          <FieldHint text="打字選一個候選代入。都留空則列出全部人的登記；填了的話要同時符合才會出現。" />
+          <div class="row g-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small mb-1" for="bp-name">藍圖名稱</label>
+              <AutocompleteField id="bp-name" v-model="bpNameText"
+                :search="searchBlueprintNames" :get-label="blueprintNameLabel"
+                aria-label="藍圖名稱" placeholder="輸入藍圖名稱…" :min-chars="1"
+                @select="onBpNameSelect" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small mb-1" for="bp-type">藍圖類型</label>
+              <AutocompleteField id="bp-type" v-model="bpTypeText"
+                :search="searchBlueprintTypesLocal" :get-label="blueprintTypeLabel"
+                aria-label="藍圖類型" placeholder="點一下看全部類型…" :min-chars="0" :debounce-ms="0"
+                @select="onBpTypeSelect" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small mb-1" for="bp-player-id">玩家id</label>
+              <AutocompleteField id="bp-player-id" v-model="bpPlayerIdText"
+                :search="searchPlayersBasic" :get-label="c => c.star_citizen_id"
+                aria-label="玩家id" placeholder="輸入遊戲ID…" :min-chars="1"
+                @select="onBpPlayerIdSelect" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small mb-1" for="bp-player-nickname">玩家暱稱</label>
+              <AutocompleteField id="bp-player-nickname" v-model="bpPlayerNicknameText"
+                :search="searchPlayersBasic" :get-label="playerCandidateLabel"
+                aria-label="玩家暱稱" placeholder="輸入暱稱…" :min-chars="1"
+                @select="onBpPlayerNicknameSelect" />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -532,7 +597,7 @@
                       class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
                       @mousedown.prevent="pickBlueprintMaster(bp)">
                     {{ bp.name }}<span v-if="bp.name_zh">（{{ bp.name_zh }}）</span>
-                    <span class="text-muted" v-if="bp.output_type_label">（{{ bp.output_type_label }}）</span>
+                    <span class="text-muted" v-if="bp.output_type">（{{ blueprintTypeLabel(bp.output_type) }}）</span>
                     <span class="text-muted" v-if="bp.ingredient_count"> · {{ bp.ingredient_count }} 種材料</span>
                   </li>
                   <li v-if="!bpResults.length" class="list-group-item py-1 px-2 small text-muted">
@@ -572,7 +637,7 @@
       <div v-else class="scifi-scroll">
       <table class="table table-sm">
         <thead>
-          <tr><th>名稱</th><th>產出類型</th><th>製作時間</th><th>材料</th><th class="sf-wrap">備註</th><th></th></tr>
+          <tr><th>名稱</th><th>類型</th><th>製作時間</th><th>材料</th><th class="sf-wrap">備註</th><th></th></tr>
         </thead>
         <tbody>
           <template v-for="bp in blueprints" :key="bp._id">
@@ -583,7 +648,7 @@
               <i v-if="!bp.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
                  title="自由輸入，沒有對應到遊戲配方"></i>
             </td>
-            <td class="small">{{ bp.master?.output_type_label || '—' }}</td>
+            <td class="small">{{ bp.master?.output_type ? blueprintTypeLabel(bp.master.output_type) : (bp.master?.output_type_label || '—') }}</td>
             <td class="small">{{ bp.master?.craft_time_label || '—' }}</td>
             <td class="small">
               <button v-if="bp.blueprint_uuid" class="btn btn-link btn-sm p-0"
@@ -626,24 +691,24 @@
     <!-- ══════════ 藍圖批量登記 ══════════ -->
     <div v-show="activeTab === 'blueprints' && activeSub === 'bulk'" role="tabpanel"
          id="panel-blueprints-bulk" aria-labelledby="subtab-blueprints-bulk">
-      <p class="small mb-3" style="color: var(--sf-text-muted)">
-        直接從遊戲藍圖主檔裡勾選，一次登記多張 —— 不用一張一張搜尋。
-        已經登記過的會標示「已登記」且不能重複勾選。
-      </p>
       <BlueprintBulkRegister ref="bulkRegisterRef" :fetcher="playerAuth.playerFetch"
         card-class="card scifi-card" @registered="onBulkRegistered" />
     </div>
 
-    <!-- ══════════ 藍圖材料試算 ══════════ -->
-    <div v-show="activeTab === 'craft'" role="tabpanel" id="panel-craft"
-      :aria-labelledby="'tab-craft'">
-      <p class="small mb-3" style="color: var(--sf-text-muted)">
-        選一張藍圖後填入現有材料數量，會算出最多可以做幾個、卡在哪一種材料，
-        以及做到目標數量還缺多少。「從我的個人庫帶入」會把你個人庫現有的量填進去。
-      </p>
+    <!-- ══════════ 藍圖 › 試算 ══════════ -->
+    <div v-show="activeTab === 'blueprints' && activeSub === 'craft'" role="tabpanel"
+      id="panel-blueprints-craft" :aria-labelledby="'subtab-blueprints-craft'">
       <!-- 元件跟後台「材料試算」頁共用，差別只在帶進去的身分與庫存來源 -->
       <BlueprintCalculator :fetcher="playerAuth.playerFetch"
         :stock-loader="loadMyStock" stock-label="我的個人庫"
+        card-class="card scifi-card" />
+    </div>
+
+    <!-- ══════════ 礦物參考查詢 ══════════ -->
+    <div v-show="activeTab === 'mining'" role="tabpanel" id="panel-mining"
+      :aria-labelledby="'tab-mining'">
+      <!-- 元件跟後台「礦物參考查詢」頁共用，差別只在帶進去的身分 -->
+      <MiningLookup :fetcher="playerAuth.playerFetch" :active="activeTab === 'mining'"
         card-class="card scifi-card" />
     </div>
 
@@ -791,8 +856,11 @@ import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
+import MiningLookup from '@/components/MiningLookup.vue'
 import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import FieldHint from '@/components/FieldHint.vue'
+import AutocompleteField from '@/components/AutocompleteField.vue'
+import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 // 社群繁中化包（cosmo-chang-1701/sc-translation-pack）萃取出來的地點中文對照，
 // 純靜態查表，不會隨遊戲改版自動更新，見 src/sc_zh.py 的說明
 import locationNamesZh from '@/assets/sc-locations-zh.json'
@@ -849,9 +917,10 @@ const tabs = [
     subTabs: [
       { key: 'mine',   label: '我的藍圖' },
       { key: 'bulk',   label: '批量登記' },
+      { key: 'craft',  label: '試算' },
     ],
   },
-  { key: 'craft',      label: '試算',  icon: 'bi bi-calculator' },
+  { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
   {
     key: 'search',    label: '查詢',   icon: 'bi bi-search',
     subTabs: [
@@ -922,8 +991,12 @@ function setSub(key) {
 // 不用 { immediate: true } 是因為 masterCount / bpHolders 宣告在下面，
 // 立即執行會踩到 const 的 TDZ。
 function loadForTab(tab, sub) {
-  if (tab === 'search' && sub === 'blueprints' && !bpHolders.value.length) {
-    loadBlueprintHolders()
+  if (tab === 'search' && sub === 'items' && !itemTypes.value.length) {
+    loadItemTypes()
+  }
+  if (tab === 'search' && sub === 'blueprints') {
+    if (!blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
+    if (!bpHolders.value.length) loadBlueprintHolders()
   }
   // 進「藍圖」才查主檔筆數（決定要不要顯示「尚未同步」提示）
   if (tab === 'blueprints' && masterCount.value === null) {
@@ -1109,6 +1182,23 @@ async function loadLocations() {
     const used = data.data || []
     locations.value = [...new Set([...used, ...knownLocations])].sort()
   }
+}
+
+// ── 「查詢」頁分頁篩選欄位要用的類型清單（各自進分頁時才載，見 loadForTab）──
+const itemTypes = ref([])
+async function loadItemTypes() {
+  const res = await playerAuth.playerFetch('/item/types')
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) itemTypes.value = data.data || []
+}
+
+const blueprintOutputTypes = ref([])
+async function loadBlueprintOutputTypes() {
+  const res = await playerAuth.playerFetch('/blueprint/master/types')
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) blueprintOutputTypes.value = data.data || []
 }
 
 // ── 新增／庫存異動（多筆，共用同一套 row 結構） ──────────────────
@@ -1528,24 +1618,95 @@ async function showRecipe(bp) {
 
 // ── 查詢 › 持有藍圖：誰登記了這張藍圖 ──────────────────────────
 // 這是藍圖版的 /inventory/where —— 查的是別人的名冊，不是自己的。
-const bpHolderQuery    = ref('')
+//
+// 5 個欄位（藍圖名稱／藍圖類型／玩家id／玩家暱稱，AND 語意，見
+// Blueprint.find_holders 的說明）都是「選定才算數」的 autocomplete——
+// 純打字不會觸發查詢，只有從候選清單選一個才會。沒有任何欄位選定時預設
+// 瀏覽全部（維持舊版單一輸入框留空＝列出全部的行為），不像物品庫存要求
+// 至少一個篩選條件。
 const bpHolders        = ref([])
 const loadingBpHolders = ref(false)
-let bpHolderTimer      = null
 
+const bpNameText        = ref('')
+const bpSelectedName    = ref('')   // 送給 /blueprint/holders 的 q——用主檔的
+                                     // 英文 name，因為玩家登記時一律存主檔
+                                     // name（見 app/player/view.py 的
+                                     // add_my_blueprint），用它比對最準確
+const bpTypeText        = ref('')
+const bpSelectedType    = ref('')
+const bpPlayerIdText       = ref('')
+const bpPlayerNicknameText = ref('')
+const bpPlayerScid         = ref('')
+
+let bpHolderSeq = 0
 async function loadBlueprintHolders() {
+  const seq = ++bpHolderSeq
   loadingBpHolders.value = true
-  const q = encodeURIComponent(bpHolderQuery.value.trim())
-  const res = await playerAuth.playerFetch(`/blueprint/holders?q=${q}&limit=100`)
+  const params = new URLSearchParams({ limit: '100' })
+  if (bpSelectedName.value) params.set('q', bpSelectedName.value)
+  if (bpSelectedType.value) params.set('output_type', bpSelectedType.value)
+  if (bpPlayerScid.value) params.set('player_id', bpPlayerScid.value)
+  const res = await playerAuth.playerFetch(`/blueprint/holders?${params.toString()}`)
+  if (seq !== bpHolderSeq) return   // 已經有更新的查詢在跑了
   loadingBpHolders.value = false
   if (!res) return
   const data = await res.json().catch(() => null)
   bpHolders.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-function searchBlueprintHolders() {
-  clearTimeout(bpHolderTimer)
-  bpHolderTimer = setTimeout(loadBlueprintHolders, 300)
+watch([bpSelectedName, bpSelectedType, bpPlayerScid], loadBlueprintHolders)
+
+async function searchBlueprintNames(q) {
+  const res = await playerAuth.playerFetch(`/blueprint/master/search?q=${encodeURIComponent(q)}&limit=20`)
+  if (!res) return []
+  const data = await res.json().catch(() => null)
+  return (res.ok && data?.success) ? (data.data || []) : []
+}
+function blueprintNameLabel(c) { return c.name_zh || c.name }
+
+function searchBlueprintTypesLocal(q) {
+  const query = (q || '').trim().toLowerCase()
+  const list = query
+    ? blueprintOutputTypes.value.filter(t => t.toLowerCase().includes(query))
+    : blueprintOutputTypes.value
+  return Promise.resolve(list)
+}
+
+function onBpNameSelect(c) { bpSelectedName.value = c ? c.name : '' }
+function onBpTypeSelect(c) { bpSelectedType.value = c || '' }
+
+// 玩家id／玩家暱稱兩個欄位共用同一個 bpPlayerScid（實際送出的篩選值）——
+// 兩個欄位各自都能選，選定其中一個會同步另一個欄位的顯示文字，避免
+// 「id 選了甲、暱稱又獨立選了乙」這種矛盾組合永遠查不到東西。任一欄位
+// 重新打字（尚未選定新候選）會讓兩邊的選定都失效，見 AutocompleteField
+// 的 @select(null) 語意。
+function onBpPlayerIdSelect(c) {
+  if (c) {
+    bpPlayerScid.value = c.star_citizen_id
+    bpPlayerNicknameText.value = c.nickname || c.player_name || ''
+  } else {
+    bpPlayerScid.value = ''
+    bpPlayerNicknameText.value = ''
+  }
+}
+function onBpPlayerNicknameSelect(c) {
+  if (c) {
+    bpPlayerScid.value = c.star_citizen_id
+    bpPlayerIdText.value = c.star_citizen_id
+  } else {
+    bpPlayerScid.value = ''
+    bpPlayerIdText.value = ''
+  }
+}
+
+function clearBpFilters() {
+  bpNameText.value = ''
+  bpSelectedName.value = ''
+  bpTypeText.value = ''
+  bpSelectedType.value = ''
+  bpPlayerIdText.value = ''
+  bpPlayerNicknameText.value = ''
+  bpPlayerScid.value = ''
 }
 
 async function removeBlueprint(bp) {
@@ -1555,46 +1716,145 @@ async function removeBlueprint(bp) {
   if (res.ok && data?.success) loadBlueprints()
 }
 
-// ── 查詢 › 物品庫存：一個關鍵字同時搜物品／地點／玩家 ────────────────
+// ── 查詢 › 物品庫存：物品名稱／類型／地點／玩家id／玩家暱稱，AND 篩選 ──
 //
-// 舊版是「先 autocomplete 選一個物品 → 再打 /inventory/where/<id>」，
-// 兩步。現在直接打 /inventory/search?q=，後端會把那串字分別去比對物品主檔、
-// 玩家名冊、地點清單，取聯集回傳（見 app/inventory/view.py 的 search_stock）。
-const whoQuery   = ref('')
+// 舊版是一個關鍵字同時比對物品／玩家／地點取聯集（OR）。現在拆成 5 個各自
+// autocomplete 選定的欄位，AND 語意（同時符合才顯示）——打 /inventory/search
+// 帶 item_id / item_type / location / player_id，見 app/inventory/view.py
+// 的 search_stock() 跟 Inventory.search_filtered()。
+//
+// 物品名稱／物品類型互斥：兩個都是在篩「item_id 要是哪些」，選了名稱等於
+// 精準指定單一物品，這時類型篩選只會被後端忽略（search_filtered 的
+// item_id 優先於 item_type），留著只會誤導「怎麼篩了兩個結果卻沒變」，
+// 所以選其中一個時自動清空另一個。
 const whoRows    = ref([])
-const whoMatched = ref(null)
 const loadingWho = ref(false)
-let whoSearchTimer = null
-// 每次搜尋遞增。慢的舊請求回來時若序號已過期就丟掉 ——
-// 不做這件事的話「打 Lar 再補成 Laranite」有機會被先發出的 Lar 覆蓋。
+
+const itemsNameText       = ref('')
+const itemsSelectedItemId = ref(null)
+const itemsTypeText       = ref('')
+const itemsSelectedType   = ref('')
+const itemsLocationText     = ref('')
+const itemsSelectedLocation = ref('')
+const itemsPlayerIdText       = ref('')
+const itemsPlayerNicknameText = ref('')
+const itemsPlayerScid         = ref('')
+
+const hasStockFilter = computed(() => !!(
+  itemsSelectedItemId.value || itemsSelectedType.value ||
+  itemsSelectedLocation.value || itemsPlayerScid.value
+))
+
+// 每次搜尋遞增。慢的舊請求回來時若序號已過期就丟掉。
 let whoSeq = 0
 
-function searchStock() {
-  clearTimeout(whoSearchTimer)
-  const q = whoQuery.value.trim()
-  if (!q) {
+async function runStockSearch() {
+  if (!hasStockFilter.value) {
     whoRows.value = []
-    whoMatched.value = null
     loadingWho.value = false
     return
   }
-  whoSearchTimer = setTimeout(async () => {
-    const seq = ++whoSeq
-    loadingWho.value = true
-    const res = await playerAuth.playerFetch(
-      `/inventory/search?q=${encodeURIComponent(q)}&limit=200`)
-    if (seq !== whoSeq) return          // 已經有更新的搜尋在跑了
-    loadingWho.value = false
-    if (!res) return
-    const data = await res.json().catch(() => null)
-    if (res.ok && data?.success) {
-      whoRows.value = data.data || []
-      whoMatched.value = data.matched || null
-    } else {
-      whoRows.value = []
-      whoMatched.value = null
-    }
-  }, 300)
+  const seq = ++whoSeq
+  loadingWho.value = true
+  const params = new URLSearchParams({ limit: '200' })
+  if (itemsSelectedItemId.value) params.set('item_id', itemsSelectedItemId.value)
+  else if (itemsSelectedType.value) params.set('item_type', itemsSelectedType.value)
+  if (itemsSelectedLocation.value) params.set('location', itemsSelectedLocation.value)
+  if (itemsPlayerScid.value) params.set('player_id', itemsPlayerScid.value)
+  const res = await playerAuth.playerFetch(`/inventory/search?${params.toString()}`)
+  if (seq !== whoSeq) return          // 已經有更新的搜尋在跑了
+  loadingWho.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  whoRows.value = (res.ok && data?.success) ? (data.data || []) : []
+}
+
+watch([itemsSelectedItemId, itemsSelectedType, itemsSelectedLocation, itemsPlayerScid], runStockSearch)
+
+async function searchItemNames(q) {
+  const res = await playerAuth.playerFetch(`/item/search?q=${encodeURIComponent(q)}&limit=20`)
+  if (!res) return []
+  const data = await res.json().catch(() => null)
+  return (res.ok && data?.success) ? (data.data || []) : []
+}
+function itemNameLabel(c) { return c.name_zh || c.name }
+
+function searchItemTypesLocal(q) {
+  const query = (q || '').trim().toLowerCase()
+  const list = query
+    ? itemTypes.value.filter(t => t.toLowerCase().includes(query))
+    : itemTypes.value
+  return Promise.resolve(list)
+}
+
+function searchStockLocationsLocal(q) {
+  const raw = (q || '').trim()
+  const query = raw.toLowerCase()
+  const list = query
+    ? locations.value.filter(loc => loc.toLowerCase().includes(query) || locZh(loc).includes(raw))
+    : locations.value
+  return Promise.resolve(list)
+}
+
+async function searchPlayersBasic(q) {
+  const res = await playerAuth.playerFetch(`/player/search?q=${encodeURIComponent(q)}&limit=20`)
+  if (!res) return []
+  const data = await res.json().catch(() => null)
+  return (res.ok && data?.success) ? (data.data || []) : []
+}
+function playerCandidateLabel(c) { return c.nickname || c.player_name || c.star_citizen_id }
+
+function onItemsNameSelect(c) {
+  if (c) {
+    itemsSelectedItemId.value = c._id
+    itemsTypeText.value = ''
+    itemsSelectedType.value = ''
+  } else {
+    itemsSelectedItemId.value = null
+  }
+}
+function onItemsTypeSelect(c) {
+  if (c) {
+    itemsSelectedType.value = c
+    itemsNameText.value = ''
+    itemsSelectedItemId.value = null
+  } else {
+    itemsSelectedType.value = ''
+  }
+}
+function onItemsLocationSelect(c) { itemsSelectedLocation.value = c || '' }
+
+// 玩家id／玩家暱稱共用同一個 itemsPlayerScid，理由跟「持有藍圖」分頁的
+// onBpPlayerIdSelect/onBpPlayerNicknameSelect 一樣（見那邊的說明）。
+function onItemsPlayerIdSelect(c) {
+  if (c) {
+    itemsPlayerScid.value = c.star_citizen_id
+    itemsPlayerNicknameText.value = c.nickname || c.player_name || ''
+  } else {
+    itemsPlayerScid.value = ''
+    itemsPlayerNicknameText.value = ''
+  }
+}
+function onItemsPlayerNicknameSelect(c) {
+  if (c) {
+    itemsPlayerScid.value = c.star_citizen_id
+    itemsPlayerIdText.value = c.star_citizen_id
+  } else {
+    itemsPlayerScid.value = ''
+    itemsPlayerIdText.value = ''
+  }
+}
+
+function clearItemsFilters() {
+  itemsNameText.value = ''
+  itemsSelectedItemId.value = null
+  itemsTypeText.value = ''
+  itemsSelectedType.value = ''
+  itemsLocationText.value = ''
+  itemsSelectedLocation.value = ''
+  itemsPlayerIdText.value = ''
+  itemsPlayerNicknameText.value = ''
+  itemsPlayerScid.value = ''
 }
 
 // sticky 分頁列的 top 偏移必須等於上方固定元素的實際高度：

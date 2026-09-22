@@ -380,6 +380,41 @@ def refresh_player():
     })
 
 
+@app_player.route('/search', methods=['GET'])
+@player_required
+def search_players():
+    """依暱稱／遊戲ID／真實名稱找玩家，給「查詢」頁的「玩家id」「玩家暱稱」
+    兩個自動完成欄位用——使用者打字看候選名單，選一個代入查詢欄位。
+
+    掛 @player_required 而不是這個檔案其他唯讀端點慣用的 admin_api()：
+    這支本來就要給任何登入玩家用（比照 /inventory/search、/blueprint/holders
+    這類公會成員互查功能），跟這個檔案裡其他 CRUD 端點的信任等級不同，見
+    檔案開頭那段「一律用 admin_api()」的說明——那是給後台專屬端點的規則，
+    這支跟 /player/me、/player/blueprints 一樣是玩家自助區塊。
+
+    故意不回 Discord 欄位，見 Player.search_basic() 的說明。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: q, type: string, required: true, description: "暱稱／遊戲ID／真實名稱"}
+      - {in: query, name: limit, type: integer, default: 20, description: "最多 50"}
+    responses:
+      200:
+        description: 成功（q 是空字串時回空陣列，不是錯誤）
+    """
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'success': True, 'data': []})
+    try:
+        limit = int(request.args.get('limit', 20))
+    except ValueError:
+        limit = 20
+    rows = Player.search_basic(q, limit=limit)
+    return jsonify({'success': True, 'data': rows})
+
+
 @app_player.route('/me', methods=['GET'])
 @player_required
 def get_current_player():

@@ -239,20 +239,36 @@ def blueprint_holders():
     說自己有這張圖」。公會成員互查是刻意提供的功能，所以只要求登入。
 
     回應不含玩家的 `notes`（那是寫給自己的備註）。
+
+    output_type／player_id 是「查詢 › 持有藍圖」分欄位自動完成版加的：
+    「藍圖類型」欄位選了就換算成一組 blueprint_uuid（見
+    BlueprintMaster.uuids_of_type()）；「玩家id」「玩家暱稱」欄位選了就是
+    對方的遊戲ID，兩者都轉成 Blueprint.find_holders() 的參數、AND 篩選，
+    q 不受影響、可以跟這兩個一起用（q 篩名稱，這兩個篩類型／持有者）。
     ---
     tags: [Blueprint]
     security:
       - Bearer: []
     parameters:
-      - {in: query, name: q,     type: string,  description: "藍圖名稱的一部分；留空 = 全部"}
-      - {in: query, name: limit, type: integer, default: 50, description: "最多 200 組"}
+      - {in: query, name: q,           type: string,  description: "藍圖名稱的一部分；留空 = 全部"}
+      - {in: query, name: output_type, type: string,  description: "精確藍圖類型（來自「藍圖類型」欄位自動完成）"}
+      - {in: query, name: player_id,   type: string,  description: "精確玩家遊戲ID（來自「玩家id」或「玩家暱稱」欄位自動完成）"}
+      - {in: query, name: limit,       type: integer, default: 50, description: "最多 200 組"}
     responses:
       200:
         description: 成功
     """
     limit, _ = _paging()
+    output_type = (request.args.get('output_type') or '').strip()
+    player_id = (request.args.get('player_id') or '').strip()
+
+    blueprint_uuids = None
+    if output_type:
+        blueprint_uuids = BlueprintMaster.uuids_of_type(output_type)
+
     rows = BlueprintModel.find_holders(
-        query=(request.args.get('q') or '').strip(), limit=limit)
+        query=(request.args.get('q') or '').strip(), limit=limit,
+        blueprint_uuids=blueprint_uuids, player_scid=player_id)
     return jsonify({'success': True, 'data': rows, 'total': len(rows)})
 
 

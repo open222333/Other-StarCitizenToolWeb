@@ -602,3 +602,93 @@ def test_player_cannot_hide_self_from_holders(client, player_headers, seeded_mas
 
     groups = BlueprintModel.find_holders(query='omnisky')
     assert len(groups) == 1 and groups[0]['holder_count'] == 1
+
+
+# ═══════════════════════════════════════════════════════════
+#  BlueprintMaster.uuids_of_type ——「查詢 › 持有藍圖」的「藍圖類型」
+#  欄位篩選當 join key 用（見 Blueprint.find_holders 的 blueprint_uuids）
+# ═══════════════════════════════════════════════════════════
+
+def test_uuids_of_type_matches_exact_type(seeded_master):
+    assert BlueprintMaster.uuids_of_type('WeaponGun') == [API_ROW['uuid']]
+
+
+def test_uuids_of_type_excludes_retired(seeded_master):
+    """bp-old 的 output_type 也是 WeaponGun 但 is_current=False，不該出現。"""
+    assert 'bp-old' not in BlueprintMaster.uuids_of_type('WeaponGun')
+
+
+def test_uuids_of_type_unknown_type_returns_empty(seeded_master):
+    assert BlueprintMaster.uuids_of_type('NoSuchType') == []
+
+
+def test_uuids_of_type_blank_returns_empty():
+    assert BlueprintMaster.uuids_of_type('') == []
+    assert BlueprintMaster.uuids_of_type(None) == []
+
+
+# ═══════════════════════════════════════════════════════════
+#  find_holders 的 blueprint_uuids／player_scid 篩選——「查詢 › 持有藍圖」
+#  拆分欄位自動完成版（藍圖類型／玩家id／玩家暱稱）用
+# ═══════════════════════════════════════════════════════════
+
+def test_holders_filters_by_blueprint_uuids(app, three_players_with_blueprints):
+    """類型篩選换算成 uuid 清單後傳進來，只留下這些 uuid 的組。"""
+    groups = BlueprintModel.find_holders(blueprint_uuids=[API_ROW['uuid']])
+    names = {g['name'] for g in groups}
+    assert names == {'Omnisky III Cannon'}
+    assert '某張還沒進主檔的圖' not in names, '自由輸入沒有 uuid，篩類型時天生篩不到'
+
+
+def test_holders_blueprint_uuids_empty_list_returns_empty(app, three_players_with_blueprints):
+    """呼叫端解析出「這個類型底下沒有藍圖」（空陣列）時要回空，不能被當成沒篩。"""
+    assert BlueprintModel.find_holders(blueprint_uuids=[]) == []
+
+
+def test_holders_blueprint_uuids_none_means_no_filter(app, three_players_with_blueprints):
+    """None（沒篩類型）要維持原本『全部』的行為，不受這次改動影響。"""
+    groups = BlueprintModel.find_holders(blueprint_uuids=None)
+    assert len(groups) == 2
+
+
+def test_holders_filters_by_player_scid(app, three_players_with_blueprints):
+    ids = three_players_with_blueprints
+    groups = BlueprintModel.find_holders(player_scid='AliceSC')
+    assert len(groups) == 1
+    assert groups[0]['name'] == 'Omnisky III Cannon'
+    assert groups[0]['holder_count'] == 1
+    assert groups[0]['holders'][0]['nickname'] == '艾莉絲'
+
+
+def test_holders_player_scid_no_match_returns_empty(app, three_players_with_blueprints):
+    assert BlueprintModel.find_holders(player_scid='NobodyHasThisSC') == []
+
+
+def test_holders_combines_blueprint_uuids_and_player_scid(app, three_players_with_blueprints):
+    """兩個條件同時成立才算——Bob 有 Omnisky，但篩的是 Alice，交集是空的。"""
+    groups = BlueprintModel.find_holders(
+        blueprint_uuids=[API_ROW['uuid']], player_scid='BobSC')
+    assert len(groups) == 1
+    assert groups[0]['holder_count'] == 1
+    assert groups[0]['holders'][0]['nickname'] == '鮑伯'
+
+
+def test_holders_endpoint_filters_by_output_type(client, player_headers, three_players_with_blueprints):
+    resp = client.get('/blueprint/holders?output_type=WeaponGun', headers=player_headers)
+    assert resp.status_code == 200, resp.get_json()
+    data = resp.get_json()['data']
+    assert [g['name'] for g in data] == ['Omnisky III Cannon']
+
+
+def test_holders_endpoint_filters_by_player_id(client, player_headers, three_players_with_blueprints):
+    resp = client.get('/blueprint/holders?player_id=CarolSC', headers=player_headers)
+    assert resp.status_code == 200, resp.get_json()
+    data = resp.get_json()['data']
+    assert [g['name'] for g in data] == ['某張還沒進主檔的圖']
+
+
+def test_holders_endpoint_output_type_no_match_returns_empty(
+        client, player_headers, three_players_with_blueprints):
+    resp = client.get('/blueprint/holders?output_type=NoSuchType', headers=player_headers)
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()['data'] == []

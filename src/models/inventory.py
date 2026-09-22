@@ -353,6 +353,72 @@ class Inventory:
         } for row in rows]
 
     @classmethod
+    def search_filtered(cls, scope_id: str, item_ids=None, location: str = '',
+                        player_scid: str = '', limit: int = 100) -> list:
+        """分欄位、AND 語意的庫存搜尋——跟 search_any（OR 取聯集）是不同語意，
+        給「查詢 › 物品庫存」拆分欄位版用：使用者從各欄位的自動完成候選裡
+        選出精確值（物品／地點／玩家），這裡要求全部有填的條件同時成立
+        才算符合，不是任一個符合就算數（那是 search_any 的用途）。
+
+        item_ids 是「物品名稱」「物品類型」兩個欄位在呼叫端（app/inventory/
+        view.py 的 search_stock）各自解析出的候選 id——名稱欄位選了就是單一
+        item_id，類型欄位選了就是 ItemMaster.ids_of_type() 整組——這裡只單純
+        用 $in 篩，不需要知道背後是哪個欄位選出來的。
+
+        item_ids 傳 None 代表「沒有篩物品」（完全略過這個條件）；傳空陣列
+        `[]` 代表「篩了但沒有物品符合」（例如選的類型底下沒有物品），要回
+        空陣列，不能被當成「沒有篩物品」而查出全部——這個 None／[] 的區別
+        很重要，呼叫端要留意。
+
+        全部條件都沒給的話回空陣列，理由同 search_any：沒解析到任何篩選
+        條件就代表「查不到」，回全部庫存會讓使用者誤以為自己真的查到了。
+        """
+        has_filter = item_ids is not None or bool(location) or bool(player_scid)
+        if not has_filter:
+            return []
+        if item_ids is not None and not item_ids:
+            return []
+
+        match: dict = {'scope_id': str(scope_id), 'quantity': {'$gt': 0}}
+        if item_ids is not None:
+            match['item_id'] = {'$in': list(item_ids)}
+        if location:
+            match['location'] = location
+        if player_scid:
+            match['owner_type'] = OWNER_PLAYER
+            match['player'] = player_scid
+
+        pipeline = [
+            {'$match': match},
+            {'$group': {
+                '_id': {'item_id': '$item_id', 'owner_type': '$owner_type',
+                        'player': '$player', 'location': '$location',
+                        'container': '$container'},
+                'quantity': {'$sum': '$quantity'},
+                'updated_at': {'$max': '$updated_at'},
+            }},
+            {'$lookup': {'from': 'item_master', 'localField': '_id.item_id',
+                         'foreignField': '_id', 'as': 'item'}},
+            {'$unwind': {'path': '$item', 'preserveNullAndEmptyArrays': True}},
+            {'$addFields': {
+                'item_name': {'$ifNull': ['$item.name', '$_id.item_id']},
+                'item_name_zh': '$item.name_zh',
+                'item_retired': {'$eq': [{'$ifNull': ['$item.is_current', True]}, False]},
+            }},
+            {'$sort': {'item_name': ASCENDING, 'quantity': DESCENDING}},
+            {'$limit': max(1, min(limit, 300))},
+        ]
+        rows = list(cls._col().aggregate(pipeline))
+        return [{
+            **row['_id'],
+            'quantity':      row['quantity'],
+            'updated_at':    row.get('updated_at'),
+            'item_name':     row.get('item_name'),
+            'item_name_zh':  row.get('item_name_zh'),
+            'item_retired':  row.get('item_retired', False),
+        } for row in rows]
+
+    @classmethod
     def distinct_locations(cls, scope_id: str, limit: int = 200) -> list:
         values = cls._col().distinct('location', {'scope_id': str(scope_id)})
         return sorted(v for v in values if v)[:limit]

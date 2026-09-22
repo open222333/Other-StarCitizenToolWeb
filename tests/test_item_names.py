@@ -116,3 +116,37 @@ def test_both_history_endpoints_return_the_same_shape(
     for rows in (admin_rows, player_rows):
         assert rows[0]['item_name'] == 'MedPen'
         assert rows[0]['item_name_zh'] == '醫療筆'
+
+
+# ═══════════════════════════════════════════════════════════
+#  ItemMaster.ids_of_type ——「查詢 › 物品庫存」的「物品類型」欄位
+#  篩選當 join key 用（見 src/models/inventory.py 的 search_filtered）
+# ═══════════════════════════════════════════════════════════
+
+@pytest.fixture
+def seed_typed_items():
+    col = ItemMaster._col()
+    col.insert_many([
+        {'_id': 'ty-1', 'name': 'Widget A', 'type': 'Cooler', 'is_current': True},
+        {'_id': 'ty-2', 'name': 'Widget B', 'type': 'Cooler', 'is_current': True},
+        {'_id': 'ty-3', 'name': 'Widget C', 'type': 'PowerPlant', 'is_current': True},
+        # 已下架的不該出現在「現在能查到的類型」篩選結果裡
+        {'_id': 'ty-old', 'name': 'Old Widget', 'type': 'Cooler', 'is_current': False},
+    ])
+
+
+def test_ids_of_type_matches_exact_type(seed_typed_items):
+    assert set(ItemMaster.ids_of_type('Cooler')) == {'ty-1', 'ty-2'}
+
+
+def test_ids_of_type_excludes_retired(seed_typed_items):
+    assert 'ty-old' not in ItemMaster.ids_of_type('Cooler')
+
+
+def test_ids_of_type_unknown_type_returns_empty(seed_typed_items):
+    assert ItemMaster.ids_of_type('NoSuchType') == []
+
+
+def test_ids_of_type_blank_returns_empty():
+    assert ItemMaster.ids_of_type('') == []
+    assert ItemMaster.ids_of_type(None) == []

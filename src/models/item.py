@@ -145,9 +145,39 @@ class _MasterBase:
 class ItemMaster(_MasterBase):
     COLLECTION = 'item_master'
     PROJECTION = {
-        'name': 1, 'class_name': 1, 'type': 1, 'sub_type': 1, 'size': 1,
-        'grade': 1, 'volume_uscu': 1, 'manufacturer_code': 1, 'is_current': 1,
+        'name': 1, 'name_zh': 1, 'class_name': 1, 'type': 1, 'sub_type': 1,
+        'size': 1, 'grade': 1, 'volume_uscu': 1, 'manufacturer_code': 1,
+        'is_current': 1,
     }
+
+    @classmethod
+    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False) -> list:
+        """名稱前綴搜尋，給 autocomplete 用。
+
+        覆寫 _MasterBase 的版本，多比對 name_zh —— 原本只比對英文
+        name_lower／class_name，打中文名（例如「鋁礦石」）搜尋物品會是空的，
+        跟 BlueprintMaster.search() 已經在比對 name_zh 不一致（見那邊的說明，
+        「查詢」頁的物品名稱自動完成欄位需要中英文都找得到）。
+        """
+        filt: dict = {} if include_retired else {'is_current': True}
+
+        if (query or '').strip():
+            escaped = escape_regex(query)
+            filt['$or'] = [
+                {'name_lower': {'$regex': f'^{escaped.lower()}'}},
+                {'class_name': {'$regex': escaped, '$options': 'i'}},
+                {'name_zh': {'$regex': escaped}},
+            ]
+
+        rows = list(cls._col().find(filt, cls.PROJECTION)
+                    .sort('name', ASCENDING).limit(limit))
+
+        if not rows and (query or '').strip():
+            fallback: dict = {} if include_retired else {'is_current': True}
+            fallback['name_lower'] = {'$regex': escape_regex(query).lower()}
+            rows = list(cls._col().find(fallback, cls.PROJECTION)
+                        .sort('name', ASCENDING).limit(limit))
+        return rows
 
     @classmethod
     def list_by_type(cls, item_type: str = '', limit: int = 50, offset: int = 0) -> tuple:
@@ -164,6 +194,24 @@ class ItemMaster(_MasterBase):
     @classmethod
     def types(cls) -> list:
         return sorted(t for t in cls._col().distinct('type', {'is_current': True}) if t)
+
+    @classmethod
+    def ids_of_type(cls, item_type: str, limit: int = 1000) -> list:
+        """某個類型底下所有現行物品的 uuid，給「查詢 › 物品庫存」的
+        「物品類型」欄位篩選當 join key 用（先解析成一組 item_id，
+        再跟位置／持有者條件一起做 AND 篩選，見 Inventory.search_filtered）。
+
+        跟 ids_matching() 一樣不需要顯示欄位，只回 id；跟 list_by_type()
+        不同的是這裡不分頁 —— 呼叫端要的是「這個類型全部的 id」拿去比對，
+        不是要分頁瀏覽。
+        """
+        item_type = (item_type or '').strip()
+        if not item_type:
+            return []
+        rows = cls._col().find(
+            {'is_current': True, 'type': item_type}, {'_id': 1},
+        ).limit(max(1, min(limit, 2000)))
+        return [r['_id'] for r in rows]
 
     @classmethod
     def prices(cls, item: dict, limit: int = 10) -> list:
@@ -337,6 +385,23 @@ class BlueprintMaster(_MasterBase):
         """所有產出物類型（給前端做篩選下拉）。"""
         values = cls._col().distinct('output_type', {'is_current': True})
         return sorted(v for v in values if v)
+
+    @classmethod
+    def uuids_of_type(cls, output_type: str, limit: int = 2000) -> list:
+        """某個產出類型底下所有現行藍圖的 uuid，給「查詢 › 持有藍圖」的
+        「藍圖類型」欄位篩選當 join key 用（見 Blueprint.find_holders 的
+        blueprint_uuids 參數）。
+
+        玩家自由輸入、沒有對到主檔的登記天生沒有 blueprint_uuid，篩類型時
+        本來就篩不到那些——是預期行為，不是這支的責任。
+        """
+        output_type = (output_type or '').strip()
+        if not output_type:
+            return []
+        rows = cls._col().find(
+            {'is_current': True, 'output_type': output_type}, {'_id': 1},
+        ).limit(max(1, min(limit, 5000)))
+        return [r['_id'] for r in rows]
 
     @classmethod
     def count_current(cls) -> int:
