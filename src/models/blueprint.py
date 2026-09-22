@@ -15,6 +15,7 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo.errors import BulkWriteError
 
+from src.models.item import escape_regex
 from src.mongo import get_db
 
 # 規格書第 5.3 節：取得方式分類
@@ -39,6 +40,15 @@ HOLDER_HIDDEN_STATUSES = ['locked']
 # 「誰有這張藍圖」每一組最多回傳幾位持有者。
 # 總人數另外用 holder_count 帶出去（在 $group 就算好，不受這個截斷影響）。
 HOLDERS_PER_GROUP = 50
+
+# 藍圖登記管理列表可點擊排序的欄位（規格書外、全站搜尋優化計畫新增）。
+#
+# 「取得玩家」故意不在這裡 —— 那一欄顯示的是關聯到 players collection 的
+# 玩家名字，不是 blueprints 文件上的純量欄位，排序需要先 $lookup 再排，
+# 跟這裡其他欄位的排序方式（直接 .sort()）不是同一件事。等真的有人需要
+# 再用 aggregation 加，不要為了「看起來每欄都能排序」而先做一個沒人用的
+# join 排序。
+SORTABLE_FIELDS = {'name', 'acquisition_method', 'acquisition_location', 'unlock_status'}
 
 
 def _redact_contact(holder: dict) -> dict:
@@ -87,17 +97,89 @@ class Blueprint:
     PLAYER_MAX = 5000
 
     @classmethod
-    def find_all(cls, player_id: str = '', include_deleted: bool = False,
-                 limit: int = 0) -> list:
-        query: dict = {} if include_deleted else {'deleted_at': None}
+    def _build_query(cls, *, player_id: str = '', player_ids=None,
+                      acquisition_methods=None, acquisition_location: str = '',
+                      unlock_statuses=None, query: str = '',
+                      include_deleted: bool = False):
+        """組出篩選條件；回傳 None 代表條件本身就不可能有結果
+        （例如 player_id / player_ids 裡沒有一個是合法的 ObjectId），呼叫端
+        應該直接視為「查不到東西」，不用真的送一次注定空手而回的查詢去 Mongo。
+
+        `player_id`（單一）跟 `player_ids`（多選）刻意分開兩個參數而不是共用
+        一個、要呼叫端自己包成 list —— 現有呼叫點（app/player/view.py、
+        測試）用的是 `player_id=` 這個關鍵字參數，不是 URL query string，
+        改成只收 list 會逼所有既有呼叫點都要改寫成 `player_id=[x]`。
+        """
+        q: dict = {} if include_deleted else {'deleted_at': None}
+
+        ids: list = []
         if player_id:
             try:
-                query['player_id'] = ObjectId(player_id)
+                ids.append(ObjectId(player_id))
             except Exception:
-                return []
+                return None
+        if player_ids:
+            for pid in player_ids:
+                try:
+                    ids.append(ObjectId(pid))
+                except Exception:
+                    continue
+            if not ids:
+                return None
+        if ids:
+            q['player_id'] = ids[0] if len(ids) == 1 else {'$in': ids}
+
+        if acquisition_methods:
+            q['acquisition_method'] = {'$in': list(acquisition_methods)}
+        if unlock_statuses:
+            q['unlock_status'] = {'$in': list(unlock_statuses)}
+
+        # 取得地點是玩家自由輸入的文字（不是固定列舉），用關鍵字模糊比對，
+        # 不做成 distinct 值的多選 —— 否則下拉選單會被大量幾乎一樣但拼法
+        # 不同的地點名稱塞爆，反而比一個搜尋框更難用。
+        loc = (acquisition_location or '').strip()
+        if loc:
+            q['acquisition_location'] = {'$regex': escape_regex(loc), '$options': 'i'}
+
+        keyword = (query or '').strip()
+        if keyword:
+            q['name'] = {'$regex': escape_regex(keyword), '$options': 'i'}
+
+        return q
+
+    @classmethod
+    def find_all(cls, player_id: str = '', include_deleted: bool = False,
+                 limit: int = 0, offset: int = 0, player_ids=None,
+                 acquisition_methods=None, acquisition_location: str = '',
+                 unlock_statuses=None, query: str = '',
+                 sort_by: str = 'name', sort_dir: int = 1) -> list:
+        q = cls._build_query(player_id=player_id, player_ids=player_ids,
+                              acquisition_methods=acquisition_methods,
+                              acquisition_location=acquisition_location,
+                              unlock_statuses=unlock_statuses, query=query,
+                              include_deleted=include_deleted)
+        if q is None:
+            return []
         cap = limit if limit and limit > 0 else cls.FIND_ALL_MAX
-        rows = cls._col().find(query).sort('name', 1).limit(cap)
+        sort_field = sort_by if sort_by in SORTABLE_FIELDS else 'name'
+        rows = (cls._col().find(q).sort(sort_field, sort_dir)
+                .skip(max(0, offset)).limit(cap))
         return [cls._serialize(r) for r in rows]
+
+    @classmethod
+    def count(cls, player_id: str = '', include_deleted: bool = False,
+              player_ids=None, acquisition_methods=None,
+              acquisition_location: str = '', unlock_statuses=None,
+              query: str = '') -> int:
+        """跟 find_all 用同一組篩選條件，給分頁的「共 N 筆」用。"""
+        q = cls._build_query(player_id=player_id, player_ids=player_ids,
+                              acquisition_methods=acquisition_methods,
+                              acquisition_location=acquisition_location,
+                              unlock_statuses=unlock_statuses, query=query,
+                              include_deleted=include_deleted)
+        if q is None:
+            return 0
+        return cls._col().count_documents(q)
 
     @classmethod
     def find_by_id(cls, blueprint_id: str) -> dict | None:

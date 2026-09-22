@@ -49,7 +49,9 @@ export const userApi = {
 
 // ── 操作紀錄 API ─────────────────────────────────────────────────
 export const logApi = {
-  list: () => apiFetch('/log/'),
+  list:      (params) => apiFetch(`/log/${qs(params)}`),
+  usernames: ()        => apiFetch('/log/usernames'),
+  actions:   ()        => apiFetch('/log/actions'),
 }
 
 // ── 玩家 API ─────────────────────────────────────────────────────
@@ -158,7 +160,19 @@ export const itemApi = {
 // ── 共用：把物件轉成 query string（略過 undefined／空字串） ──────
 function qs(params) {
   if (!params) return ''
-  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
-  if (!entries.length) return ''
-  return '?' + new URLSearchParams(entries).toString()
+  const sp = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    // 多選篩選（陣列）要變成重複帶同一個 key（?a=1&a=2），不是逗號字串
+    // （?a=1,2）—— 後端用 request.args.getlist() 讀，只認前者。
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item !== undefined && item !== null && item !== '') sp.append(key, item)
+      }
+    } else {
+      sp.append(key, value)
+    }
+  }
+  const str = sp.toString()
+  return str ? '?' + str : ''
 }

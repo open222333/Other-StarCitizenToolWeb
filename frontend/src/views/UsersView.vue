@@ -15,16 +15,51 @@
       <div v-if="usersMsg" :class="`alert alert-${usersMsgType} py-2 mb-3`">{{ usersMsg }}</div>
     </Transition>
 
+    <!-- ── 篩選 ────────────────────────────────────────────── -->
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <input v-model="usernameQuery" type="text" class="form-control form-control-sm"
+            style="max-width: 12rem" placeholder="搜尋帳號...">
+          <MultiSelectFilter v-model="selectedRoles" label="角色" :options="roleOptions" />
+          <MultiSelectFilter v-model="selectedTemplates" label="模板" :options="templateFilterOptions" />
+          <button v-if="hasActiveUserFilters" type="button" class="btn btn-sm btn-link" @click="resetUserFilters">
+            清除全部篩選
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">帳號</th>
-                <th>角色</th>
-                <th>模板</th>
-                <th>建立時間</th>
+                <th class="ps-3 sortable-th" role="button" tabindex="0"
+                  @click="toggleUserSort('username')" @keydown.enter="toggleUserSort('username')">
+                  帳號
+                  <i v-if="userSortBy === 'username'" class="bi ms-1"
+                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleUserSort('role')" @keydown.enter="toggleUserSort('role')">
+                  角色
+                  <i v-if="userSortBy === 'role'" class="bi ms-1"
+                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleUserSort('template')" @keydown.enter="toggleUserSort('template')">
+                  模板
+                  <i v-if="userSortBy === 'template'" class="bi ms-1"
+                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleUserSort('created_at')" @keydown.enter="toggleUserSort('created_at')">
+                  建立時間
+                  <i v-if="userSortBy === 'created_at'" class="bi ms-1"
+                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
                 <th style="width:180px" class="pe-3">操作</th>
               </tr>
             </thead>
@@ -34,11 +69,13 @@
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
-              <tr v-else-if="!users.length">
-                <td colspan="5" class="text-center py-4 text-muted">尚無使用者</td>
+              <tr v-else-if="!filteredUsers.length">
+                <td colspan="5" class="text-center py-4 text-muted">
+                  {{ hasActiveUserFilters ? '沒有符合篩選條件的使用者。' : '尚無使用者' }}
+                </td>
               </tr>
               <template v-else>
-                <tr v-for="u in users" :key="u._id">
+                <tr v-for="u in filteredUsers" :key="u._id">
                   <td class="ps-3 fw-semibold">
                     {{ u.username }}
                     <span v-if="u.username === 'admin'"
@@ -83,6 +120,7 @@
       <h6 class="mb-0 fw-bold section-toggle" @click="tmplOpen = !tmplOpen">
         <i class="bi me-1 toggle-icon" :class="tmplOpen ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
         <i class="bi bi-person-badge me-1 text-secondary"></i>使用者模板
+        <FieldHint text="模板決定使用者的角色。系統模板為系統預設，不可刪除。修改模板角色時，持有該模板的所有使用者角色將自動同步。" />
       </h6>
       <button v-show="tmplOpen" class="btn btn-outline-secondary btn-sm"
         @click="templateModalRef.open()">
@@ -91,16 +129,23 @@
     </div>
 
     <template v-if="tmplOpen">
-      <div class="alert alert-info py-2 small mb-3">
-        <i class="bi bi-info-circle me-1"></i>
-        模板決定使用者的角色。
-        <span class="badge bg-warning text-dark">系統</span> 模板為系統預設，不可刪除。
-        修改模板角色時，持有該模板的所有使用者角色將自動同步。
-      </div>
-
       <Transition name="alert-slide">
         <div v-if="tmplMsg" :class="`alert alert-${tmplMsgType} py-2 mb-3`">{{ tmplMsg }}</div>
       </Transition>
+
+      <!-- ── 篩選 ────────────────────────────────────────────── -->
+      <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body py-2">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <input v-model="tmplQuery" type="text" class="form-control form-control-sm"
+              style="max-width: 14rem" placeholder="搜尋模板名稱／說明...">
+            <MultiSelectFilter v-model="selectedTmplRoles" label="角色" :options="roleOptions" />
+            <button v-if="hasActiveTmplFilters" type="button" class="btn btn-sm btn-link" @click="resetTmplFilters">
+              清除全部篩選
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div class="card shadow-sm border-0">
         <div class="card-body p-0">
@@ -108,10 +153,30 @@
             <table class="table table-hover align-middle mb-0">
               <thead class="table-light">
                 <tr>
-                  <th class="ps-3">模板名稱</th>
-                  <th>角色</th>
-                  <th>說明</th>
-                  <th>建立時間</th>
+                  <th class="ps-3 sortable-th" role="button" tabindex="0"
+                    @click="toggleTmplSort('name')" @keydown.enter="toggleTmplSort('name')">
+                    模板名稱
+                    <i v-if="tmplSortBy === 'name'" class="bi ms-1"
+                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
+                  <th class="sortable-th" role="button" tabindex="0"
+                    @click="toggleTmplSort('role')" @keydown.enter="toggleTmplSort('role')">
+                    角色
+                    <i v-if="tmplSortBy === 'role'" class="bi ms-1"
+                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
+                  <th class="sortable-th" role="button" tabindex="0"
+                    @click="toggleTmplSort('description')" @keydown.enter="toggleTmplSort('description')">
+                    說明
+                    <i v-if="tmplSortBy === 'description'" class="bi ms-1"
+                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
+                  <th class="sortable-th" role="button" tabindex="0"
+                    @click="toggleTmplSort('created_at')" @keydown.enter="toggleTmplSort('created_at')">
+                    建立時間
+                    <i v-if="tmplSortBy === 'created_at'" class="bi ms-1"
+                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
                   <th style="width:180px" class="pe-3">操作</th>
                 </tr>
               </thead>
@@ -121,11 +186,13 @@
                     <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                   </td>
                 </tr>
-                <tr v-else-if="!templates.length">
-                  <td colspan="5" class="text-center py-4 text-muted">尚無模板</td>
+                <tr v-else-if="!filteredTemplates.length">
+                  <td colspan="5" class="text-center py-4 text-muted">
+                    {{ hasActiveTmplFilters ? '沒有符合篩選條件的模板。' : '尚無模板' }}
+                  </td>
                 </tr>
                 <template v-else>
-                  <tr v-for="t in templates" :key="t._id">
+                  <tr v-for="t in filteredTemplates" :key="t._id">
                     <td class="ps-3 fw-semibold">
                       {{ t.name }}
                       <span v-if="t.is_system" class="badge bg-warning text-dark ms-1">
@@ -170,9 +237,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { userApi } from '@/api'
-import UserModal     from '@/components/UserModal.vue'
-import TemplateModal from '@/components/TemplateModal.vue'
-import ConfirmModal  from '@/components/ConfirmModal.vue'
+import UserModal        from '@/components/UserModal.vue'
+import TemplateModal    from '@/components/TemplateModal.vue'
+import ConfirmModal     from '@/components/ConfirmModal.vue'
+import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import FieldHint         from '@/components/FieldHint.vue'
 
 const auth = useAuthStore()
 
@@ -202,12 +271,125 @@ const ROLE_LABELS = { admin: '管理員', operator: '操作員', viewer: '檢視
 const ROLE_COLORS = { admin: 'danger',  operator: 'warning',  viewer: 'secondary' }
 const roleLabel = (r) => ROLE_LABELS[r] || r
 const roleColor = (r) => ROLE_COLORS[r] || 'secondary'
+const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))
 
 const templatesMap = computed(() =>
   Object.fromEntries(templates.value.map(t => [t._id, t]))
 )
 const templateName = (id) => id ? (templatesMap.value[id]?.name ?? '') : ''
 const fmtDate = (d) => d ? new Date(d).toLocaleString('zh-TW') : '—'
+
+// ── 使用者：篩選／排序（帳號跟模板都是後台一次性載入的小清單，不像操作紀錄
+// 那樣會一路長大，所以這裡直接在前端 computed 裡篩跟排，不用另外改後端
+// 加分頁 —— 沒有資料量會撐爆這頁的問題，加了反而是白工。） ─────────────
+const usernameQuery    = ref('')
+const selectedRoles    = ref([])
+const selectedTemplates = ref([])   // '' 代表「未指定模板」
+const userSortBy  = ref('username')
+const userSortDir = ref('asc')
+
+// 模板下拉多一個「未指定模板」的假選項，讓「模板」欄也符合「每個顯示欄位都能篩」。
+const templateFilterOptions = computed(() => [
+  { value: '', label: '（未指定模板）' },
+  ...templates.value.map(t => ({ value: t._id, label: t.name })),
+])
+
+const hasActiveUserFilters = computed(() =>
+  usernameQuery.value.trim() || selectedRoles.value.length || selectedTemplates.value.length)
+
+function resetUserFilters() {
+  usernameQuery.value = ''
+  selectedRoles.value = []
+  selectedTemplates.value = []
+}
+
+function toggleUserSort(field) {
+  if (userSortBy.value === field) {
+    userSortDir.value = userSortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    userSortBy.value = field
+    userSortDir.value = 'asc'
+  }
+}
+
+function _cmp(av, bv, dir) {
+  if (av < bv) return dir === 'asc' ? -1 : 1
+  if (av > bv) return dir === 'asc' ? 1 : -1
+  return 0
+}
+
+const filteredUsers = computed(() => {
+  let rows = users.value
+
+  const q = usernameQuery.value.trim().toLowerCase()
+  if (q) rows = rows.filter(u => (u.username || '').toLowerCase().includes(q))
+
+  if (selectedRoles.value.length)
+    rows = rows.filter(u => selectedRoles.value.includes(u.role))
+
+  if (selectedTemplates.value.length)
+    rows = rows.filter(u => selectedTemplates.value.includes(u.template_id || ''))
+
+  rows = [...rows].sort((a, b) => {
+    if (userSortBy.value === 'created_at') {
+      return _cmp(new Date(a.created_at || 0).getTime(),
+                  new Date(b.created_at || 0).getTime(), userSortDir.value)
+    }
+    if (userSortBy.value === 'template') {
+      return _cmp(templateName(a.template_id).toLowerCase(),
+                  templateName(b.template_id).toLowerCase(), userSortDir.value)
+    }
+    const av = (a[userSortBy.value] ?? '').toString().toLowerCase()
+    const bv = (b[userSortBy.value] ?? '').toString().toLowerCase()
+    return _cmp(av, bv, userSortDir.value)
+  })
+  return rows
+})
+
+// ── 使用者模板：同一套邏輯 ─────────────────────────────────────────
+const tmplQuery         = ref('')
+const selectedTmplRoles = ref([])
+const tmplSortBy  = ref('name')
+const tmplSortDir = ref('asc')
+
+const hasActiveTmplFilters = computed(() =>
+  tmplQuery.value.trim() || selectedTmplRoles.value.length)
+
+function resetTmplFilters() {
+  tmplQuery.value = ''
+  selectedTmplRoles.value = []
+}
+
+function toggleTmplSort(field) {
+  if (tmplSortBy.value === field) {
+    tmplSortDir.value = tmplSortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    tmplSortBy.value = field
+    tmplSortDir.value = 'asc'
+  }
+}
+
+const filteredTemplates = computed(() => {
+  let rows = templates.value
+
+  const q = tmplQuery.value.trim().toLowerCase()
+  if (q) rows = rows.filter(t =>
+    (t.name || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
+
+  if (selectedTmplRoles.value.length)
+    rows = rows.filter(t => selectedTmplRoles.value.includes(t.role))
+
+  rows = [...rows].sort((a, b) => {
+    if (tmplSortBy.value === 'created_at') {
+      return _cmp(new Date(a.created_at || 0).getTime(),
+                  new Date(b.created_at || 0).getTime(), tmplSortDir.value)
+    }
+    const av = (a[tmplSortBy.value] ?? '').toString().toLowerCase()
+    const bv = (b[tmplSortBy.value] ?? '').toString().toLowerCase()
+    return _cmp(av, bv, tmplSortDir.value)
+  })
+  return rows
+})
 
 // ── API calls ────────────────────────────────────────────────────
 async function loadUsers() {
@@ -271,6 +453,9 @@ onMounted(loadAll)
 <style scoped>
 .section-toggle { cursor: pointer; user-select: none; }
 .toggle-icon    { transition: transform .2s; display: inline-block; }
+
+.sortable-th { cursor: pointer; user-select: none; }
+.sortable-th:hover { color: var(--bs-primary); }
 
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }

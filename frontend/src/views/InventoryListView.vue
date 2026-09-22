@@ -4,7 +4,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h5 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2 text-primary"></i>庫存 Inventory</h5>
       <div class="d-flex gap-2 flex-wrap">
-        <SearchBox v-model="keyword" placeholder="搜尋物品名稱..." />
+        <SearchBox v-model="nameQuery" placeholder="搜尋物品名稱..." />
         <button v-if="canWrite" class="btn btn-success btn-sm" @click="openAdjust('add')">
           <i class="bi bi-plus-lg me-1"></i>入庫
         </button>
@@ -21,24 +21,25 @@
     <!-- ── 篩選列 ── -->
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-body py-2">
-        <div class="row g-2 align-items-center">
-          <div class="col-auto">
-            <select class="form-select form-select-sm" v-model="filters.owner_type" @change="onOwnerTypeChange">
-              <option value="guild">公會共享庫</option>
-              <option value="player">個人庫</option>
-            </select>
-          </div>
-          <div class="col-auto" v-if="filters.owner_type === 'player'">
-            <input class="form-control form-control-sm" style="width:180px"
-              v-model="filters.player" placeholder="玩家 SCID / RSI handle" @change="load">
-          </div>
-          <div class="col-auto">
-            <select class="form-select form-select-sm" v-model="filters.location" @change="load">
-              <option value="">全部位置</option>
-              <option v-for="loc in locations" :key="loc" :value="loc">{{ loc }}</option>
-            </select>
-          </div>
-          <div class="col-auto ms-auto small text-muted" v-if="summary">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <select class="form-select form-select-sm" style="width:auto" v-model="filters.owner_type" @change="onOwnerTypeChange">
+            <option value="guild">公會共享庫</option>
+            <option value="player">個人庫</option>
+          </select>
+          <input v-if="filters.owner_type === 'player'" class="form-control form-control-sm" style="width:180px"
+            v-model="filters.player" placeholder="玩家 SCID / RSI handle" @change="reload(0)">
+
+          <MultiSelectFilter :model-value="selectedLocations" label="位置" :options="locations"
+            @update:model-value="onLocationsChange">
+          </MultiSelectFilter>
+          <input v-model="containerQuery" type="text" class="form-control form-control-sm"
+            style="max-width: 10rem" placeholder="搜尋容器..." @change="reload(0)">
+
+          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
+            清除全部篩選
+          </button>
+
+          <div class="ms-auto small text-muted" v-if="summary">
             共 {{ summary.lines }} 筆 · {{ summary.units }} 件 · {{ summary.total_scu }} SCU
             <span v-if="summary.unknown_volume" class="text-warning">
               （{{ summary.unknown_volume }} 項無體積資料，總 SCU 可能低估）
@@ -55,11 +56,36 @@
             <thead class="table-light">
               <tr>
                 <th class="ps-3">歸屬</th>
-                <th>位置</th>
-                <th>容器</th>
-                <th>物品</th>
-                <th>數量</th>
-                <th>SCU</th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleSort('location')" @keydown.enter="toggleSort('location')">
+                  位置
+                  <i v-if="sortBy === 'location'" class="bi ms-1"
+                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleSort('container')" @keydown.enter="toggleSort('container')">
+                  容器
+                  <i v-if="sortBy === 'container'" class="bi ms-1"
+                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleSort('item_name')" @keydown.enter="toggleSort('item_name')">
+                  物品
+                  <i v-if="sortBy === 'item_name'" class="bi ms-1"
+                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleSort('quantity')" @keydown.enter="toggleSort('quantity')">
+                  數量
+                  <i v-if="sortBy === 'quantity'" class="bi ms-1"
+                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
+                <th class="sortable-th" role="button" tabindex="0"
+                  @click="toggleSort('total_scu')" @keydown.enter="toggleSort('total_scu')">
+                  SCU
+                  <i v-if="sortBy === 'total_scu'" class="bi ms-1"
+                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                </th>
                 <th style="width:100px" class="pe-3" v-if="canWrite">操作</th>
               </tr>
             </thead>
@@ -69,11 +95,13 @@
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
-              <tr v-else-if="!filtered.length">
-                <td :colspan="canWrite ? 7 : 6" class="text-center py-4 text-muted">尚無庫存資料</td>
+              <tr v-else-if="!rows.length">
+                <td :colspan="canWrite ? 7 : 6" class="text-center py-4 text-muted">
+                  {{ hasActiveFilters ? '沒有符合篩選條件的庫存。' : '尚無庫存資料' }}
+                </td>
               </tr>
               <template v-else>
-                <tr v-for="row in filtered" :key="`${row.owner_type}-${row.player}-${row.location}-${row.container}-${row.item_id}`">
+                <tr v-for="row in rows" :key="`${row.owner_type}-${row.player}-${row.location}-${row.container}-${row.item_id}`">
                   <td class="ps-3 small">
                     <span v-if="row.owner_type === 'guild'" class="badge bg-secondary">公會</span>
                     <span v-else class="badge bg-info text-dark">{{ row.player || '個人' }}</span>
@@ -97,6 +125,19 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- ── 分頁 ────────────────────────────────────────────── -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+      <div class="small text-muted">
+        共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
+      </div>
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
+          @click="reload(Math.max(0, offset - limit))">上一頁</button>
+        <button class="btn btn-outline-secondary" :disabled="offset + limit >= total || loading"
+          @click="reload(offset + limit)">下一頁</button>
       </div>
     </div>
 
@@ -164,26 +205,42 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Modal } from 'bootstrap'
 import { useAuthStore } from '@/stores/auth'
 import { inventoryApi } from '@/api'
-import SearchBox from '@/components/SearchBox.vue'
+import SearchBox          from '@/components/SearchBox.vue'
+import MultiSelectFilter  from '@/components/MultiSelectFilter.vue'
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
 
 const rows      = ref([])
+const total     = ref(0)
+const limit     = 50
+const offset    = ref(0)
 const locations = ref([])
 const summary   = ref(null)
 const loading   = ref(false)
-const keyword   = ref('')
 
 const filters = reactive({
   owner_type: 'guild',
   player: '',
-  location: '',
 })
+
+// ── 篩選（位置多選、容器/物品關鍵字、排序）──────────────────────────
+// 物品名稱關鍵字改成真的送去後端查（見 app/inventory/view.py 的 q 參數），
+// 不再是「只在目前這一頁裡用 JS 過濾」—— 舊寫法在庫存超過一頁時，
+// 篩選結果會漏掉沒被載入的那些頁，是會讓使用者以為「搜尋結果就這些」的
+// 隱性錯誤，比 400/500 更難發現。
+const selectedLocations = ref([])
+const containerQuery    = ref('')
+const nameQuery         = ref('')
+const sortBy  = ref('item_name')
+const sortDir = ref('asc')
+
+const hasActiveFilters = computed(() =>
+  selectedLocations.value.length || containerQuery.value.trim() || nameQuery.value.trim())
 
 const msg = ref(''); const msgType = ref('success')
 function flash(text, type = 'danger') {
@@ -191,37 +248,74 @@ function flash(text, type = 'danger') {
   setTimeout(() => { msg.value = '' }, 3000)
 }
 
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return rows.value
-  return rows.value.filter(r =>
-    (r.item_name || '').toLowerCase().includes(kw) ||
-    (r.item_name_zh || '').toLowerCase().includes(kw)
-  )
-})
+function toggleSort(field) {
+  if (sortBy.value === field) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = field
+    sortDir.value = 'asc'
+  }
+  reload(0)
+}
+
+function onLocationsChange(values) {
+  selectedLocations.value = values
+  reload(0)
+}
+
+function resetFilters() {
+  selectedLocations.value = []
+  containerQuery.value = ''
+  nameQuery.value = ''
+  reload(0)
+}
 
 function onOwnerTypeChange() {
   if (filters.owner_type === 'guild') filters.player = ''
-  load()
+  reload(0)
 }
 
-async function load() {
+// 物品名稱是這頁唯一「邊打邊搜」的欄位（SearchBox 沒有像 Blueprint/Log
+// 頁那些次要篩選一樣等 blur 才送出的 @change），所以要 debounce，
+// 不然每敲一個字就打一次後端。
+let nameDebounceTimer = null
+watch(nameQuery, () => {
+  clearTimeout(nameDebounceTimer)
+  nameDebounceTimer = setTimeout(() => reload(0), 350)
+})
+onBeforeUnmount(() => clearTimeout(nameDebounceTimer))
+
+async function reload(newOffset = 0) {
   // 個人庫沒指定玩家時，先不打 API（後端會回 400）
   if (filters.owner_type === 'player' && !filters.player.trim()) {
-    rows.value = []; summary.value = null
+    rows.value = []; summary.value = null; total.value = 0
     return
   }
+  offset.value = newOffset
   loading.value = true
   const res = await inventoryApi.list({
     owner_type: filters.owner_type,
     player: filters.owner_type === 'player' ? filters.player.trim() : undefined,
-    location: filters.location,
-    limit: 200,
+    location: selectedLocations.value,
+    container: containerQuery.value.trim(),
+    q: nameQuery.value.trim(),
+    sort_by: sortBy.value,
+    sort_dir: sortDir.value,
+    limit, offset: newOffset,
   })
   if (res) {
     const d = await res.json()
-    if (d.success) { rows.value = d.data || []; summary.value = d.summary || null }
-    else flash(d.message || '載入失敗')
+    if (d.success) {
+      rows.value = d.data || []
+      summary.value = d.summary || null
+      total.value = d.total || 0
+    } else {
+      flash(d.message || '載入失敗')
+      rows.value = []; total.value = 0
+    }
+  } else {
+    flash('網路錯誤，請稍後再試')
+    rows.value = []; total.value = 0
   }
   loading.value = false
 }
@@ -247,7 +341,7 @@ function openAdjust(mode) {
   adjustError.value = ''
   Object.assign(adjustForm, {
     owner_type: filters.owner_type, player: filters.player,
-    item: '', quantity: 1, location: filters.location, container: '', note: '',
+    item: '', quantity: 1, location: '', container: '', note: '',
   })
   adjustModal.show()
 }
@@ -294,7 +388,7 @@ async function submitAdjust() {
   if (data.success) {
     closeAdjust()
     flash(adjustMode.value === 'add' ? '入庫成功' : '出庫成功', 'success')
-    await load()
+    await reload(offset.value)
     await loadLocations()
   } else {
     adjustError.value = data.message || '操作失敗'
@@ -303,11 +397,14 @@ async function submitAdjust() {
 
 onMounted(async () => {
   adjustModal = new Modal(adjustModalEl.value)
-  await Promise.all([load(), loadLocations()])
+  await Promise.all([reload(0), loadLocations()])
 })
 </script>
 
 <style scoped>
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
+
+.sortable-th { cursor: pointer; user-select: none; }
+.sortable-th:hover { color: var(--bs-primary); }
 </style>

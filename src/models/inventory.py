@@ -19,9 +19,19 @@ from typing import Optional
 
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
+from src.models.item import escape_regex
 from src.mongo import get_db
 
 USCU_PER_SCU = 1_000_000
+
+# 庫存列表可點擊排序的欄位（全站搜尋優化計畫第 4 項）。
+#
+# 'total_scu' 故意不在這裡 —— pipeline 裡只有 total_uscu（微 SCU）這個欄位，
+# total_scu 是 Python 端才用 uscu_to_scu() 四捨五入算出來的，Mongo 排序看
+# 不到它。_SORT_ALIASES 把使用者看到的 'total_scu' 轉成內部真正拿來排序的
+# 'total_uscu' —— uscu_to_scu 只是除以常數，用哪個排出來的順序都一樣。
+SORTABLE_FIELDS = {'item_name', 'location', 'container', 'quantity', 'total_uscu'}
+_SORT_ALIASES = {'total_scu': 'total_uscu'}
 
 OWNER_GUILD = 'guild'
 OWNER_PLAYER = 'player'
@@ -98,20 +108,61 @@ class Inventory:
     # ─────────────────────────────────────────────── 查詢
 
     @classmethod
+    def _build_match(cls, scope_id: str, owner_type: str, player: Optional[str],
+                      location: str = '', locations=None, container: str = '') -> dict:
+        """組出 inventory 原始欄位（非 join 後才有的欄位）的篩選條件。
+
+        `location`（單一，向後相容 bot／既有呼叫點）跟 `locations`（多選，
+        後台列表的「位置」篩選用）刻意分開兩個參數，理由跟
+        src/models/blueprint.py 的 player_id/player_ids 一樣：既有呼叫點
+        是 Python 關鍵字參數，不是 URL query string，不想逼全部改寫。
+        兩者都給時 `locations` 優先（後台列表只會傳其中一個）。
+        """
+        match = _owner_filter(scope_id, owner_type, player)
+        if locations:
+            match['location'] = {'$in': list(locations)}
+        elif location:
+            match['location'] = location
+        if container:
+            match['container'] = {'$regex': escape_regex(container), '$options': 'i'}
+        match['quantity'] = {'$gt': 0}
+        return match
+
+    @classmethod
+    def _name_match_stage(cls, name_query: str) -> list:
+        """物品名稱關鍵字（中英文都比對）比對的 $match，給呼叫端接在
+        $lookup + $addFields 後面。回傳 list 是因為沒有關鍵字時要接空 list
+        （不加這一段 stage），呼叫端用 `pipeline + cls._name_match_stage(q)`
+        就好，不用另外判斷要不要加。
+        """
+        q = (name_query or '').strip()
+        if not q:
+            return []
+        pattern = escape_regex(q)
+        return [{'$match': {'$or': [
+            {'item_name': {'$regex': pattern, '$options': 'i'}},
+            {'item_name_zh': {'$regex': pattern, '$options': 'i'}},
+        ]}}]
+
+    @classmethod
     def list_stock(cls, scope_id: str, owner_type: str, player: Optional[str],
                    location: str = '', item_id: str = '',
-                   offset: int = 0, limit: int = 50) -> tuple:
-        """回傳 (該頁資料, 總筆數)。已 join item_master 補上名稱與體積。"""
-        match = _owner_filter(scope_id, owner_type, player)
-        if location:
-            match['location'] = location
+                   offset: int = 0, limit: int = 50,
+                   locations=None, container: str = '', name_query: str = '',
+                   sort_by: str = 'item_name', sort_dir: int = ASCENDING) -> tuple:
+        """回傳 (該頁資料, 總筆數)。已 join item_master 補上名稱與體積。
+
+        新參數（locations／container／name_query／sort_by／sort_dir）都加在
+        既有參數後面，不是插進中間 —— bot/db.py 用位置參數呼叫這支
+        （`Inventory.list_stock, SCOPE_ID, owner_type, player, location,
+        item_id, offset, limit`），插進中間會讓 item_id/offset/limit 全部
+        對錯位置，不會報錯，只會安靜地查錯資料。
+        """
+        match = cls._build_match(scope_id, owner_type, player, location, locations, container)
         if item_id:
             match['item_id'] = item_id
-        match['quantity'] = {'$gt': 0}
 
-        total = cls._col().count_documents(match)
-
-        pipeline = [
+        base_pipeline = [
             {'$match': match},
             {'$lookup': {'from': 'item_master', 'localField': 'item_id',
                          'foreignField': '_id', 'as': 'item'}},
@@ -125,7 +176,33 @@ class Inventory:
                 'total_uscu': {'$multiply': [
                     '$quantity', {'$ifNull': ['$item.volume_uscu', 0]}]},
             }},
-            {'$sort': {'item_name': ASCENDING, 'location': ASCENDING}},
+        ]
+        name_match = cls._name_match_stage(name_query)
+
+        if name_match:
+            # name_query 篩的是 $lookup 之後才有的欄位，count_documents（只看
+            # inventory 原始文件）看不到，只能整條 pipeline 再跑一次 $count——
+            # 比 count_documents 貴，所以只有真的有關鍵字時才這樣做。
+            total_rows = list(cls._col().aggregate(
+                base_pipeline + name_match + [{'$count': 'total'}], allowDiskUse=True))
+            total = total_rows[0]['total'] if total_rows else 0
+        else:
+            total = cls._col().count_documents(match)
+
+        sort_field = _SORT_ALIASES.get(sort_by, sort_by)
+        if sort_field not in SORTABLE_FIELDS:
+            sort_field = 'item_name'
+        # 排序欄位當主鍵，item_name/location 當 tie-breaker（沒被選為排序欄位時）
+        # ——維持原本「同排序值時依名稱、位置排」的穩定順序，不會因為換排序欄位
+        # 讓同分的列每次重新整理順序都在跳。
+        sort_doc = {sort_field: sort_dir}
+        if sort_field != 'item_name':
+            sort_doc['item_name'] = ASCENDING
+        if sort_field != 'location':
+            sort_doc['location'] = ASCENDING
+
+        data_pipeline = base_pipeline + name_match + [
+            {'$sort': sort_doc},
             {'$skip': offset},
             {'$limit': limit},
             {'$project': {'_id': 0, 'item': 0}},
@@ -140,7 +217,7 @@ class Inventory:
         # 欄位（location / item_id），或在 Inventory.adjust() 寫入時就把
         # item_name 反正規化存進文件才能建索引 —— 兩者都會改變顯示順序或
         # 需要資料回填，等到規模真的接近時再處理。
-        rows = list(cls._col().aggregate(pipeline, allowDiskUse=True))
+        rows = list(cls._col().aggregate(data_pipeline, allowDiskUse=True))
         for row in rows:
             row['total_scu'] = uscu_to_scu(row.get('total_uscu'))
         return rows, total
@@ -166,32 +243,45 @@ class Inventory:
 
     @classmethod
     def capacity(cls, scope_id: str, owner_type: str, player: Optional[str],
-                 location: str = '') -> dict:
+                 location: str = '', locations=None, container: str = '',
+                 name_query: str = '') -> dict:
         """算佔用多少 SCU。
 
         unknown_volume 是「主檔沒有體積資料」的品項數 —— 有值代表 total_scu 低估，
         呼叫端要一併顯示，不能只報總量。
+
+        新參數同樣加在既有參數後面（理由見 list_stock），讓這個總量摘要跟
+        列表用同一套篩選條件（後台列表切了篩選之後，上面的「共 N 筆」也要
+        跟著變，不能列表被篩過但總量還是全庫的數字）。
         """
-        match = _owner_filter(scope_id, owner_type, player)
-        if location:
-            match['location'] = location
-        match['quantity'] = {'$gt': 0}
+        match = cls._build_match(scope_id, owner_type, player, location, locations, container)
 
         pipeline = [
             {'$match': match},
             {'$lookup': {'from': 'item_master', 'localField': 'item_id',
                          'foreignField': '_id', 'as': 'item'}},
             {'$unwind': {'path': '$item', 'preserveNullAndEmptyArrays': True}},
-            {'$group': {
-                '_id': None,
-                'total_uscu': {'$sum': {'$multiply': [
-                    '$quantity', {'$ifNull': ['$item.volume_uscu', 0]}]}},
-                'units': {'$sum': '$quantity'},
-                'lines': {'$sum': 1},
-                'unknown_volume': {'$sum': {'$cond': [
-                    {'$gt': [{'$ifNull': ['$item.volume_uscu', 0]}, 0]}, 0, 1]}},
-            }},
         ]
+        q = (name_query or '').strip()
+        if q:
+            pattern = escape_regex(q)
+            pipeline.append({'$addFields': {
+                'item_name': {'$ifNull': ['$item.name', '$item_id']},
+                'item_name_zh': '$item.name_zh',
+            }})
+            pipeline.append({'$match': {'$or': [
+                {'item_name': {'$regex': pattern, '$options': 'i'}},
+                {'item_name_zh': {'$regex': pattern, '$options': 'i'}},
+            ]}})
+        pipeline.append({'$group': {
+            '_id': None,
+            'total_uscu': {'$sum': {'$multiply': [
+                '$quantity', {'$ifNull': ['$item.volume_uscu', 0]}]}},
+            'units': {'$sum': '$quantity'},
+            'lines': {'$sum': 1},
+            'unknown_volume': {'$sum': {'$cond': [
+                {'$gt': [{'$ifNull': ['$item.volume_uscu', 0]}, 0]}, 0, 1]}},
+        }})
         # 這支沒有 $limit（要算整個庫的總量），$lookup + $group 一樣受
         # 100MB 記憶體上限限制，理由同 list_stock。
         rows = list(cls._col().aggregate(pipeline, allowDiskUse=True))

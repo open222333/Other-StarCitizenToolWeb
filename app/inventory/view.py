@@ -127,8 +127,12 @@ def list_stock():
     parameters:
       - {in: query, name: owner_type, type: string, enum: [guild, player], default: guild}
       - {in: query, name: player,     type: string, description: "owner_type=player 時必填（RSI handle）"}
-      - {in: query, name: location,   type: string, description: "只看某個位置"}
+      - {in: query, name: location,   type: string, description: "只看某個位置，可重複帶多個做多選"}
       - {in: query, name: item_id,    type: string, description: "只看某個物品（uuid）"}
+      - {in: query, name: container,  type: string, description: "容器關鍵字（模糊比對）"}
+      - {in: query, name: q,          type: string, description: "物品名稱關鍵字（中英文都比對）"}
+      - {in: query, name: sort_by,    type: string, description: "item_name(預設)/location/container/quantity/total_scu"}
+      - {in: query, name: sort_dir,   type: string, enum: [asc, desc], default: asc}
       - {in: query, name: limit,      type: integer, default: 50}
       - {in: query, name: offset,     type: integer, default: 0}
     responses:
@@ -140,15 +144,24 @@ def list_stock():
     owner_type, player = _owner_from_args()
     limit, offset = _paging()
 
+    # getlist：單一值跟多選（後台列表的「位置」篩選）共用同一個 location
+    # query key，跟 app/blueprint/view.py 的 player_id 是同一個道理。
+    locations = request.args.getlist('location')
+    container = (request.args.get('container') or '').strip()
+    name_query = (request.args.get('q') or '').strip()
+    sort_by = request.args.get('sort_by', 'item_name')
+    sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
+
     rows, total = Inventory.list_stock(
         WMS_SCOPE_ID, owner_type, player,
-        location=(request.args.get('location') or '').strip(),
         item_id=(request.args.get('item_id') or '').strip(),
         offset=offset, limit=limit,
+        locations=locations, container=container, name_query=name_query,
+        sort_by=sort_by, sort_dir=sort_dir,
     )
     summary = Inventory.capacity(
         WMS_SCOPE_ID, owner_type, player,
-        location=(request.args.get('location') or '').strip(),
+        locations=locations, container=container, name_query=name_query,
     )
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset, 'summary': summary})

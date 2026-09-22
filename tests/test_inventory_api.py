@@ -62,7 +62,65 @@ def test_read_allowed_for_viewer(client, viewer_token):
     assert resp.get_json()['success'] is True
 
 
+# ─────────────────────────────────────────────────────── 列表：多選 / 關鍵字 / 排序
+# （庫存管理列表：全站搜尋優化計畫第 4 項。模型層邏輯在 test_inventory.py 測，
+#  這裡只驗證 view 有沒有把 query string 正確轉成模型參數。）
+
+def test_list_multiple_location_is_multi_select(client, auth_headers, seed_master):
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-big', 'quantity': 5, 'location': 'Area18'})
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-big', 'quantity': 3, 'location': 'Lorville'})
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-big', 'quantity': 1, 'location': 'Orison'})
+
+    resp = client.get('/inventory/?location=Area18&location=Lorville', headers=auth_headers)
+    body = resp.get_json()
+    assert body['total'] == 2
+    assert {r['location'] for r in body['data']} == {'Area18', 'Lorville'}
+    # summary 也要跟著篩選條件變，不能列表被篩過但總量還是全庫的數字
+    assert body['summary']['total_scu'] == 8.0
+
+
+def test_list_container_keyword(client, auth_headers, seed_master):
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-big', 'quantity': 5, 'location': 'Area18',
+                     'container': 'Cargo Box A'})
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-small', 'quantity': 5, 'location': 'Area18',
+                     'container': 'Storage Crate'})
+
+    resp = client.get('/inventory/?container=cargo', headers=auth_headers)
+    body = resp.get_json()
+    assert body['total'] == 1
+    assert body['data'][0]['container'] == 'Cargo Box A'
+
+
+def test_list_name_keyword_query(client, auth_headers, seed_master):
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-big', 'quantity': 5, 'location': 'Area18'})
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-small', 'quantity': 5, 'location': 'Area18'})
+
+    resp = client.get('/inventory/?q=agric', headers=auth_headers)
+    body = resp.get_json()
+    assert body['total'] == 1
+    assert body['data'][0]['item_name'] == 'Agricium'
+
+
+def test_list_sort_by_quantity_desc(client, auth_headers, seed_master):
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-big', 'quantity': 2, 'location': 'Area18'})
+    client.post('/inventory/add', headers=auth_headers,
+               json={'item': 'item-small', 'quantity': 50, 'location': 'Area18'})
+
+    resp = client.get('/inventory/?sort_by=quantity&sort_dir=desc', headers=auth_headers)
+    rows = resp.get_json()['data']
+    assert [r['quantity'] for r in rows] == [50, 2]
+
+
 # ─────────────────────────────────────────────────────── 入出庫
+
 
 def test_add_then_list(client, auth_headers, seed_master):
     resp = client.post('/inventory/add', headers=auth_headers,

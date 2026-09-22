@@ -4,6 +4,8 @@ from src.models.user import User
 from src.models.user_template import UserTemplate
 from src.models.log import Log
 from src.models.device_token import DeviceToken
+from src.models.blueprint import Blueprint
+from src.models.player import Player
 
 
 # ─────────────────────────────────────────────
@@ -153,12 +155,63 @@ class TestLog:
         assert all('created_at' in l for l in logs)
 
     def test_find_all_username_filter(self):
+        """usernames 是清單（多選），不是單一字串 —— 對應前端 checkbox 多選。"""
         Log.create('alice', 'login')
         Log.create('bob', 'login')
         Log.create('alice', 'logout')
-        logs = Log.find_all(username='alice')
+        logs = Log.find_all(usernames=['alice'])
         assert len(logs) == 2
         assert all(l['username'] == 'alice' for l in logs)
+
+    def test_find_all_username_filter_multiple(self):
+        Log.create('alice', 'login')
+        Log.create('bob', 'login')
+        Log.create('carol', 'login')
+        logs = Log.find_all(usernames=['alice', 'bob'])
+        assert {l['username'] for l in logs} == {'alice', 'bob'}
+
+    def test_find_all_action_filter(self):
+        Log.create('alice', 'login')
+        Log.create('alice', 'logout')
+        logs = Log.find_all(actions=['login'])
+        assert len(logs) == 1
+        assert logs[0]['action'] == 'login'
+
+    def test_find_all_success_filter(self):
+        Log.create('alice', 'a', success=True)
+        Log.create('alice', 'b', success=False)
+        assert all(l['success'] is True for l in Log.find_all(success=True))
+        assert all(l['success'] is False for l in Log.find_all(success=False))
+
+    def test_find_all_time_range_filter(self):
+        from datetime import datetime
+        Log.create('alice', 'a')
+        logs = Log.find_all(since=datetime(2020, 1, 1), until=datetime(2020, 12, 31))
+        assert logs == []
+
+    def test_find_all_sort_dir(self):
+        import time
+        Log.create('alice', 'first')
+        time.sleep(0.01)
+        Log.create('alice', 'second')
+        asc = Log.find_all(usernames=['alice'], sort_dir=1)
+        assert asc[0]['action'] == 'first'
+        desc = Log.find_all(usernames=['alice'], sort_dir=-1)
+        assert desc[0]['action'] == 'second'
+
+    def test_distinct_usernames(self):
+        Log.create('zed', 'a')
+        Log.create('amy', 'b')
+        names = Log.distinct_usernames()
+        assert names == sorted(names)
+        assert 'zed' in names and 'amy' in names
+
+    def test_distinct_actions(self):
+        Log.create('u', 'action_z')
+        Log.create('u', 'action_a')
+        actions = Log.distinct_actions()
+        assert actions == sorted(actions)
+        assert 'action_z' in actions and 'action_a' in actions
 
     def test_count(self):
         Log.create('u1', 'a')
@@ -169,8 +222,8 @@ class TestLog:
         Log.create('alice', 'a1')
         Log.create('bob', 'a2')
         Log.create('alice', 'a3')
-        assert Log.count(username='alice') == 2
-        assert Log.count(username='bob') == 1
+        assert Log.count(usernames=['alice']) == 2
+        assert Log.count(usernames=['bob']) == 1
 
     def test_pagination(self):
         for i in range(6):
@@ -179,6 +232,107 @@ class TestLog:
         page2 = Log.find_all(limit=4, offset=4)
         assert len(page1) == 4
         assert len(page2) == 2
+
+
+# ─────────────────────────────────────────────
+#  Blueprint（藍圖登記管理列表：多選篩選 / 關鍵字 / 排序 / 分頁）
+# ─────────────────────────────────────────────
+
+class TestBlueprint:
+    @staticmethod
+    def _player_id(name='Tom', scid='Tom_SC'):
+        Player.create(player_name=name, star_citizen_id=scid)
+        return Player.find_by_star_citizen_id(scid)['_id']
+
+    def test_find_all_returns_list_not_tuple(self):
+        """既有呼叫點（app/player/view.py 等）預期一個 list，不是 (rows, total)。"""
+        Blueprint.create(name='Laser Cannon')
+        result = Blueprint.find_all()
+        assert isinstance(result, list)
+
+    def test_find_all_player_id_filter(self):
+        pid = self._player_id()
+        Blueprint.create(name='Mine', player_id=pid)
+        Blueprint.create(name='NotMine')
+        rows = Blueprint.find_all(player_id=pid)
+        assert len(rows) == 1
+        assert rows[0]['name'] == 'Mine'
+
+    def test_find_all_invalid_player_id_returns_empty(self):
+        Blueprint.create(name='Something')
+        assert Blueprint.find_all(player_id='not-a-valid-object-id') == []
+
+    def test_find_all_player_ids_filter_multiple(self):
+        """player_ids（多選）跟既有的單一 player_id 是分開的參數。"""
+        alice = self._player_id('Alice', 'Alice_SC')
+        bob = self._player_id('Bob', 'Bob_SC')
+        carol = self._player_id('Carol', 'Carol_SC')
+        Blueprint.create(name='A-bp', player_id=alice)
+        Blueprint.create(name='B-bp', player_id=bob)
+        Blueprint.create(name='C-bp', player_id=carol)
+        rows = Blueprint.find_all(player_ids=[str(alice), str(bob)])
+        assert {r['name'] for r in rows} == {'A-bp', 'B-bp'}
+
+    def test_find_all_all_invalid_player_ids_returns_empty(self):
+        Blueprint.create(name='Something')
+        assert Blueprint.find_all(player_ids=['garbage-1', 'garbage-2']) == []
+
+    def test_find_all_acquisition_method_filter(self):
+        Blueprint.create(name='A', acquisition_method='探索')
+        Blueprint.create(name='B', acquisition_method='商店')
+        rows = Blueprint.find_all(acquisition_methods=['探索'])
+        assert len(rows) == 1 and rows[0]['name'] == 'A'
+
+    def test_find_all_unlock_status_filter(self):
+        Blueprint.create(name='A', unlock_status='unlocked')
+        Blueprint.create(name='B', unlock_status='locked')
+        rows = Blueprint.find_all(unlock_statuses=['unlocked'])
+        assert len(rows) == 1 and rows[0]['name'] == 'A'
+
+    def test_find_all_acquisition_location_keyword_filter(self):
+        """取得地點是自由文字，用關鍵字模糊比對（大小寫不敏感），不是精確比對。"""
+        Blueprint.create(name='A', acquisition_location='Crusader - Orison')
+        Blueprint.create(name='B', acquisition_location='Hurston - Lorville')
+        rows = Blueprint.find_all(acquisition_location='orison')
+        assert len(rows) == 1 and rows[0]['name'] == 'A'
+
+    def test_find_all_name_query_filter(self):
+        Blueprint.create(name='Laser Cannon S1')
+        Blueprint.create(name='Medical Pen')
+        rows = Blueprint.find_all(query='laser')
+        assert len(rows) == 1 and rows[0]['name'] == 'Laser Cannon S1'
+
+    def test_find_all_sort_by_acquisition_method(self):
+        Blueprint.create(name='A', acquisition_method='商店')
+        Blueprint.create(name='B', acquisition_method='任務')
+        asc = Blueprint.find_all(sort_by='acquisition_method', sort_dir=1)
+        assert [r['name'] for r in asc] == ['B', 'A']
+
+    def test_find_all_invalid_sort_by_falls_back_to_name(self):
+        """sort_by 不在 SORTABLE_FIELDS 裡（例如 player_id，需要 join 才能排）就退回用 name。"""
+        Blueprint.create(name='Zed')
+        Blueprint.create(name='Amy')
+        rows = Blueprint.find_all(sort_by='player_id', sort_dir=1)
+        assert [r['name'] for r in rows] == ['Amy', 'Zed']
+
+    def test_find_all_pagination(self):
+        for i in range(6):
+            Blueprint.create(name=f'bp-{i}')
+        page1 = Blueprint.find_all(limit=4, offset=0)
+        page2 = Blueprint.find_all(limit=4, offset=4)
+        assert len(page1) == 4
+        assert len(page2) == 2
+
+    def test_count_matches_filters(self):
+        Blueprint.create(name='A', acquisition_method='探索')
+        Blueprint.create(name='B', acquisition_method='商店')
+        Blueprint.create(name='C', acquisition_method='探索')
+        assert Blueprint.count() >= 3
+        assert Blueprint.count(acquisition_methods=['探索']) == 2
+
+    def test_count_invalid_player_id_returns_zero(self):
+        Blueprint.create(name='Something')
+        assert Blueprint.count(player_id='not-a-valid-object-id') == 0
 
 
 # ─────────────────────────────────────────────

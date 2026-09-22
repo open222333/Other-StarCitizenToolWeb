@@ -315,3 +315,107 @@ def test_binding_requires_a_code():
     with pytest.raises(StockError):
         DiscordBinding.bind('111', ACTOR, SCOPE)
     assert DiscordBinding.get('111') is None
+
+
+# ─────────────────────────────────────────────────────────── 篩選 / 關鍵字 / 排序
+# （庫存管理列表：全站搜尋優化計畫第 4 項）
+
+def test_list_stock_locations_multi_select(seed_items):
+    """locations（多選）跟既有的單一 location 是分開的參數，兩個位置一起篩。"""
+    add(ITEM_BIG['_id'], 10, 'Area18')
+    add(ITEM_BIG['_id'], 5, 'Lorville')
+    add(ITEM_BIG['_id'], 3, 'Orison')
+
+    rows, total = Inventory.list_stock(SCOPE, OWNER_GUILD, None,
+                                       locations=['Area18', 'Lorville'])
+    assert total == 2
+    assert {r['location'] for r in rows} == {'Area18', 'Lorville'}
+
+
+def test_list_stock_location_singular_still_works(seed_items):
+    """既有的單一 location 參數（bot 用位置參數呼叫）維持原樣可用。"""
+    add(ITEM_BIG['_id'], 10, 'Area18')
+    add(ITEM_BIG['_id'], 5, 'Lorville')
+
+    rows, total = Inventory.list_stock(SCOPE, OWNER_GUILD, None, location='Area18')
+    assert total == 1
+    assert rows[0]['location'] == 'Area18'
+
+
+def test_list_stock_container_keyword_filter(seed_items):
+    """容器是自由文字，用關鍵字模糊比對（大小寫不敏感）。"""
+    add(ITEM_BIG['_id'], 10, 'Area18', container='Cargo Box A')
+    add(ITEM_BIG['_id'], 5, 'Area18', container='Storage Crate')
+
+    rows, total = Inventory.list_stock(SCOPE, OWNER_GUILD, None, container='cargo')
+    assert total == 1
+    assert rows[0]['container'] == 'Cargo Box A'
+
+
+def test_list_stock_name_query_filters_and_counts_correctly(seed_items):
+    """name_query 篩的是 join 之後才有的欄位，total 要另外用 aggregation 算，
+    不能只看 count_documents（那個看不到 item_name）。"""
+    add(ITEM_BIG['_id'], 10, 'Area18')      # Agricium
+    add(ITEM_SMALL['_id'], 5, 'Area18')     # Bracer Cooler
+
+    rows, total = Inventory.list_stock(SCOPE, OWNER_GUILD, None, name_query='agric')
+    assert total == 1
+    assert rows[0]['item_name'] == 'Agricium'
+
+
+def test_list_stock_name_query_matches_zh_name():
+    get_db()['item_master'].insert_one({
+        '_id': 'item-zh', 'name': 'Medical Pen', 'name_lower': 'medical pen',
+        'name_zh': '醫療筆', 'type': 'Misc', 'volume_uscu': 1_000, 'is_current': True,
+    })
+    add('item-zh', 3, 'Area18')
+
+    rows, total = Inventory.list_stock(SCOPE, OWNER_GUILD, None, name_query='醫療')
+    assert total == 1
+    assert rows[0]['item_name'] == 'Medical Pen'
+
+
+def test_list_stock_sort_by_quantity_desc(seed_items):
+    add(ITEM_BIG['_id'], 3, 'Area18')
+    add(ITEM_SMALL['_id'], 50, 'Area18')
+
+    rows, _ = Inventory.list_stock(SCOPE, OWNER_GUILD, None,
+                                   sort_by='quantity', sort_dir=-1)
+    assert [r['quantity'] for r in rows] == [50, 3]
+
+
+def test_list_stock_sort_by_total_scu_alias(seed_items):
+    """使用者看到的排序選項是 total_scu，內部用 total_uscu 排序（順序等價）。"""
+    add(ITEM_BIG['_id'], 1, 'Area18')       # 1 SCU
+    add(ITEM_SMALL['_id'], 1, 'Lorville')   # 0.024 SCU
+
+    rows, _ = Inventory.list_stock(SCOPE, OWNER_GUILD, None,
+                                   sort_by='total_scu', sort_dir=-1)
+    assert rows[0]['item_name'] == 'Agricium'
+
+
+def test_list_stock_invalid_sort_by_falls_back_to_item_name(seed_items):
+    add(ITEM_SMALL['_id'], 1, 'Area18')
+    add(ITEM_BIG['_id'], 1, 'Area18')
+
+    rows, _ = Inventory.list_stock(SCOPE, OWNER_GUILD, None, sort_by='not_a_real_field')
+    assert [r['item_name'] for r in rows] == ['Agricium', 'Bracer Cooler']
+
+
+def test_capacity_respects_locations_multi_select(seed_items):
+    add(ITEM_BIG['_id'], 10, 'Area18')     # 10 SCU
+    add(ITEM_BIG['_id'], 3, 'Lorville')    # 3 SCU
+    add(ITEM_BIG['_id'], 1, 'Orison')      # 1 SCU（不篩進來）
+
+    cap = Inventory.capacity(SCOPE, OWNER_GUILD, None, locations=['Area18', 'Lorville'])
+    assert cap['total_scu'] == 13.0
+
+
+def test_capacity_respects_name_query(seed_items):
+    add(ITEM_BIG['_id'], 10, 'Area18')
+    add(ITEM_SMALL['_id'], 100, 'Area18')
+
+    cap = Inventory.capacity(SCOPE, OWNER_GUILD, None, name_query='agric')
+    assert cap['total_scu'] == 10.0
+    assert cap['lines'] == 1
+

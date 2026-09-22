@@ -49,9 +49,30 @@ def _serialize_form(data: dict, *, partial: bool = False) -> dict:
 @app_blueprint.route('/', methods=['GET'])
 @admin_api(*READ_ROLES)
 def list_blueprints():
-    """列出所有藍圖（不含已軟刪除），可選用 player_id 過濾。"""
-    player_id = (request.args.get('player_id') or '').strip()
-    return jsonify({'success': True, 'data': BlueprintModel.find_all(player_id=player_id)})
+    """列出藍圖名冊（不含已軟刪除）。
+
+    `player_id` 用 getlist 讀 —— 單一值（PlayerDetailView 只查一位玩家）跟
+    多選（藍圖登記管理列表的「取得玩家」篩選）共用同一個查詢參數，
+    Flask 的 getlist 對單一值一樣能讀到一筆的 list，不用另外開分支。
+    """
+    player_ids           = request.args.getlist('player_id')
+    acquisition_methods  = request.args.getlist('acquisition_method')
+    unlock_statuses      = request.args.getlist('unlock_status')
+    acquisition_location = (request.args.get('acquisition_location') or '').strip()
+    keyword              = (request.args.get('q') or '').strip()
+
+    sort_by  = request.args.get('sort_by', 'name')
+    sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
+    limit, offset = _paging()
+
+    filters = dict(player_ids=player_ids, acquisition_methods=acquisition_methods,
+                   acquisition_location=acquisition_location,
+                   unlock_statuses=unlock_statuses, query=keyword)
+    total = BlueprintModel.count(**filters)
+    rows = BlueprintModel.find_all(limit=limit, offset=offset,
+                                    sort_by=sort_by, sort_dir=sort_dir, **filters)
+    return jsonify({'success': True, 'data': rows, 'total': total,
+                    'limit': limit, 'offset': offset})
 
 
 @app_blueprint.route('/<blueprint_id>', methods=['GET'])

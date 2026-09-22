@@ -148,9 +148,13 @@ async function loadStock(scid) {
 }
 
 async function loadBlueprintCount() {
-  const res = await blueprintApi.list({ player_id: route.params.id })
+  // limit: 1 —— 這裡只需要總數，不需要真的把整份清單載回來。
+  // 用 data.total（後端真的做 count_documents 算出來的數字）而不是
+  // (data.data || []).length：藍圖登記管理列表加上分頁之後，data 陣列
+  // 本身會被 limit 截斷，只看陣列長度在玩家藍圖超過一頁時會顯示錯的總數。
+  const res = await blueprintApi.list({ player_id: route.params.id, limit: 1 })
   const data = res ? await res.json().catch(() => null) : null
-  if (data?.success) blueprintCount.value = (data.data || []).length
+  if (data?.success) blueprintCount.value = data.total ?? (data.data || []).length
 }
 
 onMounted(async () => {
