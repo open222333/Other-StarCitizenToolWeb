@@ -38,13 +38,12 @@
               @mousemove="highlighted = i">
               <span class="fw-semibold">{{ bp.name_zh || bp.name }}</span>
               <span v-if="bp.name_zh" class="hint ms-1">{{ bp.name }}</span>
-              <span v-if="bp.output_type_label" class="badge bg-secondary ms-1">
-                {{ bp.output_type_label }}
+              <span v-if="bp.output_type" class="badge bg-secondary ms-1">
+                {{ blueprintTypeLabel(bp.output_type) }}
               </span>
             </li>
           </ul>
         </div>
-        <div class="hint small mt-1">用鍵盤也可以：↑↓ 選擇、Enter 確定、Esc 關閉。</div>
       </div>
     </div>
 
@@ -65,7 +64,7 @@
                 <span v-if="recipe.name_zh" class="small hint">{{ recipe.name }}</span>
               </h6>
               <div class="small hint">
-                <span v-if="recipe.output_type_label">{{ recipe.output_type_label }}</span>
+                <span v-if="recipe.output_type">{{ blueprintTypeLabel(recipe.output_type) }}</span>
                 <span v-if="recipe.craft_time_label"> · 單個製造時間 {{ recipe.craft_time_label }}</span>
                 <span v-if="rows.length"> · {{ rows.length }} 種材料</span>
               </div>
@@ -164,20 +163,27 @@
                     :class="{ 'row-bottleneck': row.isBottleneck && result.maxCraftable !== null }">
                     <td class="ps-3">
                       <span class="fw-semibold">{{ row.name }}</span>
-                      <span v-if="row.isBottleneck && result.maxCraftable !== null"
-                        class="badge bg-warning text-dark ms-1">瓶頸</span>
-                      <div v-if="!row.canPrefill" class="small hint">
-                        原料類，庫存無法自動對應，請手動填
-                      </div>
                     </td>
                     <td class="text-end">
                       <template v-if="row.need">{{ fmt(row.need) }} {{ unitLabel(row.unit) }}</template>
                       <span v-else class="hint" title="主檔沒有這項的數量">未知</span>
                     </td>
                     <td>
-                      <input v-model="amounts[row.key]" type="number" min="0"
-                        :step="row.unit === 'scu' ? 0.01 : 1"
-                        class="form-control form-control-sm" :aria-label="`${row.name} 現有數量`">
+                      <div class="d-flex gap-1">
+                        <input type="number" min="0"
+                          :step="row.unit === UNIT_SCU && amountUnit[row.key] !== 'cscu' ? 0.01 : 1"
+                          class="form-control form-control-sm"
+                          :value="displayAmount(row)"
+                          @input="setDisplayAmount(row, $event.target.value)"
+                          :aria-label="`${row.name} 現有數量`">
+                        <select v-if="row.unit === UNIT_SCU" :value="amountUnit[row.key] || 'scu'"
+                          @change="amountUnit[row.key] = $event.target.value"
+                          class="form-select form-select-sm" style="max-width: 6rem"
+                          :aria-label="`${row.name} 單位`">
+                          <option value="scu">SCU</option>
+                          <option value="cscu">cSCU</option>
+                        </select>
+                      </div>
                     </td>
                     <td class="text-end">
                       <span v-if="row.canMake === null" class="hint">—</span>
@@ -216,8 +222,9 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
-  calcCraft, craftTimeLabel, normalizeIngredients, stockToHaveMap, unitLabel,
+  calcCraft, craftTimeLabel, normalizeIngredients, stockToHaveMap, unitLabel, UNIT_SCU,
 } from '@/utils/craftCalc'
+import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 
 const props = defineProps({
   /** 帶身分的 fetch（後台用 apiFetch、玩家頁用 playerFetch），回傳 Response 或 null */
@@ -253,6 +260,44 @@ const loadingStock = ref(false)
 
 const amounts = reactive({})
 const target = ref('')
+
+// ── SCU 材料的輸入單位（SCU／cSCU）─────────────────────────────
+//
+// amounts[row.key] 永遠存「這一列原生單位」的數值（SCU 材料就是 SCU，
+// 跟 craftCalc.js 的計算邏輯、stockToHaveMap()／從庫存帶入的值都用同一個
+// 單位，不然瓶頸／缺料的算法要到處做單位轉換，很容易漏掉一個地方）。
+// amountUnit 只是「使用者這一列想用哪個單位打字」的畫面狀態，輸入框
+// 顯示、輸入的當下即時換算成/從 SCU，換算只發生在這裡兩個函式，
+// 不影響任何試算邏輯。
+// 預設 'scu'：沒選過的話行為跟改動前一樣（直接打 SCU，可以打小數）。
+const amountUnit = reactive({})
+
+/** 換算到最多 4 位小數，避免 0.07 * 100 這種浮點誤差顯示成 7.000000000000001。 */
+function round(value, decimals) {
+  const f = 10 ** decimals
+  return Math.round(value * f) / f
+}
+
+/** 依這一列目前選的單位，把 amounts[row.key]（永遠是 SCU）換算成畫面上該顯示的值。 */
+function displayAmount(row) {
+  const raw = amounts[row.key]
+  if (raw === undefined || raw === null || raw === '') return raw ?? ''
+  if (row.unit === UNIT_SCU && amountUnit[row.key] === 'cscu') {
+    const n = Number(raw)
+    return Number.isFinite(n) ? round(n * 100, 2) : raw
+  }
+  return raw
+}
+
+/** 使用者在輸入框打字時：把畫面上的值（可能是 cSCU）換算回 SCU 存進 amounts。 */
+function setDisplayAmount(row, value) {
+  if (value === '') { amounts[row.key] = ''; return }
+  const n = Number(value)
+  if (!Number.isFinite(n)) return
+  amounts[row.key] = (row.unit === UNIT_SCU && amountUnit[row.key] === 'cscu')
+    ? round(n / 100, 4)
+    : n
+}
 
 const activeOptionId = computed(() =>
   highlighted.value >= 0 ? `${listId}-opt-${highlighted.value}` : undefined)
@@ -399,7 +444,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 </script>
 
 <style scoped>
-/* 瓶頸列淡黃底，跟「瓶頸」徽章一起讓人一眼看到卡在哪 */
+/* 瓶頸列淡黃底，不用文字說明也能一眼看出卡在哪一種材料 */
 .row-bottleneck > td {
   background: rgba(255, 193, 7, .12);
 }

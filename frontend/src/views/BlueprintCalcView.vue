@@ -12,11 +12,6 @@
       </h5>
     </div>
 
-    <p class="small text-muted">
-      選一張藍圖後填入現有材料數量，會算出最多可以做幾個、卡在哪一種材料，
-      以及做到目標數量還缺多少。「從公會共享庫帶入」會把公會庫現有的量填進去。
-    </p>
-
     <BlueprintCalculator :fetcher="apiFetch" :stock-loader="loadGuildStock"
       stock-label="公會共享庫" />
   </div>

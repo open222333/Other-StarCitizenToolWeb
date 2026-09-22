@@ -783,6 +783,7 @@ def list_my_blueprints():
         row['master'] = {
             'name': master.get('name'),
             'name_zh': master.get('name_zh'),
+            'output_type': master.get('output_type'),
             'output_type_label': master.get('output_type_label'),
             'craft_time_label': master.get('craft_time_label'),
             'ingredient_count': master.get('ingredient_count'),

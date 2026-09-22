@@ -14,27 +14,20 @@
     <div :class="[cardClass, 'mb-3']">
       <div class="card-body">
         <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-5">
+          <div class="col-12 col-md-7">
             <label class="form-label small fw-semibold" :for="qId">名稱關鍵字</label>
             <input :id="qId" v-model="keyword" type="text" class="form-control form-control-sm"
               placeholder="中英文都可以，例如 Laser、醫療" @input="onKeywordInput">
           </div>
-          <div class="col-8 col-md-4">
-            <label class="form-label small fw-semibold" :for="typeId">產出類型</label>
+          <div class="col-12 col-md-5">
+            <label class="form-label small fw-semibold" :for="typeId">類型</label>
             <select :id="typeId" v-model="outputType" class="form-select form-select-sm"
               @change="reload(0)">
               <option value="">全部</option>
-              <option v-for="t in types" :key="t.value ?? t" :value="t.value ?? t">
-                {{ t.label ?? t.value ?? t }}
+              <option v-for="t in types" :key="t" :value="t">
+                {{ blueprintTypeLabel(t) }}
               </option>
             </select>
-          </div>
-          <div class="col-4 col-md-3">
-            <div class="form-check">
-              <input :id="availId" v-model="availableOnly" class="form-check-input"
-                type="checkbox" @change="reload(0)">
-              <label class="form-check-label small" :for="availId">只看免解鎖</label>
-            </div>
           </div>
         </div>
       </div>
@@ -56,7 +49,7 @@
                     aria-label="全選本頁" @change="togglePage($event.target.checked)">
                 </th>
                 <th>藍圖</th>
-                <th>產出類型</th>
+                <th>類型</th>
                 <th class="text-end">材料數</th>
                 <th class="text-end pe-3">製造時間</th>
               </tr>
@@ -80,7 +73,7 @@
               </tr>
               <tr v-else-if="!rows.length">
                 <td colspan="5" class="text-center py-4 hint">
-                  {{ keyword || outputType || availableOnly
+                  {{ keyword || outputType
                      ? '沒有符合條件的藍圖，換個關鍵字或類型看看。'
                      : '藍圖主檔還是空的 —— 請先在後台「系統設定 → 遊戲資料同步」跑一次同步。' }}
                 </td>
@@ -99,10 +92,8 @@
                   <span v-if="row.name_zh" class="small hint ms-1">{{ row.name }}</span>
                   <span v-if="registered.has(row._id)"
                     class="badge bg-secondary ms-1">已登記</span>
-                  <span v-else-if="row.is_available_by_default === false"
-                    class="badge bg-info text-dark ms-1" title="需要先完成解鎖任務">需解鎖</span>
                 </td>
-                <td class="small">{{ row.output_type_label || row.output_type || '—' }}</td>
+                <td class="small">{{ row.output_type ? blueprintTypeLabel(row.output_type) : (row.output_type_label || '—') }}</td>
                 <td class="text-end small">
                   {{ row.ingredient_count ?? '—' }}
                 </td>
@@ -153,6 +144,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
@@ -167,7 +159,6 @@ const maxBulk = 200
 const uid = Math.random().toString(36).slice(2, 8)
 const qId = `bpbulk-q-${uid}`
 const typeId = `bpbulk-type-${uid}`
-const availId = `bpbulk-avail-${uid}`
 
 const rows = ref([])
 const total = ref(0)
@@ -180,7 +171,6 @@ const types = ref([])
 
 const keyword = ref('')
 const outputType = ref('')
-const availableOnly = ref(false)
 
 /** 已登記的主檔 uuid（畫面標記＋禁止再勾，後端也會再擋一次） */
 const registered = reactive(new Set())
@@ -218,7 +208,6 @@ async function reload(nextOffset = 0) {
   })
   if (keyword.value.trim()) params.set('q', keyword.value.trim())
   if (outputType.value) params.set('output_type', outputType.value)
-  if (availableOnly.value) params.set('available', '1')
 
   const res = await props.fetcher(`/blueprint/master?${params.toString()}`)
   if (mine !== seq) return
