@@ -73,6 +73,11 @@ SCDATA_WIKI_API_BASE = config.get(
     'SCDATA', 'WIKI_API_BASE', fallback='https://api.star-citizen.wiki/api').rstrip('/')
 SCDATA_UEX_API_BASE = config.get(
     'SCDATA', 'UEX_API_BASE', fallback='https://api.uexcorp.uk/2.0').rstrip('/')
+# scunpacked-data（GitHub 上的解包資料集，StarCitizenWiki 維護）：目前只用來抓礦物回波
+# 相關的靜態參考表（礦床成分機率、地點機率），純公開靜態檔案、無需 token、無速率限制。
+SCDATA_SCUNPACKED_BASE = config.get(
+    'SCDATA', 'SCUNPACKED_BASE',
+    fallback='https://raw.githubusercontent.com/StarCitizenWiki/scunpacked-data/master').rstrip('/')
 # 每次請求間隔秒數，別把社群自費維運的 API 打爆
 SCDATA_REQUEST_DELAY = config.getfloat('SCDATA', 'REQUEST_DELAY', fallback=0.25)
 SCDATA_HTTP_TIMEOUT = config.getfloat('SCDATA', 'HTTP_TIMEOUT', fallback=60)

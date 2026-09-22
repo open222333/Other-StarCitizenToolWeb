@@ -238,6 +238,11 @@ UNGUARDED_ALLOWLIST = {
     'app_blueprint.master_output_types',
     'app_blueprint.master_for_item',
     'app_blueprint.get_master',
+    # 礦物回波參考表（同樣是公開遊戲資料，來源是 scunpacked-data；
+    # 純查詢對照表，沒有寫入動作，後台/玩家兩種身分都應該看得到）
+    'app_mining.list_deposits',
+    'app_mining.list_locations',
+    'app_mining.list_systems',
     # 「誰有這張藍圖」—— 比照 app_inventory.where_item，公會成員互查是功能需求
     'app_blueprint.blueprint_holders',
 

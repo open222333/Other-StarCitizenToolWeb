@@ -18,6 +18,7 @@ from app.item.view import app_item
 from app.inventory.view import app_inventory
 from app.player.view import app_player
 from app.blueprint.view import app_blueprint
+from app.mining.view import app_mining
 from src import FLASK_JSON_PATH
 from src.limiter import limiter
 
@@ -115,6 +116,7 @@ def create_app(config_object=None):
     app.register_blueprint(blueprint=app_inventory, url_prefix='/inventory')
     app.register_blueprint(blueprint=app_player, url_prefix='/player')
     app.register_blueprint(blueprint=app_blueprint, url_prefix='/blueprint')
+    app.register_blueprint(blueprint=app_mining, url_prefix='/mining')
     if config_object:
         app.config.from_object(config_object)
     return app

@@ -120,6 +120,12 @@ const router = createRouter({
           name: 'inventory',
           component: () => import('@/views/InventoryListView.vue'),
         },
+        {
+          // 礦物參考查詢（唯讀，靜態成分/機率對照表，見 MiningView.vue 檔頭）
+          path: 'mining',
+          name: 'mining',
+          component: () => import('@/views/MiningView.vue'),
+        },
       ],
     },
   ],

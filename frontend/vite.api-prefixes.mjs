@@ -23,6 +23,7 @@ export const API_PREFIXES = [
   '/blueprint',
   '/item',
   '/inventory',
+  '/mining',
 ]
 
 /** 產生 Vite dev server 的 proxy 設定物件。 */

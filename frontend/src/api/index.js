@@ -148,10 +148,21 @@ export const inventoryApi = {
   move:      (data)     => apiFetch('/inventory/move',   { method: 'POST', body: JSON.stringify(data) }),
 }
 
+// ── 礦物參考查詢 API（唯讀）─────────────────────────────────
+// 對應 app/mining/view.py。資料是靜態的礦床成分/機率參考表（來源
+// scunpacked-data），不是玩家實際掃描到的即時回波——資料量小，三支都
+// 一次回全部，不分頁，前端自己篩選/排序（比照使用者模板頁的作法）。
+export const miningApi = {
+  listDeposits:  () => apiFetch('/mining/deposits'),
+  listLocations: () => apiFetch('/mining/locations'),
+  listSystems:   () => apiFetch('/mining/systems'),
+}
+
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────
 // 對應 app/item/view.py 的 /item/sync-status、/item/sync、/item/sync-schedule
 export const itemApi = {
   syncStatus:         ()     => apiFetch('/item/sync-status'),
+  syncRuns:           (limit) => apiFetch(`/item/sync-runs?limit=${limit || 20}`),
   syncNow:            (data) => apiFetch('/item/sync', { method: 'POST', body: JSON.stringify(data || {}) }),
   getSyncSchedule:    ()     => apiFetch('/item/sync-schedule'),
   updateSyncSchedule: (data) => apiFetch('/item/sync-schedule', { method: 'PUT', body: JSON.stringify(data || {}) }),

@@ -203,3 +203,129 @@ def test_resource_maps_are_consistent():
     for resource, (collection, mapper) in scdata.WIKI_RESOURCES.items():
         assert collection.endswith('_master'), resource
         assert mapper({}) is None, resource
+
+
+# ─────────────────────────────────────────── scunpacked-data（礦物回波參考表）
+#
+# 片段取自 StarCitizenWiki/scunpacked-data 的 resources/resources.json 與
+# resources/locations.json（2026-09 快照）。
+
+MINING_DEPOSIT = {
+    'UUID': '3e9ecb49-dee6-433d-b7d4-cef0dbf31931',
+    'Key': 'GPI_Icicle',
+    'Name': '<= PLACEHOLDER =>',
+    'Kind': 'mineable',
+    'GlobalParams': {'PowerCapacityPerMass': 5, 'DecayPerMass': 0.2},
+    'Composition': {
+        'UUID': '51922796-a927-46dc-bf09-57deac090fa1',
+        'DepositName': 'Granite Deposit',
+        'MinimumDistinctElements': 2,
+        'Parts': [
+            {'UUID': '3776294d-5689-41f2-b03d-e8fcd17ede6a',
+             'ResourceTypeUUID': 'e30bdd32-8fd5-44b8-9994-5fd253a16c37',
+             'Key': 'Ore_Aluminum', 'Name': 'Aluminum (Ore)',
+             'MinPercentage': 30, 'MaxPercentage': 70, 'Probability': 1},
+            {'UUID': 'f2f5bf2e-87f9-4f3d-bb59-b4e11eceeaad',
+             'ResourceTypeUUID': '57aba429-cf97-4fdd-8042-94b1d643f5bd',
+             'Key': 'Ore_Gold', 'Name': 'Gold (Ore)',
+             'MinPercentage': 20, 'MaxPercentage': 50, 'Probability': 0.3},
+        ],
+    },
+    'Tier': 'common',
+    'Signature': 4000,
+}
+
+MINING_LOCATION = {
+    'Provider': {'UUID': 'adbddd5e-c6fb-49bd-bd93-750cb54efd08',
+                 'Name': 'HPP_ShipGraveyard_001', 'PresetFile': 'hpp_shipgraveyard_001'},
+    'Locations': [
+        {'Key': None, 'System': 'Stanton', 'Name': 'Ship Graveyard', 'Type': 'unknown'},
+    ],
+    'Areas': [],
+    'Groups': [
+        {'GroupName': 'Salvage_FreshDerelicts', 'GroupProbability': 0.04,
+         'Deposits': [
+             {'ResourceUUID': '3e9ecb49-dee6-433d-b7d4-cef0dbf31931',
+              'RelativeProbability': 0.9922822491730982},
+         ]},
+    ],
+}
+
+
+def test_map_mining_deposit():
+    doc = scdata.map_mining_deposit(MINING_DEPOSIT)
+    assert doc['_id'] == MINING_DEPOSIT['UUID']
+    assert doc['deposit_name'] == 'Granite Deposit'
+    assert doc['deposit_name_lower'] == 'granite deposit'
+    # "Granite Deposit" 翻譯包沒有對應資料，是標準地質學術語（非猜測）：花崗岩礦床
+    assert doc['deposit_name_zh'] == '花崗岩礦床'
+    assert doc['tier'] == 'common'
+    assert doc['min_distinct_elements'] == 2
+    assert doc['signature'] == 4000
+    assert len(doc['parts']) == 2
+    aluminum = doc['parts'][0]
+    assert aluminum == {
+        'resource_key': 'Ore_Aluminum', 'resource_name': 'Aluminum (Ore)',
+        'resource_name_zh': '鋁礦石',
+        'min_percentage': 30, 'max_percentage': 70, 'probability': 1,
+    }
+    # 查不到對照表的 key 要回 None，不能讓整筆同步掛掉
+    gold = doc['parts'][1]
+    assert gold['resource_key'] == 'Ore_Gold'
+    assert gold['resource_name_zh'] == '金礦石'
+    assert doc['raw'] is MINING_DEPOSIT
+
+
+def test_map_mining_deposit_skips_non_mineable_and_empty_composition():
+    # 資源集裡 Kind 還有 cave_harvestable / salvageable / harvestable，
+    # 這個表只收 mineable（礦物回波用得到成分機率的只有這種）。
+    non_mineable = dict(MINING_DEPOSIT, Kind='cave_harvestable')
+    assert scdata.map_mining_deposit(non_mineable) is None
+
+    no_uuid = dict(MINING_DEPOSIT)
+    no_uuid.pop('UUID')
+    assert scdata.map_mining_deposit(no_uuid) is None
+
+    no_parts = dict(MINING_DEPOSIT, Composition={'DepositName': 'Empty', 'Parts': []})
+    assert scdata.map_mining_deposit(no_parts) is None
+
+
+def test_map_mining_location():
+    doc = scdata.map_mining_location(MINING_LOCATION)
+    assert doc['_id'] == MINING_LOCATION['Provider']['UUID']
+    assert doc['provider_name'] == 'HPP_ShipGraveyard_001'
+    assert doc['system'] == 'Stanton'
+    assert doc['location_name'] == 'Ship Graveyard'
+    assert doc['location_name_lower'] == 'ship graveyard'
+    # "Ship Graveyard" 翻譯包沒有這個獨立詞條（只在別的長句子裡出現過），
+    # 查不到要回 None，不能讓整筆同步掛掉，前端會退回顯示英文。
+    assert doc['location_name_zh'] is None
+    assert len(doc['groups']) == 1
+    group = doc['groups'][0]
+    assert group['group_name'] == 'Salvage_FreshDerelicts'
+    assert group['deposits'] == [{
+        'resource_uuid': '3e9ecb49-dee6-433d-b7d4-cef0dbf31931',
+        'relative_probability': 0.9922822491730982,
+    }]
+    assert doc['raw'] is MINING_LOCATION
+
+
+def test_map_mining_location_skips_missing_provider_uuid_or_empty_groups():
+    no_uuid = {'Provider': {'Name': 'x'}, 'Locations': [], 'Groups': [{'Deposits': [{'ResourceUUID': 'a'}]}]}
+    assert scdata.map_mining_location(no_uuid) is None
+
+    no_groups = {'Provider': {'UUID': 'u1'}, 'Locations': [], 'Groups': []}
+    assert scdata.map_mining_location(no_groups) is None
+
+    # Deposits 裡每筆都缺 ResourceUUID → 整個 group 沒有可用礦床 → 整筆跳過
+    empty_deposits = {'Provider': {'UUID': 'u1'}, 'Locations': [],
+                       'Groups': [{'GroupName': 'g', 'Deposits': [{'RelativeProbability': 1}]}]}
+    assert scdata.map_mining_location(empty_deposits) is None
+
+
+def test_scunpacked_resource_maps_are_consistent():
+    """SCUNPACKED_RESOURCES 的 mapper 都要能處理空 dict 而不爆炸。"""
+    for resource, (collection, path, mapper) in scdata.SCUNPACKED_RESOURCES.items():
+        assert collection.endswith('_master'), resource
+        assert path, resource
+        assert mapper({}) is None, resource

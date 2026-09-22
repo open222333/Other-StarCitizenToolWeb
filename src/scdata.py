@@ -21,8 +21,14 @@ import httpx
 
 from src import (SCDATA_BULK_SIZE, SCDATA_HTTP_TIMEOUT, SCDATA_MAX_RETRIES,
                  SCDATA_PAGE_SIZES, SCDATA_REQUEST_DELAY, SCDATA_USER_AGENT,
-                 SCDATA_UEX_API_BASE, SCDATA_WIKI_API_BASE, UEX_API_TOKEN)
-from src.sc_zh import item_name_zh
+                 SCDATA_SCUNPACKED_BASE, SCDATA_UEX_API_BASE, SCDATA_WIKI_API_BASE,
+                 UEX_API_TOKEN)
+from src.sc_zh import (
+    item_name_zh,
+    location_name_zh,
+    mining_deposit_name_zh,
+    mining_resource_name_zh,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +192,58 @@ def uex_rows(client: httpx.Client, resource: str) -> list:
     if status != 'ok':
         raise ScDataError(f'UEX {resource} 回傳 status={status}')
     return payload.get('data') or []
+
+
+def fetch_scunpacked_rows(client: httpx.Client, path: str) -> list:
+    """抓 scunpacked-data 的靜態 JSON 檔（GitHub raw，單一請求、無分頁、無 token）。
+
+    這批檔案的回應是「裸陣列」（`[...]`），不是 Wiki API 那種 `{"data": [...]}`
+    包裝，跟 get_json() 預期回傳 dict 的假設不同，所以另外寫一支；重試邏輯
+    （429 / 5xx / 連線錯誤都重試）照抄 get_json()。
+
+    :param path: 相對於 SCDATA_SCUNPACKED_BASE 的檔案路徑，例如 'resources/resources.json'
+    """
+    url = f'{SCDATA_SCUNPACKED_BASE}/{path}'
+    delay = 1.0
+    last_err = None
+
+    for attempt in range(1, SCDATA_MAX_RETRIES + 1):
+        try:
+            resp = client.get(url)
+
+            if resp.status_code == 429:
+                wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
+                last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
+                logger.warning('scdata: scunpacked %s 429 rate limited, 等 %.1fs 重試 (%d/%d)',
+                               path, wait, attempt, SCDATA_MAX_RETRIES)
+                time.sleep(wait)
+                delay = min(delay * 2, 60)
+                continue
+
+            if resp.status_code >= 500:
+                last_err = f'HTTP {resp.status_code}'
+                logger.warning('scdata: scunpacked %s HTTP %d, 等 %.1fs 重試 (%d/%d)',
+                               path, resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+
+            resp.raise_for_status()
+            payload = resp.json()
+            if not isinstance(payload, list):
+                raise ValueError(f'預期 JSON 陣列，收到 {type(payload).__name__}')
+            return payload
+
+        # ValueError 涵蓋 json.JSONDecodeError 與上面自己拋的格式檢查——
+        # 跟 get_json() 同樣道理，這兩種情況也要重試而不是直接讓整輪同步掛掉。
+        except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as err:
+            last_err = err
+            logger.warning('scdata: scunpacked %s 請求失敗: %s (%d/%d)',
+                           path, err, attempt, SCDATA_MAX_RETRIES)
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+
+    raise ScDataError(f'scunpacked {path} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {last_err}')
 
 
 # ─────────────────────────────────────────────── 欄位映射
@@ -368,6 +426,114 @@ def map_blueprint(doc: dict) -> Optional[dict]:
     }
 
 
+def map_mining_deposit(doc: dict) -> Optional[dict]:
+    """礦床成分機率表（scunpacked-data resources.json 裡 Kind == 'mineable' 的項目）。
+
+    ⚠️ 這是**靜態**的成分機率對照——某種礦床可能含哪些礦物、比例區間（%）、
+    出現機率，跟著遊戲改版變動；不是玩家實際掃描一顆礦石時看到的即時「回波」
+    數值，那是遊戲端當下隨機生成的，本來就沒有外部資料源可以同步。
+    """
+    if doc.get('Kind') != 'mineable' or not doc.get('UUID'):
+        return None
+
+    comp = doc.get('Composition') or {}
+    parts_raw = comp.get('Parts') or []
+    if not parts_raw:
+        return None
+
+    parts = []
+    for part in parts_raw:
+        resource_key = part.get('Key')
+        parts.append({
+            'resource_key': resource_key,
+            'resource_name': part.get('Name'),
+            # 中文名稱來自翻譯包（見 src/sc_zh.py 檔頭），這裡是同步當下
+            # 的快照——sc_mining_resource_names_zh.json 改了之後，要等下一次
+            # 同步跑過才會反映到這個 collection 裡，不是即時查表。
+            # 查不到就是 None，前端退回顯示英文名。
+            'resource_name_zh': mining_resource_name_zh(resource_key),
+            'min_percentage': part.get('MinPercentage'),
+            'max_percentage': part.get('MaxPercentage'),
+            'probability': part.get('Probability'),
+        })
+
+    # DepositName 幾乎都有值；doc['Name'] 常常是資料集還沒補上的
+    # "<= PLACEHOLDER =>"，只在 DepositName 也缺的極端情況才退回去用。
+    deposit_name = comp.get('DepositName') or doc.get('Key') or ''
+
+    return {
+        '_id': doc['UUID'],
+        'key': doc.get('Key'),
+        'deposit_name': deposit_name,
+        'deposit_name_lower': deposit_name.lower(),
+        'deposit_name_zh': mining_deposit_name_zh(deposit_name),
+        'tier': doc.get('Tier'),
+        'min_distinct_elements': comp.get('MinimumDistinctElements'),
+        'parts': parts,
+        # 船艦感測器掃描單顆這種礦床/岩石回傳的基準雷達截面訊號值（RS）。
+        # 一叢礦石是這個值的整數倍（1~10 顆），例如某礦床單顆訊號 3000，
+        # 掃到 3 顆一叢就會顯示 9000 —— 前端「回波比對」拿玩家輸入的
+        # 掃描值去反查是哪個礦床（乘以 1~10 有沒有對得上）。
+        # 少數 FPS 徒手採礦專用的項目這個值是 0（船艦掃描器用不到），
+        # 前端比對時要排除。
+        'signature': doc.get('Signature'),
+        'raw': doc,
+    }
+
+
+def map_mining_location(doc: dict) -> Optional[dict]:
+    """星系／地點 -> 可能出現哪些礦床、機率多少（scunpacked-data locations.json）。
+
+    每筆是一個「地點群組」（Provider），底下 Groups[].Deposits[] 用
+    ResourceUUID 連到 resources.json 的礦床項目——查詢端要顯示礦床名稱
+    得自己做 id 對照，這裡先只存原始的 uuid 關聯，不在同步階段展開。
+    """
+    provider = doc.get('Provider') or {}
+    provider_uuid = provider.get('UUID')
+    if not provider_uuid:
+        return None
+
+    groups = []
+    for group in (doc.get('Groups') or []):
+        deposits = []
+        for dep in (group.get('Deposits') or []):
+            resource_uuid = dep.get('ResourceUUID')
+            if not resource_uuid:
+                continue
+            deposits.append({
+                'resource_uuid': resource_uuid,
+                'relative_probability': dep.get('RelativeProbability'),
+            })
+        if not deposits:
+            continue
+        groups.append({
+            'group_name': group.get('GroupName'),
+            'group_probability': group.get('GroupProbability'),
+            'deposits': deposits,
+        })
+
+    if not groups:
+        return None
+
+    locations = doc.get('Locations') or []
+    # 有些 Provider 底下掛好幾個 Locations，優先挑有標星系的那筆。
+    picked = next((loc for loc in locations if loc.get('System')),
+                  locations[0] if locations else {})
+    system = picked.get('System')
+    location_name = picked.get('Name') or provider.get('Name') or ''
+
+    return {
+        '_id': provider_uuid,
+        'provider_name': provider.get('Name'),
+        'system': system,
+        'location_name': location_name,
+        'location_name_lower': location_name.lower(),
+        'location_name_zh': location_name_zh(location_name),
+        'groups': groups,
+        'raw': doc,
+    }
+
+
 # resource -> (collection 名稱, mapper)。要加新資源就在這裡加一組。
 WIKI_RESOURCES: dict = {
     'items': ('item_master', map_item),
@@ -382,6 +548,13 @@ UEX_RESOURCES: dict = {
     'items': ('uex_items', ['id']),
     'terminals': ('uex_terminals', ['id']),
     'items_prices_all': ('uex_items_prices', ['id_item', 'id_terminal']),
+}
+
+# resource -> (collection 名稱, 檔案路徑, mapper)。跟 WIKI_RESOURCES 不同的是
+# 沒有分頁、不用 token——scunpacked-data 就是幾個公開的靜態 JSON 檔。
+SCUNPACKED_RESOURCES: dict = {
+    'mining_deposits': ('mining_deposit_master', 'resources/resources.json', map_mining_deposit),
+    'mining_locations': ('mining_location_master', 'resources/locations.json', map_mining_location),
 }
 
 

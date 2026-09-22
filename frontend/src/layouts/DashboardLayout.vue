@@ -64,6 +64,9 @@
         </RouterLink>
 
         <div class="nav-section">系統</div>
+        <RouterLink class="nav-link" to="/sync-schedule" @click="sidebarOpen = false">
+          <i class="bi bi-arrow-repeat"></i>資料同步排程
+        </RouterLink>
         <RouterLink class="nav-link" to="/settings" @click="sidebarOpen = false">
           <i class="bi bi-palette"></i>系統設定
         </RouterLink>

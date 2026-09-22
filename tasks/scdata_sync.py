@@ -47,8 +47,9 @@ from src.celery_app import celery_app
 from src.mongo import get_db
 from src.models.sync_schedule import SyncSchedule
 from src.redis_client import get_redis
-from src.scdata import (BULK_SIZE, UEX_RESOURCES, WIKI_RESOURCES, ScDataError,
-                        build_client, uex_doc_id, uex_rows, wiki_rows)
+from src.scdata import (BULK_SIZE, SCUNPACKED_RESOURCES, UEX_RESOURCES, WIKI_RESOURCES,
+                        ScDataError, build_client, fetch_scunpacked_rows, uex_doc_id,
+                        uex_rows, wiki_rows)
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,64 @@ def _sync_uex_resource(client, resource: str, run_id: str, stamp: datetime) -> d
             'seen': len(rows), 'written': len(rows) - skipped, 'skipped': skipped}
 
 
-def _do_sync(resources=None, with_uex: bool = True) -> dict:
+def _sync_scunpacked_resource(client, resource: str, run_id: str, stamp: datetime) -> dict:
+    """同步 scunpacked-data 的靜態礦物回波參考表。
+
+    跟 _sync_wiki_resource 不同：來源沒有分頁，一次 GET 一個 JSON 檔就是全部，
+    所以「讀取筆數 seen」在這裡是「檔案裡的項目數」而不是「累積跨頁筆數」。
+    is_current / retired_at / 80% 下架門檻的保護邏輯照抄 _sync_wiki_resource，
+    理由一樣：上游檔案任何一次抓取異常變短，都不該把既有參考表下架清空。
+    """
+    collection_name, path, mapper = SCUNPACKED_RESOURCES[resource]
+    db = get_db()
+
+    logger.info('scdata_sync: 同步 scunpacked %s -> %s', resource, collection_name)
+
+    rows = fetch_scunpacked_rows(client, path)
+    ops: list = []
+    seen = written = skipped = 0
+
+    for row in rows:
+        seen += 1
+        doc = mapper(row)
+        if doc is None:
+            skipped += 1
+            continue
+
+        doc['_sync'] = {'run_id': run_id, 'at': stamp}
+        doc['is_current'] = True
+
+        ops.append(UpdateOne(
+            {'_id': doc['_id']},
+            {'$set': doc, '$setOnInsert': {'first_seen_at': stamp}},
+            upsert=True,
+        ))
+
+        if len(ops) >= BULK_SIZE:
+            written += _flush(collection_name, ops)
+            ops = []
+
+    written += _flush(collection_name, ops)
+
+    before_current = db[collection_name].count_documents({'is_current': {'$ne': False}})
+    floor = int(before_current * 0.8)
+    if seen == 0 or (before_current and seen < floor):
+        raise ScDataError(
+            f'scunpacked:{resource}: 上游只回傳 {seen} 筆，低於原有上架筆數 {before_current} 的 80%'
+            f'（門檻 {floor}），判定抓取不完整，跳過下架步驟以免清空主檔')
+
+    retired = db[collection_name].update_many(
+        {'_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
+        {'$set': {'is_current': False, 'retired_at': stamp}},
+    ).modified_count
+
+    logger.info('scdata_sync: scunpacked %s 完成 讀取=%d 寫入=%d 跳過=%d 下架=%d',
+                resource, seen, written, skipped, retired)
+    return {'resource': f'scunpacked:{resource}', 'collection': collection_name, 'seen': seen,
+            'written': written, 'skipped': skipped, 'retired': retired}
+
+
+def _do_sync(resources=None, with_uex: bool = True, with_scunpacked: bool = True) -> dict:
     """同步的核心邏輯，寫入 sync_runs 並回傳摘要。
 
     刻意是純函式而不是 Celery task —— 這樣 `sync_scdata`（走 Celery 的
@@ -302,6 +360,18 @@ def _do_sync(resources=None, with_uex: bool = True) -> dict:
                         logger.exception('scdata_sync: UEX %s 失敗', resource)
                         errors.append(f'uex:{resource}: {err}')
 
+    # scunpacked-data 是公開靜態檔案，不用 token、沒有速率限制，跟 with_uex
+    # 不同的是沒有「沒設定就跳過」這回事——預設一律開啟。
+    if with_scunpacked:
+        with build_client() as scunpacked_client:
+            for resource in SCUNPACKED_RESOURCES:
+                try:
+                    stats.append(
+                        _sync_scunpacked_resource(scunpacked_client, resource, run_id, started))
+                except Exception as err:
+                    logger.exception('scdata_sync: scunpacked %s 失敗', resource)
+                    errors.append(f'scunpacked:{resource}: {err}')
+
     finished = datetime.utcnow()
     summary = {
         '_id': run_id,
@@ -310,6 +380,7 @@ def _do_sync(resources=None, with_uex: bool = True) -> dict:
         'duration_s': round((finished - started).total_seconds(), 1),
         'resources': resources,
         'with_uex': with_uex and bool(UEX_API_TOKEN),
+        'with_scunpacked': with_scunpacked,
         'stats': stats,
         'errors': errors,
         'ok': not errors,
@@ -324,11 +395,12 @@ def _do_sync(resources=None, with_uex: bool = True) -> dict:
 
 
 @celery_app.task(name='tasks.scdata_sync.sync_scdata', bind=True, max_retries=2)
-def sync_scdata(self, resources=None, with_uex: bool = True):
+def sync_scdata(self, resources=None, with_uex: bool = True, with_scunpacked: bool = True):
     """同步遊戲主檔（手動觸發用，例如後台的「立即同步」按鈕）。
 
-    :param resources: 要同步的資源清單，預設全部（items / vehicles / commodities）
+    :param resources: 要同步的資源清單，預設全部（items / vehicles / commodities / blueprints）
     :param with_uex: 是否同步 UEX 價格（沒有 UEX_API_TOKEN 會自動跳過）
+    :param with_scunpacked: 是否同步礦物回波參考表（scunpacked-data，預設開啟）
     """
     run_id = str(uuidlib.uuid4())
     with sync_lock(run_id) as acquired:
@@ -337,7 +409,8 @@ def sync_scdata(self, resources=None, with_uex: bool = True):
             return {'skipped': True, 'reason': 'already_running'}
 
         try:
-            return _do_sync(resources=resources, with_uex=with_uex)
+            return _do_sync(resources=resources, with_uex=with_uex,
+                            with_scunpacked=with_scunpacked)
         except ScDataError as exc:
             # 上游整體不可用 → 退避重試，不要寫一筆假的成功紀錄。
             # 注意：這條路徑只在透過 .delay() 派送時有效
@@ -426,6 +499,10 @@ def check_and_run_scheduled_sync():
             result = _do_sync(
                 resources=schedule.get('resources') or None,
                 with_uex=schedule.get('with_uex', True),
+                # SyncSchedule 目前沒有 with_scunpacked 欄位（見 src/models/sync_schedule.py）
+                # ——礦物回波參考表資料量小、無 token 限制，先預設一律跟著心跳同步，
+                # 之後真的要讓後台可關閉再補欄位。
+                with_scunpacked=schedule.get('with_scunpacked', True),
             )
         except ScDataError as exc:
             # 上游整體不可用。不用 self.retry（直接呼叫時無效），
