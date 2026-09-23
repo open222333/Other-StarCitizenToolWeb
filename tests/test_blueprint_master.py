@@ -402,6 +402,24 @@ def test_holders_groups_by_blueprint(app, three_players_with_blueprints):
     assert {h['unlock_status'] for h in holders} == {'unlocked', 'obtained'}
 
 
+def test_holders_enriches_name_zh_from_master(app, seeded_master, three_players_with_blueprints):
+    """持有者分組要帶上主檔的中文名稱，跟批量登記頁／玩家自助頁一致（中英並列）。
+
+    seeded_master 塞的 API_ROW 是否真的有中文翻譯取決於社群翻譯包的實際內容，
+    這裡不依賴它——直接把 blueprint_master 那筆的 name_zh 覆寫成已知值，
+    測試才不會因為翻譯包內容變動就跟著壞。
+    """
+    from src.mongo import get_db
+    get_db()['blueprint_master'].update_one(
+        {'_id': API_ROW['uuid']}, {'$set': {'name_zh': '歐姆尼天三型加農炮'}})
+
+    groups = BlueprintModel.find_holders()
+    by_name = {g['name']: g for g in groups}
+    assert by_name['Omnisky III Cannon']['name_zh'] == '歐姆尼天三型加農炮'
+    # 自由輸入、沒有 blueprint_uuid 的不該有 name_zh（查不到主檔）
+    assert not by_name['某張還沒進主檔的圖'].get('name_zh')
+
+
 def test_holders_groups_free_text_separately(app, three_players_with_blueprints):
     """自由輸入的藍圖沒有 uuid，不能全部併成一組 null。"""
     groups = BlueprintModel.find_holders()

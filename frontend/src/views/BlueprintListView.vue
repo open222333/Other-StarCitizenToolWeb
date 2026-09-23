@@ -93,7 +93,9 @@
               </tr>
               <template v-else>
                 <tr v-for="bp in blueprints" :key="bp._id">
-                  <td class="ps-3 fw-semibold">{{ bp.name }}</td>
+                  <td class="ps-3 fw-semibold">
+                    {{ bp.name }}<span v-if="bp.name_zh" class="text-muted">（{{ bp.name_zh }}）</span>
+                  </td>
                   <td class="small">{{ bp.acquisition_method || '未知' }}</td>
                   <td class="small">{{ bp.acquisition_location || '—' }}</td>
                   <td class="small">{{ playerName(bp.player_id) }}</td>

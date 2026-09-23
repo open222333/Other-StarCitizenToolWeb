@@ -15,7 +15,7 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo.errors import BulkWriteError
 
-from src.models.item import escape_regex
+from src.models.item import BlueprintMaster, escape_regex
 from src.mongo import get_db
 
 # 規格書第 5.3 節：取得方式分類
@@ -84,6 +84,29 @@ class Blueprint:
         if doc.get('player_id'):
             doc['player_id'] = str(doc['player_id'])
         return doc
+
+    @staticmethod
+    def _enrich_name_zh(rows: list) -> list:
+        """幫有 blueprint_uuid 的紀錄補上主檔（blueprint_master）的中文名稱，
+        讓後台管理列表、「誰有這張圖」查詢也能中英並列 —— 跟批量登記頁／
+        玩家自助頁（那兩處直接讀 blueprint_master，本來就有 name_zh）一致。
+
+        `blueprints` 集合存的 name 是登記當下的快照文字，不會自己跟著主檔
+        改名或補翻譯，所以要在讀取時另外查表補上，而不是存進 blueprints
+        本身 —— 翻譯表更新（見 src/sc_zh.py）不需要動到既有登記資料。
+
+        自由輸入、沒有 blueprint_uuid 的登記查不到主檔，維持英文顯示
+        （這是預期行為，不是資料缺漏）。
+        """
+        uuids = {r['blueprint_uuid'] for r in rows if r.get('blueprint_uuid')}
+        if not uuids:
+            return rows
+        masters = BlueprintMaster.names_by_ids(uuids)
+        for r in rows:
+            master = masters.get(r.get('blueprint_uuid'))
+            if master and master.get('name_zh'):
+                r['name_zh'] = master['name_zh']
+        return rows
 
     # 沒帶 player_id 時（後台「列出全部藍圖」）的硬上限。
     # 原本完全沒有 limit：整個 collection 每次都被撈出來並序列化成 JSON，
@@ -164,7 +187,7 @@ class Blueprint:
         sort_field = sort_by if sort_by in SORTABLE_FIELDS else 'name'
         rows = (cls._col().find(q).sort(sort_field, sort_dir)
                 .skip(max(0, offset)).limit(cap))
-        return [cls._serialize(r) for r in rows]
+        return cls._enrich_name_zh([cls._serialize(r) for r in rows])
 
     @classmethod
     def count(cls, player_id: str = '', include_deleted: bool = False,
@@ -448,7 +471,7 @@ class Blueprint:
         groups = list(cls._col().aggregate(pipeline, allowDiskUse=True))
         for group in groups:
             group['holders'] = [_redact_contact(h) for h in group.get('holders') or []]
-        return groups
+        return cls._enrich_name_zh(groups)
 
     @classmethod
     def soft_delete(cls, blueprint_id: str, player_id: str = '') -> bool:

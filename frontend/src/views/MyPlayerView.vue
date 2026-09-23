@@ -472,6 +472,7 @@
             <tr v-for="group in bpHolders" :key="group._id">
               <td>
                 {{ group.name }}
+                <span v-if="group.name_zh" class="text-muted">（{{ group.name_zh }}）</span>
                 <i v-if="!group.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
                    title="自由輸入，沒有對應到遊戲配方"></i>
               </td>

@@ -6,6 +6,7 @@ from src.models.log import Log
 from src.models.device_token import DeviceToken
 from src.models.blueprint import Blueprint
 from src.models.player import Player
+from src.mongo import get_db
 
 
 # ─────────────────────────────────────────────
@@ -329,6 +330,35 @@ class TestBlueprint:
         Blueprint.create(name='C', acquisition_method='探索')
         assert Blueprint.count() >= 3
         assert Blueprint.count(acquisition_methods=['探索']) == 2
+
+    def test_find_all_enriches_name_zh_from_master(self):
+        """blueprint_uuid 對得上主檔時補上 name_zh；自由輸入（無 uuid）查不到主檔，維持英文。
+
+        blueprints 存的 name 是登記當下的快照，不會自己帶中文，要在讀取時
+        另外查 blueprint_master（見 Blueprint._enrich_name_zh）。
+        """
+        get_db()['blueprint_master'].insert_one({
+            '_id': 'master-uuid-1', 'name': 'Omnisky III Cannon',
+            'name_zh': '歐姆尼天三型加農炮', 'is_current': True,
+        })
+        Blueprint.create(name='Omnisky III Cannon', blueprint_uuid='master-uuid-1')
+        Blueprint.create(name='Some Homemade Name')
+
+        rows = Blueprint.find_all()
+        by_name = {r['name']: r for r in rows}
+        assert by_name['Omnisky III Cannon']['name_zh'] == '歐姆尼天三型加農炮'
+        assert not by_name['Some Homemade Name'].get('name_zh')
+
+    def test_find_all_skips_master_lookup_without_name_zh(self):
+        """主檔有這筆但沒有中文翻譯（name_zh 是 None）時，不要塞一個 None 進結果。"""
+        get_db()['blueprint_master'].insert_one({
+            '_id': 'master-uuid-2', 'name': 'AbsoluteZero',
+            'name_zh': None, 'is_current': True,
+        })
+        Blueprint.create(name='AbsoluteZero', blueprint_uuid='master-uuid-2')
+
+        rows = Blueprint.find_all()
+        assert not rows[0].get('name_zh')
 
     def test_count_invalid_player_id_returns_zero(self):
         Blueprint.create(name='Something')
