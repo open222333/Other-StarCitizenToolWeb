@@ -18,9 +18,10 @@ from src.limiter import limiter
 from src.models.blueprint import (ACQUISITION_METHODS, DEFAULT_UNLOCK_STATUS,
                                   UNLOCK_STATUSES, Blueprint as BlueprintModel)
 from src.models.inventory import OWNER_PLAYER, Inventory, InventoryLog, StockError
-from src.models.item import BlueprintMaster, ItemMaster
+from src.models.fleet import MAX_QUANTITY as FLEET_MAX_QUANTITY, Fleet, clamp_quantity
+from src.models.item import BlueprintMaster, ItemMaster, VehicleMaster
 from src.models.log import Log
-from src.models.player import Player, PlayerError
+from src.models.player import ROSTER_MAX, Player, PlayerError
 from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api
 from app._shared import attach_item_names
 
@@ -398,19 +399,17 @@ def search_players():
     security:
       - Bearer: []
     parameters:
-      - {in: query, name: q, type: string, required: true, description: "暱稱／遊戲ID／真實名稱"}
-      - {in: query, name: limit, type: integer, default: 20, description: "最多 50"}
+      - {in: query, name: q, type: string, description: "暱稱／遊戲ID／真實名稱；留空＝列出全部玩家"}
+      - {in: query, name: limit, type: integer, default: 20, description: "有 q 時最多 50；q 留空時最多 1000"}
     responses:
       200:
-        description: 成功（q 是空字串時回空陣列，不是錯誤）
+        description: 成功
     """
     q = (request.args.get('q') or '').strip()
-    if not q:
-        return jsonify({'success': True, 'data': []})
     try:
-        limit = int(request.args.get('limit', 20))
+        limit = int(request.args.get('limit', 20 if q else ROSTER_MAX))
     except ValueError:
-        limit = 20
+        limit = 20 if q else ROSTER_MAX
     rows = Player.search_basic(q, limit=limit)
     return jsonify({'success': True, 'data': rows})
 
@@ -971,3 +970,192 @@ def delete_my_blueprint(blueprint_id):
     if not BlueprintModel.soft_delete(blueprint_id, player_id=player['_id']):
         return jsonify({'success': False, 'message': '找不到這筆藍圖紀錄'}), 404
     return jsonify({'success': True})
+
+
+# ═══════════════════════════════════════════════════════════
+#  艦隊（玩家擁有的船／載具）—— 玩家自助
+# ═══════════════════════════════════════════════════════════
+#
+# 跟上面的藍圖自助區塊同一套規則：只能登記 vehicle_master 裡存在的 uuid、
+# 名稱一律取自主檔（不接受 client 傳來的名稱，否則「誰有這艘船」會因為
+# 拼法不同分成好幾組）、只能動自己的資料。
+
+#: 一次批量登記的上限（畫面一頁最多 200 筆，理由同 MAX_BULK_BLUEPRINTS）
+MAX_BULK_VEHICLES = 200
+
+
+@app_player.route('/fleet', methods=['GET'])
+@player_required
+def list_my_fleet():
+    """自己的艦隊，每筆帶 quantity 與 `vehicle`（主檔摘要：尺寸／類型／廠商／角色）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功（另帶 max_quantity 給前端的數量輸入框用）
+    """
+    player = _self_player_doc()
+    return jsonify({'success': True, 'data': Fleet.find_for_player(player['_id']),
+                    'max_quantity': FLEET_MAX_QUANTITY})
+
+
+@app_player.route('/fleet/bulk', methods=['POST'])
+@player_required
+@limiter.limit('20 per minute')
+def add_my_fleet_bulk():
+    """一次登記多款船／載具（畫面上勾選後送出）。已登記過的款式會跳過
+    （要加艘數請改「我的艦隊」裡的數量）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          required: [vehicle_uuids]
+          properties:
+            vehicle_uuids: {type: array, items: {type: string}, description: "載具主檔 uuid，最多 200 筆"}
+            quantity:      {type: integer, description: "每款登記幾艘（預設 1，上限 99）"}
+    responses:
+      200:
+        description: 成功（含 added / skipped / not_found 統計）
+      400:
+        description: 沒有帶 uuid、或超過單次上限
+    """
+    player = _self_player_doc()
+    data = request.get_json(silent=True) or {}
+    raw = data.get('vehicle_uuids')
+    if not isinstance(raw, list) or not raw:
+        raise StockError('請先勾選要登記的船／載具。')
+    # 先看原始長度再逐項處理，理由見 add_my_blueprints_bulk
+    if len(raw) > MAX_BULK_VEHICLES:
+        raise StockError(f'一次最多只能登記 {MAX_BULK_VEHICLES} 款，這次送出了 {len(raw)} 筆。')
+
+    uuids = [u for u in (str(item).strip() for item in raw) if u and len(u) <= 64]
+    uuids = list(dict.fromkeys(uuids))
+
+    masters = VehicleMaster.by_ids(uuids)
+    items = [{'uuid': u, 'name': masters[u].get('name')}
+             for u in uuids if (masters.get(u) or {}).get('name')]
+    not_found = [u for u in uuids if not (masters.get(u) or {}).get('name')]
+
+    result = Fleet.bulk_create_for_player(player['_id'], items,
+                                          quantity=clamp_quantity(data.get('quantity'), 1))
+
+    Log.create(f'player:{player.get("star_citizen_id")}', 'bulk_add_fleet',
+               f'批量登記艦隊：新增 {len(result["added"])} 款、'
+               f'跳過 {len(result["skipped"])} 款、主檔查不到 {len(not_found)} 款',
+               success=True)
+
+    return jsonify({
+        'success': True,
+        'added': len(result['added']),
+        'skipped': len(result['skipped']),
+        'not_found': len(not_found),
+        'added_uuids': result['added'],
+    })
+
+
+@app_player.route('/fleet/<fleet_id>', methods=['PUT'])
+@player_required
+def update_my_fleet(fleet_id):
+    """改自己某筆艦隊登記的數量／備註（只能改自己的）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          properties:
+            quantity: {type: integer, description: "1～99"}
+            notes:    {type: string}
+    responses:
+      200:
+        description: 成功
+      404:
+        description: 找不到（或不是自己的）
+    """
+    player = _self_player_doc()
+    data = request.get_json(silent=True) or {}
+    if 'quantity' not in data and 'notes' not in data:
+        raise StockError('沒有要更新的欄位。')
+    ok = Fleet.update_for_player(fleet_id, player['_id'],
+                                 quantity=data.get('quantity') if 'quantity' in data else None,
+                                 notes=data.get('notes') if 'notes' in data else None)
+    if not ok:
+        return jsonify({'success': False, 'message': '找不到這筆艦隊紀錄'}), 404
+    return jsonify({'success': True})
+
+
+@app_player.route('/fleet/<fleet_id>', methods=['DELETE'])
+@player_required
+def delete_my_fleet(fleet_id):
+    """刪除自己名下的一筆艦隊登記（軟刪除；其他人的即使猜到 id 也刪不掉）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+      404:
+        description: 找不到（或不是自己的）
+    """
+    player = _self_player_doc()
+    if not Fleet.soft_delete(fleet_id, player['_id']):
+        return jsonify({'success': False, 'message': '找不到這筆艦隊紀錄'}), 404
+    return jsonify({'success': True})
+
+
+@app_player.route('/fleet/holders', methods=['GET'])
+@player_required
+def fleet_holders():
+    """「查詢 › 船艦搜尋」：誰有哪款船，同一款的持有者聚成一組。
+
+    公會成員互查是功能需求（比照 /blueprint/holders、/inventory/search），
+    所以任何登入玩家都能查別人的艦隊；不回 notes，Discord 只給本人勾了公開的。
+    條件全部留空則列出全公會的登記。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: q,            type: string, description: "船名關鍵字"}
+      - {in: query, name: vehicle_id,   type: string, description: "指定一款載具（主檔 uuid）"}
+      - {in: query, name: type,              type: string, description: "ship／ground／gravlev，可多選"}
+      - {in: query, name: size_class,        type: integer, description: "尺寸，可多選"}
+      - {in: query, name: manufacturer_code, type: string, description: "廠商代碼，可多選"}
+      - {in: query, name: role,              type: string, description: "角色，可多選"}
+      - {in: query, name: career,            type: string, description: "career，可多選"}
+      - {in: query, name: player_id,    type: string, description: "玩家遊戲ID（star_citizen_id）"}
+      - {in: query, name: limit,        type: integer, default: 100}
+    responses:
+      200:
+        description: 成功
+    """
+    vehicle_uuids = VehicleMaster.ids_matching_filter(
+        query=(request.args.get('q') or '').strip(),
+        types=request.args.getlist('type'),
+        size_classes=request.args.getlist('size_class'),
+        manufacturer_codes=request.args.getlist('manufacturer_code'),
+        roles=request.args.getlist('role'),
+        careers=request.args.getlist('career'),
+    )
+    # vehicle_id：「船艦名稱」欄位從候選清單選定的那一款（精確比對 uuid，
+    # 不用名稱中綴——選了「Cutlass Black」不該連「Cutlass Black Best In Show」
+    # 一起撈出來）。跟其他條件一樣是 AND。
+    vehicle_id = (request.args.get('vehicle_id') or '').strip()
+    if vehicle_id:
+        vehicle_uuids = ([vehicle_id] if vehicle_uuids is None
+                         else [u for u in vehicle_uuids if u == vehicle_id])
+    try:
+        limit = int(request.args.get('limit', 100))
+    except ValueError:
+        limit = 100
+    groups = Fleet.find_holders(vehicle_uuids=vehicle_uuids,
+                                player_scid=(request.args.get('player_id') or '').strip(),
+                                limit=limit)
+    return jsonify({'success': True, 'data': groups})

@@ -124,6 +124,30 @@ def _count_blueprint_duplicates(db) -> int:
         return -1
 
 
+_FLEET_UNIQUE_INDEX = 'fleet_player_vehicle_unique'
+# 同一位玩家同一款載具只能有一筆使用中的登記（艘數記在 quantity），
+# 軟刪除的不算，刪掉之後可以重新登記。
+_FLEET_UNIQUE_PARTIAL = {
+    'deleted_at': None,
+    'vehicle_uuid': {'$type': 'string'},
+}
+
+
+def _ensure_fleet_unique_index(db):
+    """(player_id, vehicle_uuid) 的 partial 唯一索引，擋批量登記的並發重複。
+
+    理由跟 _ensure_blueprint_unique_index 一樣；艦隊是新集合，不會有舊的
+    重複資料，但仍包 try，建立失敗只記警告、不讓整個 app 起不來。
+    """
+    try:
+        db['fleet'].create_index(
+            [('player_id', ASCENDING), ('vehicle_uuid', ASCENDING)],
+            unique=True, name=_FLEET_UNIQUE_INDEX,
+            partialFilterExpression=_FLEET_UNIQUE_PARTIAL)
+    except OperationFailure as e:
+        logging.warning('[index] 無法建立 %s：%s', _FLEET_UNIQUE_INDEX, e)
+
+
 def ensure_indexes():
     db = get_db()
     db['users'].create_index('username', unique=True)
@@ -145,6 +169,9 @@ def ensure_indexes():
     db['item_master'].create_index([('type', ASCENDING), ('sub_type', ASCENDING)])
     db['item_master'].create_index('manufacturer_code')
     db['vehicle_master'].create_index([('cargo_capacity_scu', DESCENDING)])
+    # 艦隊登記／船艦搜尋的篩選欄位
+    db['vehicle_master'].create_index([('is_current', ASCENDING), ('manufacturer_code', ASCENDING)])
+    db['vehicle_master'].create_index([('is_current', ASCENDING), ('size_class', ASCENDING)])
     db['commodity_master'].create_index('key')
     for name in ('item_master_versions', 'vehicle_master_versions',
                  'commodity_master_versions', 'blueprint_master_versions'):
@@ -183,6 +210,11 @@ def ensure_indexes():
     # 玩家名冊指向藍圖主檔的外鍵（可為空 —— 仍允許自由輸入名稱）
     db['blueprints'].create_index('blueprint_uuid')
     _ensure_blueprint_unique_index(db)
+
+    # ── 艦隊名冊（玩家擁有的船／載具，見 src/models/fleet.py）──────────
+    db['fleet'].create_index('player_id')
+    db['fleet'].create_index('vehicle_uuid')
+    _ensure_fleet_unique_index(db)
 
     # ── 製造藍圖主檔（API 同步，見 src/scdata.py 的 map_blueprint）──
     # 「做出這個物品的所有配方」是主要查詢路徑

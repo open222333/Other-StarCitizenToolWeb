@@ -254,6 +254,36 @@ class ItemMaster(_MasterBase):
         } for row in embedded[:limit]]
 
 
+#: 載具「類型」：太空船／地面載具／懸浮載具。上游沒有單一的「類型」欄位，
+#: 是從 is_spaceship／is_gravlev 兩個布林值推出來的——懸浮載具（Nox、
+#: Dragonfly、X1…）在資料裡 is_spaceship 是 false，所以先判斷 is_gravlev。
+VEHICLE_TYPES = {
+    'ship':    '太空船',
+    'ground':  '地面載具',
+    'gravlev': '懸浮載具',
+}
+
+
+def vehicle_type_of(doc: dict) -> str:
+    """單筆載具文件屬於哪個 VEHICLE_TYPES（給回傳結果加 vehicle_type 欄位用）。"""
+    if doc.get('is_gravlev'):
+        return 'gravlev'
+    if doc.get('is_spaceship'):
+        return 'ship'
+    return 'ground'
+
+
+def _vehicle_type_condition(vehicle_type: str) -> Optional[dict]:
+    """vehicle_type_of() 的 Mongo 查詢版本；不認得的類型回 None（呼叫端略過）。"""
+    if vehicle_type == 'gravlev':
+        return {'is_gravlev': True}
+    if vehicle_type == 'ship':
+        return {'is_gravlev': {'$ne': True}, 'is_spaceship': True}
+    if vehicle_type == 'ground':
+        return {'is_gravlev': {'$ne': True}, 'is_spaceship': {'$ne': True}}
+    return None
+
+
 class VehicleMaster(_MasterBase):
     COLLECTION = 'vehicle_master'
     PROJECTION = {
@@ -261,6 +291,7 @@ class VehicleMaster(_MasterBase):
         'vehicle_inventory_uscu': 1, 'manufacturer_code': 1, 'manufacturer_name': 1,
         'size_class': 1, 'career': 1, 'role': 1, 'crew_min': 1, 'crew_max': 1,
         'mass_hull': 1, 'msrp': 1, 'is_current': 1,
+        'is_spaceship': 1, 'is_gravlev': 1,
     }
 
     # 管理後台艦船列表可點擊排序的欄位（全站搜尋優化計畫，比照
@@ -270,8 +301,15 @@ class VehicleMaster(_MasterBase):
 
     @classmethod
     def _build_query(cls, *, careers=None, roles=None, manufacturer_codes=None,
-                      size_classes=None, query: str = '') -> dict:
+                      size_classes=None, query: str = '', types=None) -> dict:
         filt: dict = {'is_current': True}
+        # 類型（太空船／地面載具／懸浮載具）：玩家頁「艦隊」「查詢 › 船艦搜尋」用，
+        # 多選時是 OR（選了太空船＋地面載具就兩種都要）
+        type_conds = [c for c in (_vehicle_type_condition(t) for t in (types or [])) if c]
+        if len(type_conds) == 1:
+            filt.update(type_conds[0])
+        elif type_conds:
+            filt['$or'] = type_conds
         if careers:
             filt['career'] = {'$in': list(careers)}
         if roles:
@@ -298,23 +336,80 @@ class VehicleMaster(_MasterBase):
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0, careers=None, roles=None,
                  manufacturer_codes=None, size_classes=None, query: str = '',
-                 sort_by: str = 'name', sort_dir: int = 1) -> tuple:
+                 sort_by: str = 'name', sort_dir: int = 1, types=None) -> tuple:
         filt = cls._build_query(careers=careers, roles=roles,
                                  manufacturer_codes=manufacturer_codes,
-                                 size_classes=size_classes, query=query)
+                                 size_classes=size_classes, query=query, types=types)
         sort_field = sort_by if sort_by in cls.SORTABLE_FIELDS else 'name'
         total = cls._col().count_documents(filt)
         rows = list(cls._col().find(filt, cls.PROJECTION)
                     .sort(sort_field, sort_dir).skip(offset).limit(limit))
-        return rows, total
+        return cls.with_type(rows), total
 
     @classmethod
     def count(cls, careers=None, roles=None, manufacturer_codes=None,
-              size_classes=None, query: str = '') -> int:
+              size_classes=None, query: str = '', types=None) -> int:
         filt = cls._build_query(careers=careers, roles=roles,
                                  manufacturer_codes=manufacturer_codes,
-                                 size_classes=size_classes, query=query)
+                                 size_classes=size_classes, query=query, types=types)
         return cls._col().count_documents(filt)
+
+    @staticmethod
+    def with_type(rows: list) -> list:
+        """幫每筆載具補上 vehicle_type（ship／ground／gravlev）。"""
+        for row in rows:
+            row['vehicle_type'] = vehicle_type_of(row)
+        return rows
+
+    @classmethod
+    def types(cls) -> list:
+        """目前資料裡實際出現的類型，[{value, label}]，順序固定為 VEHICLE_TYPES 的順序。"""
+        present = {vehicle_type_of(row) for row in cls._col().find(
+            {'is_current': True}, {'is_spaceship': 1, 'is_gravlev': 1, '_id': 0})}
+        return [{'value': k, 'label': v} for k, v in VEHICLE_TYPES.items() if k in present]
+
+    @classmethod
+    def facets(cls) -> dict:
+        """篩選選單一次拿齊：類型、尺寸、廠商、角色、career（玩家頁用，省四次往返）。"""
+        return {
+            'types': cls.types(),
+            'size_classes': cls.size_classes(),
+            'manufacturers': cls.manufacturers(),
+            'roles': cls.roles(),
+            'careers': cls.careers(),
+        }
+
+    @classmethod
+    def ids_matching_filter(cls, *, query: str = '', types=None, size_classes=None,
+                            manufacturer_codes=None, roles=None, careers=None,
+                            limit: int = 2000) -> Optional[list]:
+        """符合篩選條件的所有載具 uuid，給「查詢 › 船艦搜尋」當 join key 用。
+
+        沒給任何條件回 None（代表「不篩載具」）；給了但沒有任何載具符合回
+        空陣列——跟 Inventory.search_filtered() 的 item_ids 同一套 None/[]
+        約定，呼叫端要把兩者分開處理。
+        """
+        if not ((query or '').strip() or types or size_classes or manufacturer_codes
+                or roles or careers):
+            return None
+        filt = cls._build_query(careers=careers, roles=roles,
+                                manufacturer_codes=manufacturer_codes,
+                                size_classes=size_classes, query=query, types=types)
+        rows = cls._col().find(filt, {'_id': 1}).limit(max(1, min(limit, 5000)))
+        return [r['_id'] for r in rows]
+
+    @classmethod
+    def by_ids(cls, doc_ids) -> dict:
+        """一次查多個 uuid 的顯示用欄位，回傳 `{uuid: doc}`（含 vehicle_type）。
+
+        不過濾 is_current：艦隊裡可能還登記著舊 patch 移除的船，藏起來會讓
+        玩家以為自己的登記不見了。
+        """
+        ids = [i for i in {str(i) for i in (doc_ids or []) if i} if i]
+        if not ids:
+            return {}
+        rows = cls.with_type(list(cls._col().find({'_id': {'$in': ids}}, cls.PROJECTION)))
+        return {r['_id']: r for r in rows}
 
     @classmethod
     def careers(cls) -> list:

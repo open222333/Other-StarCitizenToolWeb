@@ -21,6 +21,10 @@ from pymongo.errors import DuplicateKeyError
 from src.mongo import get_db
 
 
+#: search_basic('') 列出全部玩家時的上限（防呆，公會規模遠小於此）
+ROSTER_MAX = 1000
+
+
 class PlayerError(Exception):
     """預期中的使用者錯誤（例如遊戲ID重複），訊息可直接顯示給使用者。"""
 
@@ -126,20 +130,24 @@ class Player:
         find_holders() 的 _redact_contact 用途不同：這裡連查都不查）。
         """
         q = (query or '').strip()
-        if not q:
-            return []
-        pattern = re.escape(q)
+        filt: dict = {'deleted_at': None}
+        if q:
+            pattern = re.escape(q)
+            filt['$or'] = [
+                {'nickname':        {'$regex': pattern, '$options': 'i'}},
+                {'player_name':     {'$regex': pattern, '$options': 'i'}},
+                {'star_citizen_id': {'$regex': pattern, '$options': 'i'}},
+            ]
+            cap = 50
+        else:
+            # 空字串＝列出全部現役玩家：「查詢」頁的玩家id／暱稱欄位一 focus 就要
+            # 看到完整名單，打字時在前端逐字篩選（名單只有幾十～幾百人，一次
+            # 載入比每打一個字就打一次 API 順暢）。上限 1000 只是防呆。
+            cap = ROSTER_MAX
         rows = cls._col().find(
-            {
-                'deleted_at': None,
-                '$or': [
-                    {'nickname':        {'$regex': pattern, '$options': 'i'}},
-                    {'player_name':     {'$regex': pattern, '$options': 'i'}},
-                    {'star_citizen_id': {'$regex': pattern, '$options': 'i'}},
-                ],
-            },
+            filt,
             {'star_citizen_id': 1, 'nickname': 1, 'player_name': 1, '_id': 0},
-        ).sort('nickname', 1).limit(max(1, min(limit, 50)))
+        ).sort('nickname', 1).limit(max(1, min(limit, cap)))
         return list(rows)
 
     @classmethod

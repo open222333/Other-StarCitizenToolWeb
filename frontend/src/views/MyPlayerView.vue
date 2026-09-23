@@ -358,15 +358,15 @@
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="items-player-id">玩家id</label>
               <AutocompleteField id="items-player-id" v-model="itemsPlayerIdText"
-                :search="searchPlayersBasic" :get-label="c => c.star_citizen_id"
-                aria-label="玩家id" placeholder="輸入遊戲ID…" :min-chars="1"
+                :search="searchPlayersLocal" :get-label="c => c.star_citizen_id"
+                aria-label="玩家id" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onItemsPlayerIdSelect" />
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="items-player-nickname">玩家暱稱</label>
               <AutocompleteField id="items-player-nickname" v-model="itemsPlayerNicknameText"
-                :search="searchPlayersBasic" :get-label="playerCandidateLabel"
-                aria-label="玩家暱稱" placeholder="輸入暱稱…" :min-chars="1"
+                :search="searchPlayersLocal" :get-label="playerCandidateLabel"
+                aria-label="玩家暱稱" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onItemsPlayerNicknameSelect" />
             </div>
           </div>
@@ -444,15 +444,15 @@
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="bp-player-id">玩家id</label>
               <AutocompleteField id="bp-player-id" v-model="bpPlayerIdText"
-                :search="searchPlayersBasic" :get-label="c => c.star_citizen_id"
-                aria-label="玩家id" placeholder="輸入遊戲ID…" :min-chars="1"
+                :search="searchPlayersLocal" :get-label="c => c.star_citizen_id"
+                aria-label="玩家id" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onBpPlayerIdSelect" />
             </div>
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="bp-player-nickname">玩家暱稱</label>
               <AutocompleteField id="bp-player-nickname" v-model="bpPlayerNicknameText"
-                :search="searchPlayersBasic" :get-label="playerCandidateLabel"
-                aria-label="玩家暱稱" placeholder="輸入暱稱…" :min-chars="1"
+                :search="searchPlayersLocal" :get-label="playerCandidateLabel"
+                aria-label="玩家暱稱" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onBpPlayerNicknameSelect" />
             </div>
           </div>
@@ -484,6 +484,107 @@
                   <span v-if="blueprintStatusLabel(h.unlock_status)" class="text-muted">
                     {{ blueprintStatusLabel(h.unlock_status) }}
                   </span>
+                  <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
+                  <span v-if="discordLabel(h)" class="text-muted ms-1">
+                    <i class="bi bi-discord"></i> {{ discordLabel(h) }}
+                  </span>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════ 查詢 › 船艦搜尋：誰有哪款船 ══════════ -->
+    <div v-show="activeTab === 'search' && activeSub === 'fleet'" role="tabpanel"
+         id="panel-search-fleet" aria-labelledby="subtab-search-fleet">
+      <div class="card scifi-card mb-3">
+        <div class="card-body py-3">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <label class="form-label small fw-semibold mb-0">搜尋條件</label>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+              @click="clearFleetFilters">清除全部</button>
+          </div>
+          <FieldHint text="打字或點一下選一個候選代入。都留空則列出全部人的艦隊；填了的話要同時符合才會出現。" />
+          <div class="row g-2">
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1" for="fl-name">船艦名稱</label>
+              <AutocompleteField id="fl-name" v-model="flNameText"
+                :search="searchVehicleNames" :get-label="c => c.name"
+                aria-label="船艦名稱" placeholder="輸入船名…" :min-chars="1"
+                @select="c => { flSelectedVehicleId = c ? c._id : '' }" />
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label small mb-1" for="fl-type">類型</label>
+              <AutocompleteField id="fl-type" v-model="flTypeText"
+                :search="searchVehicleTypesLocal" :get-label="c => c.label"
+                aria-label="類型" placeholder="點一下看全部類型…" :min-chars="0" :debounce-ms="0"
+                @select="c => { flSelectedType = c ? c.value : '' }" />
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label small mb-1" for="fl-size">尺寸</label>
+              <AutocompleteField id="fl-size" v-model="flSizeText"
+                :search="searchVehicleSizesLocal" :get-label="vehicleSizeLabel"
+                aria-label="尺寸" placeholder="點一下看全部尺寸…" :min-chars="0" :debounce-ms="0"
+                @select="c => { flSelectedSize = c == null ? '' : String(c) }" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1" for="fl-mfr">廠商</label>
+              <AutocompleteField id="fl-mfr" v-model="flMfrText"
+                :search="searchManufacturersLocal" :get-label="m => manufacturerLabel(m.label, m.value)"
+                aria-label="廠商" placeholder="點一下看全部廠商…" :min-chars="0" :debounce-ms="0"
+                @select="c => { flSelectedMfr = c ? c.value : '' }" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1" for="fl-role">角色</label>
+              <AutocompleteField id="fl-role" v-model="flRoleText"
+                :search="searchVehicleRolesLocal" :get-label="r => r"
+                aria-label="角色" placeholder="點一下看全部角色…" :min-chars="0" :debounce-ms="0"
+                @select="c => { flSelectedRole = c || '' }" />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-1" for="fl-player-id">玩家id</label>
+              <AutocompleteField id="fl-player-id" v-model="flPlayerIdText"
+                :search="searchPlayersLocal" :get-label="c => c.star_citizen_id"
+                aria-label="玩家id" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
+                @select="onFlPlayerIdSelect" />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-1" for="fl-player-nickname">玩家暱稱</label>
+              <AutocompleteField id="fl-player-nickname" v-model="flPlayerNicknameText"
+                :search="searchPlayersLocal" :get-label="playerCandidateLabel"
+                aria-label="玩家暱稱" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
+                @select="onFlPlayerNicknameSelect" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="loadingFleetHolders" class="text-muted small">查詢中…</div>
+      <div v-else-if="!fleetHolders.length" class="text-muted small">
+        沒有人登記符合條件的船／載具。
+      </div>
+      <div v-else class="scifi-scroll">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>船艦</th><th>類型</th><th>尺寸</th><th>廠商</th><th>角色</th>
+              <th>持有</th><th class="sf-wrap">持有者</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="group in fleetHolders" :key="group._id">
+              <td>{{ group.vehicle?.name || group.name }}</td>
+              <td class="small">{{ vehicleTypeLabel(group.vehicle?.vehicle_type) }}</td>
+              <td class="small">{{ vehicleSizeLabel(group.vehicle?.size_class) }}</td>
+              <td class="small">{{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) }}</td>
+              <td class="small">{{ group.vehicle?.role || '—' }}</td>
+              <td class="small text-nowrap">{{ group.holder_count }} 人 / {{ group.total_quantity }} 艘</td>
+              <td class="small sf-wrap">
+                <span v-for="(h, i) in group.holders" :key="i" class="d-block">
+                  {{ holderLabel(h.nickname, h.player_name, h.star_citizen_id) }}
+                  <span v-if="h.quantity > 1" class="text-muted">×{{ h.quantity }}</span>
                   <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
                   <span v-if="discordLabel(h)" class="text-muted ms-1">
                     <i class="bi bi-discord"></i> {{ discordLabel(h) }}
@@ -705,6 +806,66 @@
         card-class="card scifi-card" />
     </div>
 
+    <!-- ══════════ 艦隊 › 我的艦隊 ══════════ -->
+    <div v-show="activeTab === 'fleet' && activeSub === 'mine'" role="tabpanel"
+         id="panel-fleet-mine" aria-labelledby="subtab-fleet-mine">
+      <Transition name="alert-slide">
+        <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
+      </Transition>
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <span class="small text-muted">
+          <template v-if="fleet.length">共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘</template>
+        </span>
+        <button class="btn btn-sm btn-link p-0" @click="loadFleet">重新整理</button>
+      </div>
+      <div v-if="loadingFleet" class="text-muted small">載入中…</div>
+      <div v-else-if="!fleet.length" class="text-muted small">
+        還沒有登記任何船／載具，到
+        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="setSub('bulk')">批量登記</button>
+        勾選你擁有的。
+      </div>
+      <div v-else class="scifi-scroll">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>載具</th><th>類型</th><th>尺寸</th><th>廠商</th><th>角色</th>
+              <th style="width: 6rem">數量</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in fleet" :key="row._id">
+              <td>
+                {{ row.name }}
+                <span v-if="row.vehicle && row.vehicle.is_current === false"
+                  class="badge bg-secondary ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
+              </td>
+              <td class="small">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) }}</td>
+              <td class="small">{{ vehicleSizeLabel(row.vehicle?.size_class) }}</td>
+              <td class="small">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) }}</td>
+              <td class="small">{{ row.vehicle?.role || '—' }}</td>
+              <td>
+                <input type="number" min="1" :max="fleetMaxQuantity"
+                  class="form-control form-control-sm" :value="row.quantity"
+                  :aria-label="`${row.name} 數量`" :disabled="savingFleetId === row._id"
+                  @change="updateFleetQuantity(row, $event)">
+              </td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-link text-danger p-0" @click="removeFleet(row)">刪除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════ 艦隊 › 批量登記 ══════════ -->
+    <div v-show="activeTab === 'fleet' && activeSub === 'bulk'" role="tabpanel"
+         id="panel-fleet-bulk" aria-labelledby="subtab-fleet-bulk">
+      <FleetBulkRegister ref="fleetBulkRef" :fetcher="playerAuth.playerFetch"
+        card-class="card scifi-card" @registered="loadFleet" />
+    </div>
+
     <!-- ══════════ 礦物參考查詢 ══════════ -->
     <div v-show="activeTab === 'mining'" role="tabpanel" id="panel-mining"
       :aria-labelledby="'tab-mining'">
@@ -859,9 +1020,11 @@ import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
 import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
+import FleetBulkRegister from '@/components/FleetBulkRegister.vue'
 import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
+import { manufacturerLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 // 社群繁中化包（cosmo-chang-1701/sc-translation-pack）萃取出來的地點中文對照，
 // 純靜態查表，不會隨遊戲改版自動更新，見 src/sc_zh.py 的說明
 import locationNamesZh from '@/assets/sc-locations-zh.json'
@@ -902,7 +1065,7 @@ function holderLabel(nickname, playerName, scid) {
 }
 
 // 主分頁。「倉庫」與「查詢」各自有下層分頁（subTabs），
-// 這樣頂層只有 5 個項目，手機上一列放得下。
+// 頂層 6 個項目，手機上放不下時分頁列可以左右滑（見 scifi-theme.css 的 .scifi-tabs）。
 const tabs = [
   {
     key: 'warehouse', label: '倉庫',   icon: 'bi bi-box-seam',
@@ -921,12 +1084,20 @@ const tabs = [
       { key: 'craft',  label: '試算' },
     ],
   },
+  {
+    key: 'fleet', label: '艦隊',  icon: 'bi bi-rocket-takeoff',
+    subTabs: [
+      { key: 'mine', label: '我的艦隊' },
+      { key: 'bulk', label: '批量登記' },
+    ],
+  },
   { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
   {
     key: 'search',    label: '查詢',   icon: 'bi bi-search',
     subTabs: [
       { key: 'items',      label: '物品庫存' },
       { key: 'blueprints', label: '持有藍圖' },
+      { key: 'fleet',      label: '船艦搜尋' },
     ],
   },
   { key: 'profile',   label: '個人資料', icon: 'bi bi-person-gear' },
@@ -999,6 +1170,13 @@ function loadForTab(tab, sub) {
     if (!blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
     if (!bpHolders.value.length) loadBlueprintHolders()
   }
+  // 「查詢」各分頁的玩家id／暱稱欄位都用同一份玩家名單，先載起來
+  if (tab === 'search') ensureRoster()
+  if (tab === 'search' && sub === 'fleet') {
+    if (!vehicleFacetsLoaded) loadVehicleFacets()
+    if (!fleetHolders.value.length) loadFleetHolders()
+  }
+  if (tab === 'fleet' && !fleetLoaded.value) loadFleet()
   // 進「藍圖」才查主檔筆數（決定要不要顯示「尚未同步」提示）
   if (tab === 'blueprints' && masterCount.value === null) {
     loadMasterCount()
@@ -1797,11 +1975,33 @@ function searchStockLocationsLocal(q) {
   return Promise.resolve(list)
 }
 
-async function searchPlayersBasic(q) {
-  const res = await playerAuth.playerFetch(`/player/search?q=${encodeURIComponent(q)}&limit=20`)
-  if (!res) return []
-  const data = await res.json().catch(() => null)
-  return (res.ok && data?.success) ? (data.data || []) : []
+// ── 玩家名單（「查詢」各分頁的玩家id／玩家暱稱欄位共用）──────────────
+//
+// 一進「查詢」就把全公會玩家名單載一次（/player/search 不帶 q＝列出全部），
+// 欄位一 focus 就列出全部玩家，打字時在前端逐字篩選——名單只有幾十～
+// 幾百人，比每打一個字就打一次 API 順暢，也不會有「打太快結果跳動」的問題。
+const playerRoster = ref([])
+let rosterLoading = null
+
+function ensureRoster() {
+  if (playerRoster.value.length) return Promise.resolve()
+  if (!rosterLoading) {
+    rosterLoading = (async () => {
+      const res = await playerAuth.playerFetch('/player/search?limit=1000')
+      const data = res ? await res.json().catch(() => null) : null
+      if (res?.ok && data?.success) playerRoster.value = data.data || []
+    })().finally(() => { rosterLoading = null })
+  }
+  return rosterLoading
+}
+
+async function searchPlayersLocal(q) {
+  await ensureRoster()
+  const query = (q || '').trim().toLowerCase()
+  if (!query) return playerRoster.value
+  return playerRoster.value.filter(p =>
+    [p.star_citizen_id, p.nickname, p.player_name]
+      .some(v => (v || '').toLowerCase().includes(query)))
 }
 function playerCandidateLabel(c) { return c.nickname || c.player_name || c.star_citizen_id }
 
@@ -1883,6 +2083,168 @@ function trackStickyHeights() {
   stickyObserver = new ResizeObserver(sync)
   stickyObserver.observe(bar)
   if (tabsEl) stickyObserver.observe(tabsEl)
+}
+
+// ── 艦隊 › 我的艦隊 ──────────────────────────────────────────
+const fleet            = ref([])
+const loadingFleet     = ref(false)
+const fleetLoaded      = ref(false)
+const fleetError       = ref('')
+const fleetMaxQuantity = ref(99)
+const savingFleetId    = ref('')
+const fleetBulkRef     = ref(null)
+const fleetShipCount   = computed(() => fleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
+
+function showFleetError(text) {
+  fleetError.value = text
+  setTimeout(() => { if (fleetError.value === text) fleetError.value = '' }, 6000)
+}
+
+async function loadFleet() {
+  loadingFleet.value = true
+  const res = await playerAuth.playerFetch('/player/fleet')
+  loadingFleet.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) {
+    fleet.value = data.data || []
+    fleetMaxQuantity.value = data.max_quantity || 99
+    fleetLoaded.value = true
+  } else {
+    showFleetError(data?.message || '讀取艦隊失敗，請稍後再試')
+  }
+}
+
+async function updateFleetQuantity(row, event) {
+  const input = event.target
+  const qty = Math.trunc(Number(input.value))
+  if (!Number.isFinite(qty) || qty < 1 || qty > fleetMaxQuantity.value) {
+    input.value = row.quantity   // 不合法就還原，不送出
+    showFleetError(`數量要介於 1 到 ${fleetMaxQuantity.value} 之間。`)
+    return
+  }
+  if (qty === row.quantity) return
+  savingFleetId.value = row._id
+  const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, {
+    method: 'PUT', body: JSON.stringify({ quantity: qty }),
+  })
+  savingFleetId.value = ''
+  const data = res ? await res.json().catch(() => null) : null
+  if (res?.ok && data?.success) {
+    row.quantity = qty
+  } else {
+    input.value = row.quantity
+    showFleetError(data?.message || '更新數量失敗，請稍後再試')
+  }
+}
+
+async function removeFleet(row) {
+  const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, { method: 'DELETE' })
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  if (res.ok && data?.success) {
+    await loadFleet()
+    fleetBulkRef.value?.refresh()   // 批量登記頁的「已登記」標記也要跟著解除
+  } else {
+    showFleetError(data?.message || '刪除失敗，請稍後再試')
+  }
+}
+
+// ── 查詢 › 船艦搜尋：誰有哪款船 ──────────────────────────────
+//
+// 船艦名稱／類型／尺寸／廠商／角色／玩家id／玩家暱稱，AND 語意，打
+// /player/fleet/holders。跟「持有藍圖」一樣：都沒選定時列出全部人的艦隊，
+// 欄位要從候選清單選定才算數（純打字不觸發查詢）。
+const fleetHolders        = ref([])
+const loadingFleetHolders = ref(false)
+const vehicleFacets       = ref({ size_classes: [], types: [], manufacturers: [], roles: [] })
+let vehicleFacetsLoaded = false
+
+const flNameText           = ref('')
+const flSelectedVehicleId  = ref('')
+const flTypeText           = ref('')
+const flSelectedType       = ref('')
+const flSizeText           = ref('')
+const flSelectedSize       = ref('')
+const flMfrText            = ref('')
+const flSelectedMfr        = ref('')
+const flRoleText           = ref('')
+const flSelectedRole       = ref('')
+const flPlayerIdText       = ref('')
+const flPlayerNicknameText = ref('')
+const flPlayerScid         = ref('')
+
+async function loadVehicleFacets() {
+  vehicleFacetsLoaded = true
+  const res = await playerAuth.playerFetch('/item/vehicles/facets')
+  const data = res ? await res.json().catch(() => null) : null
+  if (res?.ok && data?.success) vehicleFacets.value = { ...vehicleFacets.value, ...(data.data || {}) }
+  else vehicleFacetsLoaded = false   // 下次進來再試
+}
+
+let fleetHolderSeq = 0
+async function loadFleetHolders() {
+  const seq = ++fleetHolderSeq
+  loadingFleetHolders.value = true
+  const params = new URLSearchParams({ limit: '100' })
+  if (flSelectedVehicleId.value) params.set('vehicle_id', flSelectedVehicleId.value)
+  if (flSelectedType.value) params.set('type', flSelectedType.value)
+  if (flSelectedSize.value) params.set('size_class', flSelectedSize.value)
+  if (flSelectedMfr.value) params.set('manufacturer_code', flSelectedMfr.value)
+  if (flSelectedRole.value) params.set('role', flSelectedRole.value)
+  if (flPlayerScid.value) params.set('player_id', flPlayerScid.value)
+  const res = await playerAuth.playerFetch(`/player/fleet/holders?${params.toString()}`)
+  if (seq !== fleetHolderSeq) return   // 已經有更新的查詢在跑了
+  loadingFleetHolders.value = false
+  if (!res) return
+  const data = await res.json().catch(() => null)
+  fleetHolders.value = (res.ok && data?.success) ? (data.data || []) : []
+}
+
+watch([flSelectedVehicleId, flSelectedType, flSelectedSize, flSelectedMfr, flSelectedRole, flPlayerScid],
+  loadFleetHolders)
+
+async function searchVehicleNames(q) {
+  const res = await playerAuth.playerFetch(`/item/vehicles?q=${encodeURIComponent(q)}&limit=20`)
+  if (!res) return []
+  const data = await res.json().catch(() => null)
+  return (res.ok && data?.success) ? (data.data || []) : []
+}
+
+function localFilter(list, q, toText) {
+  const query = (q || '').trim().toLowerCase()
+  return Promise.resolve(query ? list.filter(x => toText(x).toLowerCase().includes(query)) : list)
+}
+function searchVehicleTypesLocal(q) {
+  return localFilter(vehicleFacets.value.types, q, t => `${t.label} ${t.value}`)
+}
+function searchVehicleSizesLocal(q) {
+  return localFilter(vehicleFacets.value.size_classes, q, s => vehicleSizeLabel(s))
+}
+function searchManufacturersLocal(q) {
+  return localFilter(vehicleFacets.value.manufacturers, q, m => `${m.label || ''} ${m.value || ''}`)
+}
+function searchVehicleRolesLocal(q) {
+  return localFilter(vehicleFacets.value.roles, q, r => r)
+}
+
+// 玩家id／玩家暱稱共用 flPlayerScid，理由同「持有藍圖」的 onBpPlayerIdSelect
+function onFlPlayerIdSelect(c) {
+  flPlayerScid.value = c ? c.star_citizen_id : ''
+  flPlayerNicknameText.value = c ? (c.nickname || c.player_name || '') : ''
+}
+function onFlPlayerNicknameSelect(c) {
+  flPlayerScid.value = c ? c.star_citizen_id : ''
+  flPlayerIdText.value = c ? c.star_citizen_id : ''
+}
+
+function clearFleetFilters() {
+  flNameText.value = '';  flSelectedVehicleId.value = ''
+  flTypeText.value = '';  flSelectedType.value = ''
+  flSizeText.value = '';  flSelectedSize.value = ''
+  flMfrText.value = '';   flSelectedMfr.value = ''
+  flRoleText.value = '';  flSelectedRole.value = ''
+  flPlayerIdText.value = ''; flPlayerNicknameText.value = ''; flPlayerScid.value = ''
 }
 
 onMounted(() => {

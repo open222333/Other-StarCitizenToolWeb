@@ -161,7 +161,11 @@ def get_item_prices(item_id):
 @app_item.route('/vehicles', methods=['GET'])
 @jwt_required()
 def list_vehicles():
-    """載具主檔列表（含 SCU 貨艙容量）。
+    """載具主檔列表（太空船＋地面載具＋懸浮載具，含 SCU 貨艙容量）。
+
+    上游 Wiki API 的 vehicles 本來就同時包含太空船與地面載具，用 `type`
+    分開（由 is_spaceship／is_gravlev 推出來，見 src/models/item.py 的
+    VEHICLE_TYPES），每筆回傳也帶 `vehicle_type`。
 
     篩選/排序/分頁比照全站搜尋優化計畫（藍圖登記管理／操作紀錄那批）的
     做法：多選用 getlist（可重複帶同一個 key），排序欄位在 model 端有
@@ -176,6 +180,7 @@ def list_vehicles():
       - {in: query, name: role,               type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/roles）"}
       - {in: query, name: manufacturer_code,  type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/manufacturers）"}
       - {in: query, name: size_class,         type: array, items: {type: integer}, description: "可重複帶多個（見 /item/vehicles/size-classes）"}
+      - {in: query, name: type,               type: array, items: {type: string}, description: "ship（太空船）／ground（地面載具）／gravlev（懸浮載具），可重複帶多個"}
       - {in: query, name: sort_by,            type: string, description: "name（預設）／crew_max／cargo_capacity_scu／mass_hull／msrp／size_class"}
       - {in: query, name: sort_dir,           type: string, description: "asc（預設）／desc"}
       - {in: query, name: limit,              type: integer, default: 50}
@@ -190,10 +195,11 @@ def list_vehicles():
     roles = request.args.getlist('role')
     manufacturer_codes = request.args.getlist('manufacturer_code')
     size_classes = request.args.getlist('size_class')
+    types = request.args.getlist('type')
     sort_by = request.args.get('sort_by', 'name')
     sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
 
-    has_filters = bool(careers or roles or manufacturer_codes or size_classes)
+    has_filters = bool(careers or roles or manufacturer_codes or size_classes or types)
 
     if query and not has_filters:
         # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
@@ -201,13 +207,13 @@ def list_vehicles():
         #    使用者永遠翻不到第二頁（而且不會有任何錯誤徵兆）。
         #    回 None 讓前端知道「總數未知」，分頁改用「本頁滿了就還有下一頁」。
         #    帶了其他篩選條件時 search() 沒辦法一起套用，改走 list_all()。
-        rows = VehicleMaster.search(query, limit=limit)
+        rows = VehicleMaster.with_type(VehicleMaster.search(query, limit=limit))
         total = None
     else:
         rows, total = VehicleMaster.list_all(
             limit=limit, offset=offset, careers=careers, roles=roles,
             manufacturer_codes=manufacturer_codes, size_classes=size_classes,
-            query=query, sort_by=sort_by, sort_dir=sort_dir)
+            query=query, sort_by=sort_by, sort_dir=sort_dir, types=types)
 
     for row in rows:
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
@@ -273,6 +279,25 @@ def list_vehicle_size_classes():
         description: 成功
     """
     return jsonify({'success': True, 'data': VehicleMaster.size_classes()})
+
+
+@app_item.route('/vehicles/facets', methods=['GET'])
+@jwt_required()
+def vehicle_facets():
+    """載具篩選選單的選項一次拿齊：類型、尺寸、廠商、角色、career。
+
+    跟上面四支 distinct 清單是同樣的資料，只是合成一次回應 —— 玩家頁
+    「艦隊」「查詢 › 船艦搜尋」一進去就要全部用到，省四次往返；多出來的
+    「類型」（太空船／地面載具／懸浮載具）只有這支有。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功（data 含 types／size_classes／manufacturers／roles／careers）
+    """
+    return jsonify({'success': True, 'data': VehicleMaster.facets()})
 
 
 @app_item.route('/commodities', methods=['GET'])

@@ -237,6 +237,7 @@ UNGUARDED_ALLOWLIST = {
     'app_item.list_vehicle_roles',
     'app_item.list_vehicle_manufacturers',
     'app_item.list_vehicle_size_classes',
+    'app_item.vehicle_facets',        # 上面幾支合成一次回應＋類型，玩家頁艦隊／船艦搜尋要用
     'app_item.list_commodities',
     # 製造藍圖主檔（同樣是公開遊戲資料，玩家端的藍圖自動完成要用）
     'app_blueprint.list_master',

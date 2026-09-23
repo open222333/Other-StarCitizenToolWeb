@@ -55,9 +55,19 @@ def test_search_basic_returns_display_fields_only(client, seed_players):
     assert set(row.keys()) == {'star_citizen_id', 'nickname', 'player_name'}
 
 
-def test_search_basic_blank_query_returns_empty(client, seed_players):
-    assert Player.search_basic('') == []
-    assert Player.search_basic('   ') == []
+def test_search_basic_blank_query_lists_everyone(client, seed_players):
+    """空字串＝列出全部現役玩家（「查詢」頁玩家欄位一 focus 就要看到完整名單，
+    打字時在前端逐字篩選），依暱稱排序。"""
+    rows = Player.search_basic('')
+    assert {r['star_citizen_id'] for r in rows} == {'SearcherSC', 'TomLi', 'AlicePilot'}
+    assert [r['nickname'] for r in rows] == sorted(r['nickname'] for r in rows)
+    assert Player.search_basic('   ') == rows
+
+
+def test_search_basic_blank_query_excludes_deleted(client, seed_players):
+    tom = Player.find_by_star_citizen_id('TomLi')
+    Player.soft_delete(tom['_id'])
+    assert 'TomLi' not in {r['star_citizen_id'] for r in Player.search_basic('')}
 
 
 def test_search_basic_excludes_deleted(client, seed_players):
@@ -89,10 +99,23 @@ def test_endpoint_allows_player_token(client, player_headers, seed_players):
     assert data[0]['nickname'] == '愛麗絲'
 
 
-def test_endpoint_blank_q_returns_empty_not_error(client, player_headers, seed_players):
+def test_endpoint_blank_q_lists_full_roster(client, player_headers, seed_players):
     resp = client.get('/player/search', headers=player_headers)
     assert resp.status_code == 200
-    assert resp.get_json()['data'] == []
+    data = resp.get_json()['data']
+    assert {r['star_citizen_id'] for r in data} == {'SearcherSC', 'TomLi', 'AlicePilot'}
+    # 列全部時也一樣不帶 Discord
+    assert all(set(r.keys()) == {'star_citizen_id', 'nickname', 'player_name'} for r in data)
+
+
+def test_endpoint_query_limit_still_capped_at_50(client, player_headers, seed_players):
+    for i in range(60):
+        Player.create(player_name=f'Bulk {i}', star_citizen_id=f'BulkSC{i}',
+                      nickname=f'bulk{i:02d}', password='pw-123456')
+    resp = client.get('/player/search?q=bulk&limit=500', headers=player_headers)
+    assert len(resp.get_json()['data']) == 50
+    resp = client.get('/player/search', headers=player_headers)
+    assert len(resp.get_json()['data']) == 63, '不帶 q 時要回完整名單，不受 50 筆上限'
 
 
 def test_endpoint_soft_deleted_player_cannot_call_it(client, player_headers, seed_players):
