@@ -58,7 +58,7 @@
           <span class="spinner-border spinner-border-sm me-2"></span>載入中...
         </div>
         <div v-else-if="resonanceInput === ''" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
-          請輸入船艦感測器掃描到的訊號值，反查可能是哪個礦床、幾顆
+          請輸入船艦感測器掃描到的訊號值
         </div>
         <div v-else-if="!signatureMatches.length" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
           沒有礦床的「單顆訊號值 × 顆數」對得上 {{ resonanceInput }}
@@ -125,9 +125,6 @@
           </div>
         </template>
 
-        <p class="mining-echo__footnote">
-          同一個數字可能同時符合好幾個礦床（不同顆數也可能湊出接近的值），最佳吻合（誤差最小）當主結果卡，其餘收進上面的完整診斷，實際礦物仍須以遊戲內判讀為準。少數 FPS 徒手採礦專用的礦床沒有船艦掃描訊號值，不會出現在這裡。
-        </p>
       </div>
 
       <!-- ══ 右：礦物訊號參考（輸入名稱 → 列出每一筆真實礦床各自的數字）══ -->
@@ -146,81 +143,55 @@
         <div v-if="loadingDeposits" class="mining-echo__panel text-center py-4">
           <span class="spinner-border spinner-border-sm me-2"></span>載入中...
         </div>
+        <!-- 搜尋框沒輸入時只顯示提示（跟左側「回波」同樣的空狀態樣式），輸入了才列出符合的礦物 -->
+        <div v-else-if="!mineralQuery.trim()" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
+          請輸入礦物名稱
+        </div>
         <div v-else-if="!filteredMineralGroups.length" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
           找不到符合「{{ mineralQuery }}」的礦物
         </div>
         <div v-else class="mining-echo__mineral-list">
-          <div v-for="g in filteredMineralGroups" :key="g.resource_key" class="mining-echo__panel mining-echo__panel--table mb-2">
-            <div class="px-3 pt-3">
-              <h3 class="mining-echo__title mb-1" style="font-size: 1.05rem">{{ mineralLabel(g) }}</h3>
-              <p v-if="locationsFor(g).length" class="mining-echo__hint mb-2">
-                可能出現地點：
-                <span v-for="loc in locationsFor(g)" :key="loc.system + '/' + loc.location_name"
-                  class="mining-echo__tag mining-echo__tag--info me-1" :title="loc.system">
-                  {{ locationLabel(loc) }}
-                </span>
-              </p>
-            </div>
-            <div style="overflow-x:auto">
-              <table class="table table-sm table-hover align-middle mb-0 mining-echo__table">
-                <thead>
-                  <tr>
-                    <th class="ps-3">所屬礦床</th>
-                    <th>Tier</th>
-                    <th>比例區間</th>
-                    <th>機率</th>
-                    <th class="pe-3">單顆訊號值</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template v-for="dep in dedupedDeposits(g)" :key="dep._rowKey">
-                    <tr :style="dep.signature ? 'cursor:pointer' : ''"
-                      @click="dep.signature && toggleDepositExpand(dep._rowKey)">
-                      <td class="ps-3 fw-semibold">
-                        <i v-if="dep.signature" class="bi me-1"
-                          :class="expandedDeposits.has(dep._rowKey) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-                        {{ depositLabel(dep) }}
-                      </td>
-                      <td>
-                        <span v-if="dep.tier" class="mining-echo__tag">{{ dep.tier }}</span>
-                        <span v-else>—</span>
-                      </td>
-                      <td>{{ fmtRange(dep.min_percentage, dep.max_percentage) }}</td>
-                      <td>{{ fmtPct(dep.probability) }}</td>
-                      <td class="pe-3">
-                        <span v-if="dep.signature">{{ fmtInt(dep.signature) }}</span>
-                        <span v-else title="這個礦床沒有船艦掃描訊號值（可能是 FPS 徒手採礦專用）">—</span>
-                      </td>
-                    </tr>
-                    <tr v-if="dep.signature && expandedDeposits.has(dep._rowKey)">
-                      <td colspan="5" class="pb-3">
-                        <div class="mining-echo__hint mb-1">一叢礦石可能有 1～10 顆，掃描器讀到的整叢訊號值＝單顆 × 顆數：</div>
-                        <div class="mining-echo__grid">
-                          <div v-for="step in signatureSteps(dep.signature)" :key="step.n" class="mining-echo__cell">
-                            <div class="mining-echo__cell-mult">{{ step.n }}X</div>
-                            <div class="mining-echo__cell-label">SIGNATURE</div>
-                            <div class="mining-echo__cell-value">{{ fmtInt(step.value) }}</div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
+          <div v-for="g in filteredMineralGroups" :key="g.resource_key" class="mining-echo__panel mb-2">
+            <h3 class="mining-echo__title mb-1" style="font-size: 1.05rem">
+              {{ mineralLabel(g) }}
+              <span v-if="ownSignatures(g)[0]?.tier" class="mining-echo__tag ms-1">{{ ownSignatures(g)[0].tier }}</span>
+            </h3>
+            <p v-if="locationsFor(g).length" class="mining-echo__hint mb-2">
+              可能出現地點：
+              <span v-for="loc in locationsFor(g)" :key="loc.system + '/' + loc.location_name"
+                class="mining-echo__tag mining-echo__tag--info me-1" :title="loc.system">
+                {{ locationLabel(loc) }}
+              </span>
+            </p>
+            <template v-if="ownSignatures(g).length">
+              <div class="mining-echo__hint mb-1">一叢礦石可能有 1～10 顆，掃描器讀到的整叢訊號值＝單顆 × 顆數：</div>
+              <div v-for="own in ownSignatures(g)" :key="own.signature" class="mb-2">
+                <!-- 極少數礦物（Carinite、Janalite）自己的礦床有兩種單顆值，才另外標出來 -->
+                <div v-if="ownSignatures(g).length > 1" class="mining-echo__hint mb-1">
+                  單顆 {{ fmtInt(own.signature) }}
+                </div>
+                <div class="mining-echo__grid">
+                  <div v-for="step in signatureSteps(own.signature)" :key="step.n" class="mining-echo__cell">
+                    <div class="mining-echo__cell-mult">{{ step.n }}X</div>
+                    <div class="mining-echo__cell-label">SIGNATURE</div>
+                    <div class="mining-echo__cell-value">{{ fmtInt(step.value) }}</div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <p v-else class="mining-echo__hint mb-0">
+              資料裡沒有這種礦物單獨成礦的紀錄（只以其他礦床的成分出現），沒有它自己的訊號值可以參考。
+            </p>
           </div>
         </div>
 
-        <p class="mining-echo__footnote">
-          礦物、礦床、地點的中文名稱來自社群翻譯包，查不到就顯示英文。這是靜態的遊戲設定值參考表，不是玩家實際掃描到的即時回波。點一列展開該礦床自己的 1～10 顆訊號值——同一種礦物在不同礦床/尺寸下的數值本來就不一樣，這裡不會幫你合成一個「代表值」。
-        </p>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
   /** 帶身分的 fetch（後台用 apiFetch、玩家頁用 playerFetch），回傳 Response 或 null */
@@ -294,11 +265,6 @@ function depositLabel(d) {
 function locationLabel(loc) {
   if (loc.location_name_zh) return `${loc.location_name_zh}（${loc.location_name}）`
   return loc.location_name
-}
-
-function fmtPct(v) {
-  if (v === null || v === undefined) return '—'
-  return `${Math.round(v * 100)}%`
 }
 
 function fmtRange(min, max) {
@@ -402,15 +368,17 @@ const mineralGroups = computed(() => {
     byKey.get(p.resource_key).deposits.push(p)
   }
   return Array.from(byKey.values())
+    // 資料集裡還沒補名字的佔位項目（"<= PLACEHOLDER =>"）不列出
+    .filter(g => !(g.resource_name || '').includes('PLACEHOLDER'))
     .sort((a, b) => mineralLabel(a).localeCompare(mineralLabel(b), 'zh-Hant'))
 })
 
-// 不輸入就顯示全部（可瀏覽），輸入了才用子字串篩選——一律是「包含」不是
-// 「完全相等」，邊打邊即時篩選（Vue 的 computed 本來就會跟著 v-model 重算，
-// 不用另外做防抖或按鈕觸發）。
+// 沒輸入就不列（畫面上什麼都不顯示），輸入了才用子字串篩選——一律是「包含」
+// 不是「完全相等」，邊打邊即時篩選（Vue 的 computed 本來就會跟著 v-model
+// 重算，不用另外做防抖或按鈕觸發）。
 const filteredMineralGroups = computed(() => {
   const raw = mineralQuery.value.trim()
-  if (!raw) return mineralGroups.value
+  if (!raw) return []
   const q = raw.toLowerCase()
   return mineralGroups.value.filter(g =>
     (g.resource_name || '').toLowerCase().includes(q) ||
@@ -418,35 +386,26 @@ const filteredMineralGroups = computed(() => {
     (g.resource_key || '').toLowerCase().includes(q))
 })
 
-// 同一種礦床常常在資料集裡有好幾筆幾乎一樣的紀錄（不同大小/版本的礦床
-// 模板，但成分比例、機率、單顆訊號值完全相同）——依「礦床名稱＋Tier＋
-// 比例區間＋機率＋單顆訊號值」去重，值真的不同的變體還是會各自留一筆。
+// 每種礦物「自己那個礦床」的單顆訊號值 —— 礦床名稱跟礦物名稱相同的那一筆
+// （例如「Hephaestanite (R)」礦床，成分 100% 是 Hephaestanite），也就是
+// 掃描器掃到一顆純的這種礦石時讀到的值。其他礦床（Shale／Gneiss／小行星…）
+// 的訊號值是那個礦床本身的屬性，跟「查的是哪種礦物」無關，列出來只會讓
+// 畫面變成一長串幾乎都是 4000 的數字，所以不顯示。
 //
-// 注意：這裡只影響表格顯示，「可能出現地點」的 locationsFor() 還是吃
-// 原始、沒去重的 group.deposits，不然去重會連帶漏掉某些變體才出現的地點。
-function dedupedDeposits(group) {
-  const seen = new Map()
+// 同名礦床常有好幾筆（成分比例區間不同的變體），但單顆訊號值相同，依值去重；
+// 真的有兩種值的（Carinite、Janalite：3000／4000）兩組都列。
+function ownSignatures(group) {
+  const name = (group.resource_name || '').trim().toLowerCase()
+  const bySig = new Map()
   for (const dep of group.deposits) {
-    const key = [
-      group.resource_key, dep.deposit_name, dep.tier,
-      dep.min_percentage, dep.max_percentage, dep.probability, dep.signature,
-    ].join('|')
-    if (!seen.has(key)) seen.set(key, { ...dep, _rowKey: key })
+    if (!dep.signature) continue
+    if ((dep.deposit_name || '').trim().toLowerCase() !== name) continue
+    if (!bySig.has(dep.signature)) bySig.set(dep.signature, { signature: dep.signature, tier: dep.tier })
   }
-  return Array.from(seen.values())
+  return Array.from(bySig.values()).sort((x, y) => x.signature - y.signature)
 }
 
-// 哪些礦床列被展開了（顯示 1~10 顆的整叢訊號值）。reactive(Set) 在 Vue 3
-// 是響應式的，add/delete/has 都會正確觸發重新渲染。
-const expandedDeposits = reactive(new Set())
-
-function toggleDepositExpand(key) {
-  if (expandedDeposits.has(key)) expandedDeposits.delete(key)
-  else expandedDeposits.add(key)
-}
-
-/** 單顆基準值 × 1~10 顆——給「點開礦床列」用，這是那一列自己真實的值，
- *  不是合成/統計出來的。 */
+/** 單顆訊號值 × 1~10 顆（整叢掃描值），用的是礦物自己礦床的真實值，不是合成的。 */
 function signatureSteps(signature) {
   return Array.from({ length: 10 }, (_, i) => ({ n: i + 1, value: signature * (i + 1) }))
 }
