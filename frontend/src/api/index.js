@@ -158,6 +158,18 @@ export const miningApi = {
   listSystems:   () => apiFetch('/mining/systems'),
 }
 
+// ── 艦船主檔 API（遊戲資料，唯讀）───────────────────────────────
+// 對應 app/item/view.py 的 /item/vehicles*，由 tasks/scdata_sync.py 從
+// Star Citizen Wiki API 同步進 vehicle_master。篩選/排序/分頁比照藍圖
+// 登記管理那批全站搜尋優化計畫的做法。
+export const vehicleApi = {
+  list:          (params) => apiFetch(`/item/vehicles${qs(params)}`),
+  careers:       () => apiFetch('/item/vehicles/careers'),
+  roles:         () => apiFetch('/item/vehicles/roles'),
+  manufacturers: () => apiFetch('/item/vehicles/manufacturers'),
+  sizeClasses:   () => apiFetch('/item/vehicles/size-classes'),
+}
+
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────
 // 對應 app/item/view.py 的 /item/sync-status、/item/sync、/item/sync-schedule
 export const itemApi = {

@@ -56,6 +56,9 @@
         <RouterLink class="nav-link" to="/mining" @click="sidebarOpen = false">
           <i class="bi bi-gem"></i>礦物
         </RouterLink>
+        <RouterLink class="nav-link" to="/vehicles" @click="sidebarOpen = false">
+          <i class="bi bi-rocket-takeoff"></i>艦船
+        </RouterLink>
 
         <div class="nav-section">管理</div>
         <RouterLink v-if="auth.isAdmin"

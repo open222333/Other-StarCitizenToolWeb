@@ -132,6 +132,12 @@ const router = createRouter({
           name: 'mining',
           component: () => import('@/views/MiningView.vue'),
         },
+        {
+          // 艦船基本資料（唯讀，遊戲主檔，見 VehicleListView.vue 檔頭）
+          path: 'vehicles',
+          name: 'vehicles',
+          component: () => import('@/views/VehicleListView.vue'),
+        },
       ],
     },
   ],

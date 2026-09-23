@@ -162,35 +162,117 @@ def get_item_prices(item_id):
 @jwt_required()
 def list_vehicles():
     """載具主檔列表（含 SCU 貨艙容量）。
+
+    篩選/排序/分頁比照全站搜尋優化計畫（藍圖登記管理／操作紀錄那批）的
+    做法：多選用 getlist（可重複帶同一個 key），排序欄位在 model 端有
+    白名單擋著。
     ---
     tags: [Item]
     security:
       - Bearer: []
     parameters:
-      - {in: query, name: q,      type: string,  description: "名稱前綴搜尋"}
-      - {in: query, name: limit,  type: integer, default: 50}
-      - {in: query, name: offset, type: integer, default: 0}
+      - {in: query, name: q,                 type: string, description: "名稱前綴搜尋"}
+      - {in: query, name: career,             type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/careers）"}
+      - {in: query, name: role,               type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/roles）"}
+      - {in: query, name: manufacturer_code,  type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/manufacturers）"}
+      - {in: query, name: size_class,         type: array, items: {type: integer}, description: "可重複帶多個（見 /item/vehicles/size-classes）"}
+      - {in: query, name: sort_by,            type: string, description: "name（預設）／crew_max／cargo_capacity_scu／mass_hull／msrp／size_class"}
+      - {in: query, name: sort_dir,           type: string, description: "asc（預設）／desc"}
+      - {in: query, name: limit,              type: integer, default: 50}
+      - {in: query, name: offset,             type: integer, default: 0}
     responses:
       200:
         description: 成功
     """
     limit, offset = _paging()
     query = (request.args.get('q') or '').strip()
+    careers = request.args.getlist('career')
+    roles = request.args.getlist('role')
+    manufacturer_codes = request.args.getlist('manufacturer_code')
+    size_classes = request.args.getlist('size_class')
+    sort_by = request.args.get('sort_by', 'name')
+    sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
 
-    if query:
+    has_filters = bool(careers or roles or manufacturer_codes or size_classes)
+
+    if query and not has_filters:
         # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
         #    照舊回 len(rows) 的話 total == limit，前端算出「只有一頁」，
         #    使用者永遠翻不到第二頁（而且不會有任何錯誤徵兆）。
         #    回 None 讓前端知道「總數未知」，分頁改用「本頁滿了就還有下一頁」。
+        #    帶了其他篩選條件時 search() 沒辦法一起套用，改走 list_all()。
         rows = VehicleMaster.search(query, limit=limit)
         total = None
     else:
-        rows, total = VehicleMaster.list_all(limit=limit, offset=offset)
+        rows, total = VehicleMaster.list_all(
+            limit=limit, offset=offset, careers=careers, roles=roles,
+            manufacturer_codes=manufacturer_codes, size_classes=size_classes,
+            query=query, sort_by=sort_by, sort_dir=sort_dir)
 
     for row in rows:
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset})
+
+
+@app_item.route('/vehicles/careers', methods=['GET'])
+@jwt_required()
+def list_vehicle_careers():
+    """所有載具 career 值（後台篩選下拉用）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': VehicleMaster.careers()})
+
+
+@app_item.route('/vehicles/roles', methods=['GET'])
+@jwt_required()
+def list_vehicle_roles():
+    """所有載具 role 值（後台篩選下拉用）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': VehicleMaster.roles()})
+
+
+@app_item.route('/vehicles/manufacturers', methods=['GET'])
+@jwt_required()
+def list_vehicle_manufacturers():
+    """所有載具製造商（代碼＋全名，後台篩選下拉用）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': VehicleMaster.manufacturers()})
+
+
+@app_item.route('/vehicles/size-classes', methods=['GET'])
+@jwt_required()
+def list_vehicle_size_classes():
+    """所有載具尺寸等級（後台篩選下拉用）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': VehicleMaster.size_classes()})
 
 
 @app_item.route('/commodities', methods=['GET'])

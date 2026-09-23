@@ -258,17 +258,88 @@ class VehicleMaster(_MasterBase):
     COLLECTION = 'vehicle_master'
     PROJECTION = {
         'name': 1, 'class_name': 1, 'cargo_capacity_scu': 1,
-        'vehicle_inventory_uscu': 1, 'manufacturer_code': 1, 'size_class': 1,
-        'career': 1, 'role': 1, 'crew_max': 1, 'is_current': 1,
+        'vehicle_inventory_uscu': 1, 'manufacturer_code': 1, 'manufacturer_name': 1,
+        'size_class': 1, 'career': 1, 'role': 1, 'crew_min': 1, 'crew_max': 1,
+        'mass_hull': 1, 'msrp': 1, 'is_current': 1,
     }
 
+    # 管理後台艦船列表可點擊排序的欄位（全站搜尋優化計畫，比照
+    # BlueprintMaster.SORTABLE_FIELDS 的白名單作法，避免把任意欄位名稱
+    # 直接丟給 $sort）。
+    SORTABLE_FIELDS = {'name', 'crew_max', 'cargo_capacity_scu', 'mass_hull', 'msrp', 'size_class'}
+
     @classmethod
-    def list_all(cls, limit: int = 50, offset: int = 0) -> tuple:
-        filt = {'is_current': True}
+    def _build_query(cls, *, careers=None, roles=None, manufacturer_codes=None,
+                      size_classes=None, query: str = '') -> dict:
+        filt: dict = {'is_current': True}
+        if careers:
+            filt['career'] = {'$in': list(careers)}
+        if roles:
+            filt['role'] = {'$in': list(roles)}
+        if manufacturer_codes:
+            filt['manufacturer_code'] = {'$in': list(manufacturer_codes)}
+        if size_classes:
+            # size_class 存的是數字，query string 進來一律是字串，這裡轉型
+            # 失敗的值直接丟掉（不讓整個查詢因為一個壞值而 500）。
+            sizes = []
+            for s in size_classes:
+                try:
+                    sizes.append(int(s))
+                except (TypeError, ValueError):
+                    continue
+            if sizes:
+                filt['size_class'] = {'$in': sizes}
+        keyword = (query or '').strip()
+        if keyword:
+            pattern = escape_regex(keyword)
+            filt['name_lower'] = {'$regex': pattern.lower()}
+        return filt
+
+    @classmethod
+    def list_all(cls, limit: int = 50, offset: int = 0, careers=None, roles=None,
+                 manufacturer_codes=None, size_classes=None, query: str = '',
+                 sort_by: str = 'name', sort_dir: int = 1) -> tuple:
+        filt = cls._build_query(careers=careers, roles=roles,
+                                 manufacturer_codes=manufacturer_codes,
+                                 size_classes=size_classes, query=query)
+        sort_field = sort_by if sort_by in cls.SORTABLE_FIELDS else 'name'
         total = cls._col().count_documents(filt)
         rows = list(cls._col().find(filt, cls.PROJECTION)
-                    .sort('name', ASCENDING).skip(offset).limit(limit))
+                    .sort(sort_field, sort_dir).skip(offset).limit(limit))
         return rows, total
+
+    @classmethod
+    def count(cls, careers=None, roles=None, manufacturer_codes=None,
+              size_classes=None, query: str = '') -> int:
+        filt = cls._build_query(careers=careers, roles=roles,
+                                 manufacturer_codes=manufacturer_codes,
+                                 size_classes=size_classes, query=query)
+        return cls._col().count_documents(filt)
+
+    @classmethod
+    def careers(cls) -> list:
+        return sorted(v for v in cls._col().distinct('career', {'is_current': True}) if v)
+
+    @classmethod
+    def roles(cls) -> list:
+        return sorted(v for v in cls._col().distinct('role', {'is_current': True}) if v)
+
+    @classmethod
+    def size_classes(cls) -> list:
+        return sorted(v for v in cls._col().distinct('size_class', {'is_current': True})
+                      if v is not None)
+
+    @classmethod
+    def manufacturers(cls) -> list:
+        """{value: 廠商代碼, label: 廠商全名} —— 篩選用代碼，畫面顯示全名。"""
+        pipeline = [
+            {'$match': {'is_current': True, 'manufacturer_code': {'$ne': None}}},
+            {'$group': {'_id': '$manufacturer_code',
+                        'name': {'$first': '$manufacturer_name'}}},
+            {'$sort': {'_id': 1}},
+        ]
+        return [{'value': row['_id'], 'label': row.get('name') or row['_id']}
+                for row in cls._col().aggregate(pipeline)]
 
 
 class CommodityMaster(_MasterBase):

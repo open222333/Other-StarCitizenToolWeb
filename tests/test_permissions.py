@@ -232,6 +232,11 @@ UNGUARDED_ALLOWLIST = {
     'app_item.get_item',
     'app_item.get_item_prices',
     'app_item.list_vehicles',
+    # 艦船篩選下拉的 distinct 值清單，跟 list_vehicles 同一類唯讀公開資料
+    'app_item.list_vehicle_careers',
+    'app_item.list_vehicle_roles',
+    'app_item.list_vehicle_manufacturers',
+    'app_item.list_vehicle_size_classes',
     'app_item.list_commodities',
     # 製造藍圖主檔（同樣是公開遊戲資料，玩家端的藍圖自動完成要用）
     'app_blueprint.list_master',
