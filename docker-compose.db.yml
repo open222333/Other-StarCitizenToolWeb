@@ -18,6 +18,12 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
 
   # ⚠️ mysql 預設不啟動 —— 全專案沒有任何程式 import src.mysql（已 grep 確認），
   #    它是從 Flask 模板繼承下來的服務。跑一個沒人用、又帶著範本密碼
@@ -56,6 +62,12 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+        reservations:
+          memory: 192m
 
   redis:
     image: redis:7-alpine
@@ -74,3 +86,9 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+        reservations:
+          memory: 32m

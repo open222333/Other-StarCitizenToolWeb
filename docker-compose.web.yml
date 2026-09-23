@@ -7,8 +7,12 @@ services:
       dockerfile: docker/Dockerfile.web
     image: sc-tool-web:latest
     hostname: flask-api-web
+    # 預設只綁 127.0.0.1——理由同 docker-compose.db.yml 的 DB_BIND_HOST：
+    # Docker 的 port 發佈會直接寫 iptables、繞過 ufw，寫死 0.0.0.0 等於
+    # 只要主機有公網 IP 就對外開放。要繞過前面的 nginx/反向代理直接對外
+    # 才需要改成 0.0.0.0，一般透過主機 nginx 反代時不需要。
     ports:
-      - "${WEB_PORT:-8090}:80"
+      - "${WEB_BIND_HOST:-127.0.0.1}:${WEB_PORT:-8090}:80"
     depends_on:
       api:
         condition: service_healthy
@@ -19,3 +23,7 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64m
