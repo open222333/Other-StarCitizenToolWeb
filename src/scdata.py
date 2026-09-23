@@ -138,51 +138,71 @@ WIKI_QUERY_EXTRA: dict = {
     'blueprints': {'include': 'ingredients,output,dismantle_returns'},
 }
 
+# wiki_rows() 的絕對安全網：萬一 meta.current_page 卡住不前進，最多跑這麼多
+# 頁就強制停止。目前最大的資源（items）約 124 頁，留了充分餘裕。獨立成模組
+# 常數是為了讓測試能 monkeypatch 成一個小數字，不用真的跑 500 輪。
+WIKI_PAGINATION_MAX_PAGES = 500
+
 
 def wiki_rows(client: httpx.Client, resource: str) -> Iterator[dict]:
     """走訪 Wiki API 分頁（Laravel JSON:API 風格 page[size] / page[number]）。
 
-    直接跟著 links.next 走，不自己算頁數 —— 總筆數會在同步途中變動。
+    自己算下一頁的 page[number]，**不**跟著 `links.next` 走。
 
-    ⚠️ 只信任 links.next 也有代價：blueprints 這種帶 include 的大分頁，實測
-    遇過上游回的 links.next 指回「剛剛已經抓過的那個 URL」（simplePaginate
-    型態的分頁在 total 邊界附近本來就容易出這種問題，不是我們自己重複組出
-    page[number]，但效果一樣 —— 迴圈會卡在同一頁，永遠抓不完，整輪同步
-    卡死不會逾時也不會報錯）。所以額外記錄已經拿過的 URL，重複就視為分頁
-    結束並記一筆錯誤，而不是照著上游的指示一直繞下去。
+    ⚠️ 這是踩過真的很隱蔽的上游 bug 之後才改的：blueprints 這種帶 include
+    的大分頁，實測到從某一頁開始（目前觀察是第 9 頁），上游回應的
+    `links`（不只 next，連 first/prev/1/2/...這些分頁按鈕連結全部）會把
+    「這次請求本身用的 page[number]」跟「目標頁碼」兩個 query key 一起
+    留在 URL 裡，變成 `...page[number]=9&page[size]=50&...&page[number]=10`
+    這種帶重複 key 的畸形連結。乍看只是連結長得醜，但實測直接拿這個畸形
+    URL 去打，上游會用**第一個** page[number]（也就是舊頁碼 9），回傳的
+    還是第 9 頁的資料，不是第 10 頁——而且拿它自己回的 links.next 再打
+    一次，會拿到一模一樣的畸形 URL，形成真正的無窮迴圈（不逾時也不報錯，
+    整輪同步卡死）。乾淨地用單一 `page[number]=10` 直接打則能正確拿到
+    第 10 頁，證實問題出在上游「產生分頁連結」的邏輯，不是頁碼本身失效。
+
+    改法：完全不解析上游的 links，自己用 `meta.current_page + 1` 組下一頁
+    的乾淨請求（跟第一次請求用同一份 base_params，只換 page[number]）。
+    `meta.current_page`／`meta.last_page` 這兩個純數字欄位是準的（上游只有
+    「產生連結」那段邏輯有 bug，回報目前在第幾頁是對的），拿頁碼自己組
+    URL 就完全避開畸形連結，不需要再靠「重複 URL 判斷迴圈」這種被動防禦。
+
+    仍保留一個絕對安全網（WIKI_PAGINATION_MAX_PAGES）：萬一 meta 本身也不
+    可信、current_page 卡住不動，最多跑這麼多頁就強制停止，不會真的無窮
+    迴圈。
     """
-    url = f'{SCDATA_WIKI_API_BASE}/{resource}'
-    params = {
+    base_params = {
         'page[size]': SCDATA_PAGE_SIZES.get(resource, 100),
-        'page[number]': 1,
         **WIKI_QUERY_EXTRA.get(resource, {}),
     }
+    url = f'{SCDATA_WIKI_API_BASE}/{resource}'
 
-    seen_urls: set = set()
-    while url:
-        if url in seen_urls:
-            logger.error(
-                'scdata: %s 分頁 links.next 指回已抓過的 URL，判定分頁迴圈，'
-                '停止並保留已抓到的 %s',
-                resource, url)
-            break
-        seen_urls.add(url)
-
-        payload = get_json(client, url, params)
-        params = None  # links.next 已含查詢字串
+    page = 1
+    for _ in range(WIKI_PAGINATION_MAX_PAGES):
+        payload = get_json(client, url, {**base_params, 'page[number]': page})
 
         rows = payload.get('data') or []
         meta = payload.get('meta') or {}
+        current_page = meta.get('current_page', page)
+        last_page = meta.get('last_page', current_page)
         logger.info('scdata: %s 第 %s/%s 頁 (%d 筆, 共 %s)',
-                    resource, meta.get('current_page', '?'), meta.get('last_page', '?'),
-                    len(rows), meta.get('total', '?'))
+                    resource, current_page, last_page, len(rows), meta.get('total', '?'))
 
         for row in rows:
             yield row
 
-        url = (payload.get('links') or {}).get('next')
-        if url:
-            time.sleep(SCDATA_REQUEST_DELAY)
+        if not rows or current_page >= last_page:
+            return
+
+        # 用回報的 current_page（而不是自己的 page 計數器）算下一頁，
+        # 上游如果因為快取或其他原因把某一頁重複回給我們，至少不會因為
+        # 「頁碼一直往前跳」而卡死——跳號也能正確接續下一頁。
+        page = current_page + 1
+        time.sleep(SCDATA_REQUEST_DELAY)
+    else:
+        logger.error(
+            'scdata: %s 分頁超過 %d 頁仍未結束，判定 meta 不可信，強制停止',
+            resource, WIKI_PAGINATION_MAX_PAGES)
 
 
 def uex_rows(client: httpx.Client, resource: str) -> list:

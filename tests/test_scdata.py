@@ -123,30 +123,29 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    """模擬 3 頁分頁，記錄每次請求的 URL 與 params。"""
+    """模擬分頁：每次請求都打同一個 URL，靠 params 裡的 page[number] 決定
+    回傳第幾頁的資料——跟新版 wiki_rows() 的實際行為一致（不再解析
+    links，完全靠自己算頁碼 + 上游回報的 meta.current_page 前進）。
+    """
 
     BASE = 'https://api.star-citizen.wiki/api/items'
 
-    def __init__(self):
-        self.pages = {
-            self.BASE: {'data': [{'uuid': 'a'}],
-                        'links': {'next': self.BASE + '?page=2'},
-                        'meta': {'current_page': 1, 'last_page': 3, 'total': 3}},
-            self.BASE + '?page=2': {'data': [{'uuid': 'b'}],
-                                    'links': {'next': self.BASE + '?page=3'},
-                                    'meta': {'current_page': 2, 'last_page': 3, 'total': 3}},
-            self.BASE + '?page=3': {'data': [{'uuid': 'c'}],
-                                    'links': {'next': None},
-                                    'meta': {'current_page': 3, 'last_page': 3, 'total': 3}},
+    def __init__(self, pages=None):
+        # {page_number: {'data': [...], 'meta': {...}}}
+        self.pages = pages or {
+            1: {'data': [{'uuid': 'a'}], 'meta': {'current_page': 1, 'last_page': 3, 'total': 3}},
+            2: {'data': [{'uuid': 'b'}], 'meta': {'current_page': 2, 'last_page': 3, 'total': 3}},
+            3: {'data': [{'uuid': 'c'}], 'meta': {'current_page': 3, 'last_page': 3, 'total': 3}},
         }
         self.calls = []
 
     def get(self, url, params=None):
-        self.calls.append((url, params))
-        return _FakeResponse(self.pages[url])
+        self.calls.append((url, dict(params or {})))
+        page = (params or {}).get('page[number]', 1)
+        return _FakeResponse(self.pages[page])
 
 
-def test_pagination_follows_links_next(monkeypatch):
+def test_pagination_walks_pages_via_meta_current_page(monkeypatch):
     monkeypatch.setattr(scdata, 'SCDATA_REQUEST_DELAY', 0)
     client = _FakeClient()
 
@@ -154,30 +153,64 @@ def test_pagination_follows_links_next(monkeypatch):
 
     assert [r['uuid'] for r in rows] == ['a', 'b', 'c']
     assert len(client.calls) == 3
-    # 第一次請求帶 page[size]，之後跟著 links.next 就不再重複帶
-    assert client.calls[0][1] == {
-        'page[size]': scdata.SCDATA_PAGE_SIZES['items'], 'page[number]': 1}
-    assert client.calls[1][1] is None
+    # 每次都是同一個 URL，用乾淨的 page[number] 換頁，不解析/不依賴 links
+    assert {url for url, _ in client.calls} == {client.BASE}
+    assert [params['page[number]'] for _, params in client.calls] == [1, 2, 3]
+    assert client.calls[0][1]['page[size]'] == scdata.SCDATA_PAGE_SIZES['items']
 
 
-def test_pagination_stops_on_repeated_next_link(monkeypatch, caplog):
-    """links.next 指回已經抓過的 URL（upstream 分頁在 total 邊界附近的已知問題，
-    blueprints 這種帶 include 的大分頁實測遇過）不能造成無窮迴圈 —— 整輪同步
-    會卡死不逾時也不報錯，比起直接失敗更難發現。偵測到重複 URL 就停止分頁，
-    保留已經抓到的資料。"""
+def test_pagination_ignores_upstream_duplicate_key_link_bug(monkeypatch):
+    """實測踩到的真實上游 bug：blueprints 這種帶 include 的大分頁，從某頁
+    開始上游回應的 links（不只 next，所有分頁連結）會把「這次請求用的
+    page[number]」跟「目標頁碼」一起留在 URL 裡，變成帶重複 key 的畸形
+    連結；照著打，上游用第一個 key（舊頁碼），回傳的還是同一頁，永遠
+    前進不了，形成真正的無窮迴圈。
+
+    新版完全不解析 links 欄位（這裡故意塞一個會製造無窮迴圈的 links.next
+    進假資料，藉此驗證它真的被忽略），只靠 meta.current_page 自己算下一頁，
+    天生不會被這個上游 bug 影響。
+    """
     monkeypatch.setattr(scdata, 'SCDATA_REQUEST_DELAY', 0)
-    client = _FakeClient()
-    # 把第 2 頁的 links.next 改成指回第 1 頁本身（模擬卡死的分頁迴圈）
-    client.pages[client.BASE + '?page=2']['links']['next'] = client.BASE
+    pages = {
+        1: {'data': [{'uuid': 'a'}], 'meta': {'current_page': 1, 'last_page': 3, 'total': 3},
+            'links': {'next': _FakeClient.BASE + '?page[number]=1&page[number]=1'}},
+        2: {'data': [{'uuid': 'b'}], 'meta': {'current_page': 2, 'last_page': 3, 'total': 3},
+            'links': {'next': _FakeClient.BASE + '?page[number]=2&page[number]=2'}},
+        3: {'data': [{'uuid': 'c'}], 'meta': {'current_page': 3, 'last_page': 3, 'total': 3},
+            'links': {'next': _FakeClient.BASE + '?page[number]=3&page[number]=3'}},
+    }
+    client = _FakeClient(pages)
 
-    with caplog.at_level('ERROR'):
-        rows = list(scdata.wiki_rows(client, 'items'))
+    rows = list(scdata.wiki_rows(client, 'items'))
 
-    # 前兩頁的資料還是要保留，不能因為偵測到迴圈就整批丟掉
-    assert [r['uuid'] for r in rows] == ['a', 'b']
-    # 沒有被迴圈卡住：只打了頁 1、頁 2，沒有再打回頁 1
-    assert len(client.calls) == 2
-    assert '分頁迴圈' in caplog.text
+    assert [r['uuid'] for r in rows] == ['a', 'b', 'c']
+    assert len(client.calls) == 3
+
+
+def test_pagination_stops_at_max_pages_when_current_page_stuck(monkeypatch):
+    """安全網：萬一 meta.current_page 真的卡住不前進（比目前實測到的上游
+    bug 更壞的情況），WIKI_PAGINATION_MAX_PAGES 要能強制停止，不會真的
+    無窮迴圈。"""
+    monkeypatch.setattr(scdata, 'SCDATA_REQUEST_DELAY', 0)
+    monkeypatch.setattr(scdata, 'WIKI_PAGINATION_MAX_PAGES', 5)
+
+    class _StuckClient:
+        BASE = 'https://api.star-citizen.wiki/api/items'
+
+        def __init__(self):
+            self.calls = []
+
+        def get(self, url, params=None):
+            self.calls.append((url, dict(params or {})))
+            # 不管要求第幾頁，永遠回報還在第 1 頁——模擬 current_page 卡死
+            return _FakeResponse({'data': [{'uuid': 'x'}],
+                                   'meta': {'current_page': 1, 'last_page': 99, 'total': 99}})
+
+    client = _StuckClient()
+    rows = list(scdata.wiki_rows(client, 'items'))
+
+    assert len(client.calls) == 5
+    assert len(rows) == 5
 
 
 def test_uex_doc_id():
