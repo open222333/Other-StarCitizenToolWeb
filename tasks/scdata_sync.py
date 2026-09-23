@@ -47,8 +47,12 @@ from src.celery_app import celery_app
 from src.mongo import get_db
 from src.models.sync_schedule import SyncSchedule
 from src.redis_client import get_redis
-from src.scdata import (BULK_SIZE, SCUNPACKED_RESOURCES, UEX_RESOURCES, WIKI_RESOURCES,
-                        ScDataError, build_client, fetch_scunpacked_rows, uex_doc_id,
+from src import SCDATA_TRANSLATION_INI_URL
+from src.models import translation as translation_model
+from src.scdata import (BULK_SIZE, SCUNPACKED_LABELS_PATH, SCUNPACKED_RESOURCES, UEX_RESOURCES,
+                        WIKI_RESOURCES, ScDataError, build_client, fetch_scunpacked_rows,
+                        fetch_translation_ini, iter_translation_entries, normalize_labels,
+                        uex_doc_id,
                         uex_rows, wiki_rows)
 
 logger = logging.getLogger(__name__)
@@ -316,7 +320,59 @@ def _sync_scunpacked_resource(client, resource: str, run_id: str, stamp: datetim
             'written': written, 'skipped': skipped, 'retired': retired}
 
 
-def _do_sync(resources=None, with_uex: bool = True, with_scunpacked: bool = True) -> dict:
+TRANSLATION_LANG = 'zh-TW'
+
+
+def _sync_translations(client, run_id: str, stamp: datetime) -> dict:
+    """同步遊戲文字翻譯到 sc_translations（全站中文化的唯一來源）。
+
+    英文（主語言）來自 scunpacked-data 的 labels.json，繁中來自社群翻譯包的
+    global.ini，兩邊 key 一樣，一個 key 一筆；翻譯包沒有的人工條目
+    （src/data/sc_translation_manual.json）一併寫入。見 src/models/translation.py。
+
+    跑在其他資源之前：物品／礦物的 name_zh 是同步當下查表寫進主檔的，
+    同一輪同步就要用到這次更新的翻譯。
+
+    保護：翻譯包或英文表任何一份下載異常變短（< 原有筆數 80%）就整個跳過，
+    不要讓「下載到半份檔案」把九成翻譯刪掉。
+    """
+    logger.info('scdata_sync: 同步翻譯（英文表 + %s）', TRANSLATION_LANG)
+    manual = translation_model.sync_manual(stamp)
+
+    before = translation_model.count(translation_model.SOURCE_GAME)
+    floor = int(before * 0.8)
+
+    # 英文表先轉成精簡的 {key: 英文} 就丟掉原始 dict，再下載翻譯包（記憶體考量，
+    # 見 normalize_labels）
+    english = normalize_labels(fetch_scunpacked_rows(client, SCUNPACKED_LABELS_PATH, expect=dict))
+    if len(english) < max(1000, floor):
+        raise ScDataError(f'translations: 英文表只有 {len(english)} 筆，低於原有 {before} 筆的 80%，跳過')
+    ini_text = fetch_translation_ini(client)
+    ini_lines = ini_text.count('\n')
+    if ini_lines < max(1000, floor):
+        raise ScDataError(f'translations: 翻譯包只有 {ini_lines} 行，低於原有 {before} 筆的 80%，跳過')
+
+    stats = translation_model.replace_source(
+        iter_translation_entries(english, ini_text, TRANSLATION_LANG),
+        translation_model.SOURCE_GAME, stamp)
+    del english, ini_text
+
+    translation_model.mark_synced(
+        run_id, stamp,
+        langs=[translation_model.LANG_EN, TRANSLATION_LANG],
+        sources={translation_model.LANG_EN: f'scunpacked-data/{SCUNPACKED_LABELS_PATH}',
+                 TRANSLATION_LANG: SCDATA_TRANSLATION_INI_URL},
+        counts={'game': stats['seen'], 'manual': manual['seen']})
+
+    logger.info('scdata_sync: 翻譯完成 條目=%d 寫入=%d 移除=%d 人工=%d',
+                stats['seen'], stats['written'], stats['retired'], manual['seen'])
+    return {'resource': 'translations', 'collection': translation_model.COLLECTION,
+            'seen': stats['seen'], 'written': stats['written'],
+            'retired': stats['retired'], 'manual': manual['seen']}
+
+
+def _do_sync(resources=None, with_uex: bool = True, with_scunpacked: bool = True,
+             with_translations: bool = True, translations_only: bool = False) -> dict:
     """同步的核心邏輯，寫入 sync_runs 並回傳摘要。
 
     刻意是純函式而不是 Celery task —— 這樣 `sync_scdata`（走 Celery 的
@@ -324,8 +380,14 @@ def _do_sync(resources=None, with_uex: bool = True, with_scunpacked: bool = True
     共用同一份邏輯。
 
     上游整體不可用時往上拋 ScDataError，由呼叫端決定重試策略。
+
+    translations_only：只同步翻譯（部署後資料庫還沒有翻譯時，心跳會自動跑一次，
+    見 check_and_run_scheduled_sync）。
     """
-    resources = list(resources or WIKI_RESOURCES.keys())
+    resources = [] if translations_only else list(resources or WIKI_RESOURCES.keys())
+    if translations_only:
+        with_uex = with_scunpacked = False
+        with_translations = True
     unknown = [r for r in resources if r not in WIKI_RESOURCES]
     if unknown:
         raise ValueError(f'未知的資源: {", ".join(unknown)}')
@@ -336,6 +398,15 @@ def _do_sync(resources=None, with_uex: bool = True, with_scunpacked: bool = True
     errors: list = []
 
     logger.info('scdata_sync: 開始 run_id=%s resources=%s', run_id, resources)
+
+    if with_translations:
+        with build_client() as tr_client:
+            try:
+                stats.append(_sync_translations(tr_client, run_id, started))
+            except Exception as err:
+                # 翻譯失敗不影響主檔同步——主檔照樣用資料庫裡上一版的翻譯
+                logger.exception('scdata_sync: 翻譯同步失敗')
+                errors.append(f'translations: {err}')
 
     with build_client() as client:
         for resource in resources:
@@ -381,6 +452,8 @@ def _do_sync(resources=None, with_uex: bool = True, with_scunpacked: bool = True
         'resources': resources,
         'with_uex': with_uex and bool(UEX_API_TOKEN),
         'with_scunpacked': with_scunpacked,
+        'with_translations': with_translations,
+        'translations_only': translations_only,
         'stats': stats,
         'errors': errors,
         'ok': not errors,
@@ -395,12 +468,14 @@ def _do_sync(resources=None, with_uex: bool = True, with_scunpacked: bool = True
 
 
 @celery_app.task(name='tasks.scdata_sync.sync_scdata', bind=True, max_retries=2)
-def sync_scdata(self, resources=None, with_uex: bool = True, with_scunpacked: bool = True):
+def sync_scdata(self, resources=None, with_uex: bool = True, with_scunpacked: bool = True,
+                with_translations: bool = True):
     """同步遊戲主檔（手動觸發用，例如後台的「立即同步」按鈕）。
 
     :param resources: 要同步的資源清單，預設全部（items / vehicles / commodities / blueprints）
     :param with_uex: 是否同步 UEX 價格（沒有 UEX_API_TOKEN 會自動跳過）
     :param with_scunpacked: 是否同步礦物回波參考表（scunpacked-data，預設開啟）
+    :param with_translations: 是否同步遊戲文字翻譯（英文表＋社群繁中化包，預設開啟）
     """
     run_id = str(uuidlib.uuid4())
     with sync_lock(run_id) as acquired:
@@ -410,7 +485,8 @@ def sync_scdata(self, resources=None, with_uex: bool = True, with_scunpacked: bo
 
         try:
             return _do_sync(resources=resources, with_uex=with_uex,
-                            with_scunpacked=with_scunpacked)
+                            with_scunpacked=with_scunpacked,
+                            with_translations=with_translations)
         except ScDataError as exc:
             # 上游整體不可用 → 退避重試，不要寫一筆假的成功紀錄。
             # 注意：這條路徑只在透過 .delay() 派送時有效
@@ -420,12 +496,17 @@ def sync_scdata(self, resources=None, with_uex: bool = True, with_scunpacked: bo
             raise self.retry(exc=exc, countdown=600)
 
 
+#: 排程到期／失敗 backoff 只看一般同步的紀錄：部署後自動補跑的「只同步翻譯」
+#: 不該把下一次全量同步往後推，也不該被當成全量同步失敗
+_SCHEDULED_RUNS = {'translations_only': {'$ne': True}}
+
+
 def _consecutive_failures(limit: int = MAX_CONSECUTIVE_FAILURES + 1) -> int:
     """從最新往回數，連續有幾次同步是失敗的。"""
     # 用 started_at 排序（src/mongo.py 的索引建在這個欄位上）。
     # 同步是互斥的，所以 started_at 的先後等於 finished_at 的先後。
     runs = get_db()['sync_runs'].find(
-        {}, {'ok': 1}, sort=[('started_at', -1)], limit=limit)
+        _SCHEDULED_RUNS, {'ok': 1}, sort=[('started_at', -1)], limit=limit)
     count = 0
     for run in runs:
         if run.get('ok'):
@@ -443,7 +524,7 @@ def _is_due() -> tuple:
     # ⚠️ 基準是「最後一次**嘗試**」而不是「最後一次成功」。
     #    只看成功紀錄的話，一旦上游有任何部分失敗（errors 非空 → ok=False），
     #    這輪就完全不算，5 分鐘後又會判定到期，變成無限重跑全量同步。
-    last = get_db()['sync_runs'].find_one({}, sort=[('started_at', -1)])
+    last = get_db()['sync_runs'].find_one(_SCHEDULED_RUNS, sort=[('started_at', -1)])
     if not last:
         return True, 'never_run'
 
@@ -465,6 +546,33 @@ def _is_due() -> tuple:
     return False, 'not_due'
 
 
+TRANSLATION_BOOTSTRAP_RETRY = timedelta(minutes=30)
+
+
+def _translations_bootstrap():
+    """資料庫沒有翻譯時先只同步翻譯；有翻譯（或 30 分鐘內剛試過）回 None。"""
+    status = translation_model.status()
+    if status.get('version'):
+        return None
+    last = status.get('bootstrap_attempt_at')
+    now = datetime.utcnow()
+    if last and now - last < TRANSLATION_BOOTSTRAP_RETRY:
+        return None
+
+    run_id = str(uuidlib.uuid4())
+    with sync_lock(run_id) as acquired:
+        if not acquired:
+            return None
+        get_db()[translation_model.META_COLLECTION].update_one(
+            {'_id': 'status'}, {'$set': {'bootstrap_attempt_at': now}}, upsert=True)
+        logger.info('check_and_run_scheduled_sync: 資料庫沒有翻譯，先同步翻譯')
+        try:
+            return _do_sync(translations_only=True)
+        except ScDataError as exc:
+            logger.error('check_and_run_scheduled_sync: 翻譯同步失敗: %s', exc)
+            return {'ok': False, 'errors': [str(exc)]}
+
+
 @celery_app.task(name='tasks.scdata_sync.check_and_run_scheduled_sync')
 def check_and_run_scheduled_sync():
     """每 5 分鐘的心跳（見 tasks/celeryconfig.py 的 check-sync-schedule）。
@@ -479,6 +587,13 @@ def check_and_run_scheduled_sync():
          因為 Celery 的 Task.retry 在直接呼叫時不會排重試，
          這裡的重試節奏由第 2 步的 backoff 負責）
     """
+    # 資料庫還沒有任何翻譯（剛部署、或 sc_translations 被清掉）時，不等排程到期，
+    # 先只同步翻譯——否則全站中文化要等下一次排程（預設一週）才會出現。
+    # 失敗的話 30 分鐘後才再試，不要每 5 分鐘打一次 GitHub。
+    bootstrap = _translations_bootstrap()
+    if bootstrap is not None:
+        return bootstrap
+
     due, reason = _is_due()
     if not due:
         logger.debug('check_and_run_scheduled_sync: 略過（%s）', reason)
@@ -503,6 +618,7 @@ def check_and_run_scheduled_sync():
                 # ——礦物回波參考表資料量小、無 token 限制，先預設一律跟著心跳同步，
                 # 之後真的要讓後台可關閉再補欄位。
                 with_scunpacked=schedule.get('with_scunpacked', True),
+                with_translations=schedule.get('with_translations', True),
             )
         except ScDataError as exc:
             # 上游整體不可用。不用 self.retry（直接呼叫時無效），

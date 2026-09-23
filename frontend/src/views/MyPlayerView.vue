@@ -506,12 +506,11 @@
             <button type="button" class="btn btn-sm btn-outline-secondary py-0"
               @click="clearFleetFilters">清除全部</button>
           </div>
-          <FieldHint text="打字或點一下選一個候選代入。都留空則列出全部人的艦隊；填了的話要同時符合才會出現。" />
           <div class="row g-2">
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="fl-name">船艦名稱</label>
               <AutocompleteField id="fl-name" v-model="flNameText"
-                :search="searchVehicleNames" :get-label="c => c.name"
+                :search="searchVehicleNames" :get-label="c => vehicleNameLabel(c.name, c.name_zh)"
                 aria-label="船艦名稱" placeholder="輸入船名…" :min-chars="1"
                 @select="c => { flSelectedVehicleId = c ? c._id : '' }" />
             </div>
@@ -539,9 +538,9 @@
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="fl-role">角色</label>
               <AutocompleteField id="fl-role" v-model="flRoleText"
-                :search="searchVehicleRolesLocal" :get-label="r => r"
+                :search="searchVehicleRolesLocal" :get-label="r => r.label"
                 aria-label="角色" placeholder="點一下看全部角色…" :min-chars="0" :debounce-ms="0"
-                @select="c => { flSelectedRole = c || '' }" />
+                @select="c => { flSelectedRole = c ? c.value : '' }" />
             </div>
             <div class="col-6 col-md-2">
               <label class="form-label small mb-1" for="fl-player-id">玩家id</label>
@@ -575,11 +574,14 @@
           </thead>
           <tbody>
             <tr v-for="group in fleetHolders" :key="group._id">
-              <td>{{ group.vehicle?.name || group.name }}</td>
+              <td>
+                {{ group.vehicle?.name || group.name }}
+                <span v-if="group.vehicle?.name_zh" class="text-muted">（{{ group.vehicle.name_zh }}）</span>
+              </td>
               <td class="small">{{ vehicleTypeLabel(group.vehicle?.vehicle_type) }}</td>
               <td class="small">{{ vehicleSizeLabel(group.vehicle?.size_class) }}</td>
               <td class="small">{{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) }}</td>
-              <td class="small">{{ group.vehicle?.role || '—' }}</td>
+              <td class="small">{{ vehicleRoleLabel(group.vehicle?.role, group.vehicle?.role_zh) }}</td>
               <td class="small text-nowrap">{{ group.holder_count }} 人 / {{ group.total_quantity }} 艘</td>
               <td class="small sf-wrap">
                 <span v-for="(h, i) in group.holders" :key="i" class="d-block">
@@ -820,12 +822,7 @@
         <button class="btn btn-sm btn-link p-0" @click="loadFleet">重新整理</button>
       </div>
       <div v-if="loadingFleet" class="text-muted small">載入中…</div>
-      <div v-else-if="!fleet.length" class="text-muted small">
-        還沒有登記任何船／載具，到
-        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="setSub('bulk')">批量登記</button>
-        勾選你擁有的。
-      </div>
-      <div v-else class="scifi-scroll">
+      <div v-else-if="fleet.length" class="scifi-scroll">
         <table class="table table-sm align-middle">
           <thead>
             <tr>
@@ -837,13 +834,14 @@
             <tr v-for="row in fleet" :key="row._id">
               <td>
                 {{ row.name }}
+                <span v-if="row.vehicle?.name_zh" class="text-muted">（{{ row.vehicle.name_zh }}）</span>
                 <span v-if="row.vehicle && row.vehicle.is_current === false"
                   class="badge bg-secondary ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
               </td>
               <td class="small">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) }}</td>
               <td class="small">{{ vehicleSizeLabel(row.vehicle?.size_class) }}</td>
               <td class="small">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) }}</td>
-              <td class="small">{{ row.vehicle?.role || '—' }}</td>
+              <td class="small">{{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) }}</td>
               <td>
                 <input type="number" min="1" :max="fleetMaxQuantity"
                   class="form-control form-control-sm" :value="row.quantity"
@@ -1024,16 +1022,15 @@ import FleetBulkRegister from '@/components/FleetBulkRegister.vue'
 import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
-import { manufacturerLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
-// 社群繁中化包（cosmo-chang-1701/sc-translation-pack）萃取出來的地點中文對照，
-// 純靜態查表，不會隨遊戲改版自動更新，見 src/sc_zh.py 的說明
-import locationNamesZh from '@/assets/sc-locations-zh.json'
+import { manufacturerLabel, vehicleNameLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
+// 地點中文：跟全站一樣查資料庫的翻譯（utils/translations.js），不在前端放對照表
+import { loadKnownLocations, loadTranslations, translate } from '@/utils/translations'
 
 const router     = useRouter()
 const playerAuth = usePlayerAuthStore()
 const scifiTheme = useScifiThemeStore()
 
-function locZh(en) { return locationNamesZh[en] || '' }
+function locZh(en) { return translate('location', en) }
 function locLabel(en) { const zh = locZh(en); return zh ? `${en}（${zh}）` : en }
 
 /** 持有者顯示成「暱稱（遊戲ID）」。
@@ -1350,17 +1347,16 @@ function logout() {
 
 // ── 地點清單（給新增物品的地點下拉選單用） ─────────────────────
 // 來源有兩個：資料庫裡已經用過的地點（/inventory/locations），加上
-// 星際公民官方地名中文對照表裡已知的地點（即使還沒有人登記過庫存也能選）。
-const knownLocations = Object.keys(locationNamesZh).sort()
-const locations = ref([...knownLocations])
+// 遊戲已知的地點名稱（翻譯表裡的星系／星球／降落點…，即使還沒有人登記過庫存也能選）。
+const locations = ref([])
 async function loadLocations() {
-  const res = await playerAuth.playerFetch('/inventory/locations')
-  if (!res) return
-  const data = await res.json().catch(() => null)
-  if (res.ok && data?.success) {
-    const used = data.data || []
-    locations.value = [...new Set([...used, ...knownLocations])].sort()
-  }
+  const [res, known] = await Promise.all([
+    playerAuth.playerFetch('/inventory/locations'),
+    loadKnownLocations(),
+  ])
+  const data = res ? await res.json().catch(() => null) : null
+  const used = (res?.ok && data?.success) ? (data.data || []) : []
+  locations.value = [...new Set([...used, ...known])].sort()
 }
 
 // ── 「查詢」頁分頁篩選欄位要用的類型清單（各自進分頁時才載，見 loadForTab）──
@@ -2225,7 +2221,7 @@ function searchManufacturersLocal(q) {
   return localFilter(vehicleFacets.value.manufacturers, q, m => `${m.label || ''} ${m.value || ''}`)
 }
 function searchVehicleRolesLocal(q) {
-  return localFilter(vehicleFacets.value.roles, q, r => r)
+  return localFilter(vehicleFacets.value.roles, q, r => `${r.label} ${r.value}`)
 }
 
 // 玩家id／玩家暱稱共用 flPlayerScid，理由同「持有藍圖」的 onBpPlayerIdSelect
@@ -2246,6 +2242,17 @@ function clearFleetFilters() {
   flRoleText.value = '';  flSelectedRole.value = ''
   flPlayerIdText.value = ''; flPlayerNicknameText.value = ''; flPlayerScid.value = ''
 }
+
+// 畫面上會出現的地點都查一次翻譯（地點清單、個人庫存、異動紀錄、查詢結果）；
+// 查過的有快取，不會重複打 API
+watch([locations, myInventory, history, whoRows], () => {
+  loadTranslations('location', [
+    ...locations.value,
+    ...myInventory.value.map(r => r.location),
+    ...history.value.map(r => r.location),
+    ...whoRows.value.map(r => r.location),
+  ])
+})
 
 onMounted(() => {
   scifiTheme.apply()      // 套用這位玩家自己存的配色（localStorage）

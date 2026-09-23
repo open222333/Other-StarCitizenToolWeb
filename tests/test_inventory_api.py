@@ -462,13 +462,10 @@ def test_search_excludes_zero_quantity(client, auth_headers, seed_search):
     assert body['data'] == []
 
 
-def test_search_by_location_chinese_name(client, auth_headers, seed_search):
-    """地點的中文對照表在程式裡不在 DB，所以中文搜尋要靠 view 層比對。"""
-    from src.sc_zh import location_name_zh
-    zh = location_name_zh('Lorville')
-    if not zh:
-        pytest.skip('對照表沒有 Lorville 的中文名')
-    body = _search(client, auth_headers, zh)
+def test_search_by_location_chinese_name(client, auth_headers, seed_search, seed_translations):
+    """地點中文存在 sc_translations、不在庫存資料上，所以中文搜尋要靠 view 層比對。"""
+    seed_translations({'Stanton1_Lorville': ('Lorville', '羅威爾')})
+    body = _search(client, auth_headers, '羅威爾')
     assert {r['location'] for r in body['data']} == {'Lorville'}
 
 

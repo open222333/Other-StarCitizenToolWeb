@@ -118,11 +118,12 @@
                 <tr v-for="v in vehicles" :key="v._id">
                   <td class="ps-3">
                     <span class="fw-semibold">{{ v.name }}</span>
+                    <span v-if="v.name_zh" class="ms-1">（{{ v.name_zh }}）</span>
                     <span v-if="v.class_name" class="small text-muted ms-1">{{ v.class_name }}</span>
                   </td>
                   <td class="small">{{ v.manufacturer_name || v.manufacturer_code || '—' }}</td>
                   <td class="small">{{ v.career || '—' }}</td>
-                  <td class="small">{{ v.role || '—' }}</td>
+                  <td class="small">{{ v.role_zh ? `${v.role_zh}（${v.role}）` : (v.role || '—') }}</td>
                   <td class="text-end small">{{ v.size_class ?? '—' }}</td>
                   <td class="text-end small">{{ crewLabel(v) }}</td>
                   <td class="text-end small">{{ fmtNum(v.cargo_capacity_scu) }}</td>
@@ -251,10 +252,11 @@ async function reload(newOffset = 0) {
 onMounted(async () => {
   await reload(0)
   const [careersRes, rolesRes, manufacturersRes, sizeClassesRes] = await Promise.all([
-    vehicleApi.careers(), vehicleApi.roles(), vehicleApi.manufacturers(), vehicleApi.sizeClasses(),
+    vehicleApi.careers(), vehicleApi.facets(), vehicleApi.manufacturers(), vehicleApi.sizeClasses(),
   ])
   if (careersRes?.ok) careerOptions.value = (await careersRes.json()).data || []
-  if (rolesRes?.ok) roleOptions.value = (await rolesRes.json()).data || []
+  // 角色選項用 facets 的 [{value, label}]，label 含中文（見 VehicleMaster.role_options）
+  if (rolesRes?.ok) roleOptions.value = ((await rolesRes.json()).data || {}).roles || []
   if (manufacturersRes?.ok) manufacturerOptions.value = (await manufacturersRes.json()).data || []
   if (sizeClassesRes?.ok) {
     const sizes = (await sizeClassesRes.json()).data || []

@@ -21,8 +21,8 @@ import httpx
 
 from src import (SCDATA_BULK_SIZE, SCDATA_HTTP_TIMEOUT, SCDATA_MAX_RETRIES,
                  SCDATA_PAGE_SIZES, SCDATA_REQUEST_DELAY, SCDATA_USER_AGENT,
-                 SCDATA_SCUNPACKED_BASE, SCDATA_UEX_API_BASE, SCDATA_WIKI_API_BASE,
-                 UEX_API_TOKEN)
+                 SCDATA_SCUNPACKED_BASE, SCDATA_TRANSLATION_INI_URL, SCDATA_UEX_API_BASE,
+                 SCDATA_WIKI_API_BASE, UEX_API_TOKEN)
 from src.sc_zh import (
     item_name_zh,
     location_name_zh,
@@ -214,7 +214,132 @@ def uex_rows(client: httpx.Client, resource: str) -> list:
     return payload.get('data') or []
 
 
-def fetch_scunpacked_rows(client: httpx.Client, path: str) -> list:
+def fetch_translation_ini(client: httpx.Client, url: str = '') -> str:
+    """下載社群繁中化包的 global.ini（約 10MB 純文字），回傳解碼後的字串。
+
+    重試邏輯（429 / 5xx / 連線錯誤）同 fetch_scunpacked_rows()。檔頭有 UTF-8
+    BOM，用 utf-8-sig 解碼去掉。內容明顯不像 global.ini（太短）也當成失敗重試，
+    避免 GitHub 回一頁錯誤 HTML 就被當成「翻譯全部消失」寫進資料庫。
+    """
+    url = url or SCDATA_TRANSLATION_INI_URL
+    delay = 1.0
+    last_err = None
+
+    for attempt in range(1, SCDATA_MAX_RETRIES + 1):
+        try:
+            resp = client.get(url)
+
+            if resp.status_code == 429:
+                wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
+                last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
+                logger.warning('scdata: 翻譯包 429 rate limited, 等 %.1fs 重試 (%d/%d)',
+                               wait, attempt, SCDATA_MAX_RETRIES)
+                time.sleep(wait)
+                delay = min(delay * 2, 60)
+                continue
+
+            if resp.status_code >= 500:
+                last_err = f'HTTP {resp.status_code}'
+                logger.warning('scdata: 翻譯包 HTTP %d, 等 %.1fs 重試 (%d/%d)',
+                               resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+
+            resp.raise_for_status()
+            text = resp.content.decode('utf-8-sig')
+            if text.count('=') < 1000:
+                raise ValueError(f'內容不像 global.ini（只有 {len(text)} 字元）')
+            return text
+
+        except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as err:
+            last_err = err
+            logger.warning('scdata: 翻譯包下載失敗: %s (%d/%d)', err, attempt, SCDATA_MAX_RETRIES)
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+
+    raise ScDataError(f'翻譯包下載失敗（{url}）：{last_err}')
+
+
+#: 遊戲英文在地化表（scunpacked-data），翻譯同步的英文主語言來源
+SCUNPACKED_LABELS_PATH = 'labels.json'
+
+
+def _loc_key(raw_key) -> str:
+    """localization key 正規化：去掉 BOM 與 `,P` 之類的旗標（英文表與翻譯包都有，
+    位置一樣——約 1.3 萬筆），兩邊才對得上。"""
+    return str(raw_key).lstrip('\ufeff').split(',', 1)[0].strip()
+
+
+def iter_translation_ini(text: str):
+    """逐行解析 global.ini，yield (key, value)。值原樣保留（包含字面上的 \\n）。
+
+    自己用 str.find 逐行切，不用 splitlines()／StringIO：檔案約 10MB、9 萬行，
+    splitlines 會一次產生整份字串清單，StringIO 會再複製一份（而且是較寬的內部
+    編碼），worker 記憶體（256MB）吃不消多留一份。
+    """
+    text = text or ''
+    pos = 1 if text.startswith('\ufeff') else 0
+    size = len(text)
+    while pos < size:
+        end = text.find('\n', pos)
+        if end == -1:
+            end = size
+        line = text[pos:end].rstrip('\r')
+        pos = end + 1
+        if '=' not in line or line.lstrip().startswith(';'):
+            continue
+        key, value = line.split('=', 1)
+        key = _loc_key(key)
+        if key:
+            yield key, value
+
+
+def normalize_labels(labels: dict) -> dict:
+    """遊戲英文表 → {正規化後的 key: 英文}（去掉 BOM／`,P`，沒有英文的丟掉）。
+
+    同步時先轉好就把原始 dict 丟掉，再去下載翻譯包——兩份 10MB 級的表不要同時
+    留在 worker 記憶體裡（container 只有 256MB）。
+    """
+    english = {}
+    for raw_key, en in labels.items():
+        if isinstance(en, str) and en.strip():
+            english[_loc_key(raw_key)] = en.strip()
+    return english
+
+
+def iter_translation_entries(english: dict, ini_text: str, lang: str):
+    """遊戲英文表（normalize_labels 的結果）+ 某語言的 global.ini → yield (_id, text, None)。
+
+    ⚠️ 會邊處理邊把 english 裡用過的 key 拿掉（省下另外記一份「處理過哪些 key」
+    的集合），呼叫端傳進來的 dict 之後就不完整了，不要再拿去用。
+
+    以英文表為準（英文是主語言）。翻譯包有、英文表沒有的 key 也收，英文就用
+    翻譯包中英並列格式裡的英文（「English\\n中文」的前半）；兩邊都沒有英文的
+    不收（沒有英文就無從反查）。中英並列格式會拿掉英文部分，見
+    src/models/translation.py 的 strip_english。
+    """
+    from src.models.translation import LANG_EN, strip_english
+
+    for key, value in iter_translation_ini(ini_text):
+        en = english.pop(key, None)
+        if not en:
+            en = value.split('\\n', 1)[0].strip() if '\\n' in value else ''
+            if not en:
+                continue
+        text = {LANG_EN: en}
+        translated = strip_english(value, en)
+        if translated:
+            text[lang] = translated
+        yield key, text, None
+
+    # 剩下的是翻譯包沒有的 key：只有英文
+    while english:
+        key, en = english.popitem()
+        yield key, {LANG_EN: en}, None
+
+
+def fetch_scunpacked_rows(client: httpx.Client, path: str, expect: type = list):
     """抓 scunpacked-data 的靜態 JSON 檔（GitHub raw，單一請求、無分頁、無 token）。
 
     這批檔案的回應是「裸陣列」（`[...]`），不是 Wiki API 那種 `{"data": [...]}`
@@ -222,6 +347,7 @@ def fetch_scunpacked_rows(client: httpx.Client, path: str) -> list:
     （429 / 5xx / 連線錯誤都重試）照抄 get_json()。
 
     :param path: 相對於 SCDATA_SCUNPACKED_BASE 的檔案路徑，例如 'resources/resources.json'
+    :param expect: 預期的最外層型別；大部分檔案是陣列，labels.json（遊戲英文在地化表）是物件
     """
     url = f'{SCDATA_SCUNPACKED_BASE}/{path}'
     delay = 1.0
@@ -250,8 +376,8 @@ def fetch_scunpacked_rows(client: httpx.Client, path: str) -> list:
 
             resp.raise_for_status()
             payload = resp.json()
-            if not isinstance(payload, list):
-                raise ValueError(f'預期 JSON 陣列，收到 {type(payload).__name__}')
+            if not isinstance(payload, expect):
+                raise ValueError(f'預期 JSON {expect.__name__}，收到 {type(payload).__name__}')
             return payload
 
         # ValueError 涵蓋 json.JSONDecodeError 與上面自己拋的格式檢查——
@@ -287,8 +413,8 @@ def map_item(doc: dict) -> Optional[dict]:
         'name': name,
         # 前綴查詢（^abc）要走索引就得靠這個小寫欄位
         'name_lower': name.lower(),
-        # 社群繁中化包查表，查不到就是 None（見 src/sc_zh.py 說明來源與涵蓋範圍）
-        'name_zh': item_name_zh(name),
+        # 查 sc_translations（翻譯同步在同一輪、主檔之前跑），查不到就是 None
+        'name_zh': item_name_zh(name, doc.get('class_name') or ''),
         'description_en': desc.get('en_EN') if isinstance(desc, dict) else None,
         'type': doc.get('type'),
         'sub_type': doc.get('sub_type'),
@@ -424,7 +550,7 @@ def map_blueprint(doc: dict) -> Optional[dict]:
         'name': name,
         # 前綴查詢（^abc）要走索引就得靠這個小寫欄位（比照 map_item）
         'name_lower': name.lower(),
-        'name_zh': item_name_zh(name),
+        'name_zh': item_name_zh(name, doc.get('output_class') or ''),
         'category_uuid': doc.get('category_uuid'),
         # 對應 item_master._id
         'output_item_uuid': doc.get('output_item_uuid'),
@@ -467,11 +593,10 @@ def map_mining_deposit(doc: dict) -> Optional[dict]:
         parts.append({
             'resource_key': resource_key,
             'resource_name': part.get('Name'),
-            # 中文名稱來自翻譯包（見 src/sc_zh.py 檔頭），這裡是同步當下
-            # 的快照——sc_mining_resource_names_zh.json 改了之後，要等下一次
-            # 同步跑過才會反映到這個 collection 裡，不是即時查表。
+            # 中文名稱查 sc_translations（見 src/sc_zh.py），是同步當下的快照：
+            # 翻譯更新後要等下一次同步才會反映到這個 collection。
             # 查不到就是 None，前端退回顯示英文名。
-            'resource_name_zh': mining_resource_name_zh(resource_key),
+            'resource_name_zh': mining_resource_name_zh(resource_key, part.get('Name') or ''),
             'min_percentage': part.get('MinPercentage'),
             'max_percentage': part.get('MaxPercentage'),
             'probability': part.get('Probability'),

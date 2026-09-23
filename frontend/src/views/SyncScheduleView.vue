@@ -201,6 +201,7 @@ function resourcesLabel(run) {
   const parts = [...(run.resources || [])]
   if (run.with_uex) parts.push('UEX 價格')
   if (run.with_scunpacked) parts.push('礦物')
+  if (run.with_translations) parts.push('翻譯')
   return parts.length ? parts.join('、') : '—'
 }
 

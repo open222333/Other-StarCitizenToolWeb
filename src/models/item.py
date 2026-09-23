@@ -13,6 +13,7 @@ from typing import Optional
 from pymongo import ASCENDING
 
 from src.mongo import get_db
+from src.sc_zh import vehicle_name_zh, vehicle_role_zh
 
 
 def escape_regex(text: str) -> str:
@@ -254,6 +255,8 @@ class ItemMaster(_MasterBase):
         } for row in embedded[:limit]]
 
 
+_CJK = re.compile(r'[\u4e00-\u9fff]')
+
 #: 載具「類型」：太空船／地面載具／懸浮載具。上游沒有單一的「類型」欄位，
 #: 是從 is_spaceship／is_gravlev 兩個布林值推出來的——懸浮載具（Nox、
 #: Dragonfly、X1…）在資料裡 is_spaceship 是 false，所以先判斷 is_gravlev。
@@ -328,7 +331,10 @@ class VehicleMaster(_MasterBase):
             if sizes:
                 filt['size_class'] = {'$in': sizes}
         keyword = (query or '').strip()
-        if keyword:
+        if keyword and _CJK.search(keyword):
+            # 中文名稱沒有存在 DB，改成先查表拿到 uuid 再篩
+            filt['_id'] = {'$in': cls.ids_matching_zh(keyword)}
+        elif keyword:
             pattern = escape_regex(keyword)
             filt['name_lower'] = {'$regex': pattern.lower()}
         return filt
@@ -356,10 +362,37 @@ class VehicleMaster(_MasterBase):
 
     @staticmethod
     def with_type(rows: list) -> list:
-        """幫每筆載具補上 vehicle_type（ship／ground／gravlev）。"""
+        """幫每筆載具補上 vehicle_type（ship／ground／gravlev）與中文名稱／角色。
+
+        中文（name_zh／role_zh）是讀取時查表補上的（見 src/sc_zh.py），不存進
+        vehicle_master——翻譯表更新不用重新同步就會生效，查不到就是 None。
+        """
         for row in rows:
             row['vehicle_type'] = vehicle_type_of(row)
+            row['name_zh'] = vehicle_name_zh(row.get('class_name'), row.get('name'))
+            row['role_zh'] = vehicle_role_zh(row.get('role'))
         return rows
+
+    @classmethod
+    def ids_matching_zh(cls, query: str) -> list:
+        """中文名稱含 query 的現行載具 uuid（中文名稱不在 DB 裡，只能在這裡查表比對，
+        現行載具只有約 300 筆，整批掃一次成本可忽略）。"""
+        q = (query or '').strip()
+        if not q:
+            return []
+        rows = cls._col().find({'is_current': True}, {'class_name': 1, 'name': 1})
+        return [r['_id'] for r in rows
+                if q in (vehicle_name_zh(r.get('class_name'), r.get('name')) or '')]
+
+    @classmethod
+    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False) -> list:
+        """名稱搜尋（autocomplete 用）。打中文時改用中文名稱比對，英文照舊前綴搜尋。"""
+        if _CJK.search(query or ''):
+            filt = {'_id': {'$in': cls.ids_matching_zh(query)}}
+            if not include_retired:
+                filt['is_current'] = True
+            return list(cls._col().find(filt, cls.PROJECTION).sort('name', ASCENDING).limit(limit))
+        return super().search(query, limit=limit, include_retired=include_retired)
 
     @classmethod
     def types(cls) -> list:
@@ -369,13 +402,26 @@ class VehicleMaster(_MasterBase):
         return [{'value': k, 'label': v} for k, v in VEHICLE_TYPES.items() if k in present]
 
     @classmethod
+    def role_options(cls) -> list:
+        """角色選項 [{value: 英文, label: 顯示文字}]，有中文就顯示「中文（English）」。"""
+        options = []
+        for role in cls.roles():
+            zh = vehicle_role_zh(role)
+            options.append({'value': role, 'label': f'{zh}（{role}）' if zh else role})
+        return options
+
+    @classmethod
     def facets(cls) -> dict:
-        """篩選選單一次拿齊：類型、尺寸、廠商、角色、career（玩家頁用，省四次往返）。"""
+        """篩選選單一次拿齊：類型、尺寸、廠商、角色、career（玩家頁用，省四次往返）。
+
+        roles 是 [{value, label}]（label 含中文），跟 /item/vehicles/roles 回的
+        純字串清單不同。
+        """
         return {
             'types': cls.types(),
             'size_classes': cls.size_classes(),
             'manufacturers': cls.manufacturers(),
-            'roles': cls.roles(),
+            'roles': cls.role_options(),
             'careers': cls.careers(),
         }
 

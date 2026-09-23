@@ -285,7 +285,13 @@ MINING_LOCATION = {
 }
 
 
-def test_map_mining_deposit():
+def test_map_mining_deposit(seed_translations):
+    # 中文查 sc_translations：礦物是翻譯包條目，"Granite Deposit" 是人工條目
+    # （翻譯包沒有，標準地質學術語，見 src/data/sc_translation_manual.json）
+    seed_translations({
+        'items_commodities_aluminum_ore': ('Aluminum (Ore)', '鋁礦石'),
+        'items_commodities_gold_ore': ('Gold (Ore)', '金礦石'),
+    })
     doc = scdata.map_mining_deposit(MINING_DEPOSIT)
     assert doc['_id'] == MINING_DEPOSIT['UUID']
     assert doc['deposit_name'] == 'Granite Deposit'

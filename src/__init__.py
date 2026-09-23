@@ -78,6 +78,12 @@ SCDATA_UEX_API_BASE = config.get(
 SCDATA_SCUNPACKED_BASE = config.get(
     'SCDATA', 'SCUNPACKED_BASE',
     fallback='https://raw.githubusercontent.com/StarCitizenWiki/scunpacked-data/master').rstrip('/')
+# 社群繁中化包（cosmo-chang-1701/sc-translation-pack）的 global.ini。同步時整份寫進
+# sc_translations collection，全站中文化一律先查那裡（見 src/sc_zh.py、src/models/translation.py）。
+SCDATA_TRANSLATION_INI_URL = config.get(
+    'SCDATA', 'TRANSLATION_INI_URL',
+    fallback='https://raw.githubusercontent.com/cosmo-chang-1701/sc-translation-pack/'
+             'main/chinese_(traditional)/global.ini')
 # 每次請求間隔秒數，別把社群自費維運的 API 打爆
 SCDATA_REQUEST_DELAY = config.getfloat('SCDATA', 'REQUEST_DELAY', fallback=0.25)
 SCDATA_HTTP_TIMEOUT = config.getfloat('SCDATA', 'HTTP_TIMEOUT', fallback=60)

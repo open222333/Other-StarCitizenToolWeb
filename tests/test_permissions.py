@@ -237,6 +237,8 @@ UNGUARDED_ALLOWLIST = {
     'app_item.list_vehicle_roles',
     'app_item.list_vehicle_manufacturers',
     'app_item.list_vehicle_size_classes',
+    # 遊戲文字翻譯查詢：公開的遊戲在地化＋社群翻譯包，不需要 token（未登入頁面也要用）
+    'app_item.lookup_translations',
     'app_item.vehicle_facets',        # 上面幾支合成一次回應＋類型，玩家頁艦隊／船艦搜尋要用
     'app_item.list_commodities',
     # 製造藍圖主檔（同樣是公開遊戲資料，玩家端的藍圖自動完成要用）

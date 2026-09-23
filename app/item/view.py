@@ -14,6 +14,8 @@ from src.models.item import CommodityMaster, ItemMaster, SyncRun, VehicleMaster
 from src.models.inventory import uscu_to_scu
 from src.models.sync_schedule import SyncSchedule, SyncScheduleError
 from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, require_role
+from src.models.translation import DEFAULT_LANG
+from src.sc_zh import LOOKUPS, blueprint_type_names, known_location_names
 
 app_item = Blueprint('app_item', __name__)
 
@@ -300,6 +302,59 @@ def vehicle_facets():
     return jsonify({'success': True, 'data': VehicleMaster.facets()})
 
 
+#: /item/translations 一次最多查幾段文字、每段最長幾個字
+MAX_TRANSLATION_TEXTS = 300
+MAX_TRANSLATION_TEXT_LEN = 200
+
+
+@app_item.route('/translations', methods=['GET'])
+@limiter.limit('120 per minute')
+def lookup_translations():
+    """遊戲文字翻譯查詢（給前端用；翻譯存在 sc_translations，見 src/models/translation.py）。
+
+    公開、不需要 token：內容是公開的遊戲在地化文字與社群翻譯包，後台與玩家站
+    （還沒登入的頁面也一樣）都會用到。
+    ---
+    tags: [Item]
+    parameters:
+      - {in: query, name: domain, type: string, required: true,
+         description: "location／item／vehicle／vehicle_role／mining_resource／mining_deposit／blueprint_type"}
+      - {in: query, name: text, type: array, items: {type: string},
+         description: "要翻譯的英文（可重複帶多個）；domain=blueprint_type／location 時可省略，回傳整份清單"}
+      - {in: query, name: lang, type: string, default: zh-TW}
+    responses:
+      200:
+        description: 成功，data 是 {英文: 翻譯}，查不到的不會出現
+      400:
+        description: domain 不認得、沒帶 text、或 text 太多
+    """
+    domain = (request.args.get('domain') or '').strip()
+    lang = (request.args.get('lang') or DEFAULT_LANG).strip()
+    lookup = LOOKUPS.get(domain)
+    if lookup is None:
+        return jsonify({'success': False, 'message': f'不支援的 domain：{domain}'}), 400
+
+    texts = [t.strip() for t in request.args.getlist('text') if t and t.strip()]
+    if not texts:
+        # 兩個封閉的小清單可以不帶 text 整份拿：藍圖類型、遊戲已知地點名稱
+        #（地點回傳 {英文: 翻譯或 null}，沒有翻譯的也列出來，給地點下拉選單用）
+        if domain == 'blueprint_type':
+            return jsonify({'success': True, 'data': blueprint_type_names(lang)})
+        if domain == 'location':
+            return jsonify({'success': True, 'data': known_location_names(lang)})
+        return jsonify({'success': False, 'message': '請帶 text 參數'}), 400
+    if len(texts) > MAX_TRANSLATION_TEXTS:
+        return jsonify({'success': False,
+                        'message': f'一次最多 {MAX_TRANSLATION_TEXTS} 段文字'}), 400
+
+    data = {}
+    for text in dict.fromkeys(t[:MAX_TRANSLATION_TEXT_LEN] for t in texts):
+        value = lookup(text, lang=lang)
+        if value:
+            data[text] = value
+    return jsonify({'success': True, 'data': data})
+
+
 @app_item.route('/commodities', methods=['GET'])
 @jwt_required()
 def list_commodities():
@@ -413,6 +468,7 @@ def trigger_sync():
             resources: {type: array, items: {type: string}, description: "預設全部：items/vehicles/commodities"}
             with_uex:  {type: boolean, default: true}
             with_scunpacked: {type: boolean, default: true, description: "是否同步礦物回波參考表"}
+            with_translations: {type: boolean, default: true, description: "是否同步遊戲文字翻譯（英文表＋社群繁中化包）"}
     responses:
       202:
         description: 已排入同步佇列
@@ -435,9 +491,11 @@ def trigger_sync():
     resources = data.get('resources') or None
     with_uex = data.get('with_uex', True)
     with_scunpacked = data.get('with_scunpacked', True)
+    with_translations = data.get('with_translations', True)
 
     async_result = sync_scdata.delay(
-        resources=resources, with_uex=with_uex, with_scunpacked=with_scunpacked)
+        resources=resources, with_uex=with_uex, with_scunpacked=with_scunpacked,
+        with_translations=with_translations)
     return jsonify({'success': True, 'task_id': async_result.id,
                     'message': '已排入同步佇列，稍後可用 /item/sync-status 查看結果'}), 202
 

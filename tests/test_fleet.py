@@ -117,7 +117,7 @@ def test_facets(client, seed_vehicles):
     assert [t['value'] for t in f['types']] == ['ship', 'ground', 'gravlev']
     assert {m['value'] for m in f['manufacturers']} == {'AEGS', 'DRAK', 'TMBL', 'AOPO'}
     assert 'Competition' in f['careers']
-    assert 'Racing' in f['roles'] and 'Interceptor' in f['roles']
+    assert {'Racing', 'Interceptor'} <= {r['value'] for r in f['roles']}
 
 
 def test_ids_matching_filter_none_vs_empty(client, seed_vehicles):
@@ -299,3 +299,77 @@ def test_holders_filter_by_exact_vehicle_id(client, seeded_fleets):
     assert [g['vehicle_uuid'] for g in groups] == ['v-cutlass']
     # 跟其他條件 AND：Cutlass 不是地面載具
     assert _holders(client, seeded_fleets, vehicle_id='v-cutlass', type='ground') == []
+
+
+# ═══════════════════════════════════════════════════════
+#  載具名稱／角色中文（查 sc_translations，見 src/sc_zh.py）
+# ═══════════════════════════════════════════════════════
+
+# 真實的遊戲 key／英文／翻譯包中文（翻譯已拿掉中英並列的英文部分）
+VEHICLE_TRANSLATIONS = {
+    'vehicle_NameAEGS_Avenger_Stalker_short': ('Avenger Stalker', '復仇者 追獵'),
+    'vehicle_NameAEGS_Avenger_Stalker': ('Aegis Avenger Stalker', '聖盾 復仇者 追獵'),
+    'vehicle_class_interceptor': ('Interceptor', '截擊'),
+    'vehicle_class_heavyfighter': ('Heavy Fighter', '重型戰鬥'),
+    'vehicle_class_starterlightfreight': ('Starter / Light Freight', '新手 / 輕型貨運'),
+    'vehicle_class_heavyrefuelling': ('Heavy Refueling', '重型加油'),
+    'vehicle_class_mediumfreightgunshio': ('Medium Freight / Gun Shio', '中型貨運船 / 火砲船'),
+    'vehicle_focus_combat': ('Combat', '戰鬥'),
+}
+
+
+@pytest.fixture
+def vehicle_zh(seed_translations):
+    seed_translations(VEHICLE_TRANSLATIONS)
+
+
+def test_vehicle_zh_lookup(vehicle_zh):
+    from src.sc_zh import vehicle_name_zh, vehicle_role_zh
+    assert vehicle_name_zh('AEGS_Avenger_Stalker') == '復仇者 追獵', '優先取 _short（不含廠商名）'
+    assert vehicle_name_zh('aegs_avenger_stalker') == '復仇者 追獵', 'class_name 不分大小寫'
+    assert vehicle_name_zh('NOPE_Class', 'Avenger Stalker') == '復仇者 追獵', 'class_name 對不上時用英文名稱備援'
+    assert vehicle_name_zh('NOPE_Class', 'No Such Ship') is None
+    assert vehicle_role_zh('Heavy Fighter') == '重型戰鬥'
+    assert vehicle_role_zh('Starter / Light Freight') == '新手 / 輕型貨運'
+    assert vehicle_role_zh('Heavy Refueling') == '重型加油'
+    assert vehicle_role_zh('Combat') == '戰鬥'
+    # 上游 role 跟翻譯包 key 拼法不同（翻譯包拼錯成 gunshio），靠別名對到
+    assert vehicle_role_zh('Medium Freight / Gun Ship') == '中型貨運船 / 火砲船'
+    # 翻譯包沒有的不自己翻
+    assert vehicle_role_zh('Luxury Touring') is None
+    assert vehicle_role_zh('') is None
+
+
+def test_vehicle_zh_is_none_before_translations_are_synced(client):
+    from src.sc_zh import vehicle_name_zh
+    assert vehicle_name_zh('AEGS_Avenger_Stalker') is None
+
+
+def test_list_carries_name_and_role_zh(client, auth_headers, seed_vehicles, vehicle_zh):
+    body = client.get('/item/vehicles?type=ship&manufacturer_code=AEGS', headers=auth_headers).get_json()
+    avenger = next(r for r in body['data'] if r['_id'] == 'v-avenger')
+    assert avenger['name_zh'] == '復仇者 追獵'
+    assert avenger['role_zh'] == '截擊'
+
+
+def test_search_by_chinese_name(client, auth_headers, seed_vehicles, vehicle_zh):
+    # 只帶 q（走 search()）跟帶其他篩選（走 list_all()）兩條路徑都要能用中文找
+    body = client.get('/item/vehicles?q=復仇者', headers=auth_headers).get_json()
+    assert [r['_id'] for r in body['data']] == ['v-avenger']
+    body = client.get('/item/vehicles?q=復仇者&type=ship', headers=auth_headers).get_json()
+    assert [r['_id'] for r in body['data']] == ['v-avenger']
+    assert client.get('/item/vehicles?q=不存在的船', headers=auth_headers).get_json()['data'] == []
+
+
+def test_facets_roles_have_chinese_labels(client, seed_vehicles, vehicle_zh):
+    roles = {r['value']: r['label'] for r in VehicleMaster.facets()['roles']}
+    assert roles['Interceptor'] == '截擊（Interceptor）'
+    assert roles['Heavy Gun Ship'] == 'Heavy Gun Ship', '沒有翻譯的角色只顯示英文'
+
+
+def test_fleet_and_holders_carry_zh(client, alice, seed_vehicles, vehicle_zh):
+    _bulk(client, alice, ['v-avenger'])
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert row['vehicle']['name_zh'] == '復仇者 追獵' and row['vehicle']['role_zh'] == '截擊'
+    group = _holders(client, alice)[0]
+    assert group['vehicle']['name_zh'] == '復仇者 追獵'

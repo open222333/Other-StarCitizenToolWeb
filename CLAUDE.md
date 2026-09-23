@@ -10,6 +10,24 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
 - **資料庫**：MongoDB（使用者 / 日誌）、MySQL（可擴充）、Redis（Rate Limiting + Celery Broker）
 - **部署**：Docker multi-stage build + docker-compose（nginx + app + worker + beat + mongo + mysql + redis）
 
+## 介面文字原則（使用者要求，務必遵守）
+
+- **不要在畫面上主動加使用說明**：提示文字、FieldHint、頁尾註解、「到某處去做某事」這類引導句、
+  空狀態裡的操作指引都不要加。需要時使用者會明確要求再加。
+- 只保留必要的狀態訊息（載入中、讀取失敗、查無結果、送出結果）與欄位標籤，而且要短。
+- 程式碼裡的註解不受此限（那是給維護者看的，不是畫面文字）。
+
+## 中文化（翻譯）原則（使用者要求，務必遵守）
+
+- 全站中文化**只有一個來源**：資料庫 `sc_translations`（見 `src/models/translation.py`）。
+  英文（主語言）來自 scunpacked-data 的 `labels.json`，繁中來自社群翻譯包
+  cosmo-chang-1701/sc-translation-pack，跟著資料同步排程更新；結構以英文為主、
+  每個語言一個欄位（`text.en`、`text.zh-TW`…），之後可以加其他語言。
+- 需要中文化的地方一律先從本地資料庫查：後端用 `src/sc_zh.py` 的查詢函式（沒有合適的就在
+  那裡新增一個），前端用 `frontend/src/utils/translations.js`。**不要再另外做 JSON 對照表**。
+- 翻譯包沒有、必須人工補的條目放 `src/data/sc_translation_manual.json`（同步時寫進同一張表，
+  source=manual，不會被翻譯包覆蓋）；翻譯包有的一律以翻譯包為準。
+
 ## 目錄結構速查
 
 ```

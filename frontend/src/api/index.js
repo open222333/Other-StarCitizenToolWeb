@@ -168,6 +168,8 @@ export const vehicleApi = {
   roles:         () => apiFetch('/item/vehicles/roles'),
   manufacturers: () => apiFetch('/item/vehicles/manufacturers'),
   sizeClasses:   () => apiFetch('/item/vehicles/size-classes'),
+  // 一次拿齊篩選選項；roles 是 [{value, label}]，label 含中文
+  facets:        () => apiFetch('/item/vehicles/facets'),
 }
 
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────

@@ -48,7 +48,7 @@
             <select :id="`${uid}-role`" v-model="role" class="form-select form-select-sm"
               @change="reload(0)">
               <option value="">全部</option>
-              <option v-for="r in facets.roles" :key="r" :value="r">{{ r }}</option>
+              <option v-for="r in facets.roles" :key="r.value" :value="r.value">{{ r.label }}</option>
             </select>
           </div>
         </div>
@@ -107,17 +107,18 @@
                   <input class="form-check-input" type="checkbox"
                     :checked="selected.has(row._id)"
                     :disabled="registered.has(row._id)"
-                    :aria-label="`勾選 ${row.name}`"
+                    :aria-label="`勾選 ${row.name_zh || row.name}`"
                     @change="toggleOne(row._id, $event.target.checked)">
                 </td>
                 <td>
-                  <span class="fw-semibold">{{ row.name }}</span>
+                  <span class="fw-semibold">{{ row.name_zh || row.name }}</span>
+                  <span v-if="row.name_zh" class="small hint ms-1">{{ row.name }}</span>
                   <span v-if="registered.has(row._id)" class="badge bg-secondary ms-1">已登記</span>
                 </td>
                 <td class="small">{{ vehicleTypeLabel(row.vehicle_type) }}</td>
                 <td class="small">{{ vehicleSizeLabel(row.size_class) }}</td>
                 <td class="small">{{ manufacturerLabel(row.manufacturer_name, row.manufacturer_code) }}</td>
-                <td class="small pe-3">{{ row.role || '—' }}</td>
+                <td class="small pe-3">{{ vehicleRoleLabel(row.role, row.role_zh) }}</td>
               </tr>
             </tbody>
           </table>
@@ -168,7 +169,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { manufacturerLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
+import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
@@ -340,7 +341,7 @@ async function submit() {
 
     // 誠實回報：跳過與查不到的也要講
     const parts = [`新增 ${data.added} 款`]
-    if (data.skipped) parts.push(`跳過 ${data.skipped} 款（已登記過，要加艘數請到「我的艦隊」改數量）`)
+    if (data.skipped) parts.push(`跳過 ${data.skipped} 款（已登記過）`)
     if (data.not_found) parts.push(`${data.not_found} 款在主檔查不到`)
     flash(parts.join('，'), data.added ? 'alert-success' : 'alert-warning')
 

@@ -211,6 +211,15 @@ def ensure_indexes():
     db['blueprints'].create_index('blueprint_uuid')
     _ensure_blueprint_unique_index(db)
 
+    # ── 遊戲文字翻譯（全站中文化的唯一來源，見 src/models/translation.py）──
+    # 人工條目在這裡就先寫進去（很便宜），翻譯包本體等同步排程跑過才會有。
+    from src.models import translation as _translation
+    _translation.ensure_indexes(db)
+    try:
+        _translation.sync_manual()
+    except Exception as e:   # 人工條目寫不進去不該讓 app 起不來
+        logging.warning('[index] 寫入人工翻譯條目失敗：%s', e)
+
     # ── 艦隊名冊（玩家擁有的船／載具，見 src/models/fleet.py）──────────
     db['fleet'].create_index('player_id')
     db['fleet'].create_index('vehicle_uuid')

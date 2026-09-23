@@ -45,11 +45,13 @@ def _vehicle_summary(master: dict | None) -> dict | None:
         return None
     return {
         'name': master.get('name'),
+        'name_zh': master.get('name_zh'),
         'size_class': master.get('size_class'),
         'vehicle_type': master.get('vehicle_type'),
         'manufacturer_code': master.get('manufacturer_code'),
         'manufacturer_name': master.get('manufacturer_name'),
         'role': master.get('role'),
+        'role_zh': master.get('role_zh'),
         'career': master.get('career'),
         'is_current': master.get('is_current'),
     }

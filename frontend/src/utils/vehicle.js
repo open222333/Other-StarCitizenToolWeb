@@ -19,6 +19,22 @@ export function vehicleSizeLabel(size) {
   return size === null || size === undefined || size === '' ? '—' : `尺寸 ${size}`
 }
 
+/** 角色顯示「中文（English）」；翻譯包查不到中文就只顯示英文。
+ *  role_zh 由後端查表補上（src/sc_zh.py 的 vehicle_role_zh）。 */
+export function vehicleRoleLabel(role, roleZh) {
+  const en = (role || '').trim()
+  const zh = (roleZh || '').trim()
+  if (!en) return '—'
+  return zh ? `${zh}（${en}）` : en
+}
+
+/** 載具名稱顯示「English（中文）」，給單行文字（例如自動完成候選）用。 */
+export function vehicleNameLabel(name, nameZh) {
+  const en = (name || '').trim()
+  const zh = (nameZh || '').trim()
+  return zh ? `${en}（${zh}）` : en
+}
+
 /** 廠商顯示「全名（代碼）」，只有代碼時單獨顯示代碼。 */
 export function manufacturerLabel(name, code) {
   const n = (name || '').trim()

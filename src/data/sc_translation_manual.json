@@ -1,0 +1,141 @@
+{
+  "_comment": [
+    "翻譯包（cosmo-chang-1701/sc-translation-pack）沒收錄、人工補的翻譯。",
+    "同步翻譯時會一併寫進 sc_translations（source=manual），不會被翻譯包覆蓋；",
+    "格式：domain → id → {en, zh-TW}，en 省略時就是 id 本身。",
+    "只放翻譯包真的沒有的條目——翻譯包有的一律以翻譯包為準，不要在這裡覆蓋。"
+  ],
+  "blueprint_type": {
+    "Cargo": {
+      "zh-TW": "貨物"
+    },
+    "Char_Armor_Arms": {
+      "zh-TW": "臂甲"
+    },
+    "Char_Armor_Backpack": {
+      "zh-TW": "背包"
+    },
+    "Char_Armor_Helmet": {
+      "zh-TW": "頭盔"
+    },
+    "Char_Armor_Legs": {
+      "zh-TW": "腿甲"
+    },
+    "Char_Armor_Torso": {
+      "zh-TW": "胸甲"
+    },
+    "Char_Armor_Undersuit": {
+      "zh-TW": "內層服"
+    },
+    "Char_Clothing_Feet": {
+      "zh-TW": "鞋類"
+    },
+    "Char_Clothing_Legs": {
+      "zh-TW": "下身服裝"
+    },
+    "Char_Clothing_Torso_0": {
+      "zh-TW": "上身服裝"
+    },
+    "Char_Clothing_Torso_1": {
+      "zh-TW": "上身服裝"
+    },
+    "Container": {
+      "zh-TW": "貨櫃"
+    },
+    "Cooler": {
+      "zh-TW": "散熱器"
+    },
+    "DockingCollar": {
+      "zh-TW": "對接環"
+    },
+    "MiningModifier": {
+      "zh-TW": "採礦強化模組"
+    },
+    "Misc": {
+      "zh-TW": "其他"
+    },
+    "PowerPlant": {
+      "zh-TW": "發電機"
+    },
+    "QuantumDrive": {
+      "zh-TW": "量子引擎"
+    },
+    "Radar": {
+      "zh-TW": "雷達"
+    },
+    "SalvageHead": {
+      "zh-TW": "拆解頭"
+    },
+    "SalvageModifier": {
+      "zh-TW": "拆解強化模組"
+    },
+    "Shield": {
+      "zh-TW": "護盾"
+    },
+    "TractorBeam": {
+      "zh-TW": "牽引光束"
+    },
+    "WeaponAttachment": {
+      "zh-TW": "武器配件"
+    },
+    "WeaponGun": {
+      "zh-TW": "載具武器"
+    },
+    "WeaponMining": {
+      "zh-TW": "採礦武器"
+    },
+    "WeaponPersonal": {
+      "zh-TW": "個人武器"
+    }
+  },
+  "mining_deposit": {
+    "Asteroid (C-Type)": {
+      "zh-TW": "C 型小行星"
+    },
+    "Asteroid (E-Type)": {
+      "zh-TW": "E 型小行星"
+    },
+    "Asteroid (I-Type)": {
+      "zh-TW": "I 型小行星"
+    },
+    "Asteroid (M-Type)": {
+      "zh-TW": "M 型小行星"
+    },
+    "Asteroid (P-Type)": {
+      "zh-TW": "P 型小行星"
+    },
+    "Asteroid (Q-Type)": {
+      "zh-TW": "Q 型小行星"
+    },
+    "Asteroid (S-Type)": {
+      "zh-TW": "S 型小行星"
+    },
+    "Atacamite Deposit": {
+      "zh-TW": "氯銅礦礦床"
+    },
+    "Felsic Deposit": {
+      "zh-TW": "酸性岩礦床"
+    },
+    "Gneiss Deposit": {
+      "zh-TW": "片麻岩礦床"
+    },
+    "Granite Deposit": {
+      "zh-TW": "花崗岩礦床"
+    },
+    "Igneous Deposit": {
+      "zh-TW": "火成岩礦床"
+    },
+    "Obsidian Deposit": {
+      "zh-TW": "黑曜岩礦床"
+    },
+    "Quantainium Deposit": {
+      "zh-TW": "量子礦床"
+    },
+    "Quartzite Deposit": {
+      "zh-TW": "石英岩礦床"
+    },
+    "Shale Deposit": {
+      "zh-TW": "頁岩礦床"
+    }
+  }
+}

@@ -1,106 +1,185 @@
-"""英文 → 繁體中文物品/地點/礦物名稱對照。
+"""全站中文化的領域查詢（載具、物品、地點、礦物、藍圖類型…）。
 
-資料來源：cosmo-chang-1701/sc-translation-pack（社群維護的星際公民繁中化包）
-https://github.com/cosmo-chang-1701/sc-translation-pack/releases/tag/v4.10.1-rev.2
+翻譯本身一律存在資料庫（collection `sc_translations`，見
+src/models/translation.py），由同步排程從遊戲英文表（scunpacked-data
+labels.json）＋社群繁中化包（cosmo-chang-1701/sc-translation-pack）寫入；
+翻譯包沒有、人工補的條目在 src/data/sc_translation_manual.json，同步時一併
+寫入。這裡只負責「某種東西要用哪個遊戲 key／哪一類英文去查」，不再維護任何
+對照表 —— 需要中文化的新地方，請在這裡加一個查詢函式，不要另外做 JSON 表。
 
-對照表是從該專案發布的 global.ini 萃取出來的，總共四份表、三種 key pattern：
+每個函式都有 `lang` 參數（預設 zh-TW），之後加語言不用改呼叫端的邏輯。
+查不到一律回 None，呼叫端顯示英文。
 
-  - 物品（sc_item_names_zh.json）：Item_Name_xxx=English Name\\n中文名稱，約 4,700 筆
-    （目前還是舊版 v4.9.0-v49 萃取的，還沒跟礦物表一起升到 v4.10.1-rev.2）。
-  - 地點（sc_location_names_zh.json）：StantonN[字母][_Xxx]=中文（English），
-    涵蓋 Stanton／Pyro／Nyx 三個星系的星球、衛星、降落點、太空站、Lagrange
-    點——2026-09 這次為了礦物回波的「地點」需求，把原本只抓
-    StantonN_Xxx（一定要有底線後綴）的規則放寬成同時抓
-    StantonN/PyroN/NyxN（裸的星球/衛星本身），新增 39 筆，現在共 77 筆。
-    少數地點翻譯包完全沒有對應資料（多半是程序生成的採礦事件/資源點，例如
-    "Resource Rush Gold"、"Lagrange (Occupied)"、"Ship Graveyard"、代號類
-    的 "RMB-DARI"），查不到就顯示英文，不強行猜。
-  - 礦物商品（sc_mining_resource_names_zh.json）：items_commodities_<slug>=
-    English Name\\n中文名稱。這份以前誤以為官方翻譯包沒收錄礦物商品名稱，
-    整份手工亂猜——後來查證發現翻譯包其實有這個獨立的 key namespace
-    （跟物品表用的 Item_Name_xxx 不同命名空間，才會誤判翻譯包沒有）。
-    39 個真正會用到的 mineable resource_key，38 個能在 items_commodities_*
-    裡找到官方社群翻譯（含去掉 (Ore)/(Raw)/(Pure)/(R) 後綴、或去掉 "Raw "
-    前綴的正規化比對——RawOuratite、RawSilicon 一開始就是漏在只做「去尾綴」
-    沒做「去前綴」正規化，才會誤判翻譯包沒有這兩筆）；只剩 Raw_Ice 翻譯包
-    真的沒收錄，保留人工最佳猜測（其實就是「冰」，沒什麼好猜的）。
-    （Vlk_Limpet 這個 resource_key 對應的上游英文名稱本身就是垃圾資料
-    '<= PLACEHOLDER =>'，沒有意義可翻，故意不收進這份表。）
-  - 礦床名稱（sc_mining_deposit_names_zh.json，新增）：礦床的 DepositName
-    （例如 "Granite Deposit"、"Aluminum (Ore)"）跟礦物商品名稱其實常常是
-    同一個字串（單一礦物的礦床直接用該礦物當礦床名），所以大多數（38/56）
-    直接重用礦物商品表的翻譯；少數通用岩石/小行星分類名稱
-    （Granite/Gneiss/Obsidian/Quartzite/Shale/Felsic/Igneous/Atacamite
-    Deposit、C~S 七種小行星光譜分類）翻譯包沒收錄，這些是有公認中文譯名的
-    真實地質/天文學術語（不是猜測），直接用標準譯名；"Abandon"、
-    "Calcified Coolant" 這兩個 DepositName 對應的都是開發用的佔位/測試
-    礦床（Name 本身就是 '<= PLACEHOLDER =>'），故意不收進表。
-
-只做「英文名稱 → 中文」的靜態查表，不會自動跟著遊戲改版更新——
-game 改版後如果要更新，重新下載新版翻譯包，用同樣的規則重新萃取、覆蓋這幾個
-JSON 檔即可（萃取腳本邏輯見對話紀錄，之後可以另外寫成 tasks/ 底下的維護腳本）。
-
-四份表都是各自獨立的靜態 JSON 快取，_load_cached() 用檔案 mtime 判斷要不要
-重讀——只改 JSON 檔不用重啟 worker/api container 就會生效，但同步進 DB 的
-mining_deposit_master/mining_location_master 欄位仍是同步當下的快照，
-改完 JSON 檔還是要重新跑一次同步才會反映到既有資料上。
+各類查法：
+  - 載具名稱：vehicle_Name<class_name>_short → vehicle_Name<class_name>（_short
+    不含廠商名，跟 vehicle_master.name 的寫法一致），再退回用英文名稱反查。
+  - 載具角色：用英文角色反查 vehicle_class_*／vehicle_focus_*；上游 role 字串跟
+    翻譯包 key 拼法不同的幾個（refueling／refuelling、gunship／gunshio…）走別名。
+  - 物品：item_Name<class_name>，再退回英文名稱反查 item_name*。
+  - 地點：英文名稱反查 Stanton*／Pyro*／Nyx*。
+  - 礦物：英文名稱（含去掉 (Ore)／(Raw)／(Pure)／(R) 後綴、去掉 "Raw " 前綴的
+    寫法）反查 items_commodities_*。
+  - 礦床：人工條目（岩石／小行星分類）→ 同礦物的查法。
+  - 藍圖類型：人工條目（遊戲 output_type 代碼，翻譯包沒有）。
 """
 
-import json
-from pathlib import Path
+import re
 from typing import Optional
 
-_DATA_DIR = Path(__file__).resolve().parent / 'data'
-
-# filename -> (mtime, data)。用 mtime 判斷要不要重讀，而不是「process 生命週期
-# 只讀一次」——這幾份表都是人工維護、常常改完就直接覆蓋 JSON 檔，過去因為
-# 讀了一次就永遠快取住，改完表卻要記得重啟 worker/api container 才會生效，
-# 忘記重啟就會讓人誤以為「明明改了怎麼沒用」（實際發生過一次，見
-# mining 對照表改用翻譯包來源那次）。這幾份表資料量都很小（最大的物品表
-# 也才 4,700 筆），每次呼叫多一次 stat() 的成本可忽略不計。
-_cache: dict = {}
+from src.models import translation as T
+from src.models.translation import DEFAULT_LANG, manual_key
 
 
-def _load_cached(filename: str) -> dict:
-    path = _DATA_DIR / filename
-    try:
-        mtime = path.stat().st_mtime
-    except FileNotFoundError:
-        _cache.pop(filename, None)
-        return {}
-
-    cached = _cache.get(filename)
-    if cached is not None and cached[0] == mtime:
-        return cached[1]
-
-    with open(path, encoding='utf-8') as f:
-        data = json.load(f)
-    _cache[filename] = (mtime, data)
-    return data
+def _manual(domain: str) -> str:
+    return manual_key(domain, '')
 
 
-def item_name_zh(en_name: str) -> Optional[str]:
-    """物品英文名稱 → 中文名稱，查不到回傳 None。"""
-    return _load_cached('sc_item_names_zh.json').get((en_name or '').strip())
+# ── 載具 ────────────────────────────────────────────────────────────
+
+def vehicle_name_zh(class_name: str = '', name: str = '', lang: str = DEFAULT_LANG) -> Optional[str]:
+    """載具 class_name（優先）或英文名稱 → 翻譯，查不到回傳 None。"""
+    cls = (class_name or '').strip()
+    if cls:
+        value = T.by_keys([f'vehicle_Name{cls}_short', f'vehicle_Name{cls}'], lang)
+        if value:
+            return value
+    return T.by_english(name, [_manual('vehicle'), 'vehicle_name'], lang)
 
 
-def location_name_zh(en_name: str) -> Optional[str]:
-    """地點英文名稱 → 中文名稱，查不到回傳 None。"""
-    return _load_cached('sc_location_names_zh.json').get((en_name or '').strip())
+#: 上游 role 字串 → 翻譯包 key（英文對不上、但翻譯包確實有同義條目的）
+_ROLE_KEY_ALIASES = {
+    'starterlightmining':   'vehicle_class_startermining',
+    'starterlightsalvage':  'vehicle_class_startersalvage',
+    'heavyrefueling':       'vehicle_class_heavyrefuelling',       # 翻譯包拼成 refuelling
+    'mediumfreightgunship': 'vehicle_class_mediumfreightgunshio',  # 翻譯包拼錯成 gunshio
+    'cargo':                'vehicle_class_cargo_loader',
+    'combat':               'vehicle_focus_combat',
+    'transport':            'vehicle_focus_transporter',
+}
 
 
-def mining_resource_name_zh(resource_key: str) -> Optional[str]:
-    """礦物回波用的礦石/原礦 key（例如 'Ore_Aluminum'、'Raw_Quantainium'）→ 中文名稱。
+def _role_norm(role: str) -> str:
+    return ''.join(ch for ch in (role or '').lower() if ch.isalnum())
 
-    查不到回傳 None——查詢端（src/scdata.py 的 map_mining_deposit）遇到 None
-    就只顯示英文名，不會讓整個同步或頁面掛掉。
+
+def vehicle_role_zh(role: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """載具角色（例如 'Heavy Fighter'）→ 翻譯，查不到回傳 None。"""
+    role = (role or '').strip()
+    if not role:
+        return None
+    value = T.by_english(role, [_manual('vehicle_role'), 'vehicle_class_', 'vehicle_focus_'], lang)
+    if value:
+        return value
+    norm = _role_norm(role)
+    keys = [k for k in (_ROLE_KEY_ALIASES.get(norm), f'vehicle_class_{norm}') if k]
+    return T.by_keys(keys, lang)
+
+
+# ── 物品 ────────────────────────────────────────────────────────────
+
+def item_name_zh(en_name: str = '', class_name: str = '', lang: str = DEFAULT_LANG) -> Optional[str]:
+    """物品 class_name（優先）或英文名稱 → 翻譯，查不到回傳 None。"""
+    cls = (class_name or '').strip()
+    if cls:
+        value = T.by_key(f'item_Name{cls}', lang)
+        if value:
+            return value
+    return T.by_english(en_name, [_manual('item'), 'item_name'], lang)
+
+
+# ── 地點 ────────────────────────────────────────────────────────────
+
+#: 地點名稱會出現在好幾類 key 底下：星系本體（StantonN_…）、小行星帶採礦基地、
+#: 廢棄前哨站、任務地點…；前面的優先
+_LOCATION_PREFIXES = ['stanton', 'pyro', 'nyx', 'asteroidcluster_', 'fob_', 'mission_location_']
+
+
+def location_name_zh(en_name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """地點英文名稱 → 翻譯，查不到回傳 None。"""
+    return T.by_english(en_name, [_manual('location')] + _LOCATION_PREFIXES, lang)
+
+
+#: 星系本體與其下的星球、衛星、降落點、太空站、Lagrange 點（StantonN／PyroN／NyxN…），
+#: 不含 _Desc 之類的說明文字 key
+_KNOWN_LOCATION_KEY = r'^(stanton|pyro|nyx)(\d+[a-z]?(_[a-z0-9]+)?)?$'
+
+
+def known_location_names(lang: str = DEFAULT_LANG) -> dict:
+    """遊戲裡已知的地點名稱 {英文: 翻譯或 None}，給地點下拉選單列出還沒人用過的地點。"""
+    return {en: zh for en, zh in T.by_key_pattern(_KNOWN_LOCATION_KEY, lang).items()
+            if not en.lower().endswith(' desc')}
+
+
+# ── 礦物／礦床 ──────────────────────────────────────────────────────
+
+_MINERAL_SUFFIX = re.compile(r'\s*\((ore|raw|pure|r)\)\s*$', re.I)
+
+
+def _mineral_variants(name: str) -> list:
+    """礦物名稱的查詢候選：原名優先（翻譯包對原礦有自己的譯名，例如
+    「綠柱石（原礦）」），查不到才試去掉 (Ore)／(Raw)／(Pure)／(R) 後綴、
+    去掉 "Raw " 前綴的精煉品名稱。"""
+    name = (name or '').strip()
+    if not name:
+        return []
+    out = [name]
+    bare = _MINERAL_SUFFIX.sub('', name).strip()
+    if bare and bare not in out:
+        out.append(bare)
+    for v in list(out):
+        if v.lower().startswith('raw '):
+            stripped = v[4:].strip()
+            if stripped and stripped not in out:
+                out.append(stripped)
+    return out
+
+
+def mining_resource_name_zh(resource_key: str = '', name: str = '',
+                            lang: str = DEFAULT_LANG) -> Optional[str]:
+    """礦物（例如 'Hephaestanite (R)'、resource_key 'Raw_Hephaestanite'）→ 翻譯。
+
+    以英文名稱查；沒給名稱時用 resource_key 還原（'Raw_Ice' → 'Raw Ice'）。
     """
-    return _load_cached('sc_mining_resource_names_zh.json').get((resource_key or '').strip())
+    candidates = _mineral_variants(name) or _mineral_variants((resource_key or '').replace('_', ' '))
+    for text in candidates:
+        value = T.by_english(text, [_manual('mining_resource'), 'items_commodities_'], lang)
+        if value:
+            return value
+    return None
 
 
-def mining_deposit_name_zh(deposit_name: str) -> Optional[str]:
-    """礦床名稱（例如 'Granite Deposit'、'Aluminum (Ore)'）→ 中文名稱。
+def mining_deposit_name_zh(deposit_name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """礦床名稱（例如 'Granite Deposit'、'Aluminum (Ore)'）→ 翻譯。
 
-    查不到回傳 None，行為跟 mining_resource_name_zh() 一致。
+    岩石／小行星分類是人工條目；單一礦物的礦床直接用礦物名稱當礦床名，
+    所以其他情況用礦物的查法。
     """
-    return _load_cached('sc_mining_deposit_names_zh.json').get((deposit_name or '').strip())
+    value = T.by_english(deposit_name, [_manual('mining_deposit')], lang)
+    return value or mining_resource_name_zh(name=deposit_name, lang=lang)
+
+
+# ── 藍圖 ────────────────────────────────────────────────────────────
+
+def blueprint_type_zh(output_type: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """藍圖 output_type 代碼（例如 'WeaponGun'）→ 翻譯（人工條目）。"""
+    code = (output_type or '').strip()
+    return T.by_key(manual_key('blueprint_type', code), lang) if code else None
+
+
+def blueprint_type_names(lang: str = DEFAULT_LANG) -> dict:
+    """全部藍圖類型 {代碼: 翻譯}，給前端一次載入。"""
+    return T.manual_domain('blueprint_type', lang)
+
+
+# ── 給 API 用的批次查詢 ──────────────────────────────────────────────
+
+#: domain → 單筆查詢函式（英文文字 → 翻譯），給 /item/translations 批次查
+LOOKUPS = {
+    'location':        location_name_zh,
+    'item':            lambda text, lang=DEFAULT_LANG: item_name_zh(text, lang=lang),
+    'vehicle':         lambda text, lang=DEFAULT_LANG: vehicle_name_zh(name=text, lang=lang),
+    'vehicle_role':    vehicle_role_zh,
+    'mining_resource': lambda text, lang=DEFAULT_LANG: mining_resource_name_zh(name=text, lang=lang),
+    'mining_deposit':  mining_deposit_name_zh,
+    'blueprint_type':  blueprint_type_zh,
+}

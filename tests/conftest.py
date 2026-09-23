@@ -74,6 +74,10 @@ def clean_db():
     yield
     for name in _MONGO_DB.list_collection_names():
         _MONGO_DB.drop_collection(name)
+    # 翻譯查詢有 process 內快取（src/models/translation.py），collection 清掉了
+    # 快取也要跟著清，否則上一個測試查到的翻譯會漏到下一個測試
+    from src.models import translation
+    translation.clear_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -108,3 +112,30 @@ def admin_token(client, seed_admin):
 def auth_headers(admin_token):
     """包含 Bearer token 的 Authorization header dict。"""
     return {'Authorization': f'Bearer {admin_token}'}
+
+
+@pytest.fixture
+def seed_translations():
+    """寫入測試用翻譯（sc_translations），連同人工條目。
+
+    用法：seed_translations({'vehicle_NameAEGS_Avenger_Stalker_short': ('Avenger Stalker', '復仇者 追獵')})
+    值是 (英文, 繁中)；繁中給 None 代表只有英文。可以呼叫多次，會累加。
+    """
+    from datetime import datetime
+    from src.models import translation as T
+
+    def _seed(entries: dict, lang: str = 'zh-TW'):
+        now = datetime.utcnow()
+        T.sync_manual(now)
+        col = _MONGO_DB[T.COLLECTION]
+        for key, (en, zh) in entries.items():
+            text = {'en': en}
+            if zh:
+                text[lang] = zh
+            col.update_one({'_id': key}, {'$set': {
+                'key_lower': key.lower(), 'text': text, 'en_lower': en.lower(),
+                'source': T.SOURCE_GAME, 'domain': None, 'h': T.text_hash(text),
+                'updated_at': now,
+            }}, upsert=True)
+        T.mark_synced('test', now)
+    return _seed
