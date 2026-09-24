@@ -544,6 +544,25 @@ def test_search_filtered_with_no_criteria_returns_empty_at_model_layer(client, s
     assert Inventory.search_filtered(WMS_SCOPE_ID) == []
 
 
+def test_search_filtered_multiple_item_types_are_ored(client, auth_headers, seed_search):
+    """「物品類型」可多選：Cooler（item-small）＋Commodity（item-big）兩種都要。"""
+    from urllib.parse import urlencode
+    qs = urlencode([('item_type', 'Cooler'), ('item_type', 'Commodity')])
+    body = client.get(f'/inventory/search?{qs}', headers=auth_headers).get_json()
+    assert {r['item_id'] for r in body['data']} == {'item-small', 'item-big'}
+
+
+def test_search_filtered_multiple_locations_are_ored(client, auth_headers, seed_search):
+    from urllib.parse import urlencode
+    qs = urlencode([('location', 'Lorville'), ('location', 'Area18')])
+    body = client.get(f'/inventory/search?{qs}', headers=auth_headers).get_json()
+    assert {r['location'] for r in body['data']} == {'Lorville', 'Area18'}
+    # 多選之間是 OR，跟其他條件仍是 AND：Commodity 只在 Area18
+    qs = urlencode([('location', 'Lorville'), ('location', 'Area18'), ('item_type', 'Commodity')])
+    body = client.get(f'/inventory/search?{qs}', headers=auth_headers).get_json()
+    assert {r['location'] for r in body['data']} == {'Area18'}
+
+
 def test_search_filtered_item_ids_empty_list_means_no_match(client, seed_search):
     """item_ids 傳空陣列（篩了但沒有物品符合）要跟『沒有篩物品』區分開。"""
     assert Inventory.search_filtered(WMS_SCOPE_ID, item_ids=[]) == []

@@ -288,8 +288,8 @@ def search_stock():
     parameters:
       - {in: query, name: q, type: string, description: "物品名稱／地點／玩家暱稱／遊戲ID（舊版單一關鍵字模式）"}
       - {in: query, name: item_id, type: string, description: "精確物品 uuid（新版分欄位模式，來自「物品名稱」欄位自動完成）"}
-      - {in: query, name: item_type, type: string, description: "精確物品類型（新版分欄位模式，來自「物品類型」欄位自動完成）"}
-      - {in: query, name: location, type: string, description: "精確地點（新版分欄位模式，來自「物品地點」欄位自動完成）"}
+      - {in: query, name: item_type, type: string, description: "精確物品類型，可重複帶多個（新版分欄位模式，「物品類型」欄位多選）"}
+      - {in: query, name: location, type: string, description: "精確地點，可重複帶多個（新版分欄位模式，「物品地點」欄位多選）"}
       - {in: query, name: player_id, type: string, description: "精確玩家遊戲ID（新版分欄位模式，來自「玩家id」或「玩家暱稱」欄位自動完成）"}
       - {in: query, name: limit, type: integer, default: 100, description: "最多 300"}
     responses:
@@ -298,25 +298,27 @@ def search_stock():
       400:
         description: 兩種模式的篩選條件都沒給
     """
-    item_id        = (request.args.get('item_id') or '').strip()
-    item_type      = (request.args.get('item_type') or '').strip()
-    location_exact = (request.args.get('location') or '').strip()
-    player_id      = (request.args.get('player_id') or '').strip()
+    item_id   = (request.args.get('item_id') or '').strip()
+    # 「物品類型」「物品地點」可多選：重複帶同一個 key（?item_type=A&item_type=B），
+    # 同一個條件內取聯集，跟其他條件之間仍是 AND
+    item_types = [t.strip() for t in request.args.getlist('item_type') if t.strip()]
+    locations_exact = [loc.strip() for loc in request.args.getlist('location') if loc.strip()]
+    player_id = (request.args.get('player_id') or '').strip()
 
     try:
         limit = int(request.args.get('limit', 100))
     except ValueError:
         limit = 100
 
-    if item_id or item_type or location_exact or player_id:
+    if item_id or item_types or locations_exact or player_id:
         item_ids = None
         if item_id:
             item_ids = [item_id]
-        elif item_type:
-            item_ids = ItemMaster.ids_of_type(item_type)
+        elif item_types:
+            item_ids = ItemMaster.ids_of_type(item_types)
 
         rows = Inventory.search_filtered(
-            WMS_SCOPE_ID, item_ids=item_ids, location=location_exact,
+            WMS_SCOPE_ID, item_ids=item_ids, location=locations_exact,
             player_scid=player_id, limit=limit,
         )
         _add_holder_info(rows)

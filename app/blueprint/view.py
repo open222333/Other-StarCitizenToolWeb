@@ -251,7 +251,7 @@ def blueprint_holders():
       - Bearer: []
     parameters:
       - {in: query, name: q,           type: string,  description: "藍圖名稱的一部分；留空 = 全部"}
-      - {in: query, name: output_type, type: string,  description: "精確藍圖類型（來自「藍圖類型」欄位自動完成）"}
+      - {in: query, name: output_type, type: string,  description: "精確藍圖類型，可重複帶多個（「藍圖類型」欄位多選）"}
       - {in: query, name: player_id,   type: string,  description: "精確玩家遊戲ID（來自「玩家id」或「玩家暱稱」欄位自動完成）"}
       - {in: query, name: limit,       type: integer, default: 50, description: "最多 200 組"}
     responses:
@@ -259,12 +259,13 @@ def blueprint_holders():
         description: 成功
     """
     limit, _ = _paging()
-    output_type = (request.args.get('output_type') or '').strip()
+    # 「藍圖類型」可多選：重複帶 output_type，取聯集
+    output_types = [t.strip() for t in request.args.getlist('output_type') if t.strip()]
     player_id = (request.args.get('player_id') or '').strip()
 
     blueprint_uuids = None
-    if output_type:
-        blueprint_uuids = BlueprintMaster.uuids_of_type(output_type)
+    if output_types:
+        blueprint_uuids = BlueprintMaster.uuids_of_type(output_types)
 
     rows = BlueprintModel.find_holders(
         query=(request.args.get('q') or '').strip(), limit=limit,

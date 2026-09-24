@@ -11,19 +11,22 @@
   自己用一個 ref + 點外面關閉更好控制，跟 FieldHint.vue 的理由一樣。
 -->
 <template>
-  <div ref="rootEl" class="multi-select-filter">
+  <div ref="rootEl" class="multi-select-filter" :class="{ 'multi-select-filter--block': block }">
     <button
-      type="button" class="btn btn-sm btn-outline-secondary multi-select-filter__btn"
-      :aria-expanded="open ? 'true' : 'false'" @click="open = !open"
+      :id="id" type="button" class="btn btn-sm btn-outline-secondary multi-select-filter__btn"
+      :aria-expanded="open ? 'true' : 'false'" :aria-label="label" @click="toggleOpen"
     >
-      {{ label }}
+      <!-- block 模式（表單欄位）：按鈕上直接顯示已選的項目；一般模式（篩選列）顯示欄位名稱 -->
+      <span class="multi-select-filter__text">{{ block ? (selectedSummary || placeholder || label) : label }}</span>
       <span v-if="modelValue.length" class="badge bg-primary ms-1">{{ modelValue.length }}</span>
       <i class="bi bi-chevron-down ms-1 small"></i>
     </button>
 
     <div v-if="open" class="multi-select-filter__panel" role="listbox" :aria-label="label">
-      <div v-if="!normalizedOptions.length" class="small hint px-2 py-2">沒有選項</div>
-      <label v-for="opt in normalizedOptions" :key="opt.value" class="multi-select-filter__item">
+      <input v-if="searchable" ref="searchEl" v-model="query" type="search"
+        class="form-control form-control-sm mb-1" :aria-label="`篩選${label}選項`">
+      <div v-if="!visibleOptions.length" class="small hint px-2 py-2">沒有選項</div>
+      <label v-for="opt in visibleOptions" :key="opt.value" class="multi-select-filter__item">
         <input
           type="checkbox" class="form-check-input me-1"
           :checked="modelValue.includes(opt.value)"
@@ -39,21 +42,50 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   // 字串陣列，或 {value, label} 物件陣列都可以
   options:    { type: Array, default: () => [] },
   label:      { type: String, required: true },
+  // 選項很多時（地點、物品類型）在面板頂端加一個文字框篩選選項
+  searchable: { type: Boolean, default: false },
+  // 當成表單欄位用：按鈕撐滿寬度、上面顯示已選的項目（沒選時顯示 placeholder）
+  block:       { type: Boolean, default: false },
+  placeholder: { type: String, default: '' },
+  id:          { type: String, default: undefined },
 })
 const emit = defineEmits(['update:modelValue'])
 
-const open   = ref(false)
-const rootEl = ref(null)
+const open     = ref(false)
+const rootEl   = ref(null)
+const searchEl = ref(null)
+const query    = ref('')
 
 const normalizedOptions = computed(() => props.options.map((o) =>
   (o !== null && typeof o === 'object') ? o : { value: o, label: String(o) }))
+
+const visibleOptions = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return normalizedOptions.value
+  return normalizedOptions.value.filter(o =>
+    `${o.label} ${o.value}`.toLowerCase().includes(q))
+})
+
+const selectedSummary = computed(() => {
+  const byValue = new Map(normalizedOptions.value.map(o => [o.value, o.label]))
+  return props.modelValue.map(v => byValue.get(v) ?? String(v)).join('、')
+})
+
+async function toggleOpen() {
+  open.value = !open.value
+  if (!open.value) { query.value = ''; return }
+  if (props.searchable) {
+    await nextTick()
+    searchEl.value?.focus()
+  }
+}
 
 function toggle(value, checked) {
   const next = new Set(props.modelValue)
@@ -65,7 +97,10 @@ function clear() {
 }
 
 function onDocClick(event) {
-  if (open.value && rootEl.value && !rootEl.value.contains(event.target)) open.value = false
+  if (open.value && rootEl.value && !rootEl.value.contains(event.target)) {
+    open.value = false
+    query.value = ''
+  }
 }
 onMounted(() => document.addEventListener('click', onDocClick))
 onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
@@ -73,6 +108,25 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 <style scoped>
 .multi-select-filter { position: relative; display: inline-block; }
+
+.multi-select-filter--block { display: block; }
+.multi-select-filter--block .multi-select-filter__btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+}
+.multi-select-filter--block .multi-select-filter__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multi-select-filter--block .multi-select-filter__panel {
+  right: 0;
+  max-width: none;
+}
 
 .multi-select-filter__panel {
   position: absolute;

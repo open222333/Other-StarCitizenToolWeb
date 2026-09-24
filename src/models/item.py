@@ -197,7 +197,7 @@ class ItemMaster(_MasterBase):
         return sorted(t for t in cls._col().distinct('type', {'is_current': True}) if t)
 
     @classmethod
-    def ids_of_type(cls, item_type: str, limit: int = 1000) -> list:
+    def ids_of_type(cls, item_type, limit: int = 1000) -> list:
         """某個類型底下所有現行物品的 uuid，給「查詢 › 物品庫存」的
         「物品類型」欄位篩選當 join key 用（先解析成一組 item_id，
         再跟位置／持有者條件一起做 AND 篩選，見 Inventory.search_filtered）。
@@ -205,13 +205,17 @@ class ItemMaster(_MasterBase):
         跟 ids_matching() 一樣不需要顯示欄位，只回 id；跟 list_by_type()
         不同的是這裡不分頁 —— 呼叫端要的是「這個類型全部的 id」拿去比對，
         不是要分頁瀏覽。
+
+        item_type 可以是單一類型或多個類型（「物品類型」欄位可多選，取聯集），
+        上限依類型數放大（每個類型各 limit 筆）。
         """
-        item_type = (item_type or '').strip()
-        if not item_type:
+        types = _clean_list(item_type)
+        if not types:
             return []
         rows = cls._col().find(
-            {'is_current': True, 'type': item_type}, {'_id': 1},
-        ).limit(max(1, min(limit, 2000)))
+            {'is_current': True, 'type': types[0] if len(types) == 1 else {'$in': types}},
+            {'_id': 1},
+        ).limit(max(1, min(limit, 2000)) * len(types))
         return [r['_id'] for r in rows]
 
     @classmethod
@@ -253,6 +257,12 @@ class ItemMaster(_MasterBase):
             'game_version': row.get('game_version'),
             'source': 'wiki',
         } for row in embedded[:limit]]
+
+
+def _clean_list(value) -> list:
+    """單一字串或字串清單 → 去空白、去重、去空值後的清單（保留順序）。"""
+    values = [value] if isinstance(value, str) else list(value or [])
+    return list(dict.fromkeys(v.strip() for v in values if isinstance(v, str) and v.strip()))
 
 
 _CJK = re.compile(r'[\u4e00-\u9fff]')
@@ -599,19 +609,22 @@ class BlueprintMaster(_MasterBase):
         return sorted(v for v in values if v)
 
     @classmethod
-    def uuids_of_type(cls, output_type: str, limit: int = 2000) -> list:
+    def uuids_of_type(cls, output_type, limit: int = 2000) -> list:
         """某個產出類型底下所有現行藍圖的 uuid，給「查詢 › 持有藍圖」的
         「藍圖類型」欄位篩選當 join key 用（見 Blueprint.find_holders 的
         blueprint_uuids 參數）。
 
         玩家自由輸入、沒有對到主檔的登記天生沒有 blueprint_uuid，篩類型時
         本來就篩不到那些——是預期行為，不是這支的責任。
+
+        output_type 可以是單一類型或多個類型（「藍圖類型」欄位可多選，取聯集）。
         """
-        output_type = (output_type or '').strip()
-        if not output_type:
+        types = _clean_list(output_type)
+        if not types:
             return []
         rows = cls._col().find(
-            {'is_current': True, 'output_type': output_type}, {'_id': 1},
+            {'is_current': True,
+             'output_type': types[0] if len(types) == 1 else {'$in': types}}, {'_id': 1},
         ).limit(max(1, min(limit, 5000)))
         return [r['_id'] for r in rows]
 

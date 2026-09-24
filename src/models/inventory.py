@@ -353,7 +353,7 @@ class Inventory:
         } for row in rows]
 
     @classmethod
-    def search_filtered(cls, scope_id: str, item_ids=None, location: str = '',
+    def search_filtered(cls, scope_id: str, item_ids=None, location='',
                         player_scid: str = '', limit: int = 100) -> list:
         """分欄位、AND 語意的庫存搜尋——跟 search_any（OR 取聯集）是不同語意，
         給「查詢 › 物品庫存」拆分欄位版用：使用者從各欄位的自動完成候選裡
@@ -372,8 +372,12 @@ class Inventory:
 
         全部條件都沒給的話回空陣列，理由同 search_any：沒解析到任何篩選
         條件就代表「查不到」，回全部庫存會讓使用者誤以為自己真的查到了。
+
+        location 可以是單一地點或多個地點（「物品地點」欄位可多選，取聯集）。
         """
-        has_filter = item_ids is not None or bool(location) or bool(player_scid)
+        locations = [location] if isinstance(location, str) else list(location or [])
+        locations = list(dict.fromkeys(loc for loc in locations if loc))
+        has_filter = item_ids is not None or bool(locations) or bool(player_scid)
         if not has_filter:
             return []
         if item_ids is not None and not item_ids:
@@ -382,8 +386,8 @@ class Inventory:
         match: dict = {'scope_id': str(scope_id), 'quantity': {'$gt': 0}}
         if item_ids is not None:
             match['item_id'] = {'$in': list(item_ids)}
-        if location:
-            match['location'] = location
+        if locations:
+            match['location'] = locations[0] if len(locations) == 1 else {'$in': locations}
         if player_scid:
             match['owner_type'] = OWNER_PLAYER
             match['player'] = player_scid

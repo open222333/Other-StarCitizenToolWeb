@@ -710,3 +710,21 @@ def test_holders_endpoint_output_type_no_match_returns_empty(
     resp = client.get('/blueprint/holders?output_type=NoSuchType', headers=player_headers)
     assert resp.status_code == 200, resp.get_json()
     assert resp.get_json()['data'] == []
+
+
+# ── 「藍圖類型」欄位可多選：多個 output_type 取聯集 ──
+
+def test_uuids_of_type_accepts_multiple_types(seeded_master):
+    assert set(BlueprintMaster.uuids_of_type(['WeaponGun', 'Consumable'])) == {API_ROW['uuid'], 'bp-2'}
+    assert BlueprintMaster.uuids_of_type(['WeaponGun', '', 'NoSuchType']) == [API_ROW['uuid']]
+    assert BlueprintMaster.uuids_of_type([]) == []
+
+
+def test_holders_endpoint_multiple_output_types(client, player_headers, three_players_with_blueprints):
+    alice = three_players_with_blueprints['alice']
+    BlueprintModel.create(name='Medical Pen', player_id=alice, blueprint_uuid='bp-2')
+    resp = client.get('/blueprint/holders?output_type=WeaponGun&output_type=Consumable',
+                      headers=player_headers)
+    assert {g['name'] for g in resp.get_json()['data']} == {'Omnisky III Cannon', 'Medical Pen'}
+    resp = client.get('/blueprint/holders?output_type=Consumable', headers=player_headers)
+    assert [g['name'] for g in resp.get_json()['data']] == ['Medical Pen']

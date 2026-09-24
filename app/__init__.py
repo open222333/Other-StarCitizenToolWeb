@@ -96,6 +96,30 @@ def set_security_headers(response):
     return response
 
 
+_RATE_UNITS = {'second': '秒', 'minute': '分鐘', 'hour': '小時', 'day': '天',
+               'month': '個月', 'year': '年'}
+
+
+def rate_limit_message(e) -> str:
+    """Flask-Limiter 的 429 → 中文訊息，例如「操作太頻繁（上限：每小時 4 次），請稍後再試」。
+
+    套件預設的描述是英文的 "4 per 1 hour"，前端會原樣顯示，使用者看不懂是
+    被網站自己的次數限制擋下來。解析不了限制內容時退回不帶上限的通用句子。
+    """
+    try:
+        item = e.limit.limit
+        unit = _RATE_UNITS.get(item.GRANULARITY.name, item.GRANULARITY.name)
+        per = f'每{unit}' if item.multiples == 1 else f'每 {item.multiples} {unit}'
+        return f'操作太頻繁（上限：{per} {item.amount} 次），請稍後再試'
+    except Exception:
+        return '操作太頻繁，請稍後再試'
+
+
+@app.errorhandler(429)
+def handle_rate_limit(e):
+    return jsonify({'success': False, 'message': rate_limit_message(e)}), 429
+
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     if isinstance(e, HTTPException):

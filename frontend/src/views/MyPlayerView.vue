@@ -343,17 +343,13 @@
             </div>
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="items-type">物品類型</label>
-              <AutocompleteField id="items-type" v-model="itemsTypeText"
-                :search="searchItemTypesLocal" :get-label="c => c"
-                aria-label="物品類型" placeholder="點一下看全部類型…" :min-chars="0" :debounce-ms="0"
-                @select="onItemsTypeSelect" />
+              <MultiSelectFilter id="items-type" v-model="itemsSelectedTypes" :options="itemTypes"
+                label="物品類型" placeholder="全部" block searchable />
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="items-location">物品地點</label>
-              <AutocompleteField id="items-location" v-model="itemsLocationText"
-                :search="searchStockLocationsLocal" :get-label="locLabel"
-                aria-label="物品地點" placeholder="點一下看全部地點…" :min-chars="0" :debounce-ms="0"
-                @select="onItemsLocationSelect" />
+              <MultiSelectFilter id="items-location" v-model="itemsSelectedLocations" :options="locationOptions"
+                label="物品地點" placeholder="全部" block searchable />
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="items-player-id">玩家id</label>
@@ -436,10 +432,8 @@
             </div>
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="bp-type">藍圖類型</label>
-              <AutocompleteField id="bp-type" v-model="bpTypeText"
-                :search="searchBlueprintTypesLocal" :get-label="blueprintTypeLabel"
-                aria-label="藍圖類型" placeholder="點一下看全部類型…" :min-chars="0" :debounce-ms="0"
-                @select="onBpTypeSelect" />
+              <MultiSelectFilter id="bp-type" v-model="bpSelectedTypes" :options="blueprintTypeOptions"
+                label="藍圖類型" placeholder="全部" block searchable />
             </div>
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="bp-player-id">玩家id</label>
@@ -516,31 +510,23 @@
             </div>
             <div class="col-6 col-md-4">
               <label class="form-label small mb-1" for="fl-type">類型</label>
-              <AutocompleteField id="fl-type" v-model="flTypeText"
-                :search="searchVehicleTypesLocal" :get-label="c => c.label"
-                aria-label="類型" placeholder="點一下看全部類型…" :min-chars="0" :debounce-ms="0"
-                @select="c => { flSelectedType = c ? c.value : '' }" />
+              <MultiSelectFilter id="fl-type" v-model="flSelectedTypes" :options="vehicleFacets.types"
+                label="類型" placeholder="全部" block />
             </div>
             <div class="col-6 col-md-4">
               <label class="form-label small mb-1" for="fl-size">尺寸</label>
-              <AutocompleteField id="fl-size" v-model="flSizeText"
-                :search="searchVehicleSizesLocal" :get-label="vehicleSizeLabel"
-                aria-label="尺寸" placeholder="點一下看全部尺寸…" :min-chars="0" :debounce-ms="0"
-                @select="c => { flSelectedSize = c == null ? '' : String(c) }" />
+              <MultiSelectFilter id="fl-size" v-model="flSelectedSizes" :options="vehicleSizeOptions"
+                label="尺寸" placeholder="全部" block />
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="fl-mfr">廠商</label>
-              <AutocompleteField id="fl-mfr" v-model="flMfrText"
-                :search="searchManufacturersLocal" :get-label="m => manufacturerLabel(m.label, m.value)"
-                aria-label="廠商" placeholder="點一下看全部廠商…" :min-chars="0" :debounce-ms="0"
-                @select="c => { flSelectedMfr = c ? c.value : '' }" />
+              <MultiSelectFilter id="fl-mfr" v-model="flSelectedMfrs" :options="manufacturerOptions"
+                label="廠商" placeholder="全部" block searchable />
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label small mb-1" for="fl-role">角色</label>
-              <AutocompleteField id="fl-role" v-model="flRoleText"
-                :search="searchVehicleRolesLocal" :get-label="r => r.label"
-                aria-label="角色" placeholder="點一下看全部角色…" :min-chars="0" :debounce-ms="0"
-                @select="c => { flSelectedRole = c ? c.value : '' }" />
+              <MultiSelectFilter id="fl-role" v-model="flSelectedRoles" :options="vehicleFacets.roles"
+                label="角色" placeholder="全部" block searchable />
             </div>
             <div class="col-6 col-md-2">
               <label class="form-label small mb-1" for="fl-player-id">玩家id</label>
@@ -1021,6 +1007,7 @@ import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import FleetBulkRegister from '@/components/FleetBulkRegister.vue'
 import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
+import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import { manufacturerLabel, vehicleNameLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 // 地點中文：跟全站一樣查資料庫的翻譯（utils/translations.js），不在前端放對照表
@@ -1807,8 +1794,10 @@ const bpSelectedName    = ref('')   // 送給 /blueprint/holders 的 q——用�
                                      // 英文 name，因為玩家登記時一律存主檔
                                      // name（見 app/player/view.py 的
                                      // add_my_blueprint），用它比對最準確
-const bpTypeText        = ref('')
-const bpSelectedType    = ref('')
+// 「藍圖類型」可多選（取聯集）
+const bpSelectedTypes   = ref([])
+const blueprintTypeOptions = computed(() =>
+  blueprintOutputTypes.value.map(t => ({ value: t, label: blueprintTypeLabel(t) })))
 const bpPlayerIdText       = ref('')
 const bpPlayerNicknameText = ref('')
 const bpPlayerScid         = ref('')
@@ -1819,7 +1808,7 @@ async function loadBlueprintHolders() {
   loadingBpHolders.value = true
   const params = new URLSearchParams({ limit: '100' })
   if (bpSelectedName.value) params.set('q', bpSelectedName.value)
-  if (bpSelectedType.value) params.set('output_type', bpSelectedType.value)
+  bpSelectedTypes.value.forEach(t => params.append('output_type', t))
   if (bpPlayerScid.value) params.set('player_id', bpPlayerScid.value)
   const res = await playerAuth.playerFetch(`/blueprint/holders?${params.toString()}`)
   if (seq !== bpHolderSeq) return   // 已經有更新的查詢在跑了
@@ -1829,7 +1818,7 @@ async function loadBlueprintHolders() {
   bpHolders.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-watch([bpSelectedName, bpSelectedType, bpPlayerScid], loadBlueprintHolders)
+watch([bpSelectedName, bpSelectedTypes, bpPlayerScid], loadBlueprintHolders)
 
 async function searchBlueprintNames(q) {
   const res = await playerAuth.playerFetch(`/blueprint/master/search?q=${encodeURIComponent(q)}&limit=20`)
@@ -1839,16 +1828,8 @@ async function searchBlueprintNames(q) {
 }
 function blueprintNameLabel(c) { return c.name_zh || c.name }
 
-function searchBlueprintTypesLocal(q) {
-  const query = (q || '').trim().toLowerCase()
-  const list = query
-    ? blueprintOutputTypes.value.filter(t => t.toLowerCase().includes(query))
-    : blueprintOutputTypes.value
-  return Promise.resolve(list)
-}
 
 function onBpNameSelect(c) { bpSelectedName.value = c ? c.name : '' }
-function onBpTypeSelect(c) { bpSelectedType.value = c || '' }
 
 // 玩家id／玩家暱稱兩個欄位共用同一個 bpPlayerScid（實際送出的篩選值）——
 // 兩個欄位各自都能選，選定其中一個會同步另一個欄位的顯示文字，避免
@@ -1877,8 +1858,7 @@ function onBpPlayerNicknameSelect(c) {
 function clearBpFilters() {
   bpNameText.value = ''
   bpSelectedName.value = ''
-  bpTypeText.value = ''
-  bpSelectedType.value = ''
+  bpSelectedTypes.value = []
   bpPlayerIdText.value = ''
   bpPlayerNicknameText.value = ''
   bpPlayerScid.value = ''
@@ -1907,17 +1887,18 @@ const loadingWho = ref(false)
 
 const itemsNameText       = ref('')
 const itemsSelectedItemId = ref(null)
-const itemsTypeText       = ref('')
-const itemsSelectedType   = ref('')
-const itemsLocationText     = ref('')
-const itemsSelectedLocation = ref('')
+// 「物品類型」「物品地點」可多選（同一欄位內取聯集，欄位之間 AND）
+const itemsSelectedTypes     = ref([])
+const itemsSelectedLocations = ref([])
+const locationOptions = computed(() =>
+  locations.value.map(loc => ({ value: loc, label: locLabel(loc) })))
 const itemsPlayerIdText       = ref('')
 const itemsPlayerNicknameText = ref('')
 const itemsPlayerScid         = ref('')
 
 const hasStockFilter = computed(() => !!(
-  itemsSelectedItemId.value || itemsSelectedType.value ||
-  itemsSelectedLocation.value || itemsPlayerScid.value
+  itemsSelectedItemId.value || itemsSelectedTypes.value.length ||
+  itemsSelectedLocations.value.length || itemsPlayerScid.value
 ))
 
 // 每次搜尋遞增。慢的舊請求回來時若序號已過期就丟掉。
@@ -1933,8 +1914,8 @@ async function runStockSearch() {
   loadingWho.value = true
   const params = new URLSearchParams({ limit: '200' })
   if (itemsSelectedItemId.value) params.set('item_id', itemsSelectedItemId.value)
-  else if (itemsSelectedType.value) params.set('item_type', itemsSelectedType.value)
-  if (itemsSelectedLocation.value) params.set('location', itemsSelectedLocation.value)
+  else itemsSelectedTypes.value.forEach(t => params.append('item_type', t))
+  itemsSelectedLocations.value.forEach(loc => params.append('location', loc))
   if (itemsPlayerScid.value) params.set('player_id', itemsPlayerScid.value)
   const res = await playerAuth.playerFetch(`/inventory/search?${params.toString()}`)
   if (seq !== whoSeq) return          // 已經有更新的搜尋在跑了
@@ -1944,7 +1925,15 @@ async function runStockSearch() {
   whoRows.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-watch([itemsSelectedItemId, itemsSelectedType, itemsSelectedLocation, itemsPlayerScid], runStockSearch)
+watch([itemsSelectedItemId, itemsSelectedTypes, itemsSelectedLocations, itemsPlayerScid], runStockSearch)
+
+// 物品名稱／物品類型互斥（見上面的說明）：勾了類型就清掉已選的物品名稱
+watch(itemsSelectedTypes, (types) => {
+  if (types.length && itemsSelectedItemId.value) {
+    itemsNameText.value = ''
+    itemsSelectedItemId.value = null
+  }
+})
 
 async function searchItemNames(q) {
   const res = await playerAuth.playerFetch(`/item/search?q=${encodeURIComponent(q)}&limit=20`)
@@ -1954,22 +1943,7 @@ async function searchItemNames(q) {
 }
 function itemNameLabel(c) { return c.name_zh || c.name }
 
-function searchItemTypesLocal(q) {
-  const query = (q || '').trim().toLowerCase()
-  const list = query
-    ? itemTypes.value.filter(t => t.toLowerCase().includes(query))
-    : itemTypes.value
-  return Promise.resolve(list)
-}
 
-function searchStockLocationsLocal(q) {
-  const raw = (q || '').trim()
-  const query = raw.toLowerCase()
-  const list = query
-    ? locations.value.filter(loc => loc.toLowerCase().includes(query) || locZh(loc).includes(raw))
-    : locations.value
-  return Promise.resolve(list)
-}
 
 // ── 玩家名單（「查詢」各分頁的玩家id／玩家暱稱欄位共用）──────────────
 //
@@ -2004,22 +1978,11 @@ function playerCandidateLabel(c) { return c.nickname || c.player_name || c.star_
 function onItemsNameSelect(c) {
   if (c) {
     itemsSelectedItemId.value = c._id
-    itemsTypeText.value = ''
-    itemsSelectedType.value = ''
+    itemsSelectedTypes.value = []
   } else {
     itemsSelectedItemId.value = null
   }
 }
-function onItemsTypeSelect(c) {
-  if (c) {
-    itemsSelectedType.value = c
-    itemsNameText.value = ''
-    itemsSelectedItemId.value = null
-  } else {
-    itemsSelectedType.value = ''
-  }
-}
-function onItemsLocationSelect(c) { itemsSelectedLocation.value = c || '' }
 
 // 玩家id／玩家暱稱共用同一個 itemsPlayerScid，理由跟「持有藍圖」分頁的
 // onBpPlayerIdSelect/onBpPlayerNicknameSelect 一樣（見那邊的說明）。
@@ -2045,10 +2008,8 @@ function onItemsPlayerNicknameSelect(c) {
 function clearItemsFilters() {
   itemsNameText.value = ''
   itemsSelectedItemId.value = null
-  itemsTypeText.value = ''
-  itemsSelectedType.value = ''
-  itemsLocationText.value = ''
-  itemsSelectedLocation.value = ''
+  itemsSelectedTypes.value = []
+  itemsSelectedLocations.value = []
   itemsPlayerIdText.value = ''
   itemsPlayerNicknameText.value = ''
   itemsPlayerScid.value = ''
@@ -2158,14 +2119,15 @@ let vehicleFacetsLoaded = false
 
 const flNameText           = ref('')
 const flSelectedVehicleId  = ref('')
-const flTypeText           = ref('')
-const flSelectedType       = ref('')
-const flSizeText           = ref('')
-const flSelectedSize       = ref('')
-const flMfrText            = ref('')
-const flSelectedMfr        = ref('')
-const flRoleText           = ref('')
-const flSelectedRole       = ref('')
+// 類型／尺寸／廠商／角色可多選（同一欄位內取聯集，欄位之間 AND）
+const flSelectedTypes      = ref([])
+const flSelectedSizes      = ref([])
+const flSelectedMfrs       = ref([])
+const flSelectedRoles      = ref([])
+const vehicleSizeOptions = computed(() =>
+  vehicleFacets.value.size_classes.map(n => ({ value: String(n), label: vehicleSizeLabel(n) })))
+const manufacturerOptions = computed(() =>
+  vehicleFacets.value.manufacturers.map(m => ({ value: m.value, label: manufacturerLabel(m.label, m.value) })))
 const flPlayerIdText       = ref('')
 const flPlayerNicknameText = ref('')
 const flPlayerScid         = ref('')
@@ -2184,10 +2146,10 @@ async function loadFleetHolders() {
   loadingFleetHolders.value = true
   const params = new URLSearchParams({ limit: '100' })
   if (flSelectedVehicleId.value) params.set('vehicle_id', flSelectedVehicleId.value)
-  if (flSelectedType.value) params.set('type', flSelectedType.value)
-  if (flSelectedSize.value) params.set('size_class', flSelectedSize.value)
-  if (flSelectedMfr.value) params.set('manufacturer_code', flSelectedMfr.value)
-  if (flSelectedRole.value) params.set('role', flSelectedRole.value)
+  flSelectedTypes.value.forEach(v => params.append('type', v))
+  flSelectedSizes.value.forEach(v => params.append('size_class', v))
+  flSelectedMfrs.value.forEach(v => params.append('manufacturer_code', v))
+  flSelectedRoles.value.forEach(v => params.append('role', v))
   if (flPlayerScid.value) params.set('player_id', flPlayerScid.value)
   const res = await playerAuth.playerFetch(`/player/fleet/holders?${params.toString()}`)
   if (seq !== fleetHolderSeq) return   // 已經有更新的查詢在跑了
@@ -2197,7 +2159,7 @@ async function loadFleetHolders() {
   fleetHolders.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-watch([flSelectedVehicleId, flSelectedType, flSelectedSize, flSelectedMfr, flSelectedRole, flPlayerScid],
+watch([flSelectedVehicleId, flSelectedTypes, flSelectedSizes, flSelectedMfrs, flSelectedRoles, flPlayerScid],
   loadFleetHolders)
 
 async function searchVehicleNames(q) {
@@ -2207,22 +2169,6 @@ async function searchVehicleNames(q) {
   return (res.ok && data?.success) ? (data.data || []) : []
 }
 
-function localFilter(list, q, toText) {
-  const query = (q || '').trim().toLowerCase()
-  return Promise.resolve(query ? list.filter(x => toText(x).toLowerCase().includes(query)) : list)
-}
-function searchVehicleTypesLocal(q) {
-  return localFilter(vehicleFacets.value.types, q, t => `${t.label} ${t.value}`)
-}
-function searchVehicleSizesLocal(q) {
-  return localFilter(vehicleFacets.value.size_classes, q, s => vehicleSizeLabel(s))
-}
-function searchManufacturersLocal(q) {
-  return localFilter(vehicleFacets.value.manufacturers, q, m => `${m.label || ''} ${m.value || ''}`)
-}
-function searchVehicleRolesLocal(q) {
-  return localFilter(vehicleFacets.value.roles, q, r => `${r.label} ${r.value}`)
-}
 
 // 玩家id／玩家暱稱共用 flPlayerScid，理由同「持有藍圖」的 onBpPlayerIdSelect
 function onFlPlayerIdSelect(c) {
@@ -2236,10 +2182,10 @@ function onFlPlayerNicknameSelect(c) {
 
 function clearFleetFilters() {
   flNameText.value = '';  flSelectedVehicleId.value = ''
-  flTypeText.value = '';  flSelectedType.value = ''
-  flSizeText.value = '';  flSelectedSize.value = ''
-  flMfrText.value = '';   flSelectedMfr.value = ''
-  flRoleText.value = '';  flSelectedRole.value = ''
+  flSelectedTypes.value = []
+  flSelectedSizes.value = []
+  flSelectedMfrs.value = []
+  flSelectedRoles.value = []
   flPlayerIdText.value = ''; flPlayerNicknameText.value = ''; flPlayerScid.value = ''
 }
 
