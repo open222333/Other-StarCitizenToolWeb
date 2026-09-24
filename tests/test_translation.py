@@ -262,3 +262,24 @@ def test_translations_endpoint_validates_input(client):
     assert client.get('/item/translations?domain=item').status_code == 400
     many = '&'.join(f'text=t{i}' for i in range(301))
     assert client.get(f'/item/translations?domain=item&{many}').status_code == 400
+
+
+def test_ensure_indexes_never_tests_database_truthiness(client):
+    """pymongo 的 Database 物件不能做 bool()（會丟 NotImplementedError）——
+    `db = db or get_db()` 這種寫法在 mongomock 會過、正式環境 api 直接起不來
+    （實際發生過：容器 unhealthy，log 一直印 "Database objects do not implement
+    truth value testing"）。這裡用一個同樣禁止 bool() 的包裝確認不會再犯。"""
+    real = get_db()
+
+    class StrictDatabase:
+        def __bool__(self):
+            raise NotImplementedError('Database objects do not implement truth value testing')
+
+        def __getitem__(self, name):
+            return real[name]
+
+    T.ensure_indexes(StrictDatabase())
+    import pymongo
+    fake = pymongo.MongoClient('mongodb://127.0.0.1:1', connect=False)['x']
+    with pytest.raises(NotImplementedError):
+        bool(fake)   # 確認假設本身：真的 pymongo Database 確實禁止 bool()

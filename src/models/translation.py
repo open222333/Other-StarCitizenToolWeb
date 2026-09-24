@@ -247,7 +247,10 @@ def status() -> dict:
 # ── 寫入（同步用）──────────────────────────────────────────────────
 
 def ensure_indexes(db=None):
-    db = db or get_db()
+    # pymongo 的 Database 不能拿來做 bool 判斷（會丟 NotImplementedError），
+    # 一定要跟 None 比；mongomock 沒有這個限制，測試抓不到
+    if db is None:
+        db = get_db()
     db[COLLECTION].create_index('key_lower')
     db[COLLECTION].create_index([('en_lower', ASCENDING), ('key_lower', ASCENDING)])
     db[COLLECTION].create_index([('source', ASCENDING), ('domain', ASCENDING)])
