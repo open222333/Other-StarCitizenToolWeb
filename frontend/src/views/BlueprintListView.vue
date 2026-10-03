@@ -1,132 +1,150 @@
-<!-- 藍圖管理列表（規格書第 5 節；篩選/排序/分頁見全站搜尋優化計畫第 2 項） -->
+<!--
+  後台「藍圖」頁，兩個分頁：
+    - 藍圖資料庫：製造藍圖主檔 blueprint_master（唯讀，見 components/BlueprintMasterBrowser.vue）
+    - 玩家擁有藍圖：玩家登記的名冊 blueprints（可編輯／刪除，不在後台新增——
+      登記由玩家在玩家頁面做；篩選/排序/分頁見全站搜尋優化計畫第 2 項）
+-->
 <template>
   <div>
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h5 class="mb-0 fw-bold"><i class="bi bi-journal-bookmark me-2 text-primary"></i>藍圖 Blueprint</h5>
-      <button class="btn btn-primary btn-sm" @click="bpModalRef.open()">
-        <i class="bi bi-plus-lg me-1"></i>新增藍圖
-      </button>
-    </div>
+    <h5 class="mb-3 fw-bold"><i class="bi bi-journal-bookmark me-2 text-primary"></i>藍圖 Blueprint</h5>
 
-    <Transition name="alert-slide">
-      <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
-    </Transition>
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item">
+        <button type="button" class="nav-link" :class="{ active: tab === 'master' }" @click="tab = 'master'">
+          藍圖資料庫
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link" :class="{ active: tab === 'owned' }" @click="switchToOwned">
+          玩家擁有藍圖
+        </button>
+      </li>
+    </ul>
 
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="nameQuery" type="text" class="form-control form-control-sm"
-            style="max-width: 12rem" placeholder="搜尋 Blueprint 名稱..." @change="reload(0)">
-          <input v-model="locationQuery" type="text" class="form-control form-control-sm"
-            style="max-width: 12rem" placeholder="搜尋取得地點..." @change="reload(0)">
+    <BlueprintMasterBrowser v-show="tab === 'master'" />
 
-          <MultiSelectFilter :model-value="selectedMethods" label="取得方式" :options="methodOptions"
-            @update:model-value="onMethodsChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedStatuses" label="狀態" :options="statusOptions"
-            @update:model-value="onStatusesChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedPlayers" label="取得玩家" :options="playerOptions"
-            @update:model-value="onPlayersChange">
-          </MultiSelectFilter>
+    <div v-show="tab === 'owned'">
+      <Transition name="alert-slide">
+        <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
+      </Transition>
 
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
+      <!-- ── 篩選 ────────────────────────────────────────────── -->
+      <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body py-2">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <input v-model="nameQuery" type="text" class="form-control form-control-sm"
+              style="max-width: 12rem" placeholder="搜尋 Blueprint 名稱..." @change="reload(0)">
+            <input v-model="locationQuery" type="text" class="form-control form-control-sm"
+              style="max-width: 12rem" placeholder="搜尋取得地點..." @change="reload(0)">
+
+            <MultiSelectFilter :model-value="selectedMethods" label="取得方式" :options="methodOptions"
+              @update:model-value="onMethodsChange">
+            </MultiSelectFilter>
+            <MultiSelectFilter :model-value="selectedStatuses" label="狀態" :options="statusOptions"
+              @update:model-value="onStatusesChange">
+            </MultiSelectFilter>
+            <MultiSelectFilter :model-value="selectedPlayers" label="取得玩家" :options="playerOptions"
+              @update:model-value="onPlayersChange">
+            </MultiSelectFilter>
+
+            <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
+              清除全部篩選
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="card shadow-sm border-0">
-      <div class="card-body p-0">
-        <div style="overflow-x:auto">
-          <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th class="ps-3 sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('name')" @keydown.enter="toggleSort('name')">
-                  Blueprint 名稱
-                  <i v-if="sortBy === 'name'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('acquisition_method')" @keydown.enter="toggleSort('acquisition_method')">
-                  取得方式
-                  <i v-if="sortBy === 'acquisition_method'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('acquisition_location')" @keydown.enter="toggleSort('acquisition_location')">
-                  取得地點
-                  <i v-if="sortBy === 'acquisition_location'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th>取得玩家</th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('unlock_status')" @keydown.enter="toggleSort('unlock_status')">
-                  狀態
-                  <i v-if="sortBy === 'unlock_status'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th style="width:140px" class="pe-3">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="loading">
-                <td colspan="6" class="text-center py-4 text-muted">
-                  <span class="spinner-border spinner-border-sm me-2"></span>載入中...
-                </td>
-              </tr>
-              <tr v-else-if="loadFailed">
-                <td colspan="6" class="text-center py-4">
-                  <span class="text-warning">
-                    <i class="bi bi-exclamation-triangle me-1"></i>讀取藍圖失敗。
-                  </span>
-                  <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
-                </td>
-              </tr>
-              <tr v-else-if="!blueprints.length">
-                <td colspan="6" class="text-center py-4 text-muted">
-                  {{ hasActiveFilters ? '沒有符合篩選條件的藍圖。' : '尚無藍圖資料' }}
-                </td>
-              </tr>
-              <template v-else>
-                <tr v-for="bp in blueprints" :key="bp._id">
-                  <td class="ps-3 fw-semibold">
-                    {{ bp.name }}<span v-if="bp.name_zh" class="text-muted">（{{ bp.name_zh }}）</span>
-                  </td>
-                  <td class="small">{{ bp.acquisition_method || '未知' }}</td>
-                  <td class="small">{{ bp.acquisition_location || '—' }}</td>
-                  <td class="small">{{ playerName(bp.player_id) }}</td>
-                  <td><StatusBadge :status="bp.unlock_status" /></td>
-                  <td class="pe-3">
-                    <button class="btn btn-sm btn-outline-secondary me-1" @click="bpModalRef.open(bp)">
-                      <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" @click="handleDelete(bp)">
-                      <i class="bi bi-trash"></i>
-                    </button>
+      <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+          <div style="overflow-x:auto">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="ps-3 sortable-th" role="button" tabindex="0"
+                    @click="toggleSort('name')" @keydown.enter="toggleSort('name')">
+                    Blueprint 名稱
+                    <i v-if="sortBy === 'name'" class="bi ms-1"
+                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
+                  <th class="sortable-th" role="button" tabindex="0"
+                    @click="toggleSort('acquisition_method')" @keydown.enter="toggleSort('acquisition_method')">
+                    取得方式
+                    <i v-if="sortBy === 'acquisition_method'" class="bi ms-1"
+                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
+                  <th class="sortable-th" role="button" tabindex="0"
+                    @click="toggleSort('acquisition_location')" @keydown.enter="toggleSort('acquisition_location')">
+                    取得地點
+                    <i v-if="sortBy === 'acquisition_location'" class="bi ms-1"
+                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
+                  <th>取得玩家</th>
+                  <th class="sortable-th" role="button" tabindex="0"
+                    @click="toggleSort('unlock_status')" @keydown.enter="toggleSort('unlock_status')">
+                    狀態
+                    <i v-if="sortBy === 'unlock_status'" class="bi ms-1"
+                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
+                  </th>
+                  <th style="width:140px" class="pe-3">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="loading">
+                  <td colspan="6" class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                   </td>
                 </tr>
-              </template>
-            </tbody>
-          </table>
+                <tr v-else-if="loadFailed">
+                  <td colspan="6" class="text-center py-4">
+                    <span class="text-warning">
+                      <i class="bi bi-exclamation-triangle me-1"></i>讀取藍圖失敗。
+                    </span>
+                    <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
+                  </td>
+                </tr>
+                <tr v-else-if="!blueprints.length">
+                  <td colspan="6" class="text-center py-4 text-muted">
+                    {{ hasActiveFilters ? '沒有符合篩選條件的藍圖。' : '尚無藍圖資料' }}
+                  </td>
+                </tr>
+                <template v-else>
+                  <tr v-for="bp in blueprints" :key="bp._id">
+                    <td class="ps-3 fw-semibold">
+                      {{ bp.name }}<span v-if="bp.name_zh" class="text-muted">（{{ bp.name_zh }}）</span>
+                    </td>
+                    <td class="small">{{ bp.acquisition_method || '未知' }}</td>
+                    <td class="small">{{ bp.acquisition_location || '—' }}</td>
+                    <td class="small">{{ playerName(bp.player_id) }}</td>
+                    <td><StatusBadge :status="bp.unlock_status" /></td>
+                    <td class="pe-3">
+                      <button class="btn btn-sm btn-outline-secondary me-1" @click="bpModalRef.open(bp)">
+                        <i class="bi bi-pencil"></i>
+                      </button>
+                      <button class="btn btn-sm btn-outline-danger" @click="handleDelete(bp)">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- ── 分頁 ────────────────────────────────────────────── -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
-      <div class="small text-muted">
-        共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
+      <!-- ── 分頁 ────────────────────────────────────────────── -->
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+        <div class="small text-muted">
+          共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
+        </div>
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
+            @click="reload(Math.max(0, offset - limit))">上一頁</button>
+          <button class="btn btn-outline-secondary" :disabled="offset + limit >= total || loading"
+            @click="reload(offset + limit)">下一頁</button>
+        </div>
       </div>
-      <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
-          @click="reload(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-outline-secondary" :disabled="offset + limit >= total || loading"
-          @click="reload(offset + limit)">下一頁</button>
-      </div>
+
     </div>
 
     <BlueprintFormModal ref="bpModalRef" :players="playerStore.players" @saved="reload(offset)" />
@@ -135,15 +153,27 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { usePlayerStore } from '@/stores/player'
 import { blueprintApi } from '@/api'
 import StatusBadge         from '@/components/StatusBadge.vue'
 import BlueprintFormModal   from '@/components/BlueprintFormModal.vue'
 import ConfirmModal          from '@/components/ConfirmModal.vue'
 import MultiSelectFilter     from '@/components/MultiSelectFilter.vue'
+import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 
 const playerStore = usePlayerStore()
+
+const tab = ref('master')
+// 玩家擁有藍圖第一次切過去才載入
+let ownedLoaded = false
+async function switchToOwned() {
+  tab.value = 'owned'
+  if (ownedLoaded) return
+  ownedLoaded = true
+  await reload(0)
+  if (!playerStore.players.length) await playerStore.load()
+}
 
 // 跟 BlueprintFormModal.vue 用同一份列舉值 —— 那邊也是照抄規格書第 5.2／5.3
 // 節寫死的常數，這裡刻意保持一樣的重複而不是抽共用檔，理由見那個檔案的
@@ -268,10 +298,6 @@ function escHtml(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }
 
-onMounted(async () => {
-  await reload(0)
-  if (!playerStore.players.length) await playerStore.load()
-})
 </script>
 
 <style scoped>

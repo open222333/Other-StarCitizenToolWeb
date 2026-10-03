@@ -1,10 +1,9 @@
 <!--
   藍圖材料試算：選一張藍圖 → 填現有材料 → 算最多可以做幾個。
 
-  這個元件被兩個地方掛載（同一份實作，各自帶自己的身分）：
-    - 後台：views/BlueprintCalcView.vue（用 apiFetch，庫存來源是公會共享庫）
-    - 玩家頁：MyPlayerView 的「試算」分頁（用 playerFetch，庫存來源是個人庫）
-  所以這裡不直接碰任何 store，取資料一律走 `fetcher` prop。
+  掛在玩家頁 MyPlayerView 的「試算」分頁（用 playerFetch，庫存來源是個人庫）。
+  後台原本也有一個入口（公會共享庫），已移除——後台只看資料庫，不重複玩家
+  頁的功能。取資料仍一律走 `fetcher`／`stockLoader` prop，不直接碰任何 store。
 
   計算邏輯全部在 utils/craftCalc.js（純函式、有測試：npm run test:calc），
   這個檔案只負責畫面與互動。
