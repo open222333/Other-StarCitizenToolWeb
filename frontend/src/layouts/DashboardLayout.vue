@@ -47,17 +47,26 @@
         <RouterLink class="nav-link" to="/blueprints" @click="sidebarOpen = false">
           <i class="bi bi-journal-bookmark"></i>藍圖
         </RouterLink>
-        <RouterLink class="nav-link" to="/blueprint-calc" @click="sidebarOpen = false">
-          <i class="bi bi-calculator"></i>材料試算
-        </RouterLink>
         <RouterLink class="nav-link" to="/inventory" @click="sidebarOpen = false">
           <i class="bi bi-box-seam"></i>庫存
         </RouterLink>
         <RouterLink class="nav-link" to="/mining" @click="sidebarOpen = false">
           <i class="bi bi-gem"></i>礦物
         </RouterLink>
+        <RouterLink class="nav-link" to="/missions" @click="sidebarOpen = false">
+          <i class="bi bi-flag"></i>任務
+        </RouterLink>
+        <RouterLink class="nav-link" to="/factions" @click="sidebarOpen = false">
+          <i class="bi bi-people"></i>勢力
+        </RouterLink>
+        <RouterLink class="nav-link" to="/locations" @click="sidebarOpen = false">
+          <i class="bi bi-geo-alt"></i>地點
+        </RouterLink>
         <RouterLink class="nav-link" to="/vehicles" @click="sidebarOpen = false">
           <i class="bi bi-rocket-takeoff"></i>艦船
+        </RouterLink>
+        <RouterLink class="nav-link" to="/tool-links" @click="sidebarOpen = false">
+          <i class="bi bi-link-45deg"></i>工具網站
         </RouterLink>
 
         <div class="nav-section">管理</div>

@@ -129,8 +129,10 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 玩家自助註冊 | http://localhost:8090/register | 公開，不需登入 |
 | **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
 | **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
-| 藍圖材料試算 | http://localhost:8090/me?tab=craft ／ 後台 `/admin/blueprint-calc` | 填現有材料算最多可做幾個。同一個元件，玩家版帶個人庫、後台版帶公會共享庫 |
+| 藍圖材料試算 | http://localhost:8090/me?tab=craft | 填現有材料算最多可做幾個，「帶入」來源是自己的個人庫（後台沒有這個頁面） |
 | 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
+| 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
+| 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務 |
 | 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
 | 玩家站上的後台登入 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面。管理員平常請走 8080 |
 
@@ -832,14 +834,10 @@ sudo certbot renew --dry-run                         # 測試自動續約
 
 ## 藍圖材料試算
 
-`/admin/blueprint-calc`（後台側邊欄「材料試算」）與玩家頁的「試算」分頁是
-**同一個元件**（`frontend/src/components/BlueprintCalculator.vue`），差別只在
-帶進去的身分與庫存來源：
-
-| 掛載點 | 身分 | 「帶入」按鈕的來源 |
-|---|---|---|
-| 後台 `views/BlueprintCalcView.vue` | `apiFetch`（後台 token） | 公會共享庫 |
-| 玩家頁 `MyPlayerView` 的 craft 分頁 | `playerFetch`（玩家 token） | 自己的個人庫 |
+玩家頁的「試算」分頁（`frontend/src/components/BlueprintCalculator.vue`，身分是
+`playerFetch`，「帶入」按鈕的來源是自己的個人庫）。後台原本也有一個入口
+（`/admin/blueprint-calc`，帶公會共享庫），已移除——後台的藍圖／礦物頁只用來看
+資料庫內容，不重複玩家頁的功能。
 
 用法：搜尋並選一張藍圖 → 畫面列出它需要的每種材料 → 在「我現有」填數量
 → 即時算出最多可做幾個、哪一種材料是瓶頸、做完各材料剩多少；填了「我想做 N 個」
@@ -854,8 +852,6 @@ sudo certbot renew --dry-run                         # 測試自動續約
 - **需求未知不當成 0**：材料明細只在同步時帶 `include` 參數才有內容，個別項目也
   可能兩個數量欄位都空。那種情況會標成「未知」並排除在瓶頸計算外，同時在摘要
   提示「實際可做數量可能更少」—— 當成 0 會算出可以做無限個。
-- **後台帶入是逐材料查詢**（不是撈整個庫存再比對）：庫存列表有 200 筆上限，
-  整撈在公會庫變大後會漏，而漏掉的後果是**靜默高估**可做數量。
 
 計算邏輯在 `frontend/src/utils/craftCalc.js`（純函式），有 23 項測試：
 
@@ -910,27 +906,33 @@ cd frontend && npm run test:calc
 這些是公開遊戲資料，唯讀，只要求登入（比照 `/item/*`），不限後台角色 ——
 玩家端 `/me` 的藍圖 autocomplete 需要打這裡。
 
-**排程現在存在 DB 裡（`sync_schedule` collection，`src/models/sync_schedule.py`），
-可以在後台「設定」頁面直接改 cron，不用改 `tasks/celeryconfig.py`、也不用重啟
-worker/beat。** `tasks/celeryconfig.py` 只保留一個固定的 5 分鐘心跳任務
+**排程存在 DB 裡，每個資料庫各自一筆（`sync_jobs` collection，`src/models/sync_schedule.py`
+的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、UEX 價格十個同步項目，
+各自有 cron、啟用狀態與上次執行結果。後台「資料同步排程」頁（`/admin/sync-schedule`）
+可以個別改時間、個別「立即同步」，也可以「全部立即同步」。不用改 `tasks/celeryconfig.py`、
+也不用重啟 worker/beat。
+
+`tasks/celeryconfig.py` 只保留一個固定的 5 分鐘心跳任務
 （`check-sync-schedule` → `tasks.scdata_sync.check_and_run_scheduled_sync`），
-每次心跳都會讀 DB 裡的排程設定，用 cron 表達式判斷「現在該不該跑」，到期才真的
-觸發 `sync_scdata`。
+每次心跳挑出到期的項目，**各自派成一個 Celery 任務，不同項目可以同時跑**（每個項目
+一把鎖，同一項不會並行）。同時跑幾個看 worker 的 concurrency（預設 4，`.env` 的
+`CELERY_WORKER_CONCURRENCY` 可調，記憶體上限 `WORKER_MEMORY_LIMIT` 預設 768m），
+超過的會排隊。失敗的項目 30 分鐘後重試，連續失敗 5 次回到 cron 節奏。
+
+排程頁上方的「進行中」區塊每 3 秒更新：正在跑的項目、目前階段（例如「讀取 Star
+Citizen Wiki API」）、已處理筆數／預估總數、已執行多久，以及排隊中的項目。
 
 | 排程（celeryconfig.py，固定） | 時間 | 內容 |
 |---|---|---|
-| `check-sync-schedule` | 每 5 分鐘 | 檢查 DB 排程是否到期，到期才觸發同步 |
+| `check-sync-schedule` | 每 5 分鐘 | 檢查各同步項目是否到期，到期的一起跑 |
 
-| DB 排程預設值（`sync_schedule` collection，可在後台編輯） | 值 |
-|---|---|
-| `cron` | `30 4 * * 1`（每週一 04:30，Asia/Taipei） |
-| `enabled` | `true` |
-| `resources` | `['items', 'vehicles', 'commodities', 'blueprints']` |
-| `with_uex` | `true` |
+預設值：翻譯 `0 4 * * 1`，其他 `30 4 * * 1`（每週一，Asia/Taipei），全部啟用。
+從舊版單一排程（`sync_schedule` collection）升級時，第一次讀取會沿用它的 cron／啟用狀態。
 
-API：`GET /item/sync-schedule`（任何登入者可查看）、
-`PUT /item/sync-schedule`（admin/operator，改 cron 前會先驗證表達式，
-無效會回 400）。
+API：`GET /item/sync-jobs`（後台角色可查看）、`PUT /item/sync-jobs/<key>`（admin/operator，
+`{"cron": "...", "enabled": true}`，cron 無效回 400）、`POST /item/sync`
+（`{"jobs": ["missions"]}` 只同步指定項目，省略 = 全部；每項各自派送，
+正在跑或排隊中的會略過）。
 
 worker / beat 預設不啟動（`profiles: ["background"]`），排程要生效得先：
 
@@ -946,13 +948,9 @@ docker compose --profile background up -d worker beat
 docker compose exec worker python -c \
   "from tasks.scdata_sync import sync_scdata; print(sync_scdata())"
 
-# 只同步物品
+# 只同步物品與任務
 docker compose exec worker python -c \
-  "from tasks.scdata_sync import sync_scdata; print(sync_scdata(resources=['items']))"
-
-# 跳過 UEX
-docker compose exec worker python -c \
-  "from tasks.scdata_sync import sync_scdata; print(sync_scdata(with_uex=False))"
+  "from tasks.scdata_sync import sync_scdata; print(sync_scdata(jobs=['items', 'missions']))"
 ```
 
 **方式二：後台 API 觸發（`POST /item/sync`，admin/operator 權限，需先登入拿 token）**
@@ -980,7 +978,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 | `commodity_master` | 遊戲 uuid | ~205 | 貨物，含可用箱體規格 |
 | `uex_items` / `uex_items_prices` / `uex_terminals` | UEX id | — | 價格與終端（需 token） |
 | `sync_runs` | run uuid | — | 每輪同步的統計與錯誤 |
-| `sync_schedule` | `'default'`（單一文件） | 1 | 自動同步排程設定（cron / enabled / resources / with_uex） |
+| `sync_jobs` | 同步項目 key（`items`、`missions`…） | 10 | 各資料庫的同步排程與上次結果（cron / enabled / last_*） |
 | `inventory` | ObjectId | — | 庫存 |
 | `inventory_log` | ObjectId | — | 異動稽核日誌 |
 | `discord_bindings` | ObjectId | — | Discord ID ↔ RSI handle |

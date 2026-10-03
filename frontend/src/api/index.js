@@ -158,6 +158,38 @@ export const miningApi = {
   listSystems:   () => apiFetch('/mining/systems'),
 }
 
+// ── 任務／勢力資料庫 API（遊戲資料，唯讀）─────────────────────────
+// 對應 app/mission/view.py，由 tasks/scdata_sync.py 從 Star Citizen Wiki API
+// 同步進 mission_master／faction_master。
+export const missionApi = {
+  list:         (params) => apiFetch(`/mission/${qs(params)}`),
+  get:          (id)     => apiFetch(`/mission/${id}`),
+  facets:       ()       => apiFetch('/mission/facets'),
+  forBlueprint: (uuid)   => apiFetch(`/mission/for-blueprint/${uuid}`),
+  factions:     ()       => apiFetch('/mission/factions'),
+  faction:      (id)     => apiFetch(`/mission/factions/${id}`),
+}
+
+// ── 地點資料庫 API（星圖，唯讀，後台）─────────────────────────────
+// 對應 app/starmap/view.py，由「地點」同步項目從 scunpacked-data starmap.json 同步。
+// ── 遊戲資料「玩家頁面顯示」（app/item/view.py 的 /item/visibility*，見 src/models/visibility.py）──
+// dataset：blueprints／missions／mining_deposits／minerals／mining_locations／vehicles／locations
+export const visibilityApi = {
+  // value：true／false／null（回到依名稱自動判斷）
+  set: (dataset, id, value) => apiFetch(`/item/visibility/${dataset}/${encodeURIComponent(id)}`,
+    { method: 'PUT', body: JSON.stringify({ player_visible: value }) }),
+  minerals: () => apiFetch('/item/visibility/minerals'),
+}
+
+export const starmapApi = {
+  list:   (params) => apiFetch(`/starmap/${qs(params)}`),
+  get:    (id)     => apiFetch(`/starmap/${encodeURIComponent(id)}`),
+  facets: ()       => apiFetch('/starmap/facets'),
+  // value：true／false／null（回到自動判斷）
+  setStorage: (id, value) => apiFetch(`/starmap/${encodeURIComponent(id)}/storage`,
+    { method: 'PUT', body: JSON.stringify({ can_store: value }) }),
+}
+
 // ── 艦船主檔 API（遊戲資料，唯讀）───────────────────────────────
 // 對應 app/item/view.py 的 /item/vehicles*，由 tasks/scdata_sync.py 從
 // Star Citizen Wiki API 同步進 vehicle_master。篩選/排序/分頁比照藍圖
@@ -172,14 +204,26 @@ export const vehicleApi = {
   facets:        () => apiFetch('/item/vehicles/facets'),
 }
 
+// ── 工具網站連結（後台維護，玩家頁「工具網站」分頁顯示）──────────
+export const toolLinkApi = {
+  list:   ()         => apiFetch('/links/'),
+  create: (data)     => apiFetch('/links/',      { method: 'POST',   body: JSON.stringify(data) }),
+  update: (id, data) => apiFetch(`/links/${id}`, { method: 'PUT',    body: JSON.stringify(data) }),
+  remove: (id)       => apiFetch(`/links/${id}`, { method: 'DELETE' }),
+  // JSON 批量匯入／匯出：importAll 帶 { data: <匯出檔內容或陣列>, replace: bool }
+  exportAll: ()       => apiFetch('/links/export'),
+  importAll: (body)   => apiFetch('/links/import', { method: 'POST', body: JSON.stringify(body) }),
+}
+
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────
-// 對應 app/item/view.py 的 /item/sync-status、/item/sync、/item/sync-schedule
+// 對應 app/item/view.py 的 /item/sync-status、/item/sync、/item/sync-jobs
+// （每個資料庫一個同步項目，各自排程；syncNow 帶 { jobs: [...] } 只同步那幾項）
 export const itemApi = {
-  syncStatus:         ()     => apiFetch('/item/sync-status'),
-  syncRuns:           (limit) => apiFetch(`/item/sync-runs?limit=${limit || 20}`),
-  syncNow:            (data) => apiFetch('/item/sync', { method: 'POST', body: JSON.stringify(data || {}) }),
-  getSyncSchedule:    ()     => apiFetch('/item/sync-schedule'),
-  updateSyncSchedule: (data) => apiFetch('/item/sync-schedule', { method: 'PUT', body: JSON.stringify(data || {}) }),
+  syncStatus:    ()          => apiFetch('/item/sync-status'),
+  syncRuns:      (limit)     => apiFetch(`/item/sync-runs?limit=${limit || 20}`),
+  syncNow:       (data)      => apiFetch('/item/sync', { method: 'POST', body: JSON.stringify(data || {}) }),
+  syncJobs:      ()          => apiFetch('/item/sync-jobs'),
+  updateSyncJob: (key, data) => apiFetch(`/item/sync-jobs/${key}`, { method: 'PUT', body: JSON.stringify(data || {}) }),
 }
 
 // ── 共用：把物件轉成 query string（略過 undefined／空字串） ──────

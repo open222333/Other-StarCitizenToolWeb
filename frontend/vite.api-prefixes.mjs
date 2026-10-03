@@ -24,6 +24,9 @@ export const API_PREFIXES = [
   '/item',
   '/inventory',
   '/mining',
+  '/links',
+  '/mission',
+  '/starmap',
 ]
 
 /** 產生 Vite dev server 的 proxy 設定物件。 */

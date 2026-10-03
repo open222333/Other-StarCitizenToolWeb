@@ -173,8 +173,19 @@ def ensure_indexes():
     db['vehicle_master'].create_index([('is_current', ASCENDING), ('manufacturer_code', ASCENDING)])
     db['vehicle_master'].create_index([('is_current', ASCENDING), ('size_class', ASCENDING)])
     db['commodity_master'].create_index('key')
+    # 任務／勢力（Star Citizen Wiki API，見 src/models/mission.py）
+    db['mission_master'].create_index([('is_current', ASCENDING), ('title_lower', ASCENDING)])
+    db['mission_master'].create_index('blueprint_uuids')
+    db['mission_master'].create_index('faction_uuid')
+    db['faction_master'].create_index([('is_current', ASCENDING), ('name_lower', ASCENDING)])
+    # 星圖地點（scunpacked-data starmap.json，見 src/models/starmap.py）
+    db['starmap_master'].create_index([('is_current', ASCENDING), ('system_name', ASCENDING),
+                                       ('path_sort', ASCENDING)])
+    db['starmap_master'].create_index('parent_uuid')
+    db['starmap_master'].create_index('type')
     for name in ('item_master_versions', 'vehicle_master_versions',
-                 'commodity_master_versions', 'blueprint_master_versions'):
+                 'commodity_master_versions', 'blueprint_master_versions',
+                 'mission_master_versions'):
         db[name].create_index([('item_uuid', ASCENDING), ('game_version', ASCENDING)])
 
     # UEX 價格與終端
@@ -219,6 +230,9 @@ def ensure_indexes():
         _translation.sync_manual()
     except Exception as e:   # 人工條目寫不進去不該讓 app 起不來
         logging.warning('[index] 寫入人工翻譯條目失敗：%s', e)
+
+    # ── 工具網站連結（見 src/models/tool_link.py）──────────────────────
+    db['tool_links'].create_index([('deleted_at', ASCENDING), ('sort_order', ASCENDING)])
 
     # ── 艦隊名冊（玩家擁有的船／載具，見 src/models/fleet.py）──────────
     db['fleet'].create_index('player_id')

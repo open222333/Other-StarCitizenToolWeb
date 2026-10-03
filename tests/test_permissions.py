@@ -109,9 +109,22 @@ ADMIN_ROUTES = [
     # 遊戲資料同步（後台設定頁專用，玩家端不會用到）
     ('GET',    '/item/sync-status',   READ_ROLES),
     ('GET',    '/item/sync-runs',     READ_ROLES),
-    ('GET',    '/item/sync-schedule', READ_ROLES),
+    ('GET',    '/item/sync-jobs',     READ_ROLES),
     ('POST',   '/item/sync',          WRITE_ROLES),
-    ('PUT',    '/item/sync-schedule', WRITE_ROLES),
+    ('PUT',    '/item/sync-jobs/items', WRITE_ROLES),
+    # 工具網站連結（後台維護；玩家頁讀取走 /player/tool-links）
+    ('GET',    '/links/',             READ_ROLES),
+    ('GET',    '/links/export',       READ_ROLES),
+    ('GET',    '/starmap/',           READ_ROLES),
+    ('GET',    '/starmap/facets',     READ_ROLES),
+    ('GET',    '/starmap/nope',       READ_ROLES),
+    ('PUT',    '/starmap/nope/storage', WRITE_ROLES),
+    ('PUT',    '/item/visibility/blueprints/nope', WRITE_ROLES),
+    ('GET',    '/item/visibility/minerals', READ_ROLES),
+    ('POST',   '/links/import',       WRITE_ROLES),
+    ('POST',   '/links/',             WRITE_ROLES),
+    ('PUT',    f'/links/{_OID}',      WRITE_ROLES),
+    ('DELETE', f'/links/{_OID}',      WRITE_ROLES),
 ]
 
 _IDS = [f'{m} {p}' for m, p, _ in ADMIN_ROUTES]
@@ -227,6 +240,8 @@ UNGUARDED_ALLOWLIST = {
     # 所以這一組必須對玩家 token 開放。
     # （相對地 /item/sync* 是後台設定頁專用，已收成 admin_api。）
     'app_item.list_items',
+    # 可存放的地點（公開星圖資料，玩家站庫存地點下拉在用）
+    'app_starmap.storage_locations',
     'app_item.search_items',
     'app_item.list_types',
     'app_item.get_item',
@@ -252,6 +267,14 @@ UNGUARDED_ALLOWLIST = {
     'app_mining.list_deposits',
     'app_mining.list_locations',
     'app_mining.list_systems',
+    # 任務／勢力資料庫（公開遊戲資料，來源是 Star Citizen Wiki API；
+    # 玩家頁點藍圖名稱看解鎖任務要用）
+    'app_mission.list_missions',
+    'app_mission.mission_facets',
+    'app_mission.missions_for_blueprint',
+    'app_mission.list_factions',
+    'app_mission.get_faction',
+    'app_mission.get_mission',
     # 「誰有這張藍圖」—— 比照 app_inventory.where_item，公會成員互查是功能需求
     'app_blueprint.blueprint_holders',
 

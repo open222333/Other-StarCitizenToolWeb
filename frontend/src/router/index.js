@@ -116,21 +116,39 @@ const router = createRouter({
           component: () => import('@/views/BlueprintListView.vue'),
         },
         {
-          // 藍圖材料試算（同一個元件也掛在玩家頁的「試算」分頁）
-          path: 'blueprint-calc',
-          name: 'blueprint-calc',
-          component: () => import('@/views/BlueprintCalcView.vue'),
-        },
-        {
           path: 'inventory',
           name: 'inventory',
           component: () => import('@/views/InventoryListView.vue'),
         },
         {
-          // 礦物參考查詢（唯讀，靜態成分/機率對照表，見 MiningView.vue 檔頭）
+          // 礦物資料庫（唯讀：礦物／礦床／地點與中文對照，見 MiningView.vue 檔頭）
           path: 'mining',
           name: 'mining',
           component: () => import('@/views/MiningView.vue'),
+        },
+        {
+          // 任務資料庫（唯讀，見 MissionListView.vue 檔頭）；?id= 直接展開某個任務
+          path: 'missions',
+          name: 'missions',
+          component: () => import('@/views/MissionListView.vue'),
+        },
+        {
+          // 勢力資料庫（唯讀）；?id= 直接展開某個勢力
+          path: 'factions',
+          name: 'factions',
+          component: () => import('@/views/FactionListView.vue'),
+        },
+        {
+          // 地點資料庫（星圖，唯讀，見 StarmapView.vue 檔頭）；?id= 直接展開某個地點
+          path: 'locations',
+          name: 'locations',
+          component: () => import('@/views/StarmapView.vue'),
+        },
+        {
+          // 工具網站連結（顯示在玩家頁「工具網站」分頁）
+          path: 'tool-links',
+          name: 'tool-links',
+          component: () => import('@/views/ToolLinksView.vue'),
         },
         {
           // 艦船基本資料（唯讀，遊戲主檔，見 VehicleListView.vue 檔頭）
