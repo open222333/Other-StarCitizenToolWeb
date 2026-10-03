@@ -11,6 +11,8 @@
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
 
+from src.permissions import viewer_sees_hidden
+
 from src.models.mining import MiningDeposit, MiningLocation
 
 app_mining = Blueprint('app_mining', __name__)
@@ -28,7 +30,7 @@ def list_deposits():
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': MiningDeposit.list_all()})
+    return jsonify({'success': True, 'data': MiningDeposit.list_all(visible_only=not viewer_sees_hidden())})
 
 
 @app_mining.route('/locations', methods=['GET'])
@@ -43,7 +45,7 @@ def list_locations():
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': MiningLocation.list_all()})
+    return jsonify({'success': True, 'data': MiningLocation.list_all(visible_only=not viewer_sees_hidden())})
 
 
 @app_mining.route('/systems', methods=['GET'])

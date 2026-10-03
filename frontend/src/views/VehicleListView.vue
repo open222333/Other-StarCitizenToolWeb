@@ -40,6 +40,12 @@
           <MultiSelectFilter :model-value="selectedSizeClasses" label="尺寸" :options="sizeClassOptions"
             @update:model-value="onSizeClassesChange">
           </MultiSelectFilter>
+          <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示"
+            @change="reload(0)">
+            <option value="">玩家頁面：全部</option>
+            <option value="1">玩家頁面：顯示</option>
+            <option value="0">玩家頁面：不顯示</option>
+          </select>
 
           <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
             清除全部篩選
@@ -87,22 +93,23 @@
                   <i v-if="sortBy === 'mass_hull'" class="bi ms-1"
                     :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
                 </th>
-                <th class="sortable-th text-end pe-3" role="button" tabindex="0"
+                <th class="sortable-th text-end" role="button" tabindex="0"
                   @click="toggleSort('msrp')" @keydown.enter="toggleSort('msrp')">
                   建議售價 (USD)
                   <i v-if="sortBy === 'msrp'" class="bi ms-1"
                     :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
                 </th>
+                <th class="pe-3 text-nowrap">玩家頁面</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="8" class="text-center py-4 text-muted">
+                <td colspan="9" class="text-center py-4 text-muted">
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
-                <td colspan="8" class="text-center py-4">
+                <td colspan="9" class="text-center py-4">
                   <span class="text-warning">
                     <i class="bi bi-exclamation-triangle me-1"></i>讀取艦船資料失敗。
                   </span>
@@ -110,7 +117,7 @@
                 </td>
               </tr>
               <tr v-else-if="!vehicles.length">
-                <td colspan="8" class="text-center py-4 text-muted">
+                <td colspan="9" class="text-center py-4 text-muted">
                   {{ hasActiveFilters ? '沒有符合篩選條件的艦船。' : '尚無艦船資料 —— 請先在「系統設定 → 資料同步」跑一次同步。' }}
                 </td>
               </tr>
@@ -128,7 +135,8 @@
                   <td class="text-end small">{{ crewLabel(v) }}</td>
                   <td class="text-end small">{{ fmtNum(v.cargo_capacity_scu) }}</td>
                   <td class="text-end small">{{ fmtNum(v.mass_hull) }}</td>
-                  <td class="text-end small pe-3">{{ v.msrp ? '$' + fmtNum(v.msrp) : '—' }}</td>
+                  <td class="text-end small">{{ v.msrp ? '$' + fmtNum(v.msrp) : '—' }}</td>
+                  <td class="pe-3"><PlayerVisibleToggle dataset="vehicles" :doc-id="v._id" :row="v" /></td>
                 </tr>
               </template>
             </tbody>
@@ -162,6 +170,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { vehicleApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 
 const vehicles   = ref([])
 const total      = ref(0)
@@ -182,10 +191,12 @@ const selectedSizeClasses   = ref([])
 const nameQuery = ref('')
 const sortBy  = ref('name')
 const sortDir = ref('asc')
+const playerVisible = ref('')
 
 const hasActiveFilters = computed(() =>
   selectedCareers.value.length || selectedRoles.value.length ||
-  selectedManufacturers.value.length || selectedSizeClasses.value.length || nameQuery.value)
+  selectedManufacturers.value.length || selectedSizeClasses.value.length || nameQuery.value
+  || playerVisible.value)
 
 function crewLabel(v) {
   if (!v.crew_max) return '—'
@@ -221,6 +232,7 @@ function resetFilters() {
   selectedManufacturers.value = []
   selectedSizeClasses.value = []
   nameQuery.value = ''
+  playerVisible.value = ''
   reload(0)
 }
 
@@ -236,6 +248,7 @@ async function reload(newOffset = 0) {
     q: nameQuery.value,
     sort_by: sortBy.value,
     sort_dir: sortDir.value,
+    player_visible: playerVisible.value,
     limit, offset: newOffset,
   })
   if (res && res.ok) {

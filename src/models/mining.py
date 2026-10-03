@@ -16,6 +16,8 @@ tasks/scdata_sync.py 同步進 mining_deposit_master / mining_location_master
 from typing import Optional
 
 from src.mongo import get_db
+from src.models import visibility
+from src.models.visibility import add_filter as add_visibility_filter
 
 
 class MiningDeposit:
@@ -28,11 +30,21 @@ class MiningDeposit:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def list_all(cls) -> list:
-        """全部現行礦床（含成分機率明細），依名稱排序。不含 raw 原始資料。"""
-        return list(cls._col().find(
-            {'is_current': True}, {'raw': 0},
+    def list_all(cls, visible_only: bool = False) -> list:
+        """全部現行礦床（含成分機率明細），依名稱排序。不含 raw 原始資料。
+
+        visible_only（玩家端）：不列玩家頁面不顯示的礦床，成分裡也拿掉不顯示的礦物
+        （見 src/models/visibility.py）。
+        """
+        rows = list(cls._col().find(
+            add_visibility_filter({'is_current': True}, visible_only=visible_only), {'raw': 0},
         ).sort('deposit_name_lower', 1))
+        if visible_only:
+            hidden = {k for k, v in visibility.minerals_state(rows).items() if not v['player_visible']}
+            if hidden:
+                for row in rows:
+                    row['parts'] = [p for p in row.get('parts') or [] if p.get('resource_key') not in hidden]
+        return rows
 
     @classmethod
     def get(cls, doc_id: str) -> Optional[dict]:
@@ -70,8 +82,10 @@ class MiningLocation:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def list_all(cls) -> list:
+    def list_all(cls, visible_only: bool = False) -> list:
         """全部現行地點（含各礦床出現機率），把 deposits 展開成礦床名稱＋Tier。
+
+        visible_only（玩家端）：不列玩家頁面不顯示的地點，群組裡也拿掉不顯示的礦床。
 
         同步階段（src/scdata.py 的 map_mining_location）只存了 resource_uuid，
         查詢端才展開成名稱——資料量小（幾十個地點、至多幾百個礦床參照），
@@ -79,7 +93,7 @@ class MiningLocation:
         不需要 Mongo $lookup 展開巢狀陣列那套複雜度。
         """
         rows = list(cls._col().find(
-            {'is_current': True}, {'raw': 0},
+            add_visibility_filter({'is_current': True}, visible_only=visible_only), {'raw': 0},
         ).sort('location_name_lower', 1))
 
         all_uuids = set()
@@ -89,6 +103,10 @@ class MiningLocation:
                     if dep.get('resource_uuid'):
                         all_uuids.add(dep['resource_uuid'])
         deposit_info = MiningDeposit.by_ids(all_uuids)
+        hidden_deposits = set()
+        if visible_only and all_uuids:
+            hidden_deposits = {r['_id'] for r in MiningDeposit._col().find(
+                {'_id': {'$in': list(all_uuids)}, 'player_visible': False}, {'_id': 1})}
 
         for row in rows:
             for group in row.get('groups', []):
@@ -96,6 +114,12 @@ class MiningLocation:
                     info = deposit_info.get(dep.get('resource_uuid')) or {}
                     dep['deposit_name'] = info.get('deposit_name')
                     dep['tier'] = info.get('tier')
+                if visible_only:
+                    group['deposits'] = [
+                        d for d in group.get('deposits', [])
+                        if d.get('resource_uuid') not in hidden_deposits]
+            if visible_only:
+                row['groups'] = [g for g in row.get('groups', []) if g.get('deposits')]
         return rows
 
     @classmethod

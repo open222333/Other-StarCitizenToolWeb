@@ -14,7 +14,7 @@
 from functools import wraps
 
 from flask import jsonify
-from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required, verify_jwt_in_request
 
 from src.models.user import User
 
@@ -59,6 +59,24 @@ def require_role(*roles):
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def viewer_sees_hidden() -> bool:
+    """這次請求看不看得到「玩家頁面不顯示」的遊戲資料（見 src/models/visibility.py）。
+
+    只有後台帳號看得到（後台資料庫頁要能檢查、切換）；玩家自助 token、
+    沒帶 token（公開端點）、Discord bot 都看不到。
+    """
+    try:
+        verify_jwt_in_request(optional=True)
+        return bool(get_jwt_identity()) and not get_jwt().get(PLAYER_CLAIM)
+    except Exception:
+        return False
+
+
+def visibility_arg(args) -> object:
+    """後台列表的「玩家頁面顯示」篩選參數 player_visible：'1' → True、'0' → False、其他 → None。"""
+    return {'1': True, '0': False}.get((args.get('player_visible') or '').strip())
 
 
 def admin_api(*roles):

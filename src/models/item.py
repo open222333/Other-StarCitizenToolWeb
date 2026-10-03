@@ -13,6 +13,11 @@ from typing import Optional
 from pymongo import ASCENDING
 
 from src.mongo import get_db
+from src.models.visibility import STATE_FIELDS as _VIS_FIELDS
+from src.models.visibility import add_filter as add_visibility_filter
+
+#: 列表要帶出「玩家頁面顯示」欄位（後台要顯示、切換）
+VISIBILITY_PROJECTION = {f: 1 for f in _VIS_FIELDS}
 from src.sc_zh import vehicle_name_zh, vehicle_role_zh
 
 
@@ -81,9 +86,14 @@ class _MasterBase:
         return [r['_id'] for r in rows]
 
     @classmethod
-    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False) -> list:
-        """名稱前綴搜尋，給 autocomplete 用。找不到才退回中綴搜尋。"""
+    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False,
+               visible_only: bool = False) -> list:
+        """名稱前綴搜尋，給 autocomplete 用。找不到才退回中綴搜尋。
+
+        visible_only：只列玩家頁面顯示的（見 src/models/visibility.py）。
+        """
         filt: dict = {} if include_retired else {'is_current': True}
+        add_visibility_filter(filt, visible_only=visible_only)
 
         if (query or '').strip():
             prefix = escape_regex(query).lower()
@@ -97,6 +107,7 @@ class _MasterBase:
 
         if not rows and (query or '').strip():
             fallback: dict = {} if include_retired else {'is_current': True}
+            add_visibility_filter(fallback, visible_only=visible_only)
             fallback['name_lower'] = {'$regex': escape_regex(query).lower()}
             rows = list(cls._col().find(fallback, cls.PROJECTION)
                         .sort('name', ASCENDING).limit(limit))
@@ -305,6 +316,7 @@ class VehicleMaster(_MasterBase):
         'size_class': 1, 'career': 1, 'role': 1, 'crew_min': 1, 'crew_max': 1,
         'mass_hull': 1, 'msrp': 1, 'is_current': 1,
         'is_spaceship': 1, 'is_gravlev': 1,
+        **VISIBILITY_PROJECTION,
     }
 
     # 管理後台艦船列表可點擊排序的欄位（全站搜尋優化計畫，比照
@@ -314,8 +326,10 @@ class VehicleMaster(_MasterBase):
 
     @classmethod
     def _build_query(cls, *, careers=None, roles=None, manufacturer_codes=None,
-                      size_classes=None, query: str = '', types=None) -> dict:
+                      size_classes=None, query: str = '', types=None,
+                      visible_only: bool = False, visibility=None) -> dict:
         filt: dict = {'is_current': True}
+        add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
         # 類型（太空船／地面載具／懸浮載具）：玩家頁「艦隊」「查詢 › 船艦搜尋」用，
         # 多選時是 OR（選了太空船＋地面載具就兩種都要）
         type_conds = [c for c in (_vehicle_type_condition(t) for t in (types or [])) if c]
@@ -352,10 +366,12 @@ class VehicleMaster(_MasterBase):
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0, careers=None, roles=None,
                  manufacturer_codes=None, size_classes=None, query: str = '',
-                 sort_by: str = 'name', sort_dir: int = 1, types=None) -> tuple:
+                 sort_by: str = 'name', sort_dir: int = 1, types=None,
+                 visible_only: bool = False, visibility=None) -> tuple:
         filt = cls._build_query(careers=careers, roles=roles,
                                  manufacturer_codes=manufacturer_codes,
-                                 size_classes=size_classes, query=query, types=types)
+                                 size_classes=size_classes, query=query, types=types,
+                                 visible_only=visible_only, visibility=visibility)
         sort_field = sort_by if sort_by in cls.SORTABLE_FIELDS else 'name'
         total = cls._col().count_documents(filt)
         rows = list(cls._col().find(filt, cls.PROJECTION)
@@ -364,10 +380,12 @@ class VehicleMaster(_MasterBase):
 
     @classmethod
     def count(cls, careers=None, roles=None, manufacturer_codes=None,
-              size_classes=None, query: str = '', types=None) -> int:
+              size_classes=None, query: str = '', types=None,
+              visible_only: bool = False, visibility=None) -> int:
         filt = cls._build_query(careers=careers, roles=roles,
                                  manufacturer_codes=manufacturer_codes,
-                                 size_classes=size_classes, query=query, types=types)
+                                 size_classes=size_classes, query=query, types=types,
+                                 visible_only=visible_only, visibility=visibility)
         return cls._col().count_documents(filt)
 
     @staticmethod
@@ -395,14 +413,17 @@ class VehicleMaster(_MasterBase):
                 if q in (vehicle_name_zh(r.get('class_name'), r.get('name')) or '')]
 
     @classmethod
-    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False) -> list:
+    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False,
+               visible_only: bool = False) -> list:
         """名稱搜尋（autocomplete 用）。打中文時改用中文名稱比對，英文照舊前綴搜尋。"""
         if _CJK.search(query or ''):
             filt = {'_id': {'$in': cls.ids_matching_zh(query)}}
             if not include_retired:
                 filt['is_current'] = True
+            add_visibility_filter(filt, visible_only=visible_only)
             return list(cls._col().find(filt, cls.PROJECTION).sort('name', ASCENDING).limit(limit))
-        return super().search(query, limit=limit, include_retired=include_retired)
+        return super().search(query, limit=limit, include_retired=include_retired,
+                              visible_only=visible_only)
 
     @classmethod
     def types(cls) -> list:
@@ -526,6 +547,7 @@ class BlueprintMaster(_MasterBase):
         'craft_time_seconds': 1, 'craft_time_label': 1,
         'ingredient_count': 1, 'is_available_by_default': 1,
         'is_current': 1,
+        **VISIBILITY_PROJECTION,
     }
 
     # 含配方明細的完整投影（單筆查詢用）。一律排除 raw ——
@@ -538,7 +560,8 @@ class BlueprintMaster(_MasterBase):
         return cls._col().find_one({'_id': doc_id}, cls.DETAIL_PROJECTION)
 
     @classmethod
-    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False) -> list:
+    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False,
+               visible_only: bool = False) -> list:
         """名稱前綴搜尋。
 
         覆寫 _MasterBase 的版本 —— 它比對 class_name，但藍圖主檔沒有那個欄位
@@ -547,6 +570,7 @@ class BlueprintMaster(_MasterBase):
         中文名也一併比對，這樣打「雷射」也找得到。
         """
         filt: dict = {} if include_retired else {'is_current': True}
+        add_visibility_filter(filt, visible_only=visible_only)
 
         if (query or '').strip():
             escaped = escape_regex(query)
@@ -561,6 +585,7 @@ class BlueprintMaster(_MasterBase):
 
         if not rows and (query or '').strip():
             fallback: dict = {} if include_retired else {'is_current': True}
+            add_visibility_filter(fallback, visible_only=visible_only)
             fallback['name_lower'] = {'$regex': escape_regex(query).lower()}
             rows = list(cls._col().find(fallback, cls.PROJECTION)
                         .sort('name', ASCENDING).limit(limit))
@@ -568,19 +593,31 @@ class BlueprintMaster(_MasterBase):
 
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0,
-                 output_type: str = '', available_only: bool = False,
-                 query: str = '') -> tuple:
+                 output_type='', available_only: bool = False,
+                 query: str = '', missing_zh: bool = False, only_ids=None,
+                 visible_only: bool = False, visibility=None) -> tuple:
         """分頁列出藍圖主檔。
 
         `query` 是名稱關鍵字（中英文都比對）。有這個參數，前端「瀏覽整份清單
         並勾選」才能一邊篩名稱一邊翻頁 —— search() 只回前 25 筆、沒有分頁，
         當清單有 1,600 筆時不夠用。
+
+        `output_type` 可以是單一類型或多個類型（多選取聯集）。
+        `missing_zh` 只列沒有中文名稱的（後台檢查翻譯缺漏用）。
+        `only_ids` 不是 None 時只列這些 uuid（「只看需任務解鎖」用）。
+        `visible_only`（玩家端）／`visibility`（後台篩選）：玩家頁面顯示，見 src/models/visibility.py。
         """
         filt: dict = {'is_current': True}
-        if (output_type or '').strip():
-            filt['output_type'] = output_type.strip()
+        add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
+        if only_ids is not None:
+            filt['_id'] = {'$in': list(only_ids)}
+        types = _clean_list(output_type)
+        if types:
+            filt['output_type'] = types[0] if len(types) == 1 else {'$in': types}
         if available_only:
             filt['is_available_by_default'] = True
+        if missing_zh:
+            filt['name_zh'] = {'$in': [None, '']}
         if (query or '').strip():
             pattern = escape_regex(query)
             filt['$or'] = [
@@ -607,6 +644,26 @@ class BlueprintMaster(_MasterBase):
         """所有產出物類型（給前端做篩選下拉）。"""
         values = cls._col().distinct('output_type', {'is_current': True})
         return sorted(v for v in values if v)
+
+    @classmethod
+    def resolve_ids(cls, ids) -> dict:
+        """一堆 uuid（可能是藍圖本身，也可能是產出物品）→ `{輸入的 uuid: 藍圖 uuid}`。
+
+        給任務的獎勵藍圖用：上游有時只給產出物品的 uuid（見 src/scdata.py 的
+        parse_blueprint_pools）。同一個物品有好幾張配方時取第一張現行的。
+        """
+        ids = [i for i in {str(i) for i in (ids or []) if i} if i]
+        if not ids:
+            return {}
+        out = {}
+        for row in cls._col().find(
+                {'$or': [{'_id': {'$in': ids}}, {'output_item_uuid': {'$in': ids}}]},
+                {'_id': 1, 'output_item_uuid': 1, 'is_current': 1}).sort('is_current', -1):
+            if row['_id'] in ids:
+                out.setdefault(row['_id'], row['_id'])
+            if row.get('output_item_uuid') in ids:
+                out.setdefault(row['output_item_uuid'], row['_id'])
+        return out
 
     @classmethod
     def uuids_of_type(cls, output_type, limit: int = 2000) -> list:
