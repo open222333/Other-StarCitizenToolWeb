@@ -88,7 +88,11 @@
                     @change="toggleOne(row._id, $event.target.checked)">
                 </td>
                 <td>
-                  <span class="fw-semibold">{{ row.name_zh || row.name }}</span>
+                  <button v-if="row.mission_count" type="button" class="bp-link fw-semibold"
+                    @click="missionsRef.open({ uuid: row._id, name: row.name, name_zh: row.name_zh, output_type: row.output_type })">
+                    {{ row.name_zh || row.name }}
+                  </button>
+                  <span v-else class="fw-semibold">{{ row.name_zh || row.name }}</span>
                   <span v-if="row.name_zh" class="small hint ms-1">{{ row.name }}</span>
                   <span v-if="registered.has(row._id)"
                     class="badge bg-secondary ms-1">已登記</span>
@@ -139,12 +143,14 @@
         </div>
       </div>
     </div>
+    <BlueprintMissionsModal ref="missionsRef" :fetcher="props.fetcher" />
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
+import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
@@ -152,6 +158,9 @@ const props = defineProps({
   cardClass: { type: String, default: 'card shadow-sm border-0' },
 })
 const emit = defineEmits(['registered'])
+
+// 藍圖名稱可以點開看解鎖任務（有任務會給的才做成連結，見後端 mission_count）
+const missionsRef = ref(null)
 
 // 跟後端的 MAX_BULK_BLUEPRINTS 一致
 const maxBulk = 200
@@ -328,6 +337,13 @@ defineExpose({ refresh: async () => { await loadRegistered(); await reload(offse
 </script>
 
 <style scoped>
+/* 可以點開看解鎖任務的藍圖名稱（見 BlueprintMissionsModal.vue） */
+.bp-link {
+  padding: 0; border: 0; background: none; text-align: left; font: inherit;
+  color: var(--sf-accent-text, var(--sf-accent));
+  border-bottom: 1px dashed currentColor; cursor: pointer;
+}
+.bp-link:hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
 /* 已登記的整列淡化，一眼看得出「這些不用再勾」 */
 .row-registered > td {
   opacity: .55;

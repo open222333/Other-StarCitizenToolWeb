@@ -21,7 +21,9 @@ from src.models.inventory import OWNER_PLAYER, Inventory, InventoryLog, StockErr
 from src.models.fleet import MAX_QUANTITY as FLEET_MAX_QUANTITY, Fleet, clamp_quantity
 from src.models.item import BlueprintMaster, ItemMaster, VehicleMaster
 from src.models.log import Log
+from src.models.mission import Mission
 from src.models.player import ROSTER_MAX, Player, PlayerError
+from src.models.tool_link import ToolLink
 from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api
 from app._shared import attach_item_names
 
@@ -414,6 +416,21 @@ def search_players():
     return jsonify({'success': True, 'data': rows})
 
 
+@app_player.route('/tool-links', methods=['GET'])
+@player_required
+def list_tool_links():
+    """玩家頁「工具網站」分頁：後台維護的外部工具網站連結（見 app/links/view.py）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': ToolLink.list_public()})
+
+
 @app_player.route('/me', methods=['GET'])
 @player_required
 def get_current_player():
@@ -776,6 +793,8 @@ def list_my_blueprints():
         for doc in BlueprintMaster._col().find(
                 {'_id': {'$in': uuids}}, BlueprintMaster.PROJECTION):
             masters[doc['_id']] = doc
+    # 會給這張藍圖的任務數（玩家頁藍圖名稱可以點開看解鎖任務，0 就不做成連結）
+    mission_counts = Mission.counts_for_blueprints(uuids)
 
     for row in rows:
         master = masters.get(row.get('blueprint_uuid'))
@@ -787,6 +806,7 @@ def list_my_blueprints():
             'craft_time_label': master.get('craft_time_label'),
             'ingredient_count': master.get('ingredient_count'),
             'is_current': master.get('is_current'),
+            'mission_count': mission_counts.get(row.get('blueprint_uuid'), 0),
         } if master else None
 
     return jsonify({

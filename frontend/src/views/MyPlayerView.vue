@@ -465,8 +465,14 @@
           <tbody>
             <tr v-for="group in bpHolders" :key="group._id">
               <td>
-                {{ group.name }}
-                <span v-if="group.name_zh" class="text-muted">（{{ group.name_zh }}）</span>
+                <button v-if="group.blueprint_uuid && group.mission_count" type="button" class="bp-link"
+                  @click="openBpMissions({ uuid: group.blueprint_uuid, name: group.name, name_zh: group.name_zh })">
+                  {{ group.name }}<span v-if="group.name_zh">（{{ group.name_zh }}）</span>
+                </button>
+                <template v-else>
+                  {{ group.name }}
+                  <span v-if="group.name_zh" class="text-muted">（{{ group.name_zh }}）</span>
+                </template>
                 <i v-if="!group.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
                    title="自由輸入，沒有對應到遊戲配方"></i>
               </td>
@@ -719,22 +725,40 @@
         </div>
       </div>
 
-      <div class="d-flex justify-content-end mb-2">
-        <button class="btn btn-sm btn-link p-0" @click="loadBlueprints">重新整理</button>
+      <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2">
+        <div v-if="blueprints.length" class="my-bp-filter">
+          <label class="form-label small mb-1" for="mybp-type">類型</label>
+          <MultiSelectFilter id="mybp-type" v-model="myBpTypes" :options="myBpTypeOptions"
+            label="類型" placeholder="全部" block searchable />
+        </div>
+        <span v-else></span>
+        <div class="d-flex align-items-center gap-2">
+          <span v-if="myBpTypes.length" class="small text-muted">
+            符合 {{ filteredBlueprints.length }} / {{ blueprints.length }} 張
+          </span>
+          <button class="btn btn-sm btn-link p-0" @click="loadBlueprints">重新整理</button>
+        </div>
       </div>
       <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
       <div v-else-if="!blueprints.length" class="text-muted small">目前沒有登記任何藍圖。</div>
+      <div v-else-if="!filteredBlueprints.length" class="text-muted small">沒有符合篩選條件的藍圖。</div>
       <div v-else class="scifi-scroll">
       <table class="table table-sm">
         <thead>
           <tr><th>名稱</th><th>類型</th><th>製作時間</th><th>材料</th><th class="sf-wrap">備註</th><th></th></tr>
         </thead>
         <tbody>
-          <template v-for="bp in blueprints" :key="bp._id">
+          <template v-for="bp in filteredBlueprints" :key="bp._id">
           <tr>
             <td>
-              {{ bp.name }}
-              <span v-if="bp.master?.name_zh" class="text-muted">（{{ bp.master.name_zh }}）</span>
+              <button v-if="bp.blueprint_uuid && bp.master?.mission_count" type="button" class="bp-link"
+                @click="openBpMissions({ uuid: bp.blueprint_uuid, name: bp.name, name_zh: bp.master.name_zh, output_type: bp.master.output_type })">
+                {{ bp.name }}<span v-if="bp.master?.name_zh">（{{ bp.master.name_zh }}）</span>
+              </button>
+              <template v-else>
+                {{ bp.name }}
+                <span v-if="bp.master?.name_zh" class="text-muted">（{{ bp.master.name_zh }}）</span>
+              </template>
               <i v-if="!bp.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
                  title="自由輸入，沒有對應到遊戲配方"></i>
             </td>
@@ -778,6 +802,13 @@
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->
+    <!-- ══════════ 藍圖 › 藍圖資料（遊戲藍圖資料庫，唯讀；有任務的名稱可點開看解鎖任務） ══════════ -->
+    <div v-show="activeTab === 'blueprints' && activeSub === 'data'" role="tabpanel"
+         id="panel-blueprints-data" aria-labelledby="subtab-blueprints-data">
+      <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
+        :active="activeTab === 'blueprints' && activeSub === 'data'" />
+    </div>
+
     <!-- ══════════ 藍圖批量登記 ══════════ -->
     <div v-show="activeTab === 'blueprints' && activeSub === 'bulk'" role="tabpanel"
          id="panel-blueprints-bulk" aria-labelledby="subtab-blueprints-bulk">
@@ -801,13 +832,47 @@
         <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
       </Transition>
 
+      <div v-if="fleet.length" class="card scifi-card mb-3">
+        <div class="card-body py-3">
+          <div class="row g-2 align-items-end">
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="myfleet-type">類型</label>
+              <MultiSelectFilter id="myfleet-type" v-model="myFleetTypes" :options="myFleetTypeOptions"
+                label="類型" placeholder="全部" block />
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="myfleet-size">尺寸</label>
+              <MultiSelectFilter id="myfleet-size" v-model="myFleetSizes" :options="myFleetSizeOptions"
+                label="尺寸" placeholder="全部" block />
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="myfleet-mfr">廠商</label>
+              <MultiSelectFilter id="myfleet-mfr" v-model="myFleetMfrs" :options="myFleetMfrOptions"
+                label="廠商" placeholder="全部" block searchable />
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="myfleet-role">角色</label>
+              <MultiSelectFilter id="myfleet-role" v-model="myFleetRoles" :options="myFleetRoleOptions"
+                label="角色" placeholder="全部" block searchable />
+            </div>
+          </div>
+          <div v-if="myFleetHasFilter" class="text-end mt-2">
+            <button type="button" class="btn btn-sm btn-link p-0" @click="clearMyFleetFilters">清除篩選</button>
+          </div>
+        </div>
+      </div>
+
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
         <span class="small text-muted">
-          <template v-if="fleet.length">共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘</template>
+          <template v-if="fleet.length">
+            <template v-if="myFleetHasFilter">符合 {{ filteredFleet.length }} 款、{{ filteredFleetShipCount }} 艘 · </template>
+            共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘
+          </template>
         </span>
         <button class="btn btn-sm btn-link p-0" @click="loadFleet">重新整理</button>
       </div>
       <div v-if="loadingFleet" class="text-muted small">載入中…</div>
+      <div v-else-if="fleet.length && !filteredFleet.length" class="text-muted small">沒有符合篩選條件的船／載具。</div>
       <div v-else-if="fleet.length" class="scifi-scroll">
         <table class="table table-sm align-middle">
           <thead>
@@ -817,7 +882,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in fleet" :key="row._id">
+            <tr v-for="row in filteredFleet" :key="row._id">
               <td>
                 {{ row.name }}
                 <span v-if="row.vehicle?.name_zh" class="text-muted">（{{ row.vehicle.name_zh }}）</span>
@@ -856,6 +921,26 @@
       <!-- 元件跟後台「礦物參考查詢」頁共用，差別只在帶進去的身分 -->
       <MiningLookup :fetcher="playerAuth.playerFetch" :active="activeTab === 'mining'"
         card-class="card scifi-card" />
+    </div>
+
+    <!-- ══════════ 工具網站（後台維護的外部連結） ══════════ -->
+    <div v-show="activeTab === 'tools'" role="tabpanel" id="panel-tools" :aria-labelledby="'tab-tools'">
+      <div v-if="loadingToolLinks && !toolLinks.length" class="text-muted small">載入中…</div>
+      <div v-else-if="toolLinksError" class="text-warning small">{{ toolLinksError }}</div>
+      <div v-else-if="!toolLinks.length" class="text-muted small">目前沒有工具網站。</div>
+      <div v-else class="row g-2">
+        <div v-for="link in toolLinks" :key="link._id" class="col-12 col-md-6 col-xl-4">
+          <div class="card scifi-card h-100">
+            <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+              <a :href="link.url" target="_blank" rel="noopener noreferrer"
+                class="fw-semibold text-truncate tool-link">
+                <i class="bi bi-box-arrow-up-right me-1 small"></i>{{ link.title }}
+              </a>
+              <FieldHint v-if="link.description" :text="link.description" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-show="activeTab === 'profile'" role="tabpanel" id="panel-profile" :aria-labelledby="'tab-profile'">
@@ -990,6 +1075,7 @@
       </div>
     </div>
   </div>
+  <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" />
   </div>
 </template>
 
@@ -1004,6 +1090,8 @@ import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
 import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
+import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
+import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetBulkRegister from '@/components/FleetBulkRegister.vue'
 import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
@@ -1011,10 +1099,16 @@ import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import { manufacturerLabel, vehicleNameLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 // 地點中文：跟全站一樣查資料庫的翻譯（utils/translations.js），不在前端放對照表
-import { loadKnownLocations, loadTranslations, translate } from '@/utils/translations'
+import { loadKnownLocations, loadStorageLocations, loadTranslations, translate } from '@/utils/translations'
 
 const router     = useRouter()
 const playerAuth = usePlayerAuthStore()
+
+// 點藍圖名稱看解鎖任務（「我的藍圖」「查詢 › 持有藍圖」共用一個彈窗）
+const bpMissionsRef = ref(null)
+function openBpMissions(bp) {
+  bpMissionsRef.value?.open(bp)
+}
 const scifiTheme = useScifiThemeStore()
 
 function locZh(en) { return translate('location', en) }
@@ -1064,6 +1158,7 @@ const tabs = [
     key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
     subTabs: [
       { key: 'mine',   label: '我的藍圖' },
+      { key: 'data',   label: '藍圖資料' },
       { key: 'bulk',   label: '批量登記' },
       { key: 'craft',  label: '試算' },
     ],
@@ -1084,6 +1179,7 @@ const tabs = [
       { key: 'fleet',      label: '船艦搜尋' },
     ],
   },
+  { key: 'tools',     label: '工具網站', icon: 'bi bi-link-45deg' },
   { key: 'profile',   label: '個人資料', icon: 'bi bi-person-gear' },
 ]
 
@@ -1161,6 +1257,7 @@ function loadForTab(tab, sub) {
     if (!fleetHolders.value.length) loadFleetHolders()
   }
   if (tab === 'fleet' && !fleetLoaded.value) loadFleet()
+  if (tab === 'tools') loadToolLinks()
   // 進「藍圖」才查主檔筆數（決定要不要顯示「尚未同步」提示）
   if (tab === 'blueprints' && masterCount.value === null) {
     loadMasterCount()
@@ -1333,17 +1430,20 @@ function logout() {
 }
 
 // ── 地點清單（給新增物品的地點下拉選單用） ─────────────────────
-// 來源有兩個：資料庫裡已經用過的地點（/inventory/locations），加上
-// 遊戲已知的地點名稱（翻譯表裡的星系／星球／降落點…，即使還沒有人登記過庫存也能選）。
+// 來源有兩個：資料庫裡已經用過的地點（/inventory/locations，排前面），加上
+// 地點資料庫裡「可存放」的地點（/starmap/storage-locations，即使還沒有人登記過庫存
+// 也能選）。地點資料還沒同步時退回翻譯表裡的遊戲地點名稱。
 const locations = ref([])
 async function loadLocations() {
-  const [res, known] = await Promise.all([
+  const [res, storage] = await Promise.all([
     playerAuth.playerFetch('/inventory/locations'),
-    loadKnownLocations(),
+    loadStorageLocations(),
   ])
+  const known = storage.length ? storage : await loadKnownLocations()
   const data = res ? await res.json().catch(() => null) : null
   const used = (res?.ok && data?.success) ? (data.data || []) : []
-  locations.value = [...new Set([...used, ...known])].sort()
+  const seen = new Set(used.map(loc => loc.toLowerCase()))
+  locations.value = [...[...used].sort(), ...known.filter(loc => !seen.has(loc.toLowerCase()))]
 }
 
 // ── 「查詢」頁分頁篩選欄位要用的類型清單（各自進分頁時才載，見 loadForTab）──
@@ -1623,6 +1723,22 @@ const PLAYER_BLUEPRINT_STATUS = 'obtained'
 
 const blueprints           = ref([])
 const loadingBlueprints    = ref(false)
+
+// 「我的藍圖」的類型篩選（可多選、取聯集）：清單整份載入，直接在前端篩。
+// 選項只列自己登記過的類型；自由輸入、沒對到主檔的藍圖沒有類型，歸在「未分類」。
+const BP_TYPE_NONE = '__none__'
+const myBpTypes = ref([])
+const bpTypeOf = bp => bp.master?.output_type || BP_TYPE_NONE
+const myBpTypeOptions = computed(() => {
+  const types = [...new Set(blueprints.value.map(bpTypeOf))]
+  return types
+    .map(t => ({ value: t, label: t === BP_TYPE_NONE ? '未分類' : blueprintTypeLabel(t) }))
+    .sort((a, b) => (a.value === BP_TYPE_NONE) - (b.value === BP_TYPE_NONE)
+      || a.label.localeCompare(b.label, 'zh-Hant'))
+})
+const filteredBlueprints = computed(() => (myBpTypes.value.length
+  ? blueprints.value.filter(bp => myBpTypes.value.includes(bpTypeOf(bp)))
+  : blueprints.value))
 // blueprint_uuid 對應遊戲藍圖主檔（blueprint_master）。
 // 有值＝從自動完成選的，名稱以主檔為準；空值＝自由輸入。
 const blueprintForm        = reactive({ name: '', notes: '', blueprint_uuid: '' })
@@ -2042,6 +2158,25 @@ function trackStickyHeights() {
   if (tabsEl) stickyObserver.observe(tabsEl)
 }
 
+// ── 工具網站 ────────────────────────────────────────────────
+// 每次進分頁都重抓（清單很小），後台剛改完玩家這邊切回來就看得到
+const toolLinks        = ref([])
+const loadingToolLinks = ref(false)
+const toolLinksError   = ref('')
+
+async function loadToolLinks() {
+  loadingToolLinks.value = true
+  const res = await playerAuth.playerFetch('/player/tool-links')
+  const data = res ? await res.json().catch(() => null) : null
+  loadingToolLinks.value = false
+  if (res?.ok && data?.success) {
+    toolLinks.value = data.data || []
+    toolLinksError.value = ''
+  } else if (!toolLinks.value.length) {
+    toolLinksError.value = data?.message || '讀取工具網站失敗'
+  }
+}
+
 // ── 艦隊 › 我的艦隊 ──────────────────────────────────────────
 const fleet            = ref([])
 const loadingFleet     = ref(false)
@@ -2051,6 +2186,60 @@ const fleetMaxQuantity = ref(99)
 const savingFleetId    = ref('')
 const fleetBulkRef     = ref(null)
 const fleetShipCount   = computed(() => fleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
+
+// 「我的艦隊」的篩選：清單本來就整份載入，直接在前端篩（同一欄位取聯集、欄位之間 AND）。
+// 選項只列自己艦隊裡實際有的值，不會出現勾了也篩不到東西的選項。
+const myFleetTypes = ref([])
+const myFleetSizes = ref([])
+const myFleetMfrs  = ref([])
+const myFleetRoles = ref([])
+const myFleetHasFilter = computed(() => !!(myFleetTypes.value.length || myFleetSizes.value.length
+  || myFleetMfrs.value.length || myFleetRoles.value.length))
+
+function fleetOptions(pick, label, sortKey = o => o.label) {
+  const seen = new Map()
+  for (const row of fleet.value) {
+    const v = row.vehicle
+    if (!v) continue
+    const value = pick(v)
+    if (value === null || value === undefined || value === '' || seen.has(value)) continue
+    seen.set(value, { value, label: label(v) })
+  }
+  return [...seen.values()].sort((a, b) => {
+    const x = sortKey(a), y = sortKey(b)
+    return typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'zh-Hant')
+  })
+}
+const TYPE_ORDER = ['ship', 'ground', 'gravlev']
+const myFleetTypeOptions = computed(() => fleetOptions(
+  v => v.vehicle_type, v => vehicleTypeLabel(v.vehicle_type), o => TYPE_ORDER.indexOf(o.value)))
+const myFleetSizeOptions = computed(() => fleetOptions(
+  v => v.size_class, v => vehicleSizeLabel(v.size_class), o => o.value))
+const myFleetMfrOptions = computed(() => fleetOptions(
+  v => v.manufacturer_code, v => manufacturerLabel(v.manufacturer_name, v.manufacturer_code)))
+const myFleetRoleOptions = computed(() => fleetOptions(
+  v => v.role, v => vehicleRoleLabel(v.role, v.role_zh)))
+
+const filteredFleet = computed(() => {
+  if (!myFleetHasFilter.value) return fleet.value
+  const match = (selected, value) => !selected.length || selected.includes(value)
+  return fleet.value.filter(row => {
+    const v = row.vehicle || {}
+    return match(myFleetTypes.value, v.vehicle_type)
+      && match(myFleetSizes.value, v.size_class)
+      && match(myFleetMfrs.value, v.manufacturer_code)
+      && match(myFleetRoles.value, v.role)
+  })
+})
+const filteredFleetShipCount = computed(() =>
+  filteredFleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
+
+function clearMyFleetFilters() {
+  myFleetTypes.value = []
+  myFleetSizes.value = []
+  myFleetMfrs.value = []
+  myFleetRoles.value = []
+}
 
 function showFleetError(text) {
   fleetError.value = text
@@ -2218,6 +2407,16 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 可以點開看解鎖任務的藍圖名稱（見 BlueprintMissionsModal.vue） */
+.bp-link {
+  padding: 0; border: 0; background: none; text-align: left; font: inherit;
+  color: var(--sf-accent-text, var(--sf-accent));
+  border-bottom: 1px dashed currentColor; cursor: pointer;
+}
+.bp-link:hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
+.tool-link { color: inherit; text-decoration: none; min-width: 0; }
+.tool-link:hover { text-decoration: underline; }
+.my-bp-filter { min-width: 14rem; }
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
 .nav-tabs .nav-link { cursor: pointer; }

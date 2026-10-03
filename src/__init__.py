@@ -97,6 +97,9 @@ SCDATA_PAGE_SIZES = {
     # blueprints 帶 include=ingredients,output,dismantle_returns 之後單筆會變大，
     # 但仍遠小於 vehicles；1,606 筆 / 50 = 約 33 個請求
     'blueprints': config.getint('SCDATA', 'PAGE_SIZE_BLUEPRINTS', fallback=50),
+    # 任務 1,786 筆 / 100 = 18 個請求（帶 include=blueprints）；勢力 64 筆一頁就完
+    'missions': config.getint('SCDATA', 'PAGE_SIZE_MISSIONS', fallback=100),
+    'factions': config.getint('SCDATA', 'PAGE_SIZE_FACTIONS', fallback=100),
 }
 # CIG 要求標示非官方；也讓 API 維運者知道流量來自誰
 SCDATA_USER_AGENT = config.get(

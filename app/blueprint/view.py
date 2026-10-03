@@ -19,7 +19,8 @@ from flask_jwt_extended import jwt_required
 
 from src.models.blueprint import Blueprint as BlueprintModel
 from src.models.item import BlueprintMaster
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api
+from src.models.mission import Mission
+from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg
 
 app_blueprint = Blueprint('app_blueprint', __name__)
 
@@ -152,8 +153,11 @@ def list_master():
       - Bearer: []
     parameters:
       - {in: query, name: q,           type: string, description: "名稱關鍵字（中英文都比對）"}
-      - {in: query, name: output_type, type: string, description: "依產出物類型過濾（見 /blueprint/master/types）"}
+      - {in: query, name: output_type, type: string, description: "依產出物類型過濾（見 /blueprint/master/types），可重複帶多個"}
       - {in: query, name: available,   type: integer, description: "1 = 只看預設就能用的（不需解鎖任務）"}
+      - {in: query, name: missing_zh,  type: integer, description: "1 = 只看沒有中文名稱的"}
+      - {in: query, name: has_missions, type: integer, description: "1 = 只看有任務會給的（需任務解鎖）"}
+      - {in: query, name: player_visible, type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的（玩家 token 一律只看得到顯示的）"}
       - {in: query, name: limit,       type: integer, default: 50, description: "最多 200"}
       - {in: query, name: offset,      type: integer, default: 0}
     responses:
@@ -161,12 +165,22 @@ def list_master():
         description: 成功
     """
     limit, offset = _paging()
+    hide = not viewer_sees_hidden()
     rows, total = BlueprintMaster.list_all(
         limit=limit, offset=offset,
-        output_type=(request.args.get('output_type') or '').strip(),
+        output_type=[t.strip() for t in request.args.getlist('output_type') if t.strip()],
         available_only=request.args.get('available') == '1',
         query=(request.args.get('q') or '').strip(),
+        missing_zh=request.args.get('missing_zh') == '1',
+        only_ids=(Mission.blueprint_uuids_with_missions(visible_only=hide)
+                  if request.args.get('has_missions') == '1' else None),
+        visible_only=hide,
+        visibility=None if hide else visibility_arg(request.args),
     )
+    # 每張藍圖有幾個任務會給（任務資料庫反查，見 src/models/mission.py）
+    counts = Mission.counts_for_blueprints([r['_id'] for r in rows], visible_only=hide)
+    for r in rows:
+        r['mission_count'] = counts.get(r['_id'], 0)
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset})
 
@@ -194,7 +208,8 @@ def search_master():
 
     limit, _ = _paging()
     return jsonify({'success': True,
-                    'data': BlueprintMaster.search(query, limit=min(limit, 50))})
+                    'data': BlueprintMaster.search(query, limit=min(limit, 50),
+                                                   visible_only=not viewer_sees_hidden())})
 
 
 @app_blueprint.route('/master/types', methods=['GET'])

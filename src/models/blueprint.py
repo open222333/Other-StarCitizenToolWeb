@@ -102,10 +102,16 @@ class Blueprint:
         if not uuids:
             return rows
         masters = BlueprintMaster.names_by_ids(uuids)
+        # 順便帶上「有幾個任務會給這張藍圖」，玩家頁的藍圖名稱靠它決定能不能點開
+        # 看解鎖任務（見 src/models/mission.py）
+        from src.models.mission import Mission
+        mission_counts = Mission.counts_for_blueprints(uuids)
         for r in rows:
             master = masters.get(r.get('blueprint_uuid'))
             if master and master.get('name_zh'):
                 r['name_zh'] = master['name_zh']
+            if r.get('blueprint_uuid'):
+                r['mission_count'] = mission_counts.get(r['blueprint_uuid'], 0)
         return rows
 
     # 沒帶 player_id 時（後台「列出全部藍圖」）的硬上限。

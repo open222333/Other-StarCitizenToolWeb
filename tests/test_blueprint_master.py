@@ -215,6 +215,35 @@ def test_list_all_filters_by_type(seeded_master):
     assert rows[0]['name'] == 'Medical Pen'
 
 
+def test_list_all_filters_by_multiple_types(seeded_master):
+    rows, total = BlueprintMaster.list_all(output_type=['Consumable', 'WeaponGun'])
+    assert total == 2
+    rows, total = BlueprintMaster.list_all(output_type=['Consumable', ''])
+    assert [r['name'] for r in rows] == ['Medical Pen']
+
+
+def test_list_all_missing_zh(seeded_master):
+    """後台「只看沒有中文」：name_zh 是 None、空字串或欄位不存在都算。"""
+    col = get_db()['blueprint_master']
+    col.update_one({'_id': API_ROW['uuid']}, {'$set': {'name_zh': '全天候三型機砲'}})
+    col.update_one({'_id': 'bp-2'}, {'$unset': {'name_zh': ''}})
+    rows, total = BlueprintMaster.list_all(missing_zh=True)
+    assert [r['name'] for r in rows] == ['Medical Pen']
+    col.update_one({'_id': 'bp-2'}, {'$set': {'name_zh': ''}})
+    assert BlueprintMaster.list_all(missing_zh=True)[1] == 1
+
+
+def test_master_list_endpoint_multi_type_and_missing_zh(client, auth_headers, seeded_master):
+    get_db()['blueprint_master'].update_one(
+        {'_id': API_ROW['uuid']}, {'$set': {'name_zh': '全天候三型機砲'}})
+    get_db()['blueprint_master'].update_one({'_id': 'bp-2'}, {'$set': {'name_zh': None}})
+    body = client.get('/blueprint/master?output_type=Consumable&output_type=WeaponGun',
+                      headers=auth_headers).get_json()
+    assert body['total'] == 2
+    body = client.get('/blueprint/master?missing_zh=1', headers=auth_headers).get_json()
+    assert [r['name'] for r in body['data']] == ['Medical Pen']
+
+
 # ═══════════════════════════════════════════════════════════
 #  路由優先序（真的踩過類似的坑）
 # ═══════════════════════════════════════════════════════════
