@@ -883,17 +883,53 @@ def test_sync_runs_limit_is_capped(client, auth_headers):
     assert len(body['data']) == 100, 'limit 應被夾到上限 100'
 
 
-def test_sync_schedule_includes_next_run(client, auth_headers):
-    """後台排程頁要顯示「下次執行時間」，GET/PUT 都得回這個欄位。"""
-    body = client.get('/item/sync-schedule', headers=auth_headers).get_json()
+def test_sync_jobs_list_and_update(client, auth_headers):
+    """排程頁：每個資料庫一列，各自有下次執行時間，可以個別修改。"""
+    body = client.get('/item/sync-jobs', headers=auth_headers).get_json()
     assert body['success'] is True
-    assert 'next_run' in body['data']
-    assert body['data']['next_run'] is not None, '預設排程是啟用的，應該算得出下次執行時間'
+    jobs = {j['key']: j for j in body['data']['jobs']}
+    assert list(jobs)[0] == 'translations' and 'missions' in jobs and 'mining' in jobs
+    assert jobs['items']['next_run'] is not None, '預設排程是啟用的，應該算得出下次執行時間'
+    assert jobs['items']['label'] == '物品' and 'count' in jobs['items']
 
-    put_body = client.put('/item/sync-schedule', headers=auth_headers,
-                           json={'cron': '0 4 * * *', 'enabled': False}).get_json()
-    assert put_body['success'] is True
-    assert put_body['data']['next_run'] is None, '停用排程後不該有下次執行時間'
+    put = client.put('/item/sync-jobs/items', headers=auth_headers,
+                     json={'cron': '0 4 * * *', 'enabled': False}).get_json()
+    assert put['success'] is True
+    assert put['data']['cron'] == '0 4 * * *' and put['data']['next_run'] is None
+    again = {j['key']: j for j in client.get('/item/sync-jobs', headers=auth_headers).get_json()['data']['jobs']}
+    assert again['vehicles']['enabled'] is True, '只改那一項'
+
+    bad = client.put('/item/sync-jobs/items', headers=auth_headers, json={'cron': 'nope'})
+    assert bad.status_code == 400
+    assert client.put('/item/sync-jobs/nope', headers=auth_headers, json={}).status_code == 404
+
+
+def test_trigger_sync_dispatches_each_job(client, auth_headers, monkeypatch):
+    """手動同步：每一項各自派成一個任務；正在跑的略過，全部都在跑才回 409。"""
+    import tasks.scdata_sync as sync_mod
+    sent = []
+
+    class _Result:
+        id = 'task-1'
+    monkeypatch.setattr(sync_mod.sync_scdata, 'apply_async',
+                        lambda kwargs=None, **_: sent.append(kwargs) or _Result())
+
+    resp = client.post('/item/sync', headers=auth_headers, json={'jobs': ['missions', 'translations']})
+    assert resp.status_code == 202
+    assert resp.get_json()['dispatched'] == ['translations', 'missions'], '照固定順序'
+    assert sent == [{'jobs': ['translations']}, {'jobs': ['missions']}]
+    assert client.post('/item/sync', headers=auth_headers, json={'jobs': ['nope']}).status_code == 400
+    assert client.post('/item/sync', headers=auth_headers, json={'jobs': []}).status_code == 400
+
+    # 剛派送的兩項還在排隊 → 再按一次不會重複派送
+    assert client.post('/item/sync', headers=auth_headers,
+                       json={'jobs': ['missions']}).status_code == 409
+
+    with sync_mod.sync_lock('busy', sync_mod.job_lock_key('items')):
+        body = client.post('/item/sync', headers=auth_headers, json={'jobs': ['items', 'vehicles']}).get_json()
+        assert body['dispatched'] == ['vehicles'] and body['skipped'] == ['items']
+        jobs = {j['key']: j for j in client.get('/item/sync-jobs', headers=auth_headers).get_json()['data']['jobs']}
+        assert jobs['items']['running'] is True and jobs['vehicles']['queued'] is True
 
 
 def test_paging_limit_is_capped(client, auth_headers, seed_master):

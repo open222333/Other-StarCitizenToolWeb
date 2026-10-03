@@ -3,7 +3,10 @@ services:
     profiles: ["background"]
     image: python-flask-api:latest
     hostname: flask-api-worker
-    command: celery -A celery_worker worker --loglevel=info --concurrency=2
+    # 同時跑幾個任務。每個資料庫的同步是各自一個任務（可以同時跑），再加上每 5 分鐘
+    # 的排程心跳也佔一個，所以預設 4；記憶體上限跟著放大（翻譯同步單一任務就要
+    # 一百多 MB）。可以用 .env 的 CELERY_WORKER_CONCURRENCY／WORKER_MEMORY_LIMIT 調整。
+    command: celery -A celery_worker worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
     env_file: .env
     volumes:
       - ./src:/app/src
@@ -21,7 +24,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256m
+          memory: ${WORKER_MEMORY_LIMIT:-768m}
         reservations:
           memory: 128m
 

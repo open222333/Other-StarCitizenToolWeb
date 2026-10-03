@@ -10,7 +10,8 @@ from datetime import datetime
 import pytest
 
 from src.models.sync_schedule import (
-    DEFAULT_CRON, SyncSchedule, SyncScheduleError, next_run_after, parse_cron,
+    DEFAULT_CRON, JOB_KEYS, WIKI_JOB_KEYS, SyncJobs, SyncScheduleError, next_run_after, parse_cron,
+    validate_cron,
 )
 
 
@@ -32,7 +33,7 @@ from src.models.sync_schedule import (
     '0 0 29 2 *',        # 閏日
 ])
 def test_valid_cron_accepted(cron):
-    assert SyncSchedule.validate_cron(cron) is True
+    assert validate_cron(cron) is True
     parse_cron(cron)
 
 
@@ -51,7 +52,7 @@ def test_valid_cron_accepted(cron):
     '@daily',            # 不支援別名
 ])
 def test_invalid_cron_rejected(cron):
-    assert SyncSchedule.validate_cron(cron) is False
+    assert validate_cron(cron) is False
     with pytest.raises(SyncScheduleError):
         parse_cron(cron)
 
@@ -117,50 +118,100 @@ def test_leap_day_found_within_four_years():
 
 
 # ═══════════════════════════════════════════════════════════
-#  is_due / 設定存取（需要 DB，用 conftest 的 mongomock）
+#  同步項目設定存取（需要 DB，用 conftest 的 mongomock）
 # ═══════════════════════════════════════════════════════════
 
-def test_get_creates_default(app):
-    doc = SyncSchedule.get()
-    assert doc['cron'] == DEFAULT_CRON
-    assert doc['enabled'] is True
-    assert doc['timezone'] == 'Asia/Taipei'
+def test_all_creates_every_job_in_order(app):
+    jobs = SyncJobs.all()
+    assert [j['key'] for j in jobs] == JOB_KEYS
+    assert jobs[0]['key'] == 'translations', '翻譯要最先跑（其他主檔會查中文快照）'
+    assert all(j['enabled'] for j in jobs)
+    assert SyncJobs.get('items')['cron'] == DEFAULT_CRON
+    assert SyncJobs.get('items')['label'] == '物品'
 
 
-def test_is_due_when_never_run(app):
-    assert SyncSchedule.is_due(None) is True
+def test_job_keys_match_sync_sources():
+    from src.scdata import WIKI_RESOURCES
+    assert set(WIKI_JOB_KEYS) == set(WIKI_RESOURCES)
+    assert set(JOB_KEYS) == set(WIKI_RESOURCES) | {'translations', 'mining', 'locations', 'uex'}
+    from src.scdata import SCUNPACKED_JOBS, SCUNPACKED_RESOURCES
+    assert sorted(r for rs in SCUNPACKED_JOBS.values() for r in rs) == sorted(SCUNPACKED_RESOURCES)
 
 
-def test_is_due_false_when_disabled(app):
-    SyncSchedule.update(enabled=False)
-    assert SyncSchedule.is_due(None) is False
-
-
-def test_is_due_respects_cron(app):
-    SyncSchedule.update(cron='30 4 * * *')      # 每天台北 04:30 = UTC 20:30
-    last = datetime(2026, 8, 20, 20, 30)        # 剛好在觸發點跑完
-
-    # 隔天觸發點之前 → 還沒到期
-    assert SyncSchedule.is_due(last, now=datetime(2026, 8, 21, 12, 0)) is False
-    # 隔天觸發點之後 → 到期
-    assert SyncSchedule.is_due(last, now=datetime(2026, 8, 21, 20, 31)) is True
+def test_update_job(app):
+    job = SyncJobs.update('missions', cron='0 6 * * *', enabled=False, updated_by='admin')
+    assert (job['cron'], job['enabled'], job['updated_by']) == ('0 6 * * *', False, 'admin')
+    assert SyncJobs.get('items')['cron'] == DEFAULT_CRON, '只改那一項'
 
 
 def test_update_rejects_bad_cron(app):
     with pytest.raises(SyncScheduleError):
-        SyncSchedule.update(cron='not a cron')
+        SyncJobs.update('items', cron='not a cron')
 
 
-def test_update_rejects_unknown_resource(app):
+def test_update_rejects_unknown_job(app):
     with pytest.raises(SyncScheduleError):
-        SyncSchedule.update(resources=['items', 'spaceships'])
-
-
-def test_update_rejects_empty_resources(app):
-    with pytest.raises(SyncScheduleError):
-        SyncSchedule.update(resources=[])
+        SyncJobs.update('spaceships', cron='0 4 * * *')
 
 
 def test_next_run_none_when_disabled(app):
-    SyncSchedule.update(enabled=False)
-    assert SyncSchedule.next_run() is None
+    assert SyncJobs.next_run(SyncJobs.update('items', enabled=False)) is None
+    assert SyncJobs.next_run(SyncJobs.update('items', enabled=True)) is not None
+
+
+def test_next_run_uses_backoff_after_failure(app):
+    from src.mongo import get_db
+    finished = datetime(2026, 8, 20, 0, 0)
+    SyncJobs.all()
+    get_db()['sync_jobs'].update_one({'_id': 'items'}, {'$set': {
+        'cron': '30 4 * * 1', 'last_finished_at': finished, 'last_ok': False,
+        'consecutive_failures': 1}})
+    assert SyncJobs.next_run(SyncJobs.get('items')) == datetime(2026, 8, 20, 0, 30)
+
+
+def test_seed_migrates_legacy_single_schedule(app):
+    """舊版單一排程：沿用 cron／啟用、沒選的資源停用、上次時間取最後一輪紀錄。"""
+    from src.mongo import get_db
+    db = get_db()
+    last = datetime(2026, 9, 1, 12, 0)
+    db['sync_schedule'].insert_one({
+        '_id': 'default', 'cron': '15 3 * * 2', 'enabled': True, 'with_uex': False,
+        'resources': ['items', 'blueprints'], 'resources_custom': True})
+    db['sync_runs'].insert_one({'_id': 'r', 'started_at': last, 'finished_at': last, 'ok': True})
+    db['item_master'].insert_one({'_id': 'i1', 'is_current': True})    # 舊版同步過的有資料
+
+    jobs = {j['key']: j for j in SyncJobs.all()}
+    assert all(j['cron'] == '15 3 * * 2' for j in jobs.values())
+    assert jobs['items']['enabled'] and jobs['blueprints']['enabled']
+    assert not jobs['vehicles']['enabled'], '舊排程沒選的資源要停用'
+    assert not jobs['uex']['enabled'], 'with_uex=False'
+    assert jobs['translations']['enabled'] and jobs['mining']['enabled']
+    assert jobs['items']['last_finished_at'] == last, '不然部署完全部項目會立刻全量同步'
+    assert not jobs['missions'].get('last_finished_at'), '舊版沒同步過（資料庫是空的）的不能借上次時間'
+
+
+def test_seed_keeps_existing_jobs(app):
+    SyncJobs.update('items', cron='0 1 * * *')
+    from src.mongo import get_db
+    get_db()['sync_jobs'].delete_one({'_id': 'missions'})
+    jobs = {j['key']: j for j in SyncJobs.all()}
+    assert jobs['items']['cron'] == '0 1 * * *'
+    assert jobs['missions']['cron'] == DEFAULT_CRON
+
+
+def test_empty_database_that_was_never_synced_is_due(app):
+    """已經部署過、任務資料庫借到舊的上次時間卻是空的 → 心跳要馬上同步它。"""
+    from src.mongo import get_db
+    SyncJobs.all()
+    now = datetime(2026, 10, 2, 12, 0)
+    get_db()['sync_jobs'].update_many({}, {'$set': {'last_finished_at': now, 'last_ok': True}})
+    get_db()['item_master'].insert_one({'_id': 'i1', 'is_current': True})
+    due = dict(SyncJobs.due_jobs(now=now))
+    assert due.get('missions') == 'never_synced'
+    assert 'items' not in due, '有資料的照 cron'
+    # 新版真的跑過一次之後（有 last_run_id）就照 cron，即使上游真的沒資料
+    get_db()['sync_jobs'].update_one({'_id': 'missions'}, {'$set': {'last_run_id': 'r1'}})
+    assert 'missions' not in dict(SyncJobs.due_jobs(now=now))
+    # 停用的不管
+    get_db()['sync_jobs'].update_one({'_id': 'factions'}, {'$set': {'enabled': False}})
+    assert 'factions' not in dict(SyncJobs.due_jobs(now=now))

@@ -14,9 +14,9 @@ beat_schedule = {
         'task': 'tasks.scheduled.periodic_health_check',
         'schedule': 60.0,
     },
-    # 星際公民遊戲主檔（items / vehicles / commodities + UEX）的實際排程已經
-    # 搬到 DB（src/models/sync_schedule.py，sync_schedule collection），可在
-    # 後台「設定」頁面編輯 cron。這裡只留一個每 5 分鐘的心跳，去問「現在該不該跑」，
+    # 星際公民遊戲資料的實際排程已經搬到 DB（src/models/sync_schedule.py，
+    # sync_jobs collection，每個資料庫一筆），可在後台「資料同步排程」頁個別編輯
+    # cron。這裡只留一個每 5 分鐘的心跳，去問「哪幾項到期了」，
     # 真正決定要不要跑的邏輯在 tasks.scdata_sync.check_and_run_scheduled_sync。
     #
     # 遊戲改版後不必等排程，可手動觸發：
@@ -27,6 +27,11 @@ beat_schedule = {
         'schedule': crontab(minute='*/5'),
     },
 }
+
+# 每個 worker process 一次只先拿一個任務：同步任務一跑好幾分鐘，預設的
+# prefetch（4 個）會讓任務卡在忙碌的 process 後面排隊，旁邊閒著的 process 拿不到，
+# 「不同資料庫同時同步」就變成假的。
+worker_prefetch_multiplier = 1
 
 # 全量同步約 130 次外部請求、5～10 分鐘，給足時間上限避免被中途砍掉
 task_time_limit = 3600

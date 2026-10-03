@@ -11,9 +11,13 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from src.limiter import limiter
 from src.models.item import CommodityMaster, ItemMaster, SyncRun, VehicleMaster
+from src.models.mission import Faction, Mission
 from src.models.inventory import uscu_to_scu
-from src.models.sync_schedule import SyncSchedule, SyncScheduleError
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, require_role
+from src.models.log import Log
+from src.models.sync_schedule import (JOB_KEYS, SCHEDULE_TZ, SyncJobs, SyncScheduleError,
+                                      order_jobs)
+from src.permissions import (READ_ROLES, WRITE_ROLES, admin_api, require_role, viewer_sees_hidden,
+                             visibility_arg)
 from src.models.translation import DEFAULT_LANG
 from src.sc_zh import LOOKUPS, blueprint_type_names, known_location_names
 
@@ -183,6 +187,7 @@ def list_vehicles():
       - {in: query, name: manufacturer_code,  type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/manufacturers）"}
       - {in: query, name: size_class,         type: array, items: {type: integer}, description: "可重複帶多個（見 /item/vehicles/size-classes）"}
       - {in: query, name: type,               type: array, items: {type: string}, description: "ship（太空船）／ground（地面載具）／gravlev（懸浮載具），可重複帶多個"}
+      - {in: query, name: player_visible,     type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的（玩家 token 一律只看得到顯示的）"}
       - {in: query, name: sort_by,            type: string, description: "name（預設）／crew_max／cargo_capacity_scu／mass_hull／msrp／size_class"}
       - {in: query, name: sort_dir,           type: string, description: "asc（預設）／desc"}
       - {in: query, name: limit,              type: integer, default: 50}
@@ -201,7 +206,10 @@ def list_vehicles():
     sort_by = request.args.get('sort_by', 'name')
     sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
 
-    has_filters = bool(careers or roles or manufacturer_codes or size_classes or types)
+    hide = not viewer_sees_hidden()
+    visibility = None if hide else visibility_arg(request.args)
+    has_filters = bool(careers or roles or manufacturer_codes or size_classes or types
+                       or visibility is not None)
 
     if query and not has_filters:
         # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
@@ -209,13 +217,14 @@ def list_vehicles():
         #    使用者永遠翻不到第二頁（而且不會有任何錯誤徵兆）。
         #    回 None 讓前端知道「總數未知」，分頁改用「本頁滿了就還有下一頁」。
         #    帶了其他篩選條件時 search() 沒辦法一起套用，改走 list_all()。
-        rows = VehicleMaster.with_type(VehicleMaster.search(query, limit=limit))
+        rows = VehicleMaster.with_type(VehicleMaster.search(query, limit=limit, visible_only=hide))
         total = None
     else:
         rows, total = VehicleMaster.list_all(
             limit=limit, offset=offset, careers=careers, roles=roles,
             manufacturer_codes=manufacturer_codes, size_classes=size_classes,
-            query=query, sort_by=sort_by, sort_dir=sort_dir, types=types)
+            query=query, sort_by=sort_by, sort_dir=sort_dir, types=types,
+            visible_only=hide, visibility=visibility)
 
     for row in rows:
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
@@ -414,6 +423,8 @@ def sync_status():
             'items': ItemMaster.count_current(),
             'vehicles': VehicleMaster.count_current(),
             'commodities': CommodityMaster.count_current(),
+            'missions': Mission.count_current(),
+            'factions': Faction.count_current(),
         },
     }})
 
@@ -443,17 +454,144 @@ def sync_runs():
     return jsonify({'success': True, 'data': SyncRun.recent(limit=limit)})
 
 
+def _job_counts() -> dict:
+    """各同步項目目前在資料庫裡的筆數（排程頁顯示用）。"""
+    from src.models import translation as T
+    from src.models.item import BlueprintMaster
+    from src.models.mining import MiningDeposit
+    from src.models.starmap import Starmap
+    from src.mongo import get_db
+
+    return {
+        'translations': T.count(T.SOURCE_GAME),
+        'items': ItemMaster.count_current(),
+        'vehicles': VehicleMaster.count_current(),
+        'commodities': CommodityMaster.count_current(),
+        'blueprints': BlueprintMaster.count_current(),
+        'factions': Faction.count_current(),
+        'missions': Mission.count_current(),
+        'mining': MiningDeposit.count_current(),
+        'locations': Starmap.count_current(),
+        'uex': get_db()['uex_items'].estimated_document_count(),
+    }
+
+
+def _serialize_job(job: dict, running: set, counts: dict) -> dict:
+    is_running = job['key'] in running
+    return {
+        'key': job['key'],
+        'label': job['label'],
+        'cron': job.get('cron'),
+        'enabled': job.get('enabled', True),
+        'next_run': SyncJobs.next_run(job),
+        # 「正在跑」以該項的 Redis 鎖為準：worker 被砍掉時 DB 的 running 標記不會自己清掉
+        'running': is_running,
+        'running_since': job.get('running_since') if is_running else None,
+        'progress': (job.get('progress') or {}) if is_running else {},
+        'progress_at': job.get('progress_at') if is_running else None,
+        'queued': not is_running and SyncJobs.is_queued(job),
+        'queued_at': job.get('queued_at'),
+        'queued_by': job.get('queued_by'),
+        'count': counts.get(job['key']),
+        'last_started_at': job.get('last_started_at'),
+        'last_finished_at': job.get('last_finished_at'),
+        'last_duration_s': job.get('last_duration_s'),
+        'last_ok': job.get('last_ok'),
+        'last_error': job.get('last_error'),
+        'last_stats': job.get('last_stats') or {},
+        'consecutive_failures': job.get('consecutive_failures') or 0,
+        'updated_at': job.get('updated_at'),
+        'updated_by': job.get('updated_by'),
+    }
+
+
+@app_item.route('/sync-jobs', methods=['GET'])
+@admin_api(*READ_ROLES)
+def list_sync_jobs():
+    """各同步項目（每個資料庫一筆）的排程、下次執行時間、上次結果與目前筆數。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    from datetime import datetime
+
+    from tasks.scdata_sync import running_jobs
+
+    running = set(running_jobs())
+    counts = _job_counts()
+    jobs = [_serialize_job(j, running, counts) for j in SyncJobs.all()]
+    return jsonify({'success': True, 'data': {
+        'is_running': bool(running),
+        'running': [j['key'] for j in jobs if j['running']],
+        'queued': [j['key'] for j in jobs if j['queued']],
+        # 前端算「已經跑了多久」用伺服器時間，不受使用者電腦時鐘誤差影響
+        'server_time': datetime.utcnow(),
+        'timezone': str(SCHEDULE_TZ),
+        'jobs': jobs,
+    }})
+
+
+@app_item.route('/sync-jobs/<key>', methods=['PUT'])
+@jwt_required()
+@require_role(*WRITE_ROLES)
+def update_sync_job(key):
+    """修改某個同步項目的排程（cron／啟用）。
+
+    排程實際生效方式：tasks/celeryconfig.py 有一個每 5 分鐘的心跳任務
+    （check-sync-schedule），每次都會讀這裡存的設定判斷哪幾項到期，
+    所以存檔後不需要重啟 worker/beat。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: key, type: string, required: true, description: "同步項目，例如 items、missions"}
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            cron:    {type: string,  description: "標準 5 欄位 cron，例如 '30 4 * * 1'"}
+            enabled: {type: boolean}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: cron 表達式無效
+      404:
+        description: 沒有這個同步項目
+    """
+    from tasks.scdata_sync import running_jobs
+
+    if key not in JOB_KEYS:
+        return jsonify({'success': False, 'message': f'沒有這個同步項目：{key}'}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        job = SyncJobs.update(key, cron=data.get('cron'), enabled=data.get('enabled'),
+                              updated_by=get_jwt_identity())
+    except SyncScheduleError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    Log.create(get_jwt_identity(), 'update_sync_job',
+               f'修改同步排程 {key}：cron={job.get("cron")} 啟用={job.get("enabled")}')
+    return jsonify({'success': True,
+                    'data': _serialize_job(job, set(running_jobs()), _job_counts())})
+
+
 @app_item.route('/sync', methods=['POST'])
 @jwt_required()
 @require_role(*WRITE_ROLES)
-@limiter.limit('4 per hour')
+@limiter.limit('30 per hour')
 def trigger_sync():
-    """手動觸發遊戲主檔同步（items / vehicles / commodities + UEX）。
+    """手動同步（全部，或指定幾個同步項目）。
 
-    平常靠 tasks/celeryconfig.py 的每 5 分鐘心跳（check-sync-schedule）判斷是否到期，
-    實際排程（cron）存在 DB 的 sync_schedule，可於後台設定頁修改。
-    這支只是給後台一個「立刻同步」按鈕用，非同步丟給 Celery worker 執行，
-    不會卡住這個 request（全量同步約 5～10 分鐘）。
+    每一項各自派成一個 Celery 任務，不同項目可以同時跑（同時跑幾個看 worker 的
+    concurrency，超過的會排隊）。正在跑或已在排隊的項目不重複派送；全部都在跑
+    就回 409。
     ---
     tags: [Item]
     security:
@@ -465,100 +603,96 @@ def trigger_sync():
         schema:
           type: object
           properties:
-            resources: {type: array, items: {type: string}, description: "預設全部：items/vehicles/commodities"}
-            with_uex:  {type: boolean, default: true}
-            with_scunpacked: {type: boolean, default: true, description: "是否同步礦物回波參考表"}
-            with_translations: {type: boolean, default: true, description: "是否同步遊戲文字翻譯（英文表＋社群繁中化包）"}
+            jobs: {type: array, items: {type: string}, description: "同步項目 key，省略 = 全部（見 /item/sync-jobs）"}
     responses:
       202:
-        description: 已排入同步佇列
+        description: 已派送（dispatched）；正在跑／排隊中而略過的在 skipped
+      400:
+        description: 有不認得的同步項目
       409:
-        description: 已有同步進行中
+        description: 指定的項目都已經在同步或排隊中
       429:
-        description: 觸發過於頻繁（每小時上限 4 次）
+        description: 觸發過於頻繁
     """
-    from tasks.scdata_sync import is_sync_running, sync_scdata
-
-    # 同步是互斥的（見 tasks/scdata_sync.py 的鎖），與其讓使用者按下去、
-    # 任務跑起來才發現被略過，不如在這裡就回 409 讓前端顯示「同步中」。
-    if is_sync_running():
-        return jsonify({
-            'success': False,
-            'message': '已有一輪同步進行中，請等它結束後再觸發（可用 /item/sync-status 查看）',
-        }), 409
+    from tasks.scdata_sync import dispatch_jobs
 
     data = request.get_json(silent=True) or {}
-    resources = data.get('resources') or None
-    with_uex = data.get('with_uex', True)
-    with_scunpacked = data.get('with_scunpacked', True)
-    with_translations = data.get('with_translations', True)
+    jobs = data.get('jobs')
+    if jobs is not None:
+        if not isinstance(jobs, list) or not jobs:
+            return jsonify({'success': False, 'message': 'jobs 必須是非空陣列'}), 400
+        unknown = [j for j in jobs if j not in JOB_KEYS]
+        if unknown:
+            return jsonify({'success': False,
+                            'message': f'沒有這個同步項目：{"、".join(map(str, unknown))}'}), 400
+    keys = order_jobs(jobs or JOB_KEYS)
 
-    async_result = sync_scdata.delay(
-        resources=resources, with_uex=with_uex, with_scunpacked=with_scunpacked,
-        with_translations=with_translations)
-    return jsonify({'success': True, 'task_id': async_result.id,
-                    'message': '已排入同步佇列，稍後可用 /item/sync-status 查看結果'}), 202
-
-
-@app_item.route('/sync-schedule', methods=['GET'])
-@admin_api(*READ_ROLES)
-def get_sync_schedule():
-    """目前的自動同步排程設定。
-    ---
-    tags: [Item]
-    security:
-      - Bearer: []
-    responses:
-      200:
-        description: 成功
-    """
-    schedule = SyncSchedule.get()
-    schedule['next_run'] = SyncSchedule.next_run()
-    return jsonify({'success': True, 'data': schedule})
+    sent, skipped = dispatch_jobs(keys, by=get_jwt_identity())
+    if not sent:
+        return jsonify({'success': False, 'skipped': skipped,
+                        'message': '這些項目都已經在同步或排隊中'}), 409
+    Log.create(get_jwt_identity(), 'trigger_sync', f'手動同步：{"、".join(sent)}')
+    return jsonify({'success': True, 'dispatched': sent, 'skipped': skipped,
+                    'message': '已排入同步佇列'}), 202
 
 
-@app_item.route('/sync-schedule', methods=['PUT'])
-@jwt_required()
-@require_role(*WRITE_ROLES)
-def update_sync_schedule():
-    """修改自動同步排程（cron / 啟用狀態 / 要同步的資源 / 是否含 UEX）。
+# ── 玩家頁面顯示（藍圖、任務、礦床、礦物、採礦地點、艦船、地點共用，見 src/models/visibility.py）──
 
-    排程實際生效方式：tasks/celeryconfig.py 有一個每 5 分鐘的心跳任務
-    （check-sync-schedule），每次都會讀這裡存的設定判斷「現在該不該跑」，
-    所以存檔後不需要重啟 worker/beat。
+@app_item.route('/visibility/<dataset>/<path:doc_id>', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_player_visibility(dataset, doc_id):
+    """手動設定某筆遊戲資料要不要在玩家頁面顯示（null = 回到依名稱自動判斷）。
     ---
     tags: [Item]
     security:
       - Bearer: []
     parameters:
+      - {in: path, name: dataset, type: string, required: true,
+         description: "blueprints／missions／mining_deposits／minerals／mining_locations／vehicles／locations"}
+      - {in: path, name: doc_id, type: string, required: true, description: "uuid（礦物是 resource_key）"}
       - in: body
         name: body
-        required: true
         schema:
           type: object
           properties:
-            cron:      {type: string,  description: "標準 5 欄位 cron，例如 '30 4 * * 1'"}
-            enabled:   {type: boolean}
-            resources: {type: array, items: {type: string}}
-            with_uex:  {type: boolean}
+            player_visible: {type: boolean, description: "true／false；null = 自動判斷"}
+    responses:
+      200:
+        description: 成功，data 是新的顯示欄位
+      400:
+        description: 格式錯誤或不支援的資料庫
+      404:
+        description: 找不到資料
+    """
+    from src.models import visibility
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or 'player_visible' not in body:
+        return jsonify({'success': False, 'message': '缺少 player_visible'}), 400
+    username = get_jwt_identity()
+    try:
+        state = visibility.set_override(dataset, doc_id, body['player_visible'], username)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    if state is None:
+        return jsonify({'success': False, 'message': '找不到資料'}), 404
+    label = {True: '顯示', False: '不顯示', None: '自動'}[body['player_visible']]
+    Log.create(username, 'set_player_visibility',
+               f'{visibility.DATASETS[dataset][0]} {doc_id} 玩家頁面設為{label}', success=True)
+    return jsonify({'success': True, 'data': state})
+
+
+@app_item.route('/visibility/minerals', methods=['GET'])
+@admin_api(*READ_ROLES)
+def mineral_visibility():
+    """礦物的玩家頁面顯示狀態 {resource_key: 顯示欄位}（礦物從礦床成分彙整，沒有自己的文件）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
     responses:
       200:
         description: 成功
-      400:
-        description: cron 表達式無效或 resources 格式錯誤
     """
-    data = request.get_json(silent=True) or {}
-
-    try:
-        schedule = SyncSchedule.update(
-            cron=data.get('cron'),
-            enabled=data.get('enabled'),
-            resources=data.get('resources'),
-            with_uex=data.get('with_uex'),
-            updated_by=get_jwt_identity(),
-        )
-    except SyncScheduleError as err:
-        return jsonify({'success': False, 'message': str(err)}), 400
-
-    schedule['next_run'] = SyncSchedule.next_run()
-    return jsonify({'success': True, 'data': schedule})
+    from src.models import visibility
+    from src.models.mining import MiningDeposit
+    return jsonify({'success': True, 'data': visibility.minerals_state(MiningDeposit.list_all())})

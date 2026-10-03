@@ -1,14 +1,16 @@
-"""遊戲主檔同步排程設定（DB 版，取代 celeryconfig.py 寫死的 cron）。
+"""遊戲資料同步排程（DB 版，取代 celeryconfig.py 寫死的 cron）。
 
-單一文件（_id='default'）存在 sync_schedule collection，欄位：
-  cron       標準 5 欄位 cron 字串，例如 '30 4 * * 1' = 每週一 04:30
-  enabled    是否啟用排程（關掉的話 check_and_run_scheduled_sync 只會略過）
-  resources  要同步的資源清單，預設 ['items','vehicles','commodities']
-  with_uex   是否連 UEX 一起同步
-  updated_at / updated_by
+每個資料庫（翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、UEX 價格）是一個
+「同步項目」，各自有自己的 cron、啟用狀態與上次執行結果，存在 `sync_jobs`
+collection（一個項目一筆，_id = 項目 key，見下方 SyncJobs）。後台「資料同步排程」
+頁可以個別改時間、個別手動同步。
 
-實際觸發邏輯在 tasks/scdata_sync.py 的 check_and_run_scheduled_sync，
-由 celeryconfig.py 的 5 分鐘心跳呼叫，每次比對 is_due() 決定要不要真的跑。
+實際觸發邏輯在 tasks/scdata_sync.py 的 check_and_run_scheduled_sync，由
+celeryconfig.py 的 5 分鐘心跳呼叫，每次挑出到期的項目一起跑（全域鎖保證同一時間
+只有一輪）。
+
+舊版是單一排程（`sync_schedule` collection 的 default 文件），第一次讀取 sync_jobs
+時會沿用它的 cron／啟用狀態建立各項目（見 SyncJobs._seed）。
 
 ## 時區
 
@@ -34,7 +36,6 @@ from src.mongo import get_db
 _DEFAULT_ID = 'default'
 
 DEFAULT_CRON = '30 4 * * 1'  # 每週一 04:30（台北時間）
-DEFAULT_RESOURCES = ['items', 'vehicles', 'commodities', 'blueprints']
 
 # cron 的解讀時區，跟 tasks/celeryconfig.py 的 timezone 一致。
 #
@@ -147,6 +148,14 @@ def _matches(moment: datetime, sets: tuple) -> bool:
     return True
 
 
+def validate_cron(cron: str) -> bool:
+    try:
+        parse_cron(cron)
+        return True
+    except SyncScheduleError:
+        return False
+
+
 def next_run_after(cron: str, after: datetime) -> datetime | None:
     """回傳 `after` 之後的下一次觸發時間（naive UTC，與 DB 時間戳一致）。
 
@@ -174,113 +183,304 @@ def next_run_after(cron: str, after: datetime) -> datetime | None:
 
 
 # ═══════════════════════════════════════════════════════════
-#  排程設定
+#  同步項目（每個資料庫一筆，各自排程）
 # ═══════════════════════════════════════════════════════════
 
-class SyncSchedule:
-    COLLECTION = 'sync_schedule'
+#: 同步項目：(key, 顯示名稱, 預設 cron)。順序就是「同一次心跳有好幾項到期時」
+#: 的執行順序——翻譯排第一，因為其他主檔同步時會順便從翻譯資料庫查中文快照。
+SYNC_JOBS = [
+    ('translations', '翻譯', '0 4 * * 1'),
+    ('items', '物品', DEFAULT_CRON),
+    ('vehicles', '載具', DEFAULT_CRON),
+    ('commodities', '商品', DEFAULT_CRON),
+    ('blueprints', '藍圖', DEFAULT_CRON),
+    ('factions', '勢力', DEFAULT_CRON),
+    ('missions', '任務', DEFAULT_CRON),
+    ('mining', '礦物', DEFAULT_CRON),
+    ('locations', '地點', DEFAULT_CRON),
+    ('uex', 'UEX 價格', DEFAULT_CRON),
+]
+JOB_KEYS = [k for k, _, _ in SYNC_JOBS]
+JOB_LABELS = {k: label for k, label, _ in SYNC_JOBS}
+_JOB_DEFAULT_CRON = {k: cron for k, _, cron in SYNC_JOBS}
+
+#: Wiki API 的資源（跟 src/scdata.py 的 WIKI_RESOURCES 一致）
+WIKI_JOB_KEYS = ['items', 'vehicles', 'commodities', 'blueprints', 'factions', 'missions']
+
+# 失敗後的重試節奏：上游社群 API 常態性不穩，失敗不要等到下一個 cron 時段
+# （可能是一週後），但也不能每 5 分鐘就重轟一次。連續失敗這麼多次就回到
+# 正常 cron 節奏，避免上游長期掛掉時無限重試。
+FAILURE_BACKOFF_MIN = 30
+MAX_CONSECUTIVE_FAILURES = 5
+
+# 派送後多久還沒開始跑，就當成那個任務已經不見了（worker 重啟、佇列被清掉），
+# 下次心跳可以重新派送
+QUEUE_STALE_MIN = 60
+
+
+def order_jobs(keys) -> list:
+    """去重、丟掉不認得的 key，並照 SYNC_JOBS 的順序排好。"""
+    wanted = set(keys or [])
+    return [k for k in JOB_KEYS if k in wanted]
+
+
+class SyncJobs:
+    """各同步項目的排程設定與上次執行結果（collection `sync_jobs`，_id = key）。
+
+    欄位：
+      cron / enabled / updated_at / updated_by        排程設定（後台可改）
+      last_started_at / last_finished_at / last_ok /
+      last_error / last_run_id / last_stats /
+      consecutive_failures                            上次執行結果（同步時寫入）
+      running / running_since / progress / progress_at  這項正在跑、跑到哪（搭配該項的鎖判斷）
+      queued / queued_at / queued_task_id / queued_by    已派送、等 worker 接手
+
+    心跳（tasks/scdata_sync.py 的 check_and_run_scheduled_sync）每 5 分鐘把到期的
+    項目挑出來一起跑；手動同步可以只跑其中幾項。
+    """
+
+    COLLECTION = 'sync_jobs'
+    LEGACY_COLLECTION = 'sync_schedule'
 
     @classmethod
-    def _collection(cls):
+    def _col(cls):
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def get(cls) -> dict:
-        """取得目前排程設定，沒有就建立預設值。"""
-        doc = cls._collection().find_one({'_id': _DEFAULT_ID})
-        if doc is None:
-            doc = {
-                '_id': _DEFAULT_ID,
-                'cron': DEFAULT_CRON,
-                'enabled': True,
-                'resources': list(DEFAULT_RESOURCES),
-                'with_uex': True,
-                'updated_at': datetime.utcnow(),
-                'updated_by': None,
-            }
-            cls._collection().update_one(
-                {'_id': _DEFAULT_ID}, {'$setOnInsert': doc}, upsert=True)
-            doc = cls._collection().find_one({'_id': _DEFAULT_ID})
+    def _seed(cls, existing_ids: set):
+        """補上還沒有文件的項目。
 
-        # 前端要顯示「這個 cron 是用哪個時區解讀的」
-        doc['timezone'] = str(SCHEDULE_TZ)
-        return doc
+        第一次建立時沿用舊版單一排程（sync_schedule collection）的 cron／啟用狀態，
+        上次完成時間取舊的最後一輪同步紀錄——不然部署完所有項目都會被當成
+        「從沒跑過」立刻全量同步一次。之後新增的項目（新的資料庫）用預設值。
+        """
+        missing = [k for k in JOB_KEYS if k not in existing_ids]
+        if not missing:
+            return
+        db = get_db()
+        legacy = db[cls.LEGACY_COLLECTION].find_one({'_id': _DEFAULT_ID}) or {}
+        last_run = db['sync_runs'].find_one(
+            {'translations_only': {'$ne': True}}, sort=[('started_at', -1)]) if legacy else None
+        now = datetime.utcnow()
+
+        for key in missing:
+            doc = {
+                '_id': key,
+                'cron': _JOB_DEFAULT_CRON[key],
+                'enabled': True,
+                'updated_at': now,
+                'updated_by': None,
+                'consecutive_failures': 0,
+            }
+            if legacy:
+                doc['cron'] = legacy.get('cron') or doc['cron']
+                enabled = legacy.get('enabled', True)
+                if key == 'uex':
+                    enabled = enabled and legacy.get('with_uex', True)
+                elif key in WIKI_JOB_KEYS and legacy.get('resources_custom'):
+                    enabled = enabled and key in (legacy.get('resources') or [])
+                doc['enabled'] = bool(enabled)
+                # 只有舊版真的同步過、資料庫裡有資料的項目才沿用上次時間
+                if last_run and last_run.get('finished_at') and cls.has_data(key):
+                    doc['last_finished_at'] = last_run['finished_at']
+                    doc['last_started_at'] = last_run.get('started_at')
+                    doc['last_ok'] = True
+            cls._col().update_one({'_id': key}, {'$setOnInsert': doc}, upsert=True)
 
     @classmethod
-    def update(cls, cron=None, enabled=None, resources=None, with_uex=None,
-               updated_by=None) -> dict:
-        """更新排程設定，cron 會先驗證能不能被解析。"""
-        fields: dict = {}
+    def all(cls) -> list:
+        """全部項目（照 SYNC_JOBS 順序），每筆附 label。沒有的會先建立。"""
+        docs = {d['_id']: d for d in cls._col().find({'_id': {'$in': JOB_KEYS}})}
+        if len(docs) < len(JOB_KEYS):
+            cls._seed(set(docs))
+            docs = {d['_id']: d for d in cls._col().find({'_id': {'$in': JOB_KEYS}})}
+        out = []
+        for key in JOB_KEYS:
+            doc = docs.get(key) or {'_id': key, 'cron': _JOB_DEFAULT_CRON[key], 'enabled': True}
+            doc['key'] = key
+            doc['label'] = JOB_LABELS[key]
+            out.append(doc)
+        return out
 
+    @classmethod
+    def get(cls, key: str) -> dict | None:
+        if key not in JOB_KEYS:
+            return None
+        return next(j for j in cls.all() if j['key'] == key)
+
+    @classmethod
+    def update(cls, key: str, cron=None, enabled=None, updated_by=None) -> dict:
+        """改某一項的排程（cron 會先驗證）。"""
+        if key not in JOB_KEYS:
+            raise SyncScheduleError(f'不支援的同步項目：{key}')
+        fields: dict = {}
         if cron is not None:
             cron = str(cron).strip()
-            if not cls.validate_cron(cron):
-                raise SyncScheduleError(f'無效的 cron 表達式：{cron}')
+            try:
+                parse_cron(cron)
+            except SyncScheduleError as err:
+                raise SyncScheduleError(f'無效的 cron 表達式：{cron}（{err}）') from None
             fields['cron'] = cron
-
         if enabled is not None:
             fields['enabled'] = bool(enabled)
+        cls.all()   # 確保文件存在
+        if fields:
+            fields['updated_at'] = datetime.utcnow()
+            fields['updated_by'] = updated_by
+            cls._col().update_one({'_id': key}, {'$set': fields})
+        return cls.get(key)
 
-        if resources is not None:
-            if not isinstance(resources, list) or not resources:
-                raise SyncScheduleError('resources 必須是非空陣列')
-            unknown = [r for r in resources if r not in DEFAULT_RESOURCES]
-            if unknown:
-                raise SyncScheduleError(
-                    f'不支援的資源：{", ".join(map(str, unknown))}')
-            fields['resources'] = resources
-
-        if with_uex is not None:
-            fields['with_uex'] = bool(with_uex)
-
-        if not fields:
-            return cls.get()
-
-        fields['updated_at'] = datetime.utcnow()
-        fields['updated_by'] = updated_by
-
-        cls._collection().update_one(
-            {'_id': _DEFAULT_ID}, {'$set': fields}, upsert=True)
-        return cls.get()
+    # ── 到期判斷 ───────────────────────────────────────────────
 
     @staticmethod
-    def validate_cron(cron: str) -> bool:
-        try:
-            parse_cron(cron)
-            return True
-        except SyncScheduleError:
-            return False
+    def next_run(job: dict, after: datetime = None) -> datetime | None:
+        """這一項的下一次預定執行時間（naive UTC）；停用或 cron 無效回 None。
 
-    @classmethod
-    def next_run(cls, after: datetime = None) -> datetime | None:
-        """下一次預計觸發時間（naive UTC）。給後台設定頁顯示用。"""
-        schedule = cls.get()
-        if not schedule.get('enabled', True):
-            return None
-        try:
-            return next_run_after(schedule.get('cron') or DEFAULT_CRON,
-                                  after or datetime.utcnow())
-        except SyncScheduleError:
-            return None
-
-    @classmethod
-    def is_due(cls, last_finished_at, now: datetime = None) -> bool:
-        """給定上次同步的完成時間，判斷現在是否該跑下一次。
-
-        沒有任何歷史紀錄（last_finished_at 為 None）視為到期，立刻跑一次。
+        基準是「上次完成時間」（沒跑過就是現在）——跟 is_due 的判斷一致。
         """
-        schedule = cls.get()
-        if not schedule.get('enabled', True):
-            return False
+        if not job.get('enabled', True):
+            return None
+        base = after or job.get('last_finished_at') or datetime.utcnow()
+        try:
+            nxt = next_run_after(job.get('cron') or DEFAULT_CRON, base)
+        except SyncScheduleError:
+            return None
+        if job.get('last_ok') is False and job.get('last_finished_at') \
+                and (job.get('consecutive_failures') or 0) < MAX_CONSECUTIVE_FAILURES:
+            retry = job['last_finished_at'] + timedelta(minutes=FAILURE_BACKOFF_MIN)
+            nxt = min(nxt, retry) if nxt else retry
+        return nxt
 
-        cron = schedule.get('cron') or DEFAULT_CRON
+    @staticmethod
+    def is_due(job: dict, now: datetime = None) -> tuple:
+        """回傳 (是否到期, 原因)。
+
+        ⚠️ 基準是「最後一次**嘗試**」而不是「最後一次成功」——只看成功的話，
+        一失敗就會每 5 分鐘被判定到期，變成無限重跑。失敗後走較短的 backoff，
+        連續失敗太多次就回到 cron 節奏。
+        """
+        if not job.get('enabled', True):
+            return False, 'disabled'
+        last = job.get('last_finished_at')
+        if not last:
+            return True, 'never_run'
         now = now or datetime.utcnow()
 
-        if last_finished_at is None:
-            return True
+        if job.get('last_ok') is False:
+            fails = job.get('consecutive_failures') or 0
+            if fails < MAX_CONSECUTIVE_FAILURES:
+                if now >= last + timedelta(minutes=FAILURE_BACKOFF_MIN):
+                    return True, f'retry_after_failure({fails})'
+                return False, f'failure_backoff({fails})'
 
         try:
-            next_run = next_run_after(cron, last_finished_at)
+            nxt = next_run_after(job.get('cron') or DEFAULT_CRON, last)
         except SyncScheduleError:
+            return False, 'bad_cron'
+        if nxt is not None and now >= nxt:
+            return True, 'cron_due'
+        return False, 'not_due'
+
+    #: 各項目寫入的 collection 與「有資料」的條件（判斷是不是從來沒真的同步過）
+    _JOB_DATA = {
+        'translations': ('sc_translations', {'source': 'game'}),
+        'items': ('item_master', {'is_current': True}),
+        'vehicles': ('vehicle_master', {'is_current': True}),
+        'commodities': ('commodity_master', {'is_current': True}),
+        'blueprints': ('blueprint_master', {'is_current': True}),
+        'factions': ('faction_master', {'is_current': True}),
+        'missions': ('mission_master', {'is_current': True}),
+        'mining': ('mining_deposit_master', {'is_current': True}),
+        'locations': ('starmap_master', {'is_current': True}),
+        'uex': ('uex_items', {}),
+    }
+
+    @classmethod
+    def has_data(cls, key: str) -> bool:
+        name, filt = cls._JOB_DATA.get(key, (None, None))
+        if not name:
+            return True
+        return get_db()[name].find_one(filt, {'_id': 1}) is not None
+
+    @classmethod
+    def due_jobs(cls, now: datetime = None) -> list:
+        """現在到期的項目 [(key, 原因)]，照執行順序。
+
+        ⚠️ 從舊版單一排程升級時，各項目的「上次完成時間」是借舊的最後一輪紀錄
+        （避免部署完全部重跑）——但舊版根本沒同步過的新資料庫（任務、勢力）也借到了
+        那個時間，結果要等到下一個 cron（最久一週）才第一次同步，期間資料庫是空的。
+        所以：還沒被新版真正跑過（沒有 last_run_id）而且資料庫是空的，一律當成
+        「從沒跑過」，馬上同步。
+        """
+        out = []
+        for job in cls.all():
+            due, reason = cls.is_due(job, now)
+            if not due and job.get('enabled', True) and not job.get('last_run_id') \
+                    and not cls.has_data(job['key']):
+                due, reason = True, 'never_synced'
+            if due:
+                out.append((job['key'], reason))
+        return out
+
+    # ── 執行結果 ───────────────────────────────────────────────
+
+    @classmethod
+    def mark_queued(cls, key: str, task_id, at: datetime, by: str = None):
+        cls._col().update_one({'_id': key}, {'$set': {
+            'queued': True, 'queued_at': at, 'queued_task_id': task_id, 'queued_by': by}}, upsert=True)
+
+    @classmethod
+    def clear_queued(cls, key: str, task_id=None):
+        """任務結束（或略過）時清掉排隊標記；有給 task_id 就只清自己派的那一筆。"""
+        filt = {'_id': key, 'queued': True}
+        if task_id:
+            filt['queued_task_id'] = task_id
+        cls._col().update_one(filt, {'$set': {'queued': False}})
+
+    @staticmethod
+    def is_queued(job: dict, now: datetime = None) -> bool:
+        if not job.get('queued') or not job.get('queued_at'):
             return False
-        return next_run is not None and now >= next_run
+        now = now or datetime.utcnow()
+        return now - job['queued_at'] < timedelta(minutes=QUEUE_STALE_MIN)
+
+    @classmethod
+    def mark_started(cls, key: str, run_id: str, at: datetime):
+        cls._col().update_one({'_id': key}, {'$set': {
+            'running': True, 'running_run_id': run_id, 'running_since': at,
+            'queued': False, 'progress': {}, 'progress_at': at}}, upsert=True)
+
+    @classmethod
+    def set_progress(cls, key: str, progress: dict):
+        """正在跑的這一項目前進度（phase／seen／total），給後台「進行中」區塊即時顯示。"""
+        cls._col().update_one({'_id': key}, {'$set': {
+            **{f'progress.{k}': v for k, v in (progress or {}).items()},
+            'progress_at': datetime.utcnow()}})
+
+    @classmethod
+    def record_result(cls, key: str, run_id: str, started: datetime, finished: datetime,
+                      ok, error: str = '', stats: dict = None):
+        """寫入這一項這次的結果。ok=None 代表略過（例如沒設定 UEX token），不算失敗。"""
+        current = cls._col().find_one({'_id': key}, {'consecutive_failures': 1}) or {}
+        fails = current.get('consecutive_failures') or 0
+        if ok is False:
+            fails += 1
+        elif ok is True:
+            fails = 0
+        cls._col().update_one({'_id': key}, {'$set': {
+            'running': False,
+            'progress': {},
+            'last_run_id': run_id,
+            'last_started_at': started,
+            'last_finished_at': finished,
+            'last_duration_s': round((finished - started).total_seconds(), 1),
+            'last_ok': ok,
+            'last_error': error or None,
+            'last_stats': stats or {},
+            'consecutive_failures': fails,
+        }}, upsert=True)
+
+    @classmethod
+    def clear_running(cls):
+        """把殘留的 running 標記清掉（worker 被砍掉時不會自己清）。"""
+        cls._col().update_many({'running': True}, {'$set': {'running': False}})
