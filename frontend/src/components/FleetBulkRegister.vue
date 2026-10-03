@@ -19,37 +19,23 @@
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label small fw-semibold" :for="`${uid}-type`">類型</label>
-            <select :id="`${uid}-type`" v-model="vehicleType" class="form-select form-select-sm"
-              @change="reload(0)">
-              <option value="">全部</option>
-              <option v-for="t in facets.types" :key="t.value" :value="t.value">{{ t.label }}</option>
-            </select>
+            <MultiSelectFilter :id="`${uid}-type`" v-model="vehicleTypes" :options="facets.types"
+              label="類型" placeholder="全部" block />
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label small fw-semibold" :for="`${uid}-size`">尺寸</label>
-            <select :id="`${uid}-size`" v-model="size" class="form-select form-select-sm"
-              @change="reload(0)">
-              <option value="">全部</option>
-              <option v-for="s in facets.size_classes" :key="s" :value="String(s)">{{ vehicleSizeLabel(s) }}</option>
-            </select>
+            <MultiSelectFilter :id="`${uid}-size`" v-model="sizes" :options="sizeOptions"
+              label="尺寸" placeholder="全部" block />
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label small fw-semibold" :for="`${uid}-mfr`">廠商</label>
-            <select :id="`${uid}-mfr`" v-model="manufacturer" class="form-select form-select-sm"
-              @change="reload(0)">
-              <option value="">全部</option>
-              <option v-for="m in facets.manufacturers" :key="m.value" :value="m.value">
-                {{ manufacturerLabel(m.label, m.value) }}
-              </option>
-            </select>
+            <MultiSelectFilter :id="`${uid}-mfr`" v-model="manufacturers" :options="manufacturerOptions"
+              label="廠商" placeholder="全部" block searchable />
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label small fw-semibold" :for="`${uid}-role`">角色</label>
-            <select :id="`${uid}-role`" v-model="role" class="form-select form-select-sm"
-              @change="reload(0)">
-              <option value="">全部</option>
-              <option v-for="r in facets.roles" :key="r.value" :value="r.value">{{ r.label }}</option>
-            </select>
+            <MultiSelectFilter :id="`${uid}-role`" v-model="roles" :options="facets.roles"
+              label="角色" placeholder="全部" block searchable />
           </div>
         </div>
         <div v-if="hasFilter" class="text-end mt-2">
@@ -168,7 +154,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
 const props = defineProps({
@@ -193,12 +180,20 @@ const loadFailed = ref(false)
 const facets = ref({ size_classes: [], types: [], manufacturers: [], roles: [] })
 
 const keyword = ref('')
-const vehicleType = ref('')
-const size = ref('')
-const manufacturer = ref('')
-const role = ref('')
-const hasFilter = computed(() => !!(keyword.value.trim() || vehicleType.value || size.value
-  || manufacturer.value || role.value))
+// 類型／尺寸／廠商／角色可多選（同一欄位取聯集、欄位之間 AND）
+const vehicleTypes = ref([])
+const sizes = ref([])
+const manufacturers = ref([])
+const roles = ref([])
+const hasFilter = computed(() => !!(keyword.value.trim() || vehicleTypes.value.length
+  || sizes.value.length || manufacturers.value.length || roles.value.length))
+
+const sizeOptions = computed(() =>
+  facets.value.size_classes.map(n => ({ value: String(n), label: vehicleSizeLabel(n) })))
+const manufacturerOptions = computed(() =>
+  facets.value.manufacturers.map(m => ({ value: m.value, label: manufacturerLabel(m.label, m.value) })))
+
+watch([vehicleTypes, sizes, manufacturers, roles], () => reload(0))
 
 /** 已登記的載具 uuid */
 const registered = reactive(new Set())
@@ -232,10 +227,10 @@ async function reload(nextOffset = 0) {
 
   const params = new URLSearchParams({ limit: String(limit.value), offset: String(offset.value) })
   if (keyword.value.trim()) params.set('q', keyword.value.trim())
-  if (vehicleType.value) params.set('type', vehicleType.value)
-  if (size.value) params.set('size_class', size.value)
-  if (manufacturer.value) params.set('manufacturer_code', manufacturer.value)
-  if (role.value) params.set('role', role.value)
+  vehicleTypes.value.forEach(v => params.append('type', v))
+  sizes.value.forEach(v => params.append('size_class', v))
+  manufacturers.value.forEach(v => params.append('manufacturer_code', v))
+  roles.value.forEach(v => params.append('role', v))
 
   const res = await props.fetcher(`/item/vehicles?${params.toString()}`)
   if (mine !== seq) return
@@ -265,11 +260,10 @@ function onKeywordInput() {
 
 function clearFilters() {
   keyword.value = ''
-  vehicleType.value = ''
-  size.value = ''
-  manufacturer.value = ''
-  role.value = ''
-  reload(0)
+  vehicleTypes.value = []
+  sizes.value = []
+  manufacturers.value = []
+  roles.value = []   // 陣列換新會觸發上面的 watch 重新載入，不用另外 reload
 }
 
 async function loadRegistered() {

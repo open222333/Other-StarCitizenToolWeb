@@ -373,3 +373,15 @@ def test_fleet_and_holders_carry_zh(client, alice, seed_vehicles, vehicle_zh):
     assert row['vehicle']['name_zh'] == '復仇者 追獵' and row['vehicle']['role_zh'] == '截擊'
     group = _holders(client, alice)[0]
     assert group['vehicle']['name_zh'] == '復仇者 追獵'
+
+
+def test_item_vehicles_multi_select_filters(client, auth_headers, seed_vehicles):
+    """批量登記的類型／尺寸／廠商／角色可多選：同一欄位取聯集、欄位之間 AND。"""
+    from urllib.parse import urlencode
+    qs = urlencode([('manufacturer_code', 'AEGS'), ('manufacturer_code', 'DRAK'),
+                    ('size_class', '2'), ('size_class', '3')])
+    body = client.get(f'/item/vehicles?{qs}', headers=auth_headers).get_json()
+    assert {r['_id'] for r in body['data']} == {'v-avenger', 'v-cutlass'}
+    qs = urlencode([('role', 'Racing'), ('role', 'Passenger'), ('type', 'ground')])
+    body = client.get(f'/item/vehicles?{qs}', headers=auth_headers).get_json()
+    assert [r['_id'] for r in body['data']] == ['v-cyclone']
