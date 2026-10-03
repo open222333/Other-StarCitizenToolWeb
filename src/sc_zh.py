@@ -21,6 +21,7 @@ labels.json）＋社群繁中化包（cosmo-chang-1701/sc-translation-pack）寫
     寫法）反查 items_commodities_*。
   - 礦床：人工條目（岩石／小行星分類）→ 同礦物的查法。
   - 藍圖類型：人工條目（遊戲 output_type 代碼，翻譯包沒有）。
+  - 任務／勢力：英文標題／名稱反查，key 用片段比對（見下方「任務／勢力」一節）。
 """
 
 import re
@@ -99,15 +100,15 @@ def location_name_zh(en_name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
     return T.by_english(en_name, [_manual('location')] + _LOCATION_PREFIXES, lang)
 
 
-#: 星系本體與其下的星球、衛星、降落點、太空站、Lagrange 點（StantonN／PyroN／NyxN…），
-#: 不含 _Desc 之類的說明文字 key
-_KNOWN_LOCATION_KEY = r'^(stanton|pyro|nyx)(\d+[a-z]?(_[a-z0-9]+)?)?$'
+#: 星系本體與其下的星球、衛星、降落點、太空站、Lagrange 點（StantonN／PyroN／NyxN…）。
+#: 星球／衛星的說明文字 key（Stanton1_Desc、Pyro3_desc、Stanton2c_Desc,P…）形狀
+#: 跟地點 key 一樣，值卻是一整段描述，要用 key 排除掉（不能看值，值就是描述本身）
+_KNOWN_LOCATION_KEY = r'^(stanton|pyro|nyx)(\d+[a-z]?(_(?!desc(,p)?$)[a-z0-9]+)?)?$'
 
 
 def known_location_names(lang: str = DEFAULT_LANG) -> dict:
     """遊戲裡已知的地點名稱 {英文: 翻譯或 None}，給地點下拉選單列出還沒人用過的地點。"""
-    return {en: zh for en, zh in T.by_key_pattern(_KNOWN_LOCATION_KEY, lang).items()
-            if not en.lower().endswith(' desc')}
+    return T.by_key_pattern(_KNOWN_LOCATION_KEY, lang)
 
 
 # ── 礦物／礦床 ──────────────────────────────────────────────────────
@@ -171,6 +172,243 @@ def blueprint_type_names(lang: str = DEFAULT_LANG) -> dict:
     return T.manual_domain('blueprint_type', lang)
 
 
+# ── 任務／勢力 ──────────────────────────────────────────────────────
+#
+# 任務、勢力資料來自 Star Citizen Wiki API，沒有附 localization key，只能拿英文
+# 去反查。兩者的 key 都沒有共同前綴，所以用 key 片段比對（T.match_english）：
+#
+#   - 任務標題：`mg_klim_localdelivery_drugprod_title_intro`、
+#     `Intersec_TSG_Group_Title_001`、`RAIN_..._name_01`… → 含 title／_name
+#   - 任務說明：通常就是把標題 key 的 title 換成 desc
+#     （`..._title_intro` → `..._desc_intro`），找到標題 key 才推得出來
+#   - 任務發布者（NPC）：`MissionGivers_WallaceKlim`、`WallaceKlim_RepUI_Name`…
+#   - 勢力：`Adagio_RepUI_DisplayName`、`Aciedo_RepUI_Name`…；同一個前綴底下還有
+#     `_RepUI_Description`／`_Focus`／`_HQ`／`_Leadership`／`_Area`／`_Founded`
+#
+# 翻譯包會在任務標題後面加自己的標記，例如「需要戰術打擊小組 <EM4>[300 聲望]
+# [藍圖]</EM4>」——那是給遊戲內任務清單看的提示，不是標題本身，顯示前拿掉。
+
+_MISSION_TITLE_PATTERNS = [r'^manual\.mission\.', r'title', r'_name']
+_MISSION_GIVER_PATTERNS = [r'^manual\.mission_giver\.', r'^missiongivers_',
+                           r'_repui_(display)?name$', r'_from$']
+_FACTION_NAME_PATTERNS = [r'^manual\.faction\.', r'_repui_displayname$', r'_repui_name$',
+                          r'^missiongivers_', r'_faction_\w*title$', r'_from$']
+
+_EM_BLOCK = re.compile(r'\s*<EM\d*>.*?</EM\d*>', re.S | re.I)
+_EM_TAG = re.compile(r'</?EM\d*>', re.I)
+_OTHER_TAG = re.compile(r'</?[A-Za-z][^>]{0,20}>')
+_MISSION_TOKEN = re.compile(r'~mission\(([^)|]*)(?:\|[^)]*)?\)')
+_WIKI_TOKEN = re.compile(r'\[([^\]|]+)\|[^\]]*\]')
+
+
+def clean_title_zh(value: Optional[str], fills: dict = None) -> Optional[str]:
+    """翻譯包任務標題 → 顯示用：拿掉 <EM4>[藍圖]</EM4> 這類附加標記；
+    `~mission(Location)` 代入欄位換成 fills 裡對應的值（Wiki 標題已經填好的部分），
+    沒有就顯示成 `[Location]`。"""
+    if not value:
+        return value
+    fills = {k.lower(): v for k, v in (fills or {}).items()}
+    out = _EM_BLOCK.sub('', value)
+    out = _MISSION_TOKEN.sub(lambda m: fills.get(m.group(1).strip().lower()) or f'[{m.group(1)}]', out)
+    out = _OTHER_TAG.sub('', out).replace('\\n', ' ').strip()
+    return out or None
+
+
+def clean_text_zh(value: Optional[str]) -> Optional[str]:
+    """翻譯包的說明文字 → 顯示用：字面上的 \\n 換成換行、拿掉 <EM4> 標籤
+    （保留內容）、`~mission(Location|Address)` 這類遊戲代入欄位改成 `[Location]`。"""
+    if not value:
+        return value
+    out = value.replace('\\n', '\n')
+    out = _EM_TAG.sub('', out)
+    out = _MISSION_TOKEN.sub(lambda m: f'[{m.group(1)}]' if m.group(1) else '', out)
+    return out.strip() or None
+
+
+def clean_mission_text(value: Optional[str]) -> Optional[str]:
+    """Wiki API 的任務說明 → 顯示用：`[Pickup1|Address]` → `[Pickup1]`，
+    殘留的 `~mission(...)` 與 <EM4> 標籤同上處理。"""
+    if not value:
+        return value
+    out = _WIKI_TOKEN.sub(lambda m: f'[{m.group(1)}]', value)
+    out = _EM_TAG.sub('', out)
+    out = _MISSION_TOKEN.sub(lambda m: f'[{m.group(1)}]' if m.group(1) else '', out)
+    return out.strip() or None
+
+
+def _text_fingerprint(text: str, size: int = 60) -> str:
+    """比對兩段說明是不是同一段用：拿掉代入欄位、標籤、標點空白，只留字母數字。"""
+    t = _MISSION_TOKEN.sub(' ', text or '')
+    t = re.sub(r'\[[^\]]*\]', ' ', t)
+    t = _EM_TAG.sub(' ', t).replace('\\n', ' ')
+    return re.sub(r'[^a-z0-9]+', '', t.lower())[:size]
+
+
+def _desc_keys_for(title_key: str) -> list:
+    """任務標題 key → 可能的說明 key（title→desc／description，_name→_desc）。"""
+    k = (title_key or '').lower()
+    out = []
+    if 'title' in k:
+        i = k.rfind('title')
+        out += [k[:i] + 'desc' + k[i + 5:], k[:i] + 'description' + k[i + 5:]]
+    if '_name' in k:
+        i = k.rfind('_name')
+        out.append(k[:i] + '_desc' + k[i + 5:])
+    return [x for x in dict.fromkeys(out) if x != k]
+
+
+def mission_text_zh(title: str, description: str = '', lang: str = DEFAULT_LANG) -> dict:
+    """任務英文標題（＋英文說明）→ `{'title_zh', 'description_zh', 'title_key'}`，
+    查不到的欄位是 None。
+
+    同一個英文標題常有好幾個 key（同一系列任務的變體，翻譯可能不一樣），有說明
+    時優先挑「推得出說明 key、而且那段英文說明跟這個任務的說明對得上」的那個；
+    都對不上就用優先順序最高的標題，說明留 None（寧可不翻也不要配錯段落）。
+    """
+    out = {'title_zh': None, 'description_zh': None, 'title_key': None}
+    # 先找英文相同（或只差代入欄位寫法、引號、空白）的；都沒有才用樣板比對已經填好值的標題
+    # （"Delivery for Lorville Ready" ↔ "Delivery for ~mission(Destination) Ready"）
+    candidates = [(k, v, {}) for k, v in T.candidates_by_english(title, _MISSION_TITLE_PATTERNS, lang)]
+    if not candidates:
+        candidates = T.template_candidates(title, _MISSION_TITLE_PATTERNS, lang)
+    candidates = [c for c in candidates if 'desc' not in c[0]]
+    if not candidates:
+        return out
+
+    want = _text_fingerprint(description) if description else ''
+    if want:
+        for key, value, fills in candidates:
+            for desc_key in _desc_keys_for(key):
+                en = T.english_of(desc_key)
+                if not en:
+                    continue
+                got = _text_fingerprint(en)
+                n = min(len(got), len(want))
+                if n >= 20 and got[:n] == want[:n]:
+                    return {'title_zh': clean_title_zh(value, fills),
+                            'description_zh': clean_text_zh(T.by_key(desc_key, lang)),
+                            'title_key': key}
+
+    key, value, fills = candidates[0]
+    return {'title_zh': clean_title_zh(value, fills), 'description_zh': None, 'title_key': key}
+
+
+def mission_giver_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """任務發布者（NPC 名稱，例如 'Wallace Klim'）→ 翻譯。"""
+    hit = T.match_english(name, _MISSION_GIVER_PATTERNS, lang)
+    return clean_title_zh(hit[1]) if hit else None
+
+
+#: 勢力介紹的欄位 → RepUI key 後綴（候選依序試；HQ 有兩種寫法、還有拼錯的）
+_FACTION_FIELD_KEYS = {
+    'description':  ['description'],
+    'focus':        ['focus'],
+    'headquarters': ['hq', 'headquarters', 'headquaters'],
+    'leadership':   ['leadership'],
+    'area':         ['area'],
+    'founded':      ['founded'],
+}
+
+
+def faction_texts_zh(name: str, lang: str = DEFAULT_LANG) -> dict:
+    """勢力英文名稱 → `{'name_zh', 'description_zh', 'focus_zh', 'headquarters_zh',
+    'leadership_zh', 'area_zh', 'founded_zh'}`，查不到的欄位是 None。
+
+    名稱對到 `<前綴>_RepUI_Name`／`_DisplayName` 時，同前綴的其他 RepUI 條目就是
+    這個勢力的介紹欄位；對到的是其他類 key（任務發布者、勢力標題…）就只有名稱。
+    """
+    out = {'name_zh': None, **{f'{f}_zh': None for f in _FACTION_FIELD_KEYS}}
+    hit = T.match_english(name, _FACTION_NAME_PATTERNS, lang)
+    if not hit:
+        return out
+    key, value = hit
+    out['name_zh'] = clean_title_zh(value)
+    i = key.find('_repui_')
+    if i > 0:
+        prefix = key[:i + len('_repui_')]
+        for field, suffixes in _FACTION_FIELD_KEYS.items():
+            out[f'{field}_zh'] = clean_text_zh(T.by_keys([prefix + s for s in suffixes], lang))
+    return out
+
+
+def faction_name_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """勢力英文名稱 → 翻譯（只要名稱時用，例如任務列表的勢力欄）。"""
+    hit = T.match_english(name, _FACTION_NAME_PATTERNS, lang)
+    return clean_title_zh(hit[1]) if hit else None
+
+
+# ── 星圖地點（scunpacked-data starmap.json）────────────────────────────
+#
+# 星圖的名稱是遊戲解析好的英文，沒有附 key，用英文反查。地點名稱的 key 分散在好幾類
+# （StantonN_…、asteroidcluster_miningbase_…、pyro6_outpost_…、miningclaim…、
+# ab_mine_…），前面的優先；說明是一整段英文，直接找英文完全相同的那段。
+# 設施（Amenities）是 Maps_Amenities_*；管轄是 Jurisdictions_Name_* 或勢力名稱；
+# 類型是 Markers_Subtext_<類型>，翻譯包沒有的幾個放人工條目（manual.starmap_type.*）。
+
+_STARMAP_NAME_PATTERNS = [
+    r'^manual\.location\.', r'^(stanton|pyro|nyx)', r'^asteroidcluster_', r'^fob_',
+    r'^mission_location_', r'^miningclaim', r'^rr_', r'^ab_mine_', r'^gobling', r'^hangar_',
+    r'destination', r'^delemar_', r'^ui_dest_', r'^area_name_', r'^station_area_', r'^mission',
+    r'^contestedzone', r'^miningasteroidbase', r'^invictus', r'location',
+]
+_AMENITY_PATTERNS = [r'^maps_amenities_', r'^area_name_', r'^station_area_']
+_JURISDICTION_PATTERNS = [r'^jurisdictions_name_', r'_repui_displayname$', r'_repui_name$',
+                          r'^factions_\w+_displayname$', r'_from$']
+
+
+def starmap_name_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """星圖地點英文名稱（例如 'Blackrock Exchange'）→ 翻譯。"""
+    if not (name or '').strip():
+        return None
+    hit = T.match_english(name, _STARMAP_NAME_PATTERNS, lang)
+    return clean_title_zh(hit[1]) if hit else None
+
+
+def starmap_description_zh(text: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """星圖地點的英文說明 → 翻譯（找英文完全相同的那一段，說明類 key 優先）。"""
+    if not (text or '').strip():
+        return None
+    hit = T.match_english(text, [r'desc', r'.'], lang)
+    return clean_text_zh(hit[1]) if hit else None
+
+
+def amenity_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """地點設施（例如 'Vehicle Services'、'Landing Pad (M)'）→ 翻譯。"""
+    hit = T.match_english(name, _AMENITY_PATTERNS, lang) if (name or '').strip() else None
+    return clean_title_zh(hit[1]) if hit else None
+
+
+def jurisdiction_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """管轄單位（例如 'UEE'、"People's Alliance"）→ 翻譯。"""
+    hit = T.match_english(name, _JURISDICTION_PATTERNS, lang) if (name or '').strip() else None
+    return clean_title_zh(hit[1]) if hit else None
+
+
+def starmap_type_zh(code: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """星圖類型代碼（Planet、Asteroid_ValidQT…）→ 翻譯。底線後面是變體，先找完整代碼、再找基本類型。"""
+    code = (code or '').strip()
+    if not code:
+        return None
+    base = code.split('_', 1)[0]
+    return T.by_keys([manual_key('starmap_type', code), manual_key('starmap_type', base),
+                      f'markers_subtext_{code.lower()}', f'markers_subtext_{base.lower()}'], lang)
+
+
+def starmap_feature_zh(key: str, amenity_names=(), lang: str = DEFAULT_LANG) -> Optional[str]:
+    """地點屬性欄位（has_hangar、shop_weapons…，見 src/models/starmap.py 的 FEATURES）→ 翻譯。
+
+    先找人工條目（starmap_feature），再用第一個對應設施的翻譯；一個屬性對應好幾種尺寸
+    （機庫 S～XL）時去掉尺寸括號。
+    """
+    hit = T.by_keys([manual_key('starmap_feature', key)], lang) if key else None
+    if hit or not amenity_names:
+        return hit
+    zh = amenity_zh(amenity_names[0], lang)
+    if zh and len(amenity_names) > 1:
+        zh = re.sub(r'\s*[（(][^）)]*[）)]\s*$', '', zh) or zh
+    return zh
+
+
 # ── 給 API 用的批次查詢 ──────────────────────────────────────────────
 
 #: domain → 單筆查詢函式（英文文字 → 翻譯），給 /item/translations 批次查
@@ -182,4 +420,8 @@ LOOKUPS = {
     'mining_resource': lambda text, lang=DEFAULT_LANG: mining_resource_name_zh(name=text, lang=lang),
     'mining_deposit':  mining_deposit_name_zh,
     'blueprint_type':  blueprint_type_zh,
+    'faction':         faction_name_zh,
+    'mission_giver':   mission_giver_zh,
+    'starmap_type':    starmap_type_zh,
+    'amenity':         amenity_zh,
 }

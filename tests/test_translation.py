@@ -130,6 +130,10 @@ def test_known_location_names(client, seed_translations):
         'Stanton1_Lorville': ('Lorville', '羅威爾'),
         'Stanton1_Lorville_Desc': ('Lorville is the capital…', '說明'),
         'Pyro1_L1': ('PYR1 L1', None),
+        # 星球／衛星說明：key 形狀跟地點一樣，值是整段描述，不能出現在地點清單
+        'Stanton1_Desc': ('A wealth of ore and other resources are mined on Hurston…', '說明'),
+        'Pyro3_desc': ('This icy terrestrial world has a breathable atmosphere…', None),
+        'Stanton2c_Desc,P': ('Named after the oldest of the three siblings…', '說明'),
     })
     names = Z.known_location_names()
     assert names == {'Stanton': '斯坦頓', 'Lorville': '羅威爾', 'PYR1 L1': None}
@@ -222,6 +226,7 @@ def test_sync_translations_refuses_a_truncated_download(client, sync_mod, monkey
 def test_heartbeat_bootstraps_translations_once(client, sync_mod, monkeypatch):
     calls = []
     monkeypatch.setattr(sync_mod, '_do_sync', lambda **kw: calls.append(kw) or {'ok': True})
+    monkeypatch.setattr(sync_mod, 'dispatch_jobs', lambda keys, by=None: ([], list(keys)))
 
     sync_mod.check_and_run_scheduled_sync()
     assert calls == [{'translations_only': True}]
@@ -231,12 +236,13 @@ def test_heartbeat_bootstraps_translations_once(client, sync_mod, monkeypatch):
     assert calls[1:] != [{'translations_only': True}]
 
 
-def test_translations_only_runs_do_not_move_the_schedule(client, sync_mod):
-    now = datetime.utcnow()
-    get_db()['sync_runs'].insert_one({'_id': 't', 'started_at': now, 'finished_at': now,
-                                      'ok': True, 'translations_only': True})
-    due, reason = sync_mod._is_due()
-    assert (due, reason) == (True, 'never_run')
+def test_translations_only_runs_do_not_move_the_schedule(client, sync_mod, monkeypatch):
+    """部署後自動補跑的「只同步翻譯」只算翻譯那一項，其他項目照樣是「從沒跑過」。"""
+    from src.models.sync_schedule import SyncJobs
+    monkeypatch.setattr(sync_mod, '_run_job', lambda key, *a: ([], [], True))
+    sync_mod._do_sync(translations_only=True)
+    assert SyncJobs.is_due(SyncJobs.get('translations'))[1] != 'never_run'
+    assert SyncJobs.is_due(SyncJobs.get('items')) == (True, 'never_run')
 
 
 # ═══════════════════════════════════════════════════════

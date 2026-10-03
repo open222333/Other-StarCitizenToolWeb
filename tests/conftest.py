@@ -134,6 +134,7 @@ def seed_translations():
                 text[lang] = zh
             col.update_one({'_id': key}, {'$set': {
                 'key_lower': key.lower(), 'text': text, 'en_lower': en.lower(),
+                'en_norm': T.normalize_english(en),
                 'source': T.SOURCE_GAME, 'domain': None, 'h': T.text_hash(text),
                 'updated_at': now,
             }}, upsert=True)

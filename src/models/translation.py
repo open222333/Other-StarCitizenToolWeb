@@ -19,6 +19,7 @@
       key_lower: 'vehicle_nameaegs_avenger_stalker',
       text:      {'en': 'Aegis Avenger Stalker', 'zh-TW': '聖盾 復仇者 追獵'},
       en_lower:  'aegis avenger stalker',              # 用英文反查其他語言用
+      en_norm:   'aegis avenger stalker',              # 寬鬆比對用（代入欄位、引號、空白統一，見 normalize_english）
       source:    'game' | 'manual',
       domain:    None | 'blueprint_type' | ...,        # 只有人工條目有
       h:         '<text 的雜湊>',                      # 同步時判斷內容有沒有變
@@ -67,6 +68,26 @@ def _col():
 
 def manual_key(domain: str, ident: str) -> str:
     return f'{MANUAL_PREFIX}{domain}.{ident}'
+
+
+_TOKEN_GAME = re.compile(r'~mission\(([^)|]*)(?:\|[^)]*)?\)')
+_TOKEN_BRACKET = re.compile(r'\[([^\]|]+)\|[^\]]*\]')
+_QUOTES = str.maketrans({'’': "'", '‘': "'", '“': '"', '”': '"', '\u00a0': ' '})
+
+
+def soften_english(text: str) -> str:
+    """遊戲英文 ↔ Wiki API 英文的寫法差異統一（不改大小寫）：
+    `~mission(Location|Address)`／`[Location|Address]` → `[Location]`、彎引號 → 直引號、
+    拿掉 <EM4> 之類標籤、多個空白縮成一個。"""
+    t = _TOKEN_GAME.sub(lambda m: f'[{m.group(1)}]', text or '')
+    t = _TOKEN_BRACKET.sub(lambda m: f'[{m.group(1)}]', t)
+    t = re.sub(r'</?[A-Za-z][^>]{0,20}>', '', t.translate(_QUOTES))
+    return re.sub(r'\s+', ' ', t.replace('\\n', ' ')).strip()
+
+
+def normalize_english(text: str) -> str:
+    """寬鬆比對用的英文（soften_english 再轉小寫）。存在 en_norm 欄位。"""
+    return soften_english(text).lower()
 
 
 def text_hash(text: dict) -> str:
@@ -210,6 +231,145 @@ def by_english(text: str, prefixes: Iterable[str], lang: str = DEFAULT_LANG) -> 
     return _cached(('e', t, tuple(prefix_list), lang), load)
 
 
+def match_english(text: str, patterns: Iterable[str], lang: str = DEFAULT_LANG) -> Optional[tuple]:
+    """以英文原文反查翻譯，key 用正規式（re.search，比對小寫 key）篩選，回傳
+    `(key_lower, 翻譯)`；查不到回 None。
+
+    跟 by_english() 一樣是「同一段英文對到很多 key 時要指定是哪一類」，差別是
+    有些類別的 key 沒有共同前綴、只有共同的片段——任務標題是
+    `mg_klim_..._title_intro`、`Intersec_TSG_Group_Title_001`…，勢力名稱是
+    `Adagio_RepUI_DisplayName`、`Aciedo_RepUI_Name`…。多筆符合時依 patterns
+    的順序優先，同一個 pattern 內取 key 最短的。
+
+    回傳 key 是為了讓呼叫端從同一組 key 推出相關條目（例如任務標題 key →
+    說明 key、勢力名稱 key → 勢力介紹 key）。
+    """
+    t = (text or '').strip().lower()
+    compiled = [re.compile(p) for p in patterns if p]
+    if not t or not compiled:
+        return None
+
+    def load():
+        rows = _rows_by_english(text)
+        best = None
+        for row in rows:
+            k = row.get('key_lower') or ''
+            rank = next((i for i, rx in enumerate(compiled) if rx.search(k)), None)
+            if rank is None:
+                continue
+            value = _translation_of(row, lang)
+            if not value:
+                continue
+            score = (row['_exact'], rank, len(k), k)
+            if best is None or score < best[0]:
+                best = (score, (k, value))
+        return best[1] if best else None
+    return _cached(('m', t, tuple(p.pattern for p in compiled), lang), load)
+
+
+def _rows_by_english(text: str) -> list:
+    """英文完全相同（en_lower）優先，其次寬鬆相同（en_norm）的條目；每筆多一個
+    `_exact`（0 = 完全相同、1 = 寬鬆相同）給排序用。"""
+    t = (text or '').strip().lower()
+    n = normalize_english(text)
+    rows = list(_col().find({'$or': [{'en_lower': t}, {'en_norm': n}]},
+                            {'key_lower': 1, 'text': 1, 'en_lower': 1}))
+    for row in rows:
+        row['_exact'] = 0 if row.get('en_lower') == t else 1
+    return rows
+
+
+def candidates_by_english(text: str, patterns: Iterable[str], lang: str = DEFAULT_LANG) -> list:
+    """同 match_english()，但回傳全部符合的 `(key_lower, 翻譯)`（依優先順序排好）。
+
+    給「同一個英文標題對到好幾個 key、要再用別的線索挑」的情況用——例如兩個
+    任務都叫 "Additional Resources For Research"，標題翻譯可能不同，要再比對
+    說明文字才知道是哪一個。
+    """
+    t = (text or '').strip().lower()
+    compiled = [re.compile(p) for p in patterns if p]
+    if not t or not compiled:
+        return []
+
+    def load():
+        out = []
+        for row in _rows_by_english(text):
+            k = row.get('key_lower') or ''
+            rank = next((i for i, rx in enumerate(compiled) if rx.search(k)), None)
+            if rank is None:
+                continue
+            value = _translation_of(row, lang)
+            if value:
+                out.append(((row['_exact'], rank, len(k), k), (k, value)))
+        return [pair for _, pair in sorted(out)]
+    return _cached(('c', t, tuple(p.pattern for p in compiled), lang), load)
+
+
+#: 樣板比對時，樣板裡除了代入欄位之外至少要有這麼多個英數字，
+#: 不然 "~mission(Title)" 這種整句都是代入欄位的樣板會對到任何標題
+_TEMPLATE_MIN_LITERAL = 6
+
+
+def template_candidates(text: str, patterns: Iterable[str], lang: str = DEFAULT_LANG) -> list:
+    """英文裡有代入欄位的樣板（例如 "Delivery for ~mission(Destination) Ready"）比對
+    已經填好值的英文（"Delivery for Lorville Ready"），回傳
+    `[(key_lower, 翻譯, {欄位名稱小寫: 填進去的值})]`，字面部分越長的越優先。
+
+    只看 key 符合 patterns 的條目；完全比對不到時才用（比較慢，結果有快取）。
+    """
+    target = soften_english(text)
+    compiled = [re.compile(p) for p in patterns if p]
+    if not target or not compiled:
+        return []
+
+    def load_templates():
+        out = []
+        for row in _col().find({'text.en': {'$regex': r'~mission\('}}, {'key_lower': 1, 'text': 1}):
+            k = row.get('key_lower') or ''
+            rank = next((i for i, rx in enumerate(compiled) if rx.search(k)), None)
+            value = _translation_of(row, lang)
+            if rank is None or not value:
+                continue
+            soft = soften_english(row['text'][LANG_EN])
+            parts = re.split(r'\[([^\]]+)\]', soft)
+            literal = ''.join(parts[0::2])
+            if len(re.sub(r'[^A-Za-z0-9]', '', literal)) < _TEMPLATE_MIN_LITERAL:
+                continue
+            names, regex = [], ''
+            for i, part in enumerate(parts):
+                if i % 2:
+                    names.append(part.strip().lower())
+                    regex += f'(?P<g{len(names) - 1}>.+?)'
+                else:
+                    regex += re.escape(part)
+            out.append((len(literal), rank, k, re.compile(f'^{regex}$', re.I), names, value))
+        out.sort(key=lambda x: (-x[0], x[1], len(x[2])))
+        return out
+
+    templates = _cached(('tpl', tuple(p.pattern for p in compiled), lang), load_templates)
+
+    def load():
+        hits = []
+        for _, _, k, rx, names, value in templates:
+            m = rx.match(target)
+            if m:
+                hits.append((k, value, {n: m.group(f'g{i}') for i, n in enumerate(names)}))
+        return hits
+    return _cached(('tc', target, tuple(p.pattern for p in compiled), lang), load)
+
+
+def english_of(key: str) -> Optional[str]:
+    """某個 key 的英文原文（不分大小寫），沒有回 None。"""
+    k = (key or '').strip().lower()
+    if not k:
+        return None
+
+    def load():
+        doc = _col().find_one({'key_lower': k}, {'text': 1})
+        return ((doc or {}).get('text') or {}).get(LANG_EN) or None
+    return _cached(('en', k), load)
+
+
 def by_key_pattern(pattern: str, lang: str = DEFAULT_LANG) -> dict:
     """key（小寫）符合正規式的全部條目 {英文: 翻譯}，沒有翻譯的也收（值是 None）。
 
@@ -253,6 +413,7 @@ def ensure_indexes(db=None):
         db = get_db()
     db[COLLECTION].create_index('key_lower')
     db[COLLECTION].create_index([('en_lower', ASCENDING), ('key_lower', ASCENDING)])
+    db[COLLECTION].create_index('en_norm')
     db[COLLECTION].create_index([('source', ASCENDING), ('domain', ASCENDING)])
 
 
@@ -292,6 +453,7 @@ def replace_source(entries, source: str, stamp: datetime, bulk_size: int = 1000)
             'key_lower': _id.lower(),
             'text': text,
             'en_lower': text[LANG_EN].strip().lower(),
+            'en_norm': normalize_english(text[LANG_EN]),
             'source': source,
             'domain': domain,
             'h': h,
@@ -323,6 +485,25 @@ def iter_manual_entries(path: Path = MANUAL_FILE):
             text = {LANG_EN: (langs.get(LANG_EN) or ident)}
             text.update({k: v for k, v in langs.items() if k != LANG_EN and v})
             yield manual_key(domain, ident), text, domain
+
+
+def backfill_en_norm(bulk_size: int = 2000) -> int:
+    """補上舊資料沒有的 en_norm（內容沒變的條目同步時不會重寫，所以要另外補一次）。"""
+    col = _col()
+    ops, done = [], 0
+    for row in col.find({'en_norm': {'$exists': False}}, {'text.en': 1}):
+        ops.append(UpdateOne({'_id': row['_id']}, {'$set': {
+            'en_norm': normalize_english(((row.get('text') or {}).get(LANG_EN)) or '')}}))
+        if len(ops) >= bulk_size:
+            col.bulk_write(ops, ordered=False)
+            done += len(ops)
+            ops = []
+    if ops:
+        col.bulk_write(ops, ordered=False)
+        done += len(ops)
+    if done:
+        clear_cache()
+    return done
 
 
 def sync_manual(stamp: datetime = None) -> dict:

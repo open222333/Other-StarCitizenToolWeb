@@ -137,5 +137,33 @@
     "Shale Deposit": {
       "zh-TW": "頁岩礦床"
     }
+  },
+  "starmap_type": {
+    "PointOfInterest": {
+      "zh-TW": "興趣點"
+    },
+    "JumpPoint": {
+      "zh-TW": "跳躍點"
+    },
+    "YouAreHere": {
+      "zh-TW": "目前位置"
+    },
+    "QuantumTracePoint": {
+      "zh-TW": "量子追蹤點"
+    },
+    "CardinalPoint": {
+      "zh-TW": "方位點"
+    }
+  },
+  "starmap_feature": {
+    "has_docking": {
+      "zh-TW": "對接口"
+    },
+    "has_hangar": {
+      "zh-TW": "機庫"
+    },
+    "has_landing_pad": {
+      "zh-TW": "停機坪"
+    }
   }
 }
