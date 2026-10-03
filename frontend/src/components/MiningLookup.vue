@@ -1,9 +1,7 @@
 <!--
-  礦物參考查詢（唯讀）——共用元件，被兩個地方掛載（同一份實作，各自帶自己的身分）：
-    - 後台：views/MiningView.vue（用 apiFetch）
-    - 玩家頁：MyPlayerView 的「礦物」分頁（用 playerFetch）
-  所以這裡不直接碰 api/index.js 的 miningApi，取資料一律走 `fetcher` prop
-  （跟 BlueprintCalculator.vue 是同一個做法）。
+  礦物參考查詢（唯讀）——掛在玩家頁 MyPlayerView 的「礦物」分頁（用 playerFetch）。
+  後台的「礦物」頁是另一個東西（views/MiningView.vue：直接看礦物資料庫與中文
+  對照），不用這個元件。取資料一律走 `fetcher` prop，不直接碰 api/index.js 的 miningApi。
 
   資料來源是 scunpacked-data（StarCitizenWiki 維護的解包資料集），由
   tasks/scdata_sync.py 定期同步，兩種東西都在裡面：
@@ -192,6 +190,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { ownSignatures as mineralOwnSignatures } from '@/utils/miningSignature'
 
 const props = defineProps({
   /** 帶身分的 fetch（後台用 apiFetch、玩家頁用 playerFetch），回傳 Response 或 null */
@@ -202,8 +201,7 @@ const props = defineProps({
    * 掛載了——如果 onMounted 就無條件打兩支 API，等於每個玩家每次開
    * 個人頁都會抓一份礦物參考表，即使他根本沒點進「礦物」分頁。
    * 所以資料改成「第一次變成可見時才載入」，之後切走再切回來不重載。
-   * 後台是獨立頁面（MiningView.vue），維持原本「一進頁就載入」，
-   * 所以預設值是 true。
+   * 預設值 true（獨立頁面掛載時一進頁就載入）。
    */
   active: { type: Boolean, default: true },
 })
@@ -394,15 +392,10 @@ const filteredMineralGroups = computed(() => {
 //
 // 同名礦床常有好幾筆（成分比例區間不同的變體），但單顆訊號值相同，依值去重；
 // 真的有兩種值的（Carinite、Janalite：3000／4000）兩組都列。
+// 名稱寫法不一致的（Stileron (Ore) ↔ Stileron、Raw Ouratite ↔ Ouratite）
+// 由 utils/miningSignature.js 處理，後台礦物資料庫頁共用同一份。
 function ownSignatures(group) {
-  const name = (group.resource_name || '').trim().toLowerCase()
-  const bySig = new Map()
-  for (const dep of group.deposits) {
-    if (!dep.signature) continue
-    if ((dep.deposit_name || '').trim().toLowerCase() !== name) continue
-    if (!bySig.has(dep.signature)) bySig.set(dep.signature, { signature: dep.signature, tier: dep.tier })
-  }
-  return Array.from(bySig.values()).sort((x, y) => x.signature - y.signature)
+  return mineralOwnSignatures(group.resource_name, group.deposits)
 }
 
 /** 單顆訊號值 × 1~10 顆（整叢掃描值），用的是礦物自己礦床的真實值，不是合成的。 */
