@@ -57,6 +57,22 @@ export function loadKnownLocations() {
   return knownLocationsPromise
 }
 
+/** 地點資料庫裡「可存放」的地點名稱（英文，依星系、上下層排序），順便把中文放進
+ *  location 快取。給庫存地點下拉用；地點資料還沒同步時回 []。 */
+let storageLocationsPromise = null
+export function loadStorageLocations() {
+  if (!storageLocationsPromise) {
+    storageLocationsPromise = fetchJson('/starmap/storage-locations').then((data) => {
+      if (!Array.isArray(data)) { storageLocationsPromise = null; return [] }
+      for (const row of data) {
+        if (row.name_zh && !cache.location[row.name]) cache.location[row.name] = row.name_zh
+      }
+      return data.map(row => row.name)
+    })
+  }
+  return storageLocationsPromise
+}
+
 /** 一次載入整個小型 domain（目前只有 blueprint_type）。 */
 export async function loadTranslationDomain(domain) {
   if (!cache[domain] || loadedDomains.has(domain)) return

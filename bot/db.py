@@ -14,6 +14,7 @@ from src import WMS_SCOPE_ID
 from src.models.inventory import (OWNER_GUILD, OWNER_PLAYER, DiscordBinding, Inventory,
                                   InventoryLog, StockError, uscu_to_scu)
 from src.models.item import CommodityMaster, ItemMaster, SyncRun, VehicleMaster
+from src.models.starmap import Starmap
 from src.mongo import ensure_indexes, get_db
 
 __all__ = [
@@ -62,7 +63,8 @@ async def resolve_item(value: str) -> dict:
 
 
 async def search_vehicles(query: str, limit: int = 25) -> list:
-    return await _run(VehicleMaster.search, query, limit)
+    # bot 的使用者是玩家：不列玩家頁面不顯示的艦船
+    return await _run(VehicleMaster.search, query, limit, visible_only=True)
 
 
 async def resolve_vehicle(value: str) -> Optional[dict]:
@@ -103,6 +105,12 @@ async def capacity(owner_type: str, player: Optional[str], location: str = '') -
 
 async def distinct_locations(limit: int = 200) -> list:
     return await _run(Inventory.distinct_locations, SCOPE_ID, limit)
+
+
+async def storage_location_names() -> list:
+    """地點資料庫裡「可存放」的地點名稱（英文）。"""
+    rows = await _run(Starmap.storage_locations)
+    return [r['name'] for r in rows]
 
 
 async def recent_log(limit: int = 20) -> list:

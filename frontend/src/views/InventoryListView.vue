@@ -176,7 +176,11 @@
               </div>
               <div class="col-6">
                 <label class="form-label small">位置</label>
-                <input class="form-control form-control-sm" v-model="adjustForm.location">
+                <input class="form-control form-control-sm" v-model="adjustForm.location"
+                  list="inv-adjust-locations" autocomplete="off">
+                <datalist id="inv-adjust-locations">
+                  <option v-for="loc in adjustLocationOptions" :key="loc" :value="loc">{{ locationZh(loc) }}</option>
+                </datalist>
               </div>
               <div class="col-6">
                 <label class="form-label small">容器（可留空）</label>
@@ -209,6 +213,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Modal } from 'bootstrap'
 import { useAuthStore } from '@/stores/auth'
 import { inventoryApi } from '@/api'
+import { loadStorageLocations, translate } from '@/utils/translations'
 import SearchBox          from '@/components/SearchBox.vue'
 import MultiSelectFilter  from '@/components/MultiSelectFilter.vue'
 
@@ -320,7 +325,17 @@ async function reload(newOffset = 0) {
   loading.value = false
 }
 
+// 入庫／出庫表單的地點建議：用過的地點排前面，再補地點資料庫裡「可存放」的地點
+const storageLocations = ref([])
+const adjustLocationOptions = computed(() => {
+  const used = locations.value.map(o => (typeof o === 'string' ? o : o?.value)).filter(Boolean)
+  const seen = new Set(used.map(loc => loc.toLowerCase()))
+  return [...used, ...storageLocations.value.filter(loc => !seen.has(loc.toLowerCase()))]
+})
+const locationZh = loc => translate('location', loc) || ''
+
 async function loadLocations() {
+  loadStorageLocations().then((names) => { storageLocations.value = names })
   const res = await inventoryApi.locations()
   if (res) { const d = await res.json(); locations.value = d.data || [] }
 }

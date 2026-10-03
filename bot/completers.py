@@ -61,14 +61,21 @@ async def _cached_locations() -> list:
     now = time.monotonic()
     if _LOCATION_CACHE['rows'] and now - _LOCATION_CACHE['at'] < _LOCATION_TTL_S:
         return _LOCATION_CACHE['rows']
-    rows = await db.distinct_locations(limit=200)
+    used = await db.distinct_locations(limit=200)
+    # 用過的地點排前面，再補地點資料庫裡「可存放」的地點（還沒有人登記過也能選）
+    try:
+        storage = await db.storage_location_names()
+    except Exception:
+        storage = []
+    seen = {loc.lower() for loc in used}
+    rows = used + [n for n in storage if n.lower() not in seen]
     _LOCATION_CACHE.update(at=now, rows=rows)
     return rows
 
 
 async def location_autocomplete(interaction: discord.Interaction,
                                 current: str) -> list:
-    """位置是自由文字，這裡只把用過的位置列出來方便選。"""
+    """位置是自由文字，這裡列出用過的位置＋可存放的地點方便選。"""
     locations = await _cached_locations()
     needle = (current or '').strip().lower()
     if needle:
