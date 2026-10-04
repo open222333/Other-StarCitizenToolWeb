@@ -22,7 +22,7 @@
 -->
 <template>
   <div>
-    <div :class="[cardClass, 'mb-3']">
+    <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-2">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <input v-model="nameQuery" type="search" class="form-control form-control-sm"
@@ -61,8 +61,8 @@
     <div :class="cardClass">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
-          <table class="table table-hover align-middle mb-0" :class="{ 'table-sm': player }">
-            <thead :class="{ 'table-light': !player }">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
               <tr>
                 <th class="ps-3">{{ player ? '名稱' : '藍圖（英文）' }}</th>
                 <th v-if="!player">中文</th>
@@ -113,12 +113,12 @@
                       <span v-if="bp.name_zh">{{ bp.name_zh }}</span>
                       <span v-else class="text-muted">—</span>
                     </td>
-                    <td class="small">{{ bp.output_type ? blueprintTypeLabel(bp.output_type) : (bp.output_type_label || '—') }}</td>
-                    <td class="small">{{ bp.output_grade || '—' }}</td>
-                    <td class="small">{{ bp.craft_time_label || fmtSeconds(bp.craft_time_seconds) }}</td>
-                    <td class="small text-end">{{ bp.ingredient_count ?? '—' }}</td>
-                    <td class="small">{{ bp.is_available_by_default ? '是' : '否' }}</td>
-                    <td class="small text-end" :class="{ 'pe-3': player }">
+                    <td :class="{ small: !player }">{{ bp.output_type ? blueprintTypeLabel(bp.output_type) : (bp.output_type_label || '—') }}</td>
+                    <td :class="{ small: !player }">{{ bp.output_grade || '—' }}</td>
+                    <td :class="{ small: !player }">{{ bp.craft_time_label || fmtSeconds(bp.craft_time_seconds) }}</td>
+                    <td class="text-end" :class="{ small: !player }">{{ bp.ingredient_count ?? '—' }}</td>
+                    <td :class="{ small: !player }">{{ bp.is_available_by_default ? '是' : '否' }}</td>
+                    <td class="text-end" :class="{ small: !player, 'pe-3': player }">
                       <span v-if="bp.mission_count">{{ bp.mission_count }} 個</span>
                       <span v-else class="text-muted">—</span>
                     </td>
@@ -204,8 +204,8 @@ import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
-import { loadTranslations, translate } from '@/utils/translations'
 import { factionLabel, fmtChance, zhPair } from '@/utils/mission'
+import { loadMaterialZh, materialLabel } from '@/utils/blueprintMaterial'
 
 const props = defineProps({
   /** 帶身分的 fetch（後台 apiFetch、玩家頁 playerFetch），回傳 Response 或 null */
@@ -320,26 +320,11 @@ async function toggle(bp) {
   detail.value = body?.success ? body.data : null
   detailMissions.value = mbody?.success ? (mbody.data || []) : []
   detailLoading.value = false
-  if (detail.value) {
-    const mats = [...(detail.value.ingredients || []), ...(detail.value.dismantle_returns || [])]
-    const names = mats.map(m => m.name).filter(Boolean)
-    loadTranslations('item', mats.filter(m => !isResource(m)).map(m => m.name))
-    loadTranslations('mining_resource', names)
-  }
+  if (detail.value) loadMaterialZh(detail.value)
 }
 
 function openMissions(bp) {
   missionsRef.value?.open({ uuid: bp._id, name: bp.name, name_zh: bp.name_zh, output_type: bp.output_type })
-}
-
-function isResource(m) {
-  return m.kind === 'resource' || (!m.kind && !!m.resource_type_uuid)
-}
-
-function materialLabel(m) {
-  const name = m.name || '—'
-  const zh = (isResource(m) ? translate('mining_resource', name) : '') || translate('item', name)
-  return zh ? `${zh}（${name}）` : name
 }
 
 function fmtQty(m) {

@@ -1,22 +1,25 @@
 <!--
   藍圖材料試算：選一張藍圖 → 填現有材料 → 算最多可以做幾個。
 
-  掛在玩家頁 MyPlayerView 的「試算」分頁（用 playerFetch，庫存來源是個人庫）。
+  掛在玩家頁 MyPlayerView「我的藍圖」每一列的「材料」展開（用 playerFetch，庫存來源是個人庫）。
   後台原本也有一個入口（公會共享庫），已移除——後台只看資料庫，不重複玩家
   頁的功能。取資料仍一律走 `fetcher`／`stockLoader` prop，不直接碰任何 store。
+
+  `blueprint`：指定一張藍圖（{_id, name, name_zh}）時不顯示搜尋框，直接載入那張的配方——
+  玩家頁「我的藍圖」每一列的「材料」展開就是用這個模式（原本獨立的「試算」分頁已併進去）。
 
   計算邏輯全部在 utils/craftCalc.js（純函式、有測試：npm run test:calc），
   這個檔案只負責畫面與互動。
 -->
 <template>
   <div>
-    <!-- ── 選藍圖 ─────────────────────────────────────────── -->
-    <div :class="[cardClass, 'mb-3']">
+    <!-- ── 選藍圖（指定了 blueprint 就不需要）──────────────── -->
+    <div v-if="!blueprint" :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body">
         <label class="form-label small fw-semibold" :for="searchId">藍圖名稱</label>
         <div class="position-relative">
           <input :id="searchId" v-model="keyword" type="text" class="form-control"
-            placeholder="輸入藍圖或產出物名稱，例如 Laser Cannon、醫療筆"
+            placeholder="搜尋藍圖"
             role="combobox" aria-autocomplete="list" :aria-expanded="showResults"
             :aria-controls="listId" :aria-activedescendant="activeOptionId"
             autocomplete="off"
@@ -43,6 +46,7 @@
             </li>
           </ul>
         </div>
+
       </div>
     </div>
 
@@ -69,12 +73,12 @@
               </div>
             </div>
             <div class="d-flex gap-2">
-              <button v-if="stockLoader" class="btn btn-sm btn-outline-secondary"
+              <button v-if="stockLoader" class="btn btn-sm btn-primary"
                 :disabled="loadingStock" @click="fillFromStock">
                 <span v-if="loadingStock" class="spinner-border spinner-border-sm me-1"></span>
                 從{{ stockLabel }}帶入
               </button>
-              <button class="btn btn-sm btn-outline-secondary" @click="clearAmounts">清空數量</button>
+              <button class="btn btn-sm btn-warning" @click="clearAmounts">清空數量</button>
             </div>
           </div>
         </div>
@@ -161,10 +165,10 @@
                   <tr v-for="row in result.rows" :key="row.key"
                     :class="{ 'row-bottleneck': row.isBottleneck && result.maxCraftable !== null }">
                     <td class="ps-3">
-                      <span class="fw-semibold">{{ row.name }}</span>
+                      <span class="fw-semibold">{{ materialLabel(row) }}</span>
                     </td>
                     <td class="text-end">
-                      <template v-if="row.need">{{ fmt(row.need) }} {{ unitLabel(row.unit) }}</template>
+                      <template v-if="row.need">{{ qtyLabel(row.need, row.unit) }}</template>
                       <span v-else class="hint" title="主檔沒有這項的數量">未知</span>
                     </td>
                     <td>
@@ -190,12 +194,12 @@
                     </td>
                     <td class="text-end hint">
                       <span v-if="row.leftover === null">—</span>
-                      <span v-else>{{ fmt(row.leftover) }} {{ unitLabel(row.unit) }}</span>
+                      <span v-else>{{ qtyLabel(row.leftover, row.unit) }}</span>
                     </td>
                     <td v-if="result.target > 0" class="text-end pe-3">
                       <span v-if="row.shortfall === null" class="hint">—</span>
                       <span v-else-if="row.shortfall > 0" class="text-danger fw-semibold">
-                        {{ fmt(row.shortfall) }} {{ unitLabel(row.unit) }}
+                        {{ qtyLabel(row.shortfall, row.unit) }}
                       </span>
                       <span v-else class="text-success">✓</span>
                     </td>
@@ -207,23 +211,24 @@
         </div>
 
         <div v-if="recipe.dismantle_returns?.length" class="small hint mt-2">
-          拆解可回收：{{ recipe.dismantle_returns.map(r => `${r.name} ${r.quantity_scu} SCU`).join('、') }}
+          拆解可回收：{{ recipe.dismantle_returns.map(r => `${materialLabel(r)} ${qtyLabel(r.quantity_scu, UNIT_SCU)}`).join('、') }}
         </div>
       </template>
     </template>
 
-    <div v-else class="text-center hint py-5">
+    <div v-else-if="!blueprint" class="text-center hint py-5">
       先在上面搜尋並選一張藍圖。
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
   calcCraft, craftTimeLabel, normalizeIngredients, stockToHaveMap, unitLabel, UNIT_SCU,
 } from '@/utils/craftCalc'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
+import { loadMaterialZh, materialLabel } from '@/utils/blueprintMaterial'
 
 const props = defineProps({
   /** 帶身分的 fetch（後台用 apiFetch、玩家頁用 playerFetch），回傳 Response 或 null */
@@ -238,7 +243,12 @@ const props = defineProps({
    * 整段說明文字直接消失（已用截圖確認過這個災難）。
    */
   cardClass: { type: String, default: 'card shadow-sm border-0' },
+  /** 指定藍圖 {_id: 藍圖 uuid, name, name_zh}：不顯示搜尋框，直接載入這張的配方 */
+  blueprint: { type: Object, default: null },
 })
+
+const currentId = ref('')
+
 
 // 同一頁可能掛兩個實例（理論上），id 不能寫死，否則 label/aria 會指到別人
 const uid = Math.random().toString(36).slice(2, 8)
@@ -318,6 +328,13 @@ function fmt(value) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100)
 }
 
+/** 數量＋單位；SCU 另外附上 cSCU（1 SCU = 100 cSCU），例如「0.05 SCU（5 cSCU）」 */
+function qtyLabel(value, unit) {
+  if (value === null || value === undefined) return '—'
+  if (unit === UNIT_SCU) return `${fmt(value)} SCU（${fmt(value * 100)} cSCU）`
+  return `${fmt(value)} ${unitLabel(unit)}`
+}
+
 // ── 搜尋（debounce + 過期回應防護）────────────────────────────
 //
 // seq 是「這是第幾次搜尋」的序號：慢回應回來時如果已經不是最新一次，
@@ -327,10 +344,10 @@ let searchTimer = null
 let seq = 0
 
 function onSearchInput() {
-  showResults.value = true
   highlighted.value = -1
   clearTimeout(searchTimer)
   const q = keyword.value.trim()
+  showResults.value = true
   if (q.length < 2) {
     results.value = []
     searching.value = false
@@ -383,6 +400,7 @@ let recipeSeq = 0
 
 async function selectBlueprint(bp) {
   if (!bp) return
+  currentId.value = bp._id || ''
   const mine = ++recipeSeq
   showResults.value = false
   keyword.value = bp.name_zh || bp.name || ''
@@ -398,6 +416,7 @@ async function selectBlueprint(bp) {
     if (mine !== recipeSeq) return
     if (data?.success) {
       recipe.value = data.data
+      loadMaterialZh(data.data)   // 材料（礦物／物品）的中文
     } else {
       loadError.value = data?.message || '讀取配方失敗，請稍後再試'
     }
@@ -440,6 +459,9 @@ async function fillFromStock() {
 }
 
 onBeforeUnmount(() => clearTimeout(searchTimer))
+// 指定了藍圖（「我的藍圖」的材料展開）：一掛上就載入，換藍圖就重載。放在最後，
+// 確保 selectBlueprint 用到的變數都已經宣告。
+watch(() => props.blueprint?._id, (id) => { if (id) selectBlueprint(props.blueprint) }, { immediate: true })
 </script>
 
 <style scoped>
