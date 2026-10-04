@@ -3,7 +3,7 @@
 涵蓋：
   - VehicleMaster 的尺寸／類型／廠商／角色篩選與 facets（/item/vehicles、/item/vehicles/facets）
   - 玩家自助艦隊：批量登記、數量、改／刪只能動自己的（/player/fleet*）
-  - 「查詢 › 船艦搜尋」：誰有哪款船（/player/fleet/holders）
+  - 「查詢 › 持有船艦」：誰有哪款船（/player/fleet/holders）
 """
 from datetime import datetime
 
@@ -233,7 +233,7 @@ def test_update_with_bad_id_or_no_fields(client, alice, seed_vehicles):
 
 
 # ═══════════════════════════════════════════════════════
-#  查詢 › 船艦搜尋
+#  查詢 › 持有船艦
 # ═══════════════════════════════════════════════════════
 
 @pytest.fixture
@@ -399,7 +399,7 @@ def test_vehicle_note_shown_to_players(client, auth_headers, alice, seed_vehicle
     res = client.put(url, json={'note': '  新手推薦\n便宜好開  '}, headers=auth_headers)
     assert res.status_code == 200 and res.get_json()['data']['note'] == '新手推薦\n便宜好開'
 
-    # 玩家：艦隊、船艦搜尋都帶得到
+    # 玩家：艦隊、持有船艦都帶得到
     _bulk(client, alice, ['v-avenger'])
     row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
     assert row['vehicle']['note'] == '新手推薦\n便宜好開'

@@ -496,7 +496,7 @@
       </div>
     </div>
 
-    <!-- ══════════ 查詢 › 船艦搜尋：誰有哪款船 ══════════ -->
+    <!-- ══════════ 查詢 › 持有船艦：誰有哪款船 ══════════ -->
     <div v-show="activeTab === 'search' && activeSub === 'fleet'" role="tabpanel"
          id="panel-search-fleet" aria-labelledby="subtab-search-fleet">
       <div class="card scifi-card mb-3">
@@ -556,41 +556,45 @@
       <div v-else-if="!fleetHolders.length" class="text-muted small">
         沒有人登記符合條件的船／載具。
       </div>
-      <div v-else class="scifi-scroll">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>船艦</th><th>類型</th><th>尺寸</th><th>廠商</th><th>角色</th>
-              <th>持有</th><th class="sf-wrap">持有者</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="group in fleetHolders" :key="group._id">
-              <td>
-                {{ group.vehicle?.name || group.name }}
-                <span v-if="group.vehicle?.name_zh" class="text-muted">（{{ group.vehicle.name_zh }}）</span>
-                <span v-if="group.vehicle?.system_note" class="badge bg-info text-dark ms-1" title="系統說明：同名變體的區別">{{ group.vehicle.system_note }}</span>
-                <div v-if="group.vehicle?.note" class="small text-muted vehicle-note">{{ group.vehicle.note }}</div>
-              </td>
-              <td class="small">{{ vehicleTypeLabel(group.vehicle?.vehicle_type) }}</td>
-              <td class="small">{{ vehicleSizeLabel(group.vehicle?.size_class) }}</td>
-              <td class="small">{{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) }}</td>
-              <td class="small">{{ vehicleRoleLabel(group.vehicle?.role, group.vehicle?.role_zh) }}</td>
-              <td class="small text-nowrap">{{ group.holder_count }} 人 / {{ group.total_quantity }} 艘</td>
-              <td class="small sf-wrap">
-                <span v-for="(h, i) in group.holders" :key="i" class="d-block">
-                  {{ holderLabel(h.nickname, h.player_name, h.star_citizen_id) }}
-                  <span v-if="h.quantity > 1" class="text-muted">×{{ h.quantity }}</span>
-                  <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
-                  <span v-if="discordLabel(h)" class="text-muted ms-1">
-                    <i class="bi bi-discord"></i> {{ discordLabel(h) }}
-                  </span>
-                  <VehicleLoadoutLinks :links="h.loadout_links" />
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-else class="holder-tree">
+        <!-- 蜂巢式下拉：船艦 → 持有的玩家 → 那位玩家的配件網址，每一層按了才展開（樣式見 scifi-theme.css） -->
+        <div v-for="group in fleetHolders" :key="group._id" class="holder-ship">
+          <button type="button" class="sf-tree-row sf-tree-row--ship"
+            :aria-expanded="openHolderGroups.has(group._id) ? 'true' : 'false'"
+            @click="toggleHolderGroup(group._id)">
+            <i class="bi" :class="openHolderGroups.has(group._id) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+            <span class="sf-tree-title">{{ group.vehicle?.name || group.name }}</span>
+            <span v-if="group.vehicle?.name_zh">（{{ group.vehicle.name_zh }}）</span>
+            <span v-if="group.vehicle?.system_note" class="sf-tree-chip" title="系統說明：同名變體的區別">{{ group.vehicle.system_note }}</span>
+            <span class="sf-tree-meta">{{ group.holder_count }} 人 / {{ group.total_quantity }} 艘</span>
+          </button>
+          <div v-if="openHolderGroups.has(group._id)" class="sf-tree-level">
+            <div class="sf-tree-info">
+              {{ vehicleTypeLabel(group.vehicle?.vehicle_type) }} ·
+              {{ vehicleSizeLabel(group.vehicle?.size_class) }} ·
+              {{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) }} ·
+              {{ vehicleRoleLabel(group.vehicle?.role, group.vehicle?.role_zh) }}
+            </div>
+            <div v-if="group.vehicle?.note" class="sf-tree-info vehicle-note">{{ group.vehicle.note }}</div>
+            <div v-for="(h, i) in group.holders" :key="i" class="holder-player">
+              <button type="button" class="sf-tree-row sf-tree-row--player"
+                :disabled="!h.loadout_links?.length"
+                :aria-expanded="openHolderPlayers.has(`${group._id}|${i}`) ? 'true' : 'false'"
+                @click="toggleHolderPlayer(`${group._id}|${i}`)">
+                <i class="bi" :class="!h.loadout_links?.length ? 'bi-dot'
+                  : (openHolderPlayers.has(`${group._id}|${i}`) ? 'bi-chevron-down' : 'bi-chevron-right')"></i>
+                <span class="sf-tree-title">{{ holderLabel(h.nickname, h.player_name, h.star_citizen_id) }}</span>
+                <span v-if="h.quantity > 1">×{{ h.quantity }}</span>
+                <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
+                <span v-if="discordLabel(h)"><i class="bi bi-discord"></i> {{ discordLabel(h) }}</span>
+                <span class="sf-tree-meta">配件網址 {{ h.loadout_links?.length || 0 }}</span>
+              </button>
+              <div v-if="openHolderPlayers.has(`${group._id}|${i}`)" class="sf-tree-level">
+                <VehicleLoadoutLinks :links="h.loadout_links" button-class="btn-sf-link" hide-label />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1207,7 +1211,7 @@ const tabs = [
     subTabs: [
       { key: 'items',      label: '物品庫存' },
       { key: 'blueprints', label: '持有藍圖' },
-      { key: 'fleet',      label: '船艦搜尋' },
+      { key: 'fleet',      label: '持有船艦' },
     ],
   },
   { key: 'tools',     label: '工具網站', icon: 'bi bi-link-45deg' },
@@ -2360,7 +2364,18 @@ async function removeFleet(row) {
   }
 }
 
-// ── 查詢 › 船艦搜尋：誰有哪款船 ──────────────────────────────
+// ── 查詢 › 持有船艦：誰有哪款船 ──────────────────────────────
+// 持有者欄預設收起來，按「N 人」才展開；重新查詢後全部收回去
+const openHolderGroups = reactive(new Set())
+const openHolderPlayers = reactive(new Set())   // key：`${船艦 id}|${持有者序號}`
+function toggleHolderGroup(id) {
+  if (openHolderGroups.has(id)) openHolderGroups.delete(id)
+  else openHolderGroups.add(id)
+}
+function toggleHolderPlayer(key) {
+  if (openHolderPlayers.has(key)) openHolderPlayers.delete(key)
+  else openHolderPlayers.add(key)
+}
 //
 // 船艦名稱／類型／尺寸／廠商／角色／玩家id／玩家暱稱，AND 語意，打
 // /player/fleet/holders。跟「持有藍圖」一樣：都沒選定時列出全部人的艦隊，
@@ -2396,6 +2411,8 @@ async function loadVehicleFacets() {
 let fleetHolderSeq = 0
 async function loadFleetHolders() {
   const seq = ++fleetHolderSeq
+  openHolderGroups.clear()
+  openHolderPlayers.clear()
   loadingFleetHolders.value = true
   const params = new URLSearchParams({ limit: '100' })
   if (flSelectedVehicleId.value) params.set('vehicle_id', flSelectedVehicleId.value)
@@ -2471,6 +2488,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 持有船艦的蜂巢式下拉（列的樣式在 scifi-theme.css 的 .sf-tree-*） */
+.holder-ship { margin-bottom: .4rem; }
+.holder-player { margin-top: .35rem; }
+
 /* 後台手寫的艦船說明（換行照原樣顯示） */
 .vehicle-note { white-space: pre-line; }
 

@@ -23,7 +23,7 @@ from src.mongo import get_db
 #: 打錯一個 0 就會讓「艦隊總數」之類的統計失真，99 對公會用途已經很寬鬆。
 MAX_QUANTITY = 99
 
-#: 「查詢 › 船艦搜尋」每一款船最多列出幾位持有者（總數另外用 holder_count 帶出去），
+#: 「查詢 › 持有船艦」每一款船最多列出幾位持有者（總數另外用 holder_count 帶出去），
 #: 理由同 src/models/blueprint.py 的 HOLDERS_PER_GROUP。
 HOLDERS_PER_GROUP = 50
 
@@ -335,7 +335,7 @@ class Fleet:
 
     @classmethod
     def find_holders(cls, vehicle_uuids=None, player_scid: str = '', limit: int = 100) -> list:
-        """「查詢 › 船艦搜尋」：同一款船的持有者聚成一組。
+        """「查詢 › 持有船艦」：同一款船的持有者聚成一組。
 
         vehicle_uuids：呼叫端用尺寸／類型／廠商／角色／名稱先解析出來的載具
         uuid（見 VehicleMaster.ids_matching_filter）。None 代表不篩載具；

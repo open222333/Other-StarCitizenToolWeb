@@ -335,7 +335,7 @@ class VehicleMaster(_MasterBase):
                       visible_only: bool = False, visibility=None) -> dict:
         filt: dict = {'is_current': True}
         add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
-        # 類型（太空船／地面載具／懸浮載具）：玩家頁「艦隊」「查詢 › 船艦搜尋」用，
+        # 類型（太空船／地面載具／懸浮載具）：玩家頁「艦隊」「查詢 › 持有船艦」用，
         # 多選時是 OR（選了太空船＋地面載具就兩種都要）
         type_conds = [c for c in (_vehicle_type_condition(t) for t in (types or [])) if c]
         if len(type_conds) == 1:
@@ -517,7 +517,7 @@ class VehicleMaster(_MasterBase):
     def ids_matching_filter(cls, *, query: str = '', types=None, size_classes=None,
                             manufacturer_codes=None, roles=None, careers=None,
                             limit: int = 2000) -> Optional[list]:
-        """符合篩選條件的所有載具 uuid，給「查詢 › 船艦搜尋」當 join key 用。
+        """符合篩選條件的所有載具 uuid，給「查詢 › 持有船艦」當 join key 用。
 
         沒給任何條件回 None（代表「不篩載具」）；給了但沒有任何載具符合回
         空陣列——跟 Inventory.search_filtered() 的 item_ids 同一套 None/[]

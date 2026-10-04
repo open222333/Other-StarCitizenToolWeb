@@ -1148,7 +1148,7 @@ def delete_my_fleet(fleet_id):
 @app_player.route('/fleet/holders', methods=['GET'])
 @player_required
 def fleet_holders():
-    """「查詢 › 船艦搜尋」：誰有哪款船，同一款的持有者聚成一組。
+    """「查詢 › 持有船艦」：誰有哪款船，同一款的持有者聚成一組。
 
     公會成員互查是功能需求（比照 /blueprint/holders、/inventory/search），
     所以任何登入玩家都能查別人的艦隊；不回 notes，Discord 只給本人勾了公開的。

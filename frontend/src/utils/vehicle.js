@@ -1,5 +1,5 @@
 // 載具（太空船／地面載具／懸浮載具）顯示用的小工具，艦隊登記頁與「查詢 ›
-// 船艦搜尋」共用。類型的判斷在後端（src/models/item.py 的 vehicle_type_of），
+// 持有船艦」共用。類型的判斷在後端（src/models/item.py 的 vehicle_type_of），
 // 每筆回傳都帶 vehicle_type，前端只負責把代碼翻成中文。
 
 export const VEHICLE_TYPE_LABELS = {

@@ -13,7 +13,7 @@
     - （自動，不能改）系統說明 system_note：同名變體多出來的 class_name 部分（例如
       ANVL_Lightning_F8C_Plat →「Plat」），同步後由 VehicleMaster.apply_system_notes() 算
     - 手寫說明 note（PUT /item/vehicles/<id>/note，最多 1000 字；玩家頁的艦隊、
-      船艦搜尋、批量登記會顯示，換行照原樣）
+      持有船艦、批量登記會顯示，換行照原樣）
 
   篩選/排序/分頁比照全站搜尋優化計畫（藍圖登記管理那批）的既有做法：
   多選篩選用 MultiSelectFilter，排序欄位在後端 VehicleMaster.SORTABLE_FIELDS
@@ -251,7 +251,7 @@ const playerVisible = ref('')
 // 分頁：艦船資料庫／玩家擁有艦船（components/FleetOwnersBrowser.vue）
 const tab = ref('master')
 
-// ── 手寫說明（玩家頁的艦隊、船艦搜尋、批量登記會顯示）──
+// ── 手寫說明（玩家頁的艦隊、持有船艦、批量登記會顯示）──
 const NOTE_MAX = 1000
 const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')

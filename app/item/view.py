@@ -237,7 +237,7 @@ def list_vehicles():
 @app_item.route('/vehicles/<vehicle_id>/note', methods=['PUT'])
 @admin_api(*WRITE_ROLES)
 def set_vehicle_note(vehicle_id):
-    """後台手寫的艦船說明（玩家頁的艦隊、船艦搜尋、批量登記都會顯示）。
+    """後台手寫的艦船說明（玩家頁的艦隊、持有船艦、批量登記都會顯示）。
     ---
     tags: [Item]
     security:
@@ -371,7 +371,7 @@ def vehicle_facets():
     """載具篩選選單的選項一次拿齊：類型、尺寸、廠商、角色、career。
 
     跟上面四支 distinct 清單是同樣的資料，只是合成一次回應 —— 玩家頁
-    「艦隊」「查詢 › 船艦搜尋」一進去就要全部用到，省四次往返；多出來的
+    「艦隊」「查詢 › 持有船艦」一進去就要全部用到，省四次往返；多出來的
     「類型」（太空船／地面載具／懸浮載具）只有這支有。
     ---
     tags: [Item]

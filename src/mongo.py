@@ -169,7 +169,7 @@ def ensure_indexes():
     db['item_master'].create_index([('type', ASCENDING), ('sub_type', ASCENDING)])
     db['item_master'].create_index('manufacturer_code')
     db['vehicle_master'].create_index([('cargo_capacity_scu', DESCENDING)])
-    # 艦隊登記／船艦搜尋的篩選欄位
+    # 艦隊登記／持有船艦的篩選欄位
     db['vehicle_master'].create_index([('is_current', ASCENDING), ('manufacturer_code', ASCENDING)])
     db['vehicle_master'].create_index([('is_current', ASCENDING), ('size_class', ASCENDING)])
     db['commodity_master'].create_index('key')
