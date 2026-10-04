@@ -1494,10 +1494,19 @@ async function issueDiscordCode() {
   }
 }
 
+// 登出（或登入過期、refresh 失敗被 playerFetch 清掉登入狀態）→ 直接整頁換到登入頁。
+// 不用 router.push：登入頁是延遲載入的 chunk，載入慢或部署後舊 chunk 已經不在時
+// 畫面會停在原地；整頁換掉也順便把上一位玩家留在記憶體裡的資料清乾淨。
+function goLogin() {
+  window.location.replace(router.resolve(PLAYER_LOGIN_PATH).href)
+}
+
 function logout() {
   playerAuth.clearAuth()
-  router.push(PLAYER_LOGIN_PATH)
+  goLogin()
 }
+
+watch(() => playerAuth.isLoggedIn, (loggedIn) => { if (!loggedIn) goLogin() })
 
 // ── 地點清單（給新增物品的地點下拉選單用） ─────────────────────
 // 來源有兩個：資料庫裡已經用過的地點（/inventory/locations，排前面），加上
