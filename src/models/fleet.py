@@ -35,6 +35,8 @@ PLAYER_MAX = 1000
 LOADOUT_MAX_LINKS = 10
 LOADOUT_LABEL_MAX = 50
 LOADOUT_URL_MAX = 500
+#: 每艘船自己看的區別名稱（同一款船有好幾艘時用），只回給登記者本人
+UNIT_NAME_MAX = 50
 _URL_RE = re.compile(r'^https?://[^\s/]+\.[^\s]+$', re.IGNORECASE)
 #: 只填分享代碼（https://erkul.games/s/abcd1234 後面那段）時補成完整網址
 ERKUL_SHARE_BASE = 'https://erkul.games/s/'
@@ -83,6 +85,26 @@ def clean_loadout_links(links, previous=None) -> list:
             continue
         seen.add(url)
         out.append({'label': label or None, 'url': url, 'added_at': added.get(url) or now})
+    return out
+
+
+def clean_unit_names(names, quantity: int) -> list:
+    """整理每艘船的區別名稱：第 i 個對應第 i 艘，空字串＝沒取名；
+    超過數量的截掉、結尾的空白名稱去掉。格式不對丟 ValueError。"""
+    if not isinstance(names, list):
+        raise ValueError('區別名稱格式錯誤')
+    out = []
+    for i, name in enumerate(names[:max(0, int(quantity))], 1):
+        if name is None:
+            name = ''
+        if not isinstance(name, str):
+            raise ValueError(f'第 {i} 艘的區別名稱格式錯誤')
+        name = name.strip()
+        if len(name) > UNIT_NAME_MAX:
+            raise ValueError(f'第 {i} 艘的區別名稱最多 {UNIT_NAME_MAX} 字')
+        out.append(name)
+    while out and not out[-1]:
+        out.pop()
     return out
 
 
@@ -225,10 +247,12 @@ class Fleet:
 
     @classmethod
     def update_for_player(cls, fleet_id: str, player_id: str, *,
-                          quantity=None, notes=None, loadout_links=None) -> bool:
-        """改自己名下某筆登記的數量／備註／配件連結（只能改自己的）。
+                          quantity=None, notes=None, loadout_links=None,
+                          unit_names=None) -> bool:
+        """改自己名下某筆登記的數量／備註／配件連結／每艘的區別名稱（只能改自己的）。
 
-        loadout_links 格式不對丟 ValueError（見 clean_loadout_links）。
+        loadout_links、unit_names 格式不對丟 ValueError（見 clean_loadout_links、
+        clean_unit_names）。數量改少時，多出來那幾艘的區別名稱一起截掉。
         """
         try:
             query = {'_id': ObjectId(fleet_id), 'player_id': ObjectId(player_id),
@@ -236,15 +260,24 @@ class Fleet:
         except Exception:
             return False
         set_fields: dict = {}
+        current = None
+        if loadout_links is not None or unit_names is not None or quantity is not None:
+            current = cls._col().find_one(
+                query, {'loadout_links': 1, 'unit_names': 1, 'quantity': 1})
+            if not current:
+                return False
         if quantity is not None:
             set_fields['quantity'] = clamp_quantity(quantity)
         if notes is not None:
             set_fields['notes'] = str(notes)[:500]
         if loadout_links is not None:
-            current = cls._col().find_one(query, {'loadout_links': 1})
-            if not current:
-                return False
             set_fields['loadout_links'] = clean_loadout_links(loadout_links, current.get('loadout_links'))
+        if current is not None:
+            qty = set_fields.get('quantity') or clamp_quantity(current.get('quantity'))
+            if unit_names is not None:
+                set_fields['unit_names'] = clean_unit_names(unit_names, qty)
+            elif current.get('unit_names') and len(current['unit_names']) > qty:
+                set_fields['unit_names'] = clean_unit_names(current['unit_names'], qty)
         if not set_fields:
             return False
         set_fields['updated_at'] = datetime.utcnow()
@@ -303,7 +336,7 @@ class Fleet:
             {'$sort': dict(cls.ADMIN_SORTS.get(sort) or cls.ADMIN_SORTS['name'])},
             {'$facet': {
                 'rows': [{'$skip': max(0, int(offset))}, {'$limit': max(1, min(int(limit), 200))},
-                         {'$project': {'notes': 0, 'name_lower': 0, 'player_key': 0,
+                         {'$project': {'notes': 0, 'unit_names': 0, 'name_lower': 0, 'player_key': 0,
                                        'player.password': 0, 'player.password_hash': 0}}],
                 'total': [{'$count': 'n'}],
             }},

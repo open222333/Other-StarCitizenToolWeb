@@ -459,6 +459,35 @@ def test_player_loadout_links(client, auth_headers, alice, seed_vehicles):
     assert client.put(url, json={'loadout_links': []}, headers=alice).status_code == 200
     assert client.get('/player/fleet', headers=alice).get_json()['data'][0]['loadout_links'] == []
 
+def test_player_unit_names(client, auth_headers, alice, seed_vehicles):
+    """同款船好幾艘時，玩家可以替每一艘取自己看的區別名稱；不給別人、後台看。"""
+    _bulk(client, alice, ['v-avenger'], quantity=3)
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    url = f"/player/fleet/{row['_id']}"
+    assert client.put(url, json={'unit_names': [' 主力 ', '', '備用', '多的', '']},
+                      headers=alice).status_code == 200
+    assert client.get('/player/fleet', headers=alice).get_json()['data'][0]['unit_names'] == \
+        ['主力', '', '備用'], '去空白、超過數量的截掉'
+    # 數量改少 → 多出來那艘的名稱一起截掉；結尾空的去掉
+    client.put(url, json={'quantity': 2}, headers=alice)
+    assert get_db()['fleet'].find_one({'vehicle_uuid': 'v-avenger'})['unit_names'] == ['主力']
+    # 同時改數量與名稱，以新數量為準
+    client.put(url, json={'quantity': 4, 'unit_names': ['a', 'b', 'c', 'd', 'e']}, headers=alice)
+    assert get_db()['fleet'].find_one({'vehicle_uuid': 'v-avenger'})['unit_names'] == ['a', 'b', 'c', 'd']
+
+    bob = _register_player(client, 'Bob', 'Bob')
+    group = next(g for g in client.get('/player/fleet/holders', headers=bob).get_json()['data']
+                 if g['vehicle_uuid'] == 'v-avenger')
+    assert 'unit_names' not in group['holders'][0], '只有自己看得到'
+    assert client.put(url, json={'unit_names': []}, headers=bob).status_code == 404
+    assert 'unit_names' not in client.get('/item/fleet', headers=auth_headers).get_json()['data'][0]
+
+    for bad in ('nope', [3], ['x' * 51]):
+        assert client.put(url, json={'unit_names': bad}, headers=alice).status_code == 400, bad
+    assert client.put(url, json={'unit_names': []}, headers=alice).status_code == 200
+    assert client.get('/player/fleet', headers=alice).get_json()['data'][0]['unit_names'] == []
+
+
 def test_admin_player_fleet_list(client, auth_headers, alice, seed_vehicles):
     _bulk(client, alice, ['v-avenger', 'v-cutlass'], quantity=2)
     bob = _register_player(client, 'Bob', 'Bobby')

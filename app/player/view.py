@@ -1081,7 +1081,7 @@ def add_my_fleet_bulk():
 @app_player.route('/fleet/<fleet_id>', methods=['PUT'])
 @player_required
 def update_my_fleet(fleet_id):
-    """改自己某筆艦隊登記的數量／備註（只能改自己的）。
+    """改自己某筆艦隊登記的數量／備註／配件網址／每艘的區別名稱（只能改自己的）。
     ---
     tags: [Player]
     security:
@@ -1100,6 +1100,10 @@ def update_my_fleet(fleet_id):
                 properties:
                   label: {type: string, description: "選填，最多 50 字"}
                   url:   {type: string, description: "erkul 分享代碼（補成 https://erkul.games/s/<代碼>）或 http(s) 網址"}
+            unit_names:
+              type: array
+              description: "每艘船的區別名稱（第 i 個對應第 i 艘，空字串 = 沒取名），整份取代；每個最多 50 字，只有自己看得到"
+              items: {type: string}
     responses:
       200:
         description: 成功
@@ -1110,14 +1114,15 @@ def update_my_fleet(fleet_id):
     """
     player = _self_player_doc()
     data = request.get_json(silent=True) or {}
-    if not any(k in data for k in ('quantity', 'notes', 'loadout_links')):
+    if not any(k in data for k in ('quantity', 'notes', 'loadout_links', 'unit_names')):
         raise StockError('沒有要更新的欄位。')
     try:
         ok = Fleet.update_for_player(
             fleet_id, player['_id'],
             quantity=data.get('quantity') if 'quantity' in data else None,
             notes=data.get('notes') if 'notes' in data else None,
-            loadout_links=data.get('loadout_links') if 'loadout_links' in data else None)
+            loadout_links=data.get('loadout_links') if 'loadout_links' in data else None,
+            unit_names=data.get('unit_names') if 'unit_names' in data else None)
     except ValueError as exc:
         raise StockError(str(exc))
     if not ok:
