@@ -9,7 +9,7 @@
   地點，不是把整個物品主檔（1 萬多筆）塞進下拉選單。所以選了絕不會是空結果。
 -->
 <template>
-  <div class="card scifi-card mb-2">
+  <div class="card scifi-card sf-search mb-2">
     <div class="card-body py-2">
       <div class="row g-2 align-items-end">
         <div class="col-12 col-md-5">

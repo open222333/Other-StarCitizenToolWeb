@@ -11,7 +11,7 @@
 <template>
   <div>
     <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div :class="[cardClass, 'mb-3']">
+    <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body">
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-7">
@@ -124,7 +124,7 @@
     </div>
 
     <!-- ── 送出列（有勾選才出現）────────────────────────────── -->
-    <div v-if="selected.size" :class="[cardClass, 'mt-3', 'sticky-submit']">
+    <div v-if="selected.size" :class="[cardClass, 'sf-search', 'mt-3', 'sticky-submit']">
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="fw-semibold">已選 {{ selected.size }} 張</span>
