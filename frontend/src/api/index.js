@@ -202,6 +202,11 @@ export const vehicleApi = {
   sizeClasses:   () => apiFetch('/item/vehicles/size-classes'),
   // 一次拿齊篩選選項；roles 是 [{value, label}]，label 含中文
   facets:        () => apiFetch('/item/vehicles/facets'),
+  // 後台手寫的說明（玩家頁會顯示），空字串 = 清掉
+  setNote:       (id, note) => apiFetch(`/item/vehicles/${encodeURIComponent(id)}/note`,
+    { method: 'PUT', body: JSON.stringify({ note }) }),
+  // 後台「玩家擁有艦船」：玩家登記的船（每筆登記一列）
+  playerFleet:   (params) => apiFetch(`/item/fleet${qs(params)}`),
 }
 
 // ── 工具網站連結（後台維護，玩家頁「工具網站」分頁顯示）──────────

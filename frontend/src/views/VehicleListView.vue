@@ -1,10 +1,19 @@
 <!--
-  艦船基本資料（唯讀，管理後台）。
+  後台「艦船」頁，兩個分頁：艦船資料庫（下面這些）、玩家擁有艦船
+  （components/FleetOwnersBrowser.vue，玩家登記的船，唯讀）。
+
+  艦船基本資料（管理後台）。
 
   資料來源是 vehicle_master（由 tasks/scdata_sync.py 從 Star Citizen Wiki
-  API 同步而來，跟 item_master／blueprint_master 是同一套同步機制），這裡
-  只讀不寫，沒有新增/編輯/刪除——遊戲主檔的異動只能透過「系統設定 → 資料
-  同步」整批更新，不是在這裡手動改。
+  API 同步而來，跟 item_master／blueprint_master 是同一套同步機制），遊戲
+  資料本身只能透過同步整批更新，不在這裡改。
+
+  後台可以改的只有兩個（都存在主檔的另外欄位，重新同步不會蓋掉）：
+    - 玩家頁面顯示（PlayerVisibleToggle，見 src/models/visibility.py）
+    - （自動，不能改）系統說明 system_note：同名變體多出來的 class_name 部分（例如
+      ANVL_Lightning_F8C_Plat →「Plat」），同步後由 VehicleMaster.apply_system_notes() 算
+    - 手寫說明 note（PUT /item/vehicles/<id>/note，最多 1000 字；玩家頁的艦隊、
+      船艦搜尋、批量登記會顯示，換行照原樣）
 
   篩選/排序/分頁比照全站搜尋優化計畫（藍圖登記管理那批）的既有做法：
   多選篩選用 MultiSelectFilter，排序欄位在後端 VehicleMaster.SORTABLE_FIELDS
@@ -20,6 +29,21 @@
 <template>
   <div>
     <h5 class="mb-3 fw-bold"><i class="bi bi-rocket-takeoff me-2 text-primary"></i>艦船 Vehicle</h5>
+
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item">
+        <button type="button" class="nav-link" :class="{ active: tab === 'master' }" @click="tab = 'master'">
+          艦船資料庫
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link" :class="{ active: tab === 'owned' }" @click="tab = 'owned'">
+          玩家擁有艦船
+        </button>
+      </li>
+    </ul>
+
+    <div v-show="tab === 'master'">
 
     <!-- ── 篩選 ────────────────────────────────────────────── -->
     <div class="card shadow-sm border-0 mb-3">
@@ -99,17 +123,18 @@
                   <i v-if="sortBy === 'msrp'" class="bi ms-1"
                     :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
                 </th>
-                <th class="pe-3 text-nowrap">玩家頁面</th>
+                <th class="text-nowrap">玩家頁面</th>
+                <th class="pe-3">說明</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="9" class="text-center py-4 text-muted">
+                <td colspan="10" class="text-center py-4 text-muted">
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
-                <td colspan="9" class="text-center py-4">
+                <td colspan="10" class="text-center py-4">
                   <span class="text-warning">
                     <i class="bi bi-exclamation-triangle me-1"></i>讀取艦船資料失敗。
                   </span>
@@ -117,15 +142,17 @@
                 </td>
               </tr>
               <tr v-else-if="!vehicles.length">
-                <td colspan="9" class="text-center py-4 text-muted">
+                <td colspan="10" class="text-center py-4 text-muted">
                   {{ hasActiveFilters ? '沒有符合篩選條件的艦船。' : '尚無艦船資料 —— 請先在「系統設定 → 資料同步」跑一次同步。' }}
                 </td>
               </tr>
               <template v-else>
-                <tr v-for="v in vehicles" :key="v._id">
+                <template v-for="v in vehicles" :key="v._id">
+                <tr>
                   <td class="ps-3">
                     <span class="fw-semibold">{{ v.name }}</span>
                     <span v-if="v.name_zh" class="ms-1">（{{ v.name_zh }}）</span>
+                    <span v-if="v?.system_note" class="badge bg-info text-dark ms-1" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
                     <span v-if="v.class_name" class="small text-muted ms-1">{{ v.class_name }}</span>
                   </td>
                   <td class="small">{{ v.manufacturer_name || v.manufacturer_code || '—' }}</td>
@@ -136,8 +163,32 @@
                   <td class="text-end small">{{ fmtNum(v.cargo_capacity_scu) }}</td>
                   <td class="text-end small">{{ fmtNum(v.mass_hull) }}</td>
                   <td class="text-end small">{{ v.msrp ? '$' + fmtNum(v.msrp) : '—' }}</td>
-                  <td class="pe-3"><PlayerVisibleToggle dataset="vehicles" :doc-id="v._id" :row="v" /></td>
+                  <td><PlayerVisibleToggle dataset="vehicles" :doc-id="v._id" :row="v" /></td>
+                  <td class="pe-3 small note-cell">
+                    <span v-if="v.note" class="note-text" :title="v.note">{{ v.note }}</span>
+                    <span v-if="!v.note && !canWrite" class="text-muted">—</span>
+                    <button v-if="canWrite && editingId !== v._id" type="button" class="btn btn-link btn-sm p-0 ms-1"
+                      :aria-label="`編輯 ${v.name} 的說明`" @click="startEdit(v)">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                  </td>
                 </tr>
+                <tr v-if="editingId === v._id">
+                  <td colspan="10" class="ps-3 pe-3 py-2 edit-cell">
+                    <label class="form-label small fw-semibold mb-1" :for="`note-${v._id}`">說明</label>
+                    <textarea :id="`note-${v._id}`" v-model="noteDraft" class="form-control form-control-sm" rows="3"
+                      :maxlength="NOTE_MAX"></textarea>
+                    <div class="small text-muted text-end">{{ noteDraft.length }} / {{ NOTE_MAX }}</div>
+                    <div class="d-flex align-items-center gap-2 mt-2">
+                      <button type="button" class="btn btn-primary btn-sm" :disabled="savingNote"
+                        @click="saveNote(v)">儲存</button>
+                      <button type="button" class="btn btn-outline-secondary btn-sm" :disabled="savingNote"
+                        @click="editingId = ''">取消</button>
+                      <span v-if="noteError" class="small text-danger">{{ noteError }}</span>
+                    </div>
+                  </td>
+                </tr>
+                </template>
               </template>
             </tbody>
           </table>
@@ -163,6 +214,9 @@
           @click="reload(offset + limit)">下一頁</button>
       </div>
     </div>
+    </div>
+
+    <FleetOwnersBrowser v-show="tab === 'owned'" :active="tab === 'owned'" />
   </div>
 </template>
 
@@ -171,6 +225,8 @@ import { computed, onMounted, ref } from 'vue'
 import { vehicleApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
+import FleetOwnersBrowser from '@/components/FleetOwnersBrowser.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const vehicles   = ref([])
 const total      = ref(0)
@@ -192,6 +248,39 @@ const nameQuery = ref('')
 const sortBy  = ref('name')
 const sortDir = ref('asc')
 const playerVisible = ref('')
+// 分頁：艦船資料庫／玩家擁有艦船（components/FleetOwnersBrowser.vue）
+const tab = ref('master')
+
+// ── 手寫說明（玩家頁的艦隊、船艦搜尋、批量登記會顯示）──
+const NOTE_MAX = 1000
+const auth = useAuthStore()
+const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
+const editingId = ref('')
+const noteDraft = ref('')
+const savingNote = ref(false)
+const noteError = ref('')
+
+function startEdit(v) {
+  editingId.value = v._id
+  noteDraft.value = v.note || ''
+  noteError.value = ''
+}
+
+
+async function saveNote(v) {
+  savingNote.value = true
+  noteError.value = ''
+  const res = await vehicleApi.setNote(v._id, noteDraft.value)
+  const body = res ? await res.json().catch(() => null) : null
+  if (!(res?.ok && body?.success)) {
+    noteError.value = body?.message || '儲存失敗'
+    savingNote.value = false
+    return
+  }
+  v.note = body.data.note
+  editingId.value = ''
+  savingNote.value = false
+}
 
 const hasActiveFilters = computed(() =>
   selectedCareers.value.length || selectedRoles.value.length ||
@@ -281,4 +370,8 @@ onMounted(async () => {
 <style scoped>
 .sortable-th { cursor: pointer; user-select: none; }
 .sortable-th:hover { color: var(--bs-primary); }
+.note-cell { max-width: 16rem; }
+.note-text { display: inline-block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; vertical-align: bottom; }
+.edit-cell { background: var(--bs-tertiary-bg); }
 </style>

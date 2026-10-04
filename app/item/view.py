@@ -6,6 +6,8 @@
 （庫存外鍵需要），要查到它們得用 include_retired=1。
 """
 
+import re
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
@@ -230,6 +232,77 @@ def list_vehicles():
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset})
+
+
+@app_item.route('/vehicles/<vehicle_id>/note', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_vehicle_note(vehicle_id):
+    """後台手寫的艦船說明（玩家頁的艦隊、船艦搜尋、批量登記都會顯示）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: vehicle_id, type: string, required: true}
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            note: {type: string, description: "空字串 = 清掉；最多 1000 字"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 格式錯誤或太長
+      404:
+        description: 找不到艦船
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or 'note' not in body:
+        return jsonify({'success': False, 'message': '缺少 note'}), 400
+    username = get_jwt_identity()
+    try:
+        doc = VehicleMaster.set_note(vehicle_id, body['note'], username)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    if doc is None:
+        return jsonify({'success': False, 'message': '找不到艦船'}), 404
+    Log.create(username, 'set_vehicle_note',
+               f'艦船 {vehicle_id} 說明{"更新" if doc.get("note") else "清除"}', success=True)
+    return jsonify({'success': True, 'data': doc})
+
+
+@app_item.route('/fleet', methods=['GET'])
+@admin_api(*READ_ROLES)
+def list_player_fleet():
+    """後台「艦船 › 玩家擁有艦船」：玩家登記的船／載具（每筆登記一列，唯讀）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: q,      type: string,  description: "船名（中英文）"}
+      - {in: query, name: player, type: string,  description: "遊戲ID／暱稱／玩家名稱"}
+      - {in: query, name: sort,   type: string,  description: "name（預設）／player／quantity／updated"}
+      - {in: query, name: limit,  type: integer, default: 50, description: "最多 200"}
+      - {in: query, name: offset, type: integer, default: 0}
+    responses:
+      200:
+        description: 成功
+    """
+    from src.models.fleet import Fleet
+    limit, offset = _paging()
+    query = (request.args.get('q') or '').strip()
+    vehicle_uuids = None
+    if query and re.search(r'[\u3400-\u9fff]', query):
+        # 中文船名不在登記資料裡，先用主檔的中文對照查成 uuid
+        vehicle_uuids = VehicleMaster.ids_matching_zh(query)
+    rows, total = Fleet.admin_list(
+        query=query, player=(request.args.get('player') or '').strip(),
+        vehicle_uuids=vehicle_uuids, sort=(request.args.get('sort') or 'name').strip(),
+        limit=limit, offset=offset)
+    return jsonify({'success': True, 'data': rows, 'total': total, 'limit': limit, 'offset': offset})
 
 
 @app_item.route('/vehicles/careers', methods=['GET'])
