@@ -94,7 +94,7 @@
 
           <div v-show="showDiagnostics" class="mining-echo__panel mining-echo__panel--table mt-2">
             <div style="overflow-x:auto">
-              <table class="table table-sm table-hover align-middle mb-0 mining-echo__table">
+              <table class="table table-hover align-middle mb-0 mining-echo__table">
                 <thead>
                   <tr>
                     <th class="ps-3">礦床</th>
@@ -427,18 +427,16 @@ function locationsFor(group) {
 </script>
 
 <style scoped>
-/* 自成一體的深色「終端機」卡片——不管掛在後台淺色頁還是玩家深色 scifi
-   頁，都用自己固定的深色底＋青色 accent，跟畫面其餘部分的主題脫鉤。
-   理由：這組畫面模仿的是儀表板 HUD 觀感，硬要跟著淺色主題走（例如
-   後台）會整個看起來不協調；比照螢幕截圖，卡片本身就是深色的。 */
+/* 「終端機」風格的卡片：版面自成一體，但顏色跟著網站主題（--sf-*）。 */
 .mining-echo {
-  --me-bg: #0a0f16;
-  --me-panel: #0d141d;
-  --me-border: rgba(84, 209, 223, .35);
-  --me-border-hi: rgba(84, 209, 223, .7);
-  --me-accent: #22d3ee;
-  --me-text: #e7f6f8;
-  --me-text-dim: rgba(231, 246, 248, .62);
+  /* 顏色一律取網站主題（assets/scifi-theme.css 的 --sf-*），換強調色、切亮底會跟著變 */
+  --me-bg: var(--sf-bg-2);
+  --me-panel: var(--sf-panel);
+  --me-border: rgba(var(--sf-accent-rgb), .35);
+  --me-border-hi: rgba(var(--sf-accent-rgb), .7);
+  --me-accent: var(--sf-accent);
+  --me-text: var(--sf-text);
+  --me-text-dim: var(--sf-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -507,7 +505,7 @@ function locationsFor(group) {
   background: var(--me-panel);
   border: 1px solid var(--me-border);
   border-radius: .4rem;
-  box-shadow: 0 .5rem 1.2rem rgba(0, 0, 0, .5);
+  box-shadow: 0 .5rem 1.2rem var(--sf-shadow);
 }
 .mining-echo__suggest-item {
   padding: .4rem .6rem;
@@ -518,7 +516,7 @@ function locationsFor(group) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mining-echo__suggest-item:hover { background: rgba(34, 211, 238, .12); }
+.mining-echo__suggest-item:hover { background: rgba(var(--sf-accent-rgb), .12); }
 .mining-echo__suggest-hint {
   padding: .4rem .6rem;
   color: var(--me-text-dim);
@@ -545,7 +543,7 @@ function locationsFor(group) {
   font-weight: 700;
   letter-spacing: .08em;
   color: var(--me-accent);
-  background: rgba(34, 211, 238, .12);
+  background: rgba(var(--sf-accent-rgb), .12);
   border: 1px solid var(--me-border);
   border-radius: .3rem;
   padding: .25rem .55rem;
@@ -553,7 +551,7 @@ function locationsFor(group) {
 }
 .mining-echo__pill--muted {
   color: var(--me-text-dim);
-  background: rgba(255, 255, 255, .04);
+  background: var(--sf-hover-bg);
 }
 
 .mining-echo__title {
@@ -570,7 +568,7 @@ function locationsFor(group) {
   margin-bottom: .75rem;
 }
 .mining-echo__stat {
-  background: rgba(255, 255, 255, .03);
+  background: var(--sf-inset);
   border: 1px solid var(--me-border);
   border-radius: .4rem;
   padding: .6rem .5rem;
@@ -588,7 +586,7 @@ function locationsFor(group) {
   font-weight: 800;
 }
 .mining-echo__stat-value small { font-size: .6em; font-weight: 600; opacity: .75; }
-.mining-echo__stat-value--ok { color: #34d399; }
+.mining-echo__stat-value--ok { color: rgb(var(--bs-success-rgb)); }
 
 .mining-echo__grid {
   display: grid;
@@ -600,7 +598,7 @@ function locationsFor(group) {
   .mining-echo__grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 .mining-echo__cell {
-  background: rgba(255, 255, 255, .03);
+  background: var(--sf-inset);
   border: 1px solid var(--me-border);
   border-radius: .4rem;
   padding: .5rem .4rem;
@@ -653,7 +651,7 @@ function locationsFor(group) {
 .mining-echo__tag {
   display: inline-block;
   font-size: .72rem;
-  background: rgba(255, 255, 255, .06);
+  background: var(--sf-chip-bg);
   border: 1px solid var(--me-border);
   border-radius: .25rem;
   padding: .05rem .4rem;
@@ -671,5 +669,5 @@ function locationsFor(group) {
   border-color: var(--me-border);
   font-size: .85rem;
 }
-.mining-echo__table tbody tr:hover { background: rgba(34, 211, 238, .06); }
+.mining-echo__table tbody tr:hover { background: rgba(var(--sf-accent-rgb), .06); }
 </style>
