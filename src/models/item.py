@@ -8,9 +8,10 @@
 """
 
 import re
+from datetime import datetime
 from typing import Optional
 
-from pymongo import ASCENDING
+from pymongo import ASCENDING, UpdateOne
 
 from src.mongo import get_db
 from src.models.visibility import STATE_FIELDS as _VIS_FIELDS
@@ -316,8 +317,12 @@ class VehicleMaster(_MasterBase):
         'size_class': 1, 'career': 1, 'role': 1, 'crew_min': 1, 'crew_max': 1,
         'mass_hull': 1, 'msrp': 1, 'is_current': 1,
         'is_spaceship': 1, 'is_gravlev': 1,
+        'note': 1, 'system_note': 1,
         **VISIBILITY_PROJECTION,
     }
+
+    #: 後台手寫說明的長度上限
+    NOTE_MAX_LENGTH = 1000
 
     # 管理後台艦船列表可點擊排序的欄位（全站搜尋優化計畫，比照
     # BlueprintMaster.SORTABLE_FIELDS 的白名單作法，避免把任意欄位名稱
@@ -400,6 +405,58 @@ class VehicleMaster(_MasterBase):
             row['name_zh'] = vehicle_name_zh(row.get('class_name'), row.get('name'))
             row['role_zh'] = vehicle_role_zh(row.get('role'))
         return rows
+
+    @classmethod
+    def set_note(cls, vehicle_id: str, note, username: str = '') -> Optional[dict]:
+        """後台手寫的說明（玩家頁會顯示）。空字串＝清掉。找不到載具回 None。
+
+        存在主檔同一筆文件的 note 欄位：mapper（src/scdata.py 的 map_vehicle）不輸出
+        這個欄位、同步用 $set 寫回，所以重新同步不會蓋掉。
+        """
+        if note is not None and not isinstance(note, str):
+            raise ValueError('說明必須是文字')
+        text = (note or '').strip()
+        if len(text) > cls.NOTE_MAX_LENGTH:
+            raise ValueError(f'說明最多 {cls.NOTE_MAX_LENGTH} 字')
+        result = cls._col().update_one({'_id': vehicle_id}, {'$set': {
+            'note': text or None,
+            'note_updated_by': (username or None) if text else None,
+            'note_updated_at': datetime.utcnow() if text else None,
+        }})
+        if not result.matched_count:
+            return None
+        return cls._col().find_one({'_id': vehicle_id}, {'note': 1, 'note_updated_by': 1, 'note_updated_at': 1})
+
+    @classmethod
+    def apply_system_notes(cls) -> int:
+        """系統說明 system_note：同名的現行載具（遊戲檔裡同一艘船的變體——塗裝版、任務用、
+        醫療床等級…，名稱一樣、只有 class_name 不同）各自標上 class_name 多出來的部分，
+        玩家才分得出來。例如 ANVL_Lightning_F8C／ANVL_Lightning_F8C_Plat → 前者沒有、後者
+        「Plat」；DRAK_Cutlass_Black_Exec_Military／_Exec_Stealth → 「Military」「Stealth」。
+
+        同步完自動跑（tasks/scdata_sync.py），不是手寫的 note。回傳變動筆數。
+        """
+        rows = list(cls._col().find({}, {'name': 1, 'class_name': 1, 'is_current': 1, 'system_note': 1}))
+        groups: dict = {}
+        for row in rows:
+            name = (row.get('name') or '').strip().lower()
+            if row.get('is_current') and name and row.get('class_name'):
+                groups.setdefault(name, []).append(row)
+        notes = {}
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            tokens = [m['class_name'].split('_') for m in members]
+            common = 0   # 開頭共同的段數（不分大小寫）
+            while all(len(t) > common for t in tokens) and len({t[common].lower() for t in tokens}) == 1:
+                common += 1
+            for member, parts in zip(members, tokens):
+                notes[member['_id']] = ' '.join(p for p in parts[common:] if p) or None
+        ops = [UpdateOne({'_id': row['_id']}, {'$set': {'system_note': notes.get(row['_id'])}})
+               for row in rows if row.get('system_note') != notes.get(row['_id'])]
+        for i in range(0, len(ops), 1000):
+            cls._col().bulk_write(ops[i:i + 1000], ordered=False)
+        return len(ops)
 
     @classmethod
     def ids_matching_zh(cls, query: str) -> list:

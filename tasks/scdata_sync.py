@@ -56,6 +56,7 @@ from src import SCDATA_TRANSLATION_INI_URL
 from src.models import translation as translation_model
 from src.models.mission import Faction, Mission
 from src.models import visibility
+from src.models.item import VehicleMaster
 from src.models.starmap import Starmap
 from src import SCDATA_REQUEST_DELAY
 from src.scdata import (BULK_SIZE, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_RESOURCES,
@@ -486,6 +487,12 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
                 logger.info('scdata_sync: 重新對應任務獎勵藍圖 %d 筆', relinked)
             except Exception:
                 logger.exception('scdata_sync: 重新對應任務獎勵藍圖失敗')
+        if key == 'vehicles' and not errors:
+            # 同名變體的系統說明（見 src/models/item.py 的 VehicleMaster.apply_system_notes）
+            try:
+                logger.info('scdata_sync: 艦船系統說明更新 %d 筆', VehicleMaster.apply_system_notes())
+            except Exception:
+                logger.exception('scdata_sync: 艦船系統說明更新失敗')
 
     elif key in SCUNPACKED_JOBS:
         # scunpacked-data 是公開靜態檔案，不用 token、沒有速率限制

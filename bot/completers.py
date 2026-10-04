@@ -38,7 +38,8 @@ async def vehicle_autocomplete(interaction: discord.Interaction,
     rows = await db.search_vehicles(current, limit=MAX_CHOICES)
     return [
         app_commands.Choice(
-            name=_label(row['name'],
+            # 同名變體帶上系統說明（例如 [Plat]），不然選單上看起來一模一樣
+            name=_label(f"{row['name']} [{row['system_note']}]" if row.get('system_note') else row['name'],
                         f"{row['cargo_capacity_scu']} SCU"
                         if row.get('cargo_capacity_scu') else None),
             value=row['_id'],
