@@ -31,7 +31,8 @@ def list_links():
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': ToolLink.list_all()})
+    # tags：標籤的順序（玩家頁依標籤分組、後台標籤欄位的建議都照這個）
+    return jsonify({'success': True, 'data': ToolLink.list_all(), 'tags': ToolLink.tags()})
 
 
 @app_links.route('/', methods=['POST'])
@@ -51,6 +52,7 @@ def create_link():
             url:         {type: string, description: "http:// 或 https://；沒寫的話補 https://"}
             description: {type: string}
             sort_order:  {type: integer, description: "越小越前面"}
+            tags:        {type: array, items: {type: string}, description: "標籤，一個網址可以有好幾個（最多 10 個）"}
     responses:
       201:
         description: 成功

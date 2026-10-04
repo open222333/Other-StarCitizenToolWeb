@@ -428,7 +428,7 @@ def list_tool_links():
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': ToolLink.list_public()})
+    return jsonify({'success': True, 'data': ToolLink.list_public(), 'tags': ToolLink.tags()})
 
 
 @app_player.route('/me', methods=['GET'])
