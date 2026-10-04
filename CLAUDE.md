@@ -32,6 +32,20 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
     這樣換強調色、切亮底模式都會跟著變；可重複用的樣式放在 `scifi-theme.css`（例如蜂巢式下拉
     `.sf-tree-*`）。
   - 玩家頁的字不要太小：主要內容至少 1rem，次要資訊約 .9–.95rem，避免整片 `small`。
+- **玩家頁的資料列表一律同一種外觀**（比照艦隊／藍圖的批量登記）：
+  `<div class="card scifi-card"><div class="card-body p-0"><div style="overflow-x: auto">`
+  包 `<table class="table table-hover align-middle mb-0">`，表頭 `<thead class="table-light">`，
+  第一欄 `ps-3`、最後一欄 `pe-3`；名稱欄是「中文（`fw-semibold`）＋英文（`small text-muted`）」；
+  不要用 `table-sm`、儲存格不要整欄 `small`。「查詢」的持有者結果、「艦隊」的我的艦隊例外，用蜂巢式下拉（見下）。
+- **玩家頁的搜尋／篩選區塊一律加 `.sf-search`**（卡片直接加在 card 上；只是一排欄位的加
+  `.sf-search sf-search--inline`）：比一般卡片亮一階、欄位字放大，樣式在 `scifi-theme.css`，
+  不要在各頁另外寫搜尋欄位的顏色／字級。
+- **玩家頁「查詢」的持有者結果一律用蜂巢式下拉**（不要攤平成表格）：上層是東西（物品／藍圖／船艦），
+  按了展開持有者，持有者底下還有細項（物品放的地點、船的配件網址）就再一層。用 `scifi-theme.css`
+  的 `.sf-tree-row`（可展開的列，`--ship` 上層、`--player` 持有者層）、`.sf-tree-level`（展開的內容）、
+  `.sf-tree-leaf`（最內層不能再展開的列）；重新查詢時把展開狀態清掉。
+- **玩家頁「艦隊」只有一頁**：我的艦隊用蜂巢式下拉（船艦 → 依數量每一艘一列），每艘可填只有本人看得到的
+  區別名稱（`fleet.unit_names`，不要放進持有者查詢或後台列表）；批量登記用按鈕展開在同一頁，不要再拆下層分頁。
 - 畫面上的範例值用通用的假資料（例如分享代碼寫 `abcd1234`），不要用真實的代碼或帳號。
 
 ## 中文化（翻譯）原則（使用者要求，務必遵守）

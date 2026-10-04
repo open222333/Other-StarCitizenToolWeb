@@ -129,7 +129,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 玩家自助註冊 | http://localhost:8090/register | 公開，不需登入 |
 | **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
 | **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
-| 藍圖材料試算 | http://localhost:8090/me?tab=craft | 填現有材料算最多可做幾個，「帶入」來源是自己的個人庫（後台沒有這個頁面） |
+| 藍圖材料試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「材料」展開） | 填現有材料算最多可做幾個，「帶入」來源是自己的個人庫（後台沒有這個功能） |
 | 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
 | 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
 | 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務 |

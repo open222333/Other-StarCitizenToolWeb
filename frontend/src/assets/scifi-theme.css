@@ -272,24 +272,46 @@
   position: sticky;
   top: 0;
   z-index: 1030;
-  display: flex;
+  /* 三欄：左右兩欄等寬，中間的玩家名稱才會真的置中 */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: .75rem;
-  flex-wrap: wrap;
-  padding: .6rem clamp(.75rem, 2vw, 1.5rem);
+  padding: .65rem clamp(.75rem, 2vw, 1.5rem);
   background: rgba(var(--sf-topbar-rgb, 10, 14, 23), .82);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--sf-border);
 }
-.scifi-topbar__title {
-  display: flex; align-items: center; gap: .5rem;
-  font-size: 1.05rem; font-weight: 600; margin: 0;
+.scifi-topbar__side { min-width: 0; }
+.scifi-topbar__actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: .5rem;
+}
+.scifi-topbar__actions .btn { white-space: nowrap; }
+.scifi-topbar__center {
+  display: flex; align-items: center; justify-content: center; gap: .6rem;
   min-width: 0;
 }
+.scifi-topbar__title {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: 1.35rem; font-weight: 700; margin: 0;
+  min-width: 0;
+  color: var(--sf-text-strong);
+  letter-spacing: .03em;
+}
+.scifi-topbar__title .bi { color: var(--sf-accent); }
 .scifi-topbar__title span {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.scifi-topbar__spacer { flex: 1 1 auto; }
+/* 遊戲ID：主題色的小膠囊，不用 Bootstrap 的灰色 badge */
+.scifi-topbar__id {
+  padding: .15rem .65rem;
+  border-radius: 999px;
+  font-size: .95rem; font-weight: 600;
+  color: var(--sf-accent-text, var(--sf-accent));
+  background: rgba(var(--sf-accent-rgb), .12);
+  border: 1px solid rgba(var(--sf-accent-rgb), .45);
+  white-space: nowrap;
+}
 
 /* ── 分頁列：手機上改成橫向捲動的一列，不要折成 2-3 排 ── */
 .scifi-tabs {
@@ -311,7 +333,22 @@
 .scifi-tabs .nav-tabs .nav-link {
   white-space: nowrap;
   scroll-snap-align: start;
+  padding: .7rem 1.15rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-bottom: 3px solid transparent;
 }
+.scifi-tabs .nav-tabs .nav-link:hover:not(.active) {
+  background: rgba(var(--sf-accent-rgb), .08);
+}
+.scifi-tabs .nav-tabs .nav-link.active {
+  background: rgba(var(--sf-accent-rgb), .12);
+  border-bottom: 3px solid var(--sf-accent);
+}
+/* 置中：用頭尾 auto margin 而不是 justify-content: center——
+ * 手機上放不下要橫向捲動時，center 會把最左邊的分頁切掉捲不到 */
+.scifi-tabs .nav-tabs .nav-item:first-child { margin-left: auto; }
+.scifi-tabs .nav-tabs .nav-item:last-child { margin-right: auto; }
 
 /* ── 內容區：滿版，但超寬螢幕上仍給一個上限避免行長到難讀 ── */
 .scifi-body {
@@ -476,7 +513,9 @@
   scrollbar-width: none;
 }
 .scifi-subtabs::-webkit-scrollbar { display: none; }
-.scifi-subtabs .btn-group { flex-wrap: nowrap; }
+.scifi-subtabs { display: flex; }
+/* 置中（理由同主分頁列：auto margin 在捲動時不會切掉左邊） */
+.scifi-subtabs .btn-group { flex-wrap: nowrap; margin: 0 auto; }
 .scifi-subtabs .btn { white-space: nowrap; }
 
 /* 下層分頁按鈕。
@@ -490,9 +529,11 @@
  */
 .btn-subtab {
   border: 1px solid var(--sf-border);
-  background: transparent;
+  background: var(--sf-panel);
   color: var(--sf-text-muted);
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 1.05rem;
+  padding: .45rem 1.2rem;
 }
 .btn-subtab:hover:not(.active) {
   border-color: var(--sf-border-hi);
@@ -500,7 +541,8 @@
   color: var(--sf-text);
 }
 .btn-subtab.active {
-  background: rgba(var(--sf-accent-rgb), .16);
+  background: rgba(var(--sf-accent-rgb), .2);
+  box-shadow: inset 0 -2px 0 var(--sf-accent);
   border-color: var(--sf-accent);
   color: var(--sf-accent-text, var(--sf-accent));
   font-weight: 600;
@@ -552,6 +594,17 @@
   border-left: 2px solid var(--sf-border);
 }
 .sf-tree-info { font-size: .95rem; color: var(--sf-text-muted); margin-bottom: .35rem; }
+/* 最內層、不能再展開的一列（例如持有藍圖的玩家、物品放的地點） */
+.sf-tree-leaf {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: .4rem .8rem; margin-top: .3rem;
+  font-size: 1rem; color: var(--sf-text);
+  background: var(--sf-panel-2);
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+}
+.sf-tree-leaf .sf-tree-title { font-weight: 700; color: var(--sf-text-strong); }
+.sf-tree-leaf .sf-tree-meta { margin-left: auto; white-space: nowrap; color: var(--sf-text-muted); }
 .sf-tree-chip {
   display: inline-block; padding: .05rem .5rem; border-radius: 999px;
   font-size: .85rem; font-weight: 600;
@@ -664,3 +717,44 @@
   --bs-btn-active-border-color: var(--sf-border-hi);
   --bs-btn-active-color: var(--sf-text-strong);
 }
+
+/* ── 搜尋／篩選區塊（玩家頁每個搜尋條件的卡片都加 .sf-search，樣式比照「持有船艦」）──
+ * 比一般卡片亮一階（主強調色的淡底＋強調色邊框），欄位標籤、輸入框、下拉的字放大、
+ * 顏色調亮，一眼看得出「這裡是搜尋條件」。只在 .scifi-page 裡生效，後台共用的元件不受影響。
+ * .sf-search--inline：不是卡片、只是一排篩選欄位（例如工具網站、我的藍圖類型）。
+ */
+.scifi-page .sf-search {
+  background:
+    linear-gradient(165deg, rgba(var(--sf-accent-rgb), .16) 0%, rgba(var(--sf-accent-rgb), .06) 100%),
+    var(--sf-panel);
+  border: 1px solid rgba(var(--sf-accent-rgb), .5) !important;
+  border-radius: 8px;
+}
+.scifi-page .sf-search--inline { padding: .6rem .75rem; }
+.scifi-page .sf-search .form-label,
+.scifi-page .sf-search .form-check-label {
+  font-size: .98rem;
+  font-weight: 600;
+  color: var(--sf-text-strong);
+}
+.scifi-page .sf-search .form-control,
+.scifi-page .sf-search .form-select,
+.scifi-page .sf-search .multi-select-filter__btn {
+  font-size: 1rem;
+  min-height: 2.25rem;
+  padding-top: .38rem;
+  padding-bottom: .38rem;
+  color: var(--sf-text-strong);
+  background-color: var(--sf-chip-bg);
+  border-color: rgba(var(--sf-accent-rgb), .5);
+}
+.scifi-page .sf-search .form-control::placeholder { color: var(--sf-text-muted); opacity: 1; }
+.scifi-page .sf-search .form-control:focus,
+.scifi-page .sf-search .form-select:focus,
+.scifi-page .sf-search .multi-select-filter__btn:focus-visible {
+  border-color: var(--sf-accent);
+  box-shadow: 0 0 0 .2rem rgba(var(--sf-accent-rgb), .3);
+  background-color: var(--sf-chip-bg);
+  color: var(--sf-text-strong);
+}
+.scifi-page .sf-search .multi-select-filter__btn:hover { background-color: rgba(var(--sf-accent-rgb), .18); }
