@@ -39,7 +39,7 @@
           </div>
         </div>
         <div v-if="hasFilter" class="text-end mt-2">
-          <button type="button" class="btn btn-sm btn-link p-0" @click="clearFilters">清除篩選</button>
+          <button type="button" class="btn btn-sm btn-warning" @click="clearFilters">清除篩選</button>
         </div>
       </div>
     </div>
@@ -77,7 +77,7 @@
                   <span class="text-warning">
                     <i class="bi bi-exclamation-triangle me-1"></i>讀取載具清單失敗。
                   </span>
-                  <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
+                  <button class="btn btn-sm btn-primary ms-1" @click="reload(offset)">重試</button>
                 </td>
               </tr>
               <tr v-else-if="!rows.length">
@@ -88,18 +88,20 @@
                 </td>
               </tr>
               <tr v-for="row in rows" :key="row._id"
-                :class="{ 'row-registered': registered.has(row._id) }">
+                :class="{ 'row-registered': isRegistered(row) }">
                 <td class="ps-3">
                   <input class="form-check-input" type="checkbox"
                     :checked="selected.has(row._id)"
-                    :disabled="registered.has(row._id)"
+                    :disabled="isRegistered(row)"
                     :aria-label="`勾選 ${row.name_zh || row.name}`"
                     @change="toggleOne(row._id, $event.target.checked)">
                 </td>
                 <td>
                   <span class="fw-semibold">{{ row.name_zh || row.name }}</span>
                   <span v-if="row.name_zh" class="small hint ms-1">{{ row.name }}</span>
-                  <span v-if="registered.has(row._id)" class="badge bg-secondary ms-1">已登記</span>
+                  <span v-if="row?.system_note" class="badge bg-info text-dark ms-1" title="系統說明：同名變體的區別">{{ row.system_note }}</span>
+                  <span v-if="isRegistered(row)" class="badge bg-secondary ms-1">已登記</span>
+                  <div v-if="row.note" class="small hint vehicle-note">{{ row.note }}</div>
                 </td>
                 <td class="small">{{ vehicleTypeLabel(row.vehicle_type) }}</td>
                 <td class="small">{{ vehicleSizeLabel(row.size_class) }}</td>
@@ -121,9 +123,9 @@
         <template v-else-if="rows.length">第 {{ offset + 1 }}–{{ offset + rows.length }} 款</template>
       </div>
       <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
+        <button class="btn btn-primary" :disabled="offset === 0 || loading"
           @click="reload(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-outline-secondary"
+        <button class="btn btn-primary"
           :disabled="!hasNext || loading"
           @click="reload(offset + limit)">下一頁</button>
       </div>
@@ -134,7 +136,7 @@
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="fw-semibold">已選 {{ selected.size }} 款</span>
-          <button class="btn btn-sm btn-link p-0" @click="clearSelection">清除勾選</button>
+          <button class="btn btn-sm btn-warning" @click="clearSelection">清除勾選</button>
           <span class="flex-grow-1"></span>
           <label class="small mb-0" :for="`${uid}-qty`">每款</label>
           <input :id="`${uid}-qty`" v-model.number="quantity" type="number" min="1" :max="maxQuantity"
@@ -197,6 +199,7 @@ watch([vehicleTypes, sizes, manufacturers, roles], () => reload(0))
 
 /** 已登記的載具 uuid */
 const registered = reactive(new Set())
+const isRegistered = row => registered.has(row._id)
 /** 勾選中的 uuid，跨頁保留 */
 const selected = reactive(new Set())
 
@@ -209,7 +212,7 @@ const hasNext = computed(() => (total.value === null
   ? rows.value.length >= limit.value
   : offset.value + limit.value < total.value))
 
-const selectableRows = computed(() => rows.value.filter(r => !registered.has(r._id)))
+const selectableRows = computed(() => rows.value.filter(r => !isRegistered(r)))
 const allSelectableChecked = computed(() =>
   selectableRows.value.length > 0 && selectableRows.value.every(r => selected.has(r._id)))
 const someSelectableChecked = computed(() =>
@@ -363,6 +366,7 @@ defineExpose({ refresh: async () => { await loadRegistered(); await reload(offse
   opacity: .55;
 }
 
+.vehicle-note { white-space: pre-line; }
 .hint {
   opacity: .72;
 }

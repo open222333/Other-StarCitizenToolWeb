@@ -90,7 +90,7 @@
         >緊湊</button>
       </div>
 
-      <button class="btn btn-sm btn-link p-0" @click="theme.reset()">
+      <button class="btn btn-sm btn-warning" @click="theme.reset()">
         <i class="bi bi-arrow-counterclockwise me-1"></i>恢復預設
       </button>
     </div>

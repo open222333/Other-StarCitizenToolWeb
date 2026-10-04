@@ -68,7 +68,7 @@
                   <span class="text-warning">
                     <i class="bi bi-exclamation-triangle me-1"></i>讀取藍圖清單失敗。
                   </span>
-                  <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
+                  <button class="btn btn-sm btn-primary ms-1" @click="reload(offset)">重試</button>
                 </td>
               </tr>
               <tr v-else-if="!rows.length">
@@ -88,7 +88,7 @@
                     @change="toggleOne(row._id, $event.target.checked)">
                 </td>
                 <td>
-                  <button v-if="row.mission_count" type="button" class="bp-link fw-semibold"
+                  <button v-if="row.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start fw-semibold"
                     @click="missionsRef.open({ uuid: row._id, name: row.name, name_zh: row.name_zh, output_type: row.output_type })">
                     {{ row.name_zh || row.name }}
                   </button>
@@ -115,9 +115,9 @@
         共 {{ total }} 張<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 張</span>
       </div>
       <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
+        <button class="btn btn-primary" :disabled="offset === 0 || loading"
           @click="reload(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-outline-secondary"
+        <button class="btn btn-primary"
           :disabled="offset + limit >= total || loading"
           @click="reload(offset + limit)">下一頁</button>
       </div>
@@ -128,7 +128,7 @@
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="fw-semibold">已選 {{ selected.size }} 張</span>
-          <button class="btn btn-sm btn-link p-0" @click="clearSelection">清除勾選</button>
+          <button class="btn btn-sm btn-warning" @click="clearSelection">清除勾選</button>
           <span class="flex-grow-1"></span>
           <input v-model="acquisitionMethod" type="text" class="form-control form-control-sm"
             style="max-width: 10rem" placeholder="取得方式（可留空）"
@@ -337,13 +337,6 @@ defineExpose({ refresh: async () => { await loadRegistered(); await reload(offse
 </script>
 
 <style scoped>
-/* 可以點開看解鎖任務的藍圖名稱（見 BlueprintMissionsModal.vue） */
-.bp-link {
-  padding: 0; border: 0; background: none; text-align: left; font: inherit;
-  color: var(--sf-accent-text, var(--sf-accent));
-  border-bottom: 1px dashed currentColor; cursor: pointer;
-}
-.bp-link:hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
 /* 已登記的整列淡化，一眼看得出「這些不用再勾」 */
 .row-registered > td {
   opacity: .55;

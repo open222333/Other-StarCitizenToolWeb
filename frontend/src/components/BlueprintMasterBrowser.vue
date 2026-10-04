@@ -51,7 +51,7 @@
             <option value="1">玩家頁面：顯示</option>
             <option value="0">玩家頁面：不顯示</option>
           </select>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
+          <button v-if="hasActiveFilters" type="button" class="btn btn-sm" :class="player ? 'btn-warning' : 'btn-outline-secondary'" @click="resetFilters">
             清除全部篩選
           </button>
         </div>
@@ -84,7 +84,7 @@
               <tr v-else-if="loadFailed">
                 <td :colspan="colspan" class="text-center py-4">
                   <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取藍圖資料失敗。</span>
-                  <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
+                  <button class="btn btn-sm ms-1" :class="player ? 'btn-primary' : 'btn-outline-secondary'" @click="reload(offset)">重試</button>
                 </td>
               </tr>
               <tr v-else-if="!rows.length">
@@ -99,7 +99,7 @@
                     <td class="ps-3">
                       <i class="bi me-1 small text-muted" :class="expandedId === bp._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                       <template v-if="player">
-                        <button v-if="bp.mission_count" type="button" class="bp-link fw-semibold"
+                        <button v-if="bp.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start fw-semibold"
                           @click.stop="openMissions(bp)">{{ bp.name_zh || bp.name }}</button>
                         <span v-else class="fw-semibold">{{ bp.name_zh || bp.name }}</span>
                         <span v-if="bp.name_zh" class="small text-muted ms-1">{{ bp.name }}</span>
@@ -153,7 +153,7 @@
                           <div class="fw-semibold mb-1">解鎖任務</div>
                           <div v-if="!detailMissions.length" class="text-muted">—</div>
                           <div v-for="m in detailMissions" :key="m._id">
-                            <button v-if="player" type="button" class="bp-link" @click="openMissions(bp)">
+                            <button v-if="player" type="button" class="btn btn-sm btn-info py-0 px-2 text-start" @click="openMissions(bp)">
                               {{ zhPair(m.title, m.title_zh) }}
                             </button>
                             <RouterLink v-else :to="{ path: '/missions', query: { id: m._id } }">{{ zhPair(m.title, m.title_zh) }}</RouterLink>
@@ -367,11 +367,4 @@ watch(() => props.active, (v) => {
 <style scoped>
 .bp-row { cursor: pointer; }
 .bp-detail > td { background: var(--bs-tertiary-bg); }
-/* 玩家頁：可以點開看解鎖任務的藍圖名稱（跟 MyPlayerView／BlueprintBulkRegister 同一個樣式） */
-.bp-link {
-  padding: 0; border: 0; background: none; text-align: left; font: inherit;
-  color: var(--sf-accent-text, var(--sf-accent));
-  border-bottom: 1px dashed currentColor; cursor: pointer;
-}
-.bp-link:hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
 </style>

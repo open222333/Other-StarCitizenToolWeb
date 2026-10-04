@@ -35,7 +35,7 @@
         <span class="small">{{ opt.label }}</span>
       </label>
       <div v-if="modelValue.length" class="multi-select-filter__footer">
-        <button type="button" class="btn btn-sm btn-link p-0" @click="clear">清除已選</button>
+        <button type="button" class="btn btn-sm btn-warning" @click="clear">清除已選</button>
       </div>
     </div>
   </div>

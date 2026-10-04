@@ -65,7 +65,8 @@
         </form>
 
         <div class="text-center mt-3">
-          <RouterLink :to="PLAYER_LOGIN_PATH" class="small">已經有帳號？前往登入</RouterLink>
+          <span class="small text-muted">已經有帳號？</span>
+          <RouterLink :to="PLAYER_LOGIN_PATH" class="btn btn-sm btn-primary ms-1">前往登入</RouterLink>
         </div>
       </div>
     </div>

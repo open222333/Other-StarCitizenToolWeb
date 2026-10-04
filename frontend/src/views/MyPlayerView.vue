@@ -162,7 +162,7 @@
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <span class="badge text-bg-secondary">第 {{ idx + 1 }} 筆</span>
-            <button v-if="depositRows.length > 1" class="btn btn-sm btn-link text-danger p-0"
+            <button v-if="depositRows.length > 1" class="btn btn-sm btn-danger"
               :disabled="depositSubmitting" @click="depositRows.splice(idx, 1)">移除</button>
           </div>
 
@@ -268,7 +268,7 @@
                   @click="row.direction = 'out'">－ 減少</button>
               </div>
             </div>
-            <button v-if="withdrawRows.length > 1" class="btn btn-sm btn-link text-danger p-0"
+            <button v-if="withdrawRows.length > 1" class="btn btn-sm btn-danger"
               :disabled="withdrawSubmitting" @click="withdrawRows.splice(idx, 1)">移除</button>
           </div>
 
@@ -329,7 +329,7 @@
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <label class="form-label small fw-semibold mb-0">搜尋條件</label>
-            <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+            <button type="button" class="btn btn-sm btn-warning py-0"
               @click="clearItemsFilters">清除全部</button>
           </div>
           <FieldHint text="打字選一個候選代入（不是子字串比對），5 個欄位都填的話要同時符合才會出現在結果裡。物品名稱／物品類型只能擇一——選了名稱等於已經鎖定單一物品，類型會被忽略。" />
@@ -418,7 +418,7 @@
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <label class="form-label small fw-semibold mb-0">搜尋條件</label>
-            <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+            <button type="button" class="btn btn-sm btn-warning py-0"
               @click="clearBpFilters">清除全部</button>
           </div>
           <FieldHint text="打字選一個候選代入。都留空則列出全部人的登記；填了的話要同時符合才會出現。" />
@@ -465,7 +465,7 @@
           <tbody>
             <tr v-for="group in bpHolders" :key="group._id">
               <td>
-                <button v-if="group.blueprint_uuid && group.mission_count" type="button" class="bp-link"
+                <button v-if="group.blueprint_uuid && group.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start"
                   @click="openBpMissions({ uuid: group.blueprint_uuid, name: group.name, name_zh: group.name_zh })">
                   {{ group.name }}<span v-if="group.name_zh">（{{ group.name_zh }}）</span>
                 </button>
@@ -503,7 +503,7 @@
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <label class="form-label small fw-semibold mb-0">搜尋條件</label>
-            <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+            <button type="button" class="btn btn-sm btn-warning py-0"
               @click="clearFleetFilters">清除全部</button>
           </div>
           <div class="row g-2">
@@ -569,6 +569,8 @@
               <td>
                 {{ group.vehicle?.name || group.name }}
                 <span v-if="group.vehicle?.name_zh" class="text-muted">（{{ group.vehicle.name_zh }}）</span>
+                <span v-if="group.vehicle?.system_note" class="badge bg-info text-dark ms-1" title="系統說明：同名變體的區別">{{ group.vehicle.system_note }}</span>
+                <div v-if="group.vehicle?.note" class="small text-muted vehicle-note">{{ group.vehicle.note }}</div>
               </td>
               <td class="small">{{ vehicleTypeLabel(group.vehicle?.vehicle_type) }}</td>
               <td class="small">{{ vehicleSizeLabel(group.vehicle?.size_class) }}</td>
@@ -583,6 +585,7 @@
                   <span v-if="discordLabel(h)" class="text-muted ms-1">
                     <i class="bi bi-discord"></i> {{ discordLabel(h) }}
                   </span>
+                  <VehicleLoadoutLinks :links="h.loadout_links" />
                 </span>
               </td>
             </tr>
@@ -599,7 +602,7 @@
         v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
 
       <div class="d-flex justify-content-end mb-2">
-        <button class="btn btn-sm btn-link p-0" @click="loadMyInventory">重新整理</button>
+        <button class="btn btn-sm btn-primary" @click="loadMyInventory">重新整理</button>
       </div>
       <div v-if="loadingInventory" class="text-muted small">載入中…</div>
       <div v-else-if="!myInventory.length" class="text-muted small">目前沒有登記任何物品。</div>
@@ -630,7 +633,7 @@
         v-model:item="historyFilter.item" v-model:location="historyFilter.location" />
 
       <div class="d-flex justify-content-end mb-2">
-        <button class="btn btn-sm btn-link p-0" @click="loadHistory">重新整理</button>
+        <button class="btn btn-sm btn-primary" @click="loadHistory">重新整理</button>
       </div>
       <div v-if="loadingHistory" class="text-muted small">載入中…</div>
       <div v-else-if="!history.length" class="text-muted small">目前沒有任何紀錄。</div>
@@ -704,7 +707,7 @@
 
                 <div v-if="blueprintForm.blueprint_uuid" class="form-text text-success py-0">
                   <i class="bi bi-check-circle"></i> {{ blueprintForm.name }}
-                  <button class="btn btn-link btn-sm p-0 ms-1" @click="clearBlueprintMaster">清除</button>
+                  <button class="btn btn-sm btn-warning ms-1" @click="clearBlueprintMaster">清除</button>
                 </div>
               </template>
             </div>
@@ -736,7 +739,7 @@
           <span v-if="myBpTypes.length" class="small text-muted">
             符合 {{ filteredBlueprints.length }} / {{ blueprints.length }} 張
           </span>
-          <button class="btn btn-sm btn-link p-0" @click="loadBlueprints">重新整理</button>
+          <button class="btn btn-sm btn-primary" @click="loadBlueprints">重新整理</button>
         </div>
       </div>
       <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
@@ -751,7 +754,7 @@
           <template v-for="bp in filteredBlueprints" :key="bp._id">
           <tr>
             <td>
-              <button v-if="bp.blueprint_uuid && bp.master?.mission_count" type="button" class="bp-link"
+              <button v-if="bp.blueprint_uuid && bp.master?.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start"
                 @click="openBpMissions({ uuid: bp.blueprint_uuid, name: bp.name, name_zh: bp.master.name_zh, output_type: bp.master.output_type })">
                 {{ bp.name }}<span v-if="bp.master?.name_zh">（{{ bp.master.name_zh }}）</span>
               </button>
@@ -765,13 +768,13 @@
             <td class="small">{{ bp.master?.output_type ? blueprintTypeLabel(bp.master.output_type) : (bp.master?.output_type_label || '—') }}</td>
             <td class="small">{{ bp.master?.craft_time_label || '—' }}</td>
             <td class="small">
-              <button v-if="bp.blueprint_uuid" class="btn btn-link btn-sm p-0"
+              <button v-if="bp.blueprint_uuid" class="btn btn-sm btn-info"
                 @click="showRecipe(bp)">{{ bp.master?.ingredient_count ?? '?' }} 種</button>
               <span v-else class="text-muted">—</span>
             </td>
             <td class="small text-muted sf-wrap">{{ bp.notes || '—' }}</td>
             <td class="text-end">
-              <button class="btn btn-sm btn-link text-danger p-0" @click="removeBlueprint(bp)">刪除</button>
+              <button class="btn btn-sm btn-danger" @click="removeBlueprint(bp)">刪除</button>
             </td>
           </tr>
           <tr v-if="recipeFor === bp._id">
@@ -857,7 +860,7 @@
             </div>
           </div>
           <div v-if="myFleetHasFilter" class="text-end mt-2">
-            <button type="button" class="btn btn-sm btn-link p-0" @click="clearMyFleetFilters">清除篩選</button>
+            <button type="button" class="btn btn-sm btn-warning" @click="clearMyFleetFilters">清除篩選</button>
           </div>
         </div>
       </div>
@@ -869,7 +872,7 @@
             共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘
           </template>
         </span>
-        <button class="btn btn-sm btn-link p-0" @click="loadFleet">重新整理</button>
+        <button class="btn btn-sm btn-primary" @click="loadFleet">重新整理</button>
       </div>
       <div v-if="loadingFleet" class="text-muted small">載入中…</div>
       <div v-else-if="fleet.length && !filteredFleet.length" class="text-muted small">沒有符合篩選條件的船／載具。</div>
@@ -882,12 +885,16 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in filteredFleet" :key="row._id">
+            <template v-for="row in filteredFleet" :key="row._id">
+            <tr>
               <td>
                 {{ row.name }}
                 <span v-if="row.vehicle?.name_zh" class="text-muted">（{{ row.vehicle.name_zh }}）</span>
+                <span v-if="row.vehicle?.system_note" class="badge bg-info text-dark ms-1" title="系統說明：同名變體的區別">{{ row.vehicle.system_note }}</span>
                 <span v-if="row.vehicle && row.vehicle.is_current === false"
                   class="badge bg-secondary ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
+                <div v-if="row.vehicle?.note" class="small text-muted vehicle-note">{{ row.vehicle.note }}</div>
+                <VehicleLoadoutLinks :links="row.loadout_links" />
               </td>
               <td class="small">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) }}</td>
               <td class="small">{{ vehicleSizeLabel(row.vehicle?.size_class) }}</td>
@@ -899,10 +906,33 @@
                   :aria-label="`${row.name} 數量`" :disabled="savingFleetId === row._id"
                   @change="updateFleetQuantity(row, $event)">
               </td>
-              <td class="text-end">
-                <button class="btn btn-sm btn-link text-danger p-0" @click="removeFleet(row)">刪除</button>
+              <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-info me-2" :aria-expanded="loadoutEditId === row._id ? 'true' : 'false'"
+                  @click="toggleLoadoutEdit(row)">配件網址</button>
+                <button class="btn btn-sm btn-danger" @click="removeFleet(row)">刪除</button>
               </td>
             </tr>
+            <tr v-if="loadoutEditId === row._id">
+              <td colspan="7">
+                <div class="small mb-1">配件網址（其他玩家查詢船艦時看得到）</div>
+                <div v-for="(link, i) in loadoutDraft" :key="i" class="d-flex gap-2 mb-1">
+                  <input v-model="link.label" type="text" class="form-control form-control-sm" style="max-width: 10rem"
+                    placeholder="標籤（選填）" maxlength="50" :aria-label="`第 ${i + 1} 條標籤`">
+                  <input v-model="link.url" type="text" class="form-control form-control-sm"
+                    placeholder="abcd1234 或 https://erkul.games/s/abcd1234" :aria-label="`第 ${i + 1} 條配件網址`">
+                  <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除第 ${i + 1} 條`"
+                    @click="loadoutDraft.splice(i, 1)"><i class="bi bi-x-lg"></i></button>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+                  <button v-if="loadoutDraft.length < 10" type="button" class="btn btn-sm btn-success"
+                    @click="loadoutDraft.push({ label: '', url: '' })"><i class="bi bi-plus-lg me-1"></i>新增</button>
+                  <button type="button" class="btn btn-sm btn-primary" :disabled="savingFleetId === row._id"
+                    @click="saveLoadouts(row)">儲存</button>
+                  <button type="button" class="btn btn-sm btn-secondary" @click="loadoutEditId = ''">取消</button>
+                </div>
+              </td>
+            </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -933,7 +963,7 @@
           <div class="card scifi-card h-100">
             <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
               <a :href="link.url" target="_blank" rel="noopener noreferrer"
-                class="fw-semibold text-truncate tool-link">
+                class="btn btn-sm btn-primary fw-semibold text-truncate tool-link">
                 <i class="bi bi-box-arrow-up-right me-1 small"></i>{{ link.title }}
               </a>
               <FieldHint v-if="link.description" :text="link.description" />
@@ -1093,6 +1123,7 @@ import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetBulkRegister from '@/components/FleetBulkRegister.vue'
+import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
 import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -2284,6 +2315,39 @@ async function updateFleetQuantity(row, event) {
   }
 }
 
+// ── 我的艦隊：配件網址（存在自己的登記上，公開給其他玩家，見 src/models/fleet.py）──
+const loadoutEditId = ref('')
+const loadoutDraft = ref([])
+
+function toggleLoadoutEdit(row) {
+  if (loadoutEditId.value === row._id) {
+    loadoutEditId.value = ''
+    return
+  }
+  loadoutEditId.value = row._id
+  loadoutDraft.value = (row.loadout_links || []).map(l => ({ label: l.label || '', url: l.url }))
+  if (!loadoutDraft.value.length) loadoutDraft.value.push({ label: '', url: '' })
+}
+
+async function saveLoadouts(row) {
+  // 整列都空白的直接略過
+  const links = loadoutDraft.value
+    .map(l => ({ label: (l.label || '').trim(), url: (l.url || '').trim() }))
+    .filter(l => l.url || l.label)
+  savingFleetId.value = row._id
+  const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, {
+    method: 'PUT', body: JSON.stringify({ loadout_links: links }),
+  })
+  savingFleetId.value = ''
+  const data = res ? await res.json().catch(() => null) : null
+  if (res?.ok && data?.success) {
+    loadoutEditId.value = ''
+    await loadFleet()
+  } else {
+    showFleetError(data?.message || '儲存配件網址失敗，請稍後再試')
+  }
+}
+
 async function removeFleet(row) {
   const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, { method: 'DELETE' })
   if (!res) return
@@ -2407,15 +2471,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* 可以點開看解鎖任務的藍圖名稱（見 BlueprintMissionsModal.vue） */
-.bp-link {
-  padding: 0; border: 0; background: none; text-align: left; font: inherit;
-  color: var(--sf-accent-text, var(--sf-accent));
-  border-bottom: 1px dashed currentColor; cursor: pointer;
-}
-.bp-link:hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
-.tool-link { color: inherit; text-decoration: none; min-width: 0; }
-.tool-link:hover { text-decoration: underline; }
+/* 後台手寫的艦船說明（換行照原樣顯示） */
+.vehicle-note { white-space: pre-line; }
+
+.tool-link { min-width: 0; }
 .my-bp-filter { min-width: 14rem; }
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }

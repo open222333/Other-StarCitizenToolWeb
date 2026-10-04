@@ -37,13 +37,13 @@
 
         <div class="text-center mt-3">
           <span class="small text-muted">還沒有帳號？</span>
-          <RouterLink to="/register" class="small">前往註冊</RouterLink>
+          <RouterLink to="/register" class="btn btn-sm btn-primary ms-1">前往註冊</RouterLink>
         </div>
 
         <!-- 反過來的情況：公會管理員誤點到玩家登入頁，輸入後台帳密登入失敗。 -->
         <div class="text-center mt-2">
           <span class="small text-muted">你是公會管理員？</span>
-          <RouterLink :to="ADMIN_LOGIN_PATH" class="small">前往後台登入</RouterLink>
+          <RouterLink :to="ADMIN_LOGIN_PATH" class="btn btn-sm btn-primary ms-1">前往後台登入</RouterLink>
         </div>
       </div>
     </div>
