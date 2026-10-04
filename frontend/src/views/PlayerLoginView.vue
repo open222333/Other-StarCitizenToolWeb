@@ -40,11 +40,7 @@
           <RouterLink to="/register" class="btn btn-sm btn-primary ms-1">前往註冊</RouterLink>
         </div>
 
-        <!-- 反過來的情況：公會管理員誤點到玩家登入頁，輸入後台帳密登入失敗。 -->
-        <div class="text-center mt-2">
-          <span class="small text-muted">你是公會管理員？</span>
-          <RouterLink :to="ADMIN_LOGIN_PATH" class="btn btn-sm btn-primary ms-1">前往後台登入</RouterLink>
-        </div>
+        <!-- 刻意不放「前往後台登入」的入口：後台登入頁不對玩家公開，管理員自己記網址 -->
       </div>
     </div>
   </div>
@@ -54,7 +50,6 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginPlayer } from '@/api'
-import { ADMIN_LOGIN_PATH } from '@/router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
 
 const router     = useRouter()
