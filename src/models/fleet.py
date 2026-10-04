@@ -9,6 +9,7 @@ Cyclone 當地面接駁），所以一款一筆、另外記數量，而不是一
 「誰有這艘船」的統計會把同一個人算好幾次）。
 """
 
+import re
 from datetime import datetime
 
 from bson import ObjectId
@@ -29,6 +30,60 @@ HOLDERS_PER_GROUP = 50
 #: 玩家名冊一個人最多能有幾筆艦隊登記（查「我的艦隊」時的上限），
 #: 比 vehicle_master 全部筆數（約 300）高就不會截斷。
 PLAYER_MAX = 1000
+
+#: 配件連結（例如 erkul.games 的分享連結）：玩家在自己的艦隊登記上填，公開給其他玩家看
+LOADOUT_MAX_LINKS = 10
+LOADOUT_LABEL_MAX = 50
+LOADOUT_URL_MAX = 500
+_URL_RE = re.compile(r'^https?://[^\s/]+\.[^\s]+$', re.IGNORECASE)
+#: 只填分享代碼（https://erkul.games/s/abcd1234 後面那段）時補成完整網址
+ERKUL_SHARE_BASE = 'https://erkul.games/s/'
+_SHARE_CODE_RE = re.compile(r'^[A-Za-z0-9_-]{4,64}$')
+_BARE_HOST_RE = re.compile(r'^[a-z0-9-]+(\.[a-z0-9-]+)+/\S*$', re.IGNORECASE)
+
+
+def normalize_loadout_url(value: str) -> str:
+    """配件網址：完整網址照用；只填 erkul 分享代碼（例如 abcd1234）補成
+    https://erkul.games/s/<代碼>；少了 https:// 的（erkul.games/s/xxx）補上。"""
+    text = (value or '').strip()
+    if _SHARE_CODE_RE.match(text):
+        return ERKUL_SHARE_BASE + text
+    if _BARE_HOST_RE.match(text):
+        return 'https://' + text
+    return text
+
+
+def clean_loadout_links(links, previous=None) -> list:
+    """驗證並整理配件連結 [{label, url}]，回傳 [{label, url, added_at}]（空清單＝清掉）。
+
+    網址沒變的保留原本的 added_at——外部配裝計算器的分享連結是當時遊戲版本的配置，
+    看加入時間才知道多舊。格式不對丟 ValueError（訊息直接給玩家看）。
+    """
+    if not isinstance(links, list):
+        raise ValueError('配件連結格式錯誤')
+    if len(links) > LOADOUT_MAX_LINKS:
+        raise ValueError(f'配件網址最多 {LOADOUT_MAX_LINKS} 條')
+    added = {l.get('url'): l.get('added_at') for l in previous or [] if isinstance(l, dict)}
+    now = datetime.utcnow()
+    out, seen = [], set()
+    for i, link in enumerate(links, 1):
+        if not isinstance(link, dict):
+            raise ValueError(f'第 {i} 條配件連結格式錯誤')
+        url = normalize_loadout_url(link.get('url')) if isinstance(link.get('url'), str) else ''
+        label = link.get('label').strip() if isinstance(link.get('label'), str) else ''
+        if not url:
+            raise ValueError(f'第 {i} 條配件網址是空的')
+        if not _URL_RE.match(url):
+            raise ValueError(f'第 {i} 條配件網址格式不對（填 erkul 分享代碼或完整網址）')
+        if len(url) > LOADOUT_URL_MAX:
+            raise ValueError(f'第 {i} 條配件網址太長')
+        if len(label) > LOADOUT_LABEL_MAX:
+            raise ValueError(f'第 {i} 條配件網址標籤最多 {LOADOUT_LABEL_MAX} 字')
+        if url in seen:
+            continue
+        seen.add(url)
+        out.append({'label': label or None, 'url': url, 'added_at': added.get(url) or now})
+    return out
 
 
 def clamp_quantity(value, default: int = 1) -> int:
@@ -54,6 +109,8 @@ def _vehicle_summary(master: dict | None) -> dict | None:
         'role_zh': master.get('role_zh'),
         'career': master.get('career'),
         'is_current': master.get('is_current'),
+        'note': master.get('note'),   # 後台手寫的說明
+        'system_note': master.get('system_note'),   # 同名變體的區別（自動產生）
     }
 
 
@@ -168,21 +225,29 @@ class Fleet:
 
     @classmethod
     def update_for_player(cls, fleet_id: str, player_id: str, *,
-                          quantity=None, notes=None) -> bool:
-        """改自己名下某筆登記的數量／備註（只能改自己的）。"""
-        set_fields: dict = {}
-        if quantity is not None:
-            set_fields['quantity'] = clamp_quantity(quantity)
-        if notes is not None:
-            set_fields['notes'] = str(notes)[:500]
-        if not set_fields:
-            return False
-        set_fields['updated_at'] = datetime.utcnow()
+                          quantity=None, notes=None, loadout_links=None) -> bool:
+        """改自己名下某筆登記的數量／備註／配件連結（只能改自己的）。
+
+        loadout_links 格式不對丟 ValueError（見 clean_loadout_links）。
+        """
         try:
             query = {'_id': ObjectId(fleet_id), 'player_id': ObjectId(player_id),
                      'deleted_at': None}
         except Exception:
             return False
+        set_fields: dict = {}
+        if quantity is not None:
+            set_fields['quantity'] = clamp_quantity(quantity)
+        if notes is not None:
+            set_fields['notes'] = str(notes)[:500]
+        if loadout_links is not None:
+            current = cls._col().find_one(query, {'loadout_links': 1})
+            if not current:
+                return False
+            set_fields['loadout_links'] = clean_loadout_links(loadout_links, current.get('loadout_links'))
+        if not set_fields:
+            return False
+        set_fields['updated_at'] = datetime.utcnow()
         return cls._col().update_one(query, {'$set': set_fields}).matched_count > 0
 
     @classmethod
@@ -196,6 +261,75 @@ class Fleet:
         result = cls._col().update_one(
             query, {'$set': {'deleted_at': datetime.utcnow()}})
         return result.matched_count > 0
+
+    # ── 後台：玩家擁有艦船（唯讀列表）─────────────────────────────────
+
+    ADMIN_SORTS = {'name': [('name_lower', 1), ('player_key', 1)],
+                   'player': [('player_key', 1), ('name_lower', 1)],
+                   'quantity': [('quantity', -1), ('name_lower', 1)],
+                   'updated': [('updated_at', -1)]}
+
+    @classmethod
+    def admin_list(cls, *, query: str = '', player: str = '', vehicle_uuids=None,
+                   sort: str = 'name', limit: int = 50, offset: int = 0) -> tuple:
+        """後台「艦船 › 玩家擁有艦船」：每一筆登記一列（玩家、船、數量），分頁。
+
+        query：船名（英文，部分比對）；vehicle_uuids 不是 None 時改用這些 uuid（中文船名
+        由呼叫端先查成 uuid）。player：遊戲ID／暱稱／玩家名稱（部分比對）。
+        已軟刪除的登記、已軟刪除的玩家都不列；不回傳玩家自己寫的備註 notes。
+        回傳 (rows, total)。
+        """
+        match: dict = {'deleted_at': None}
+        if vehicle_uuids is not None:
+            match['vehicle_uuid'] = {'$in': list(vehicle_uuids)}
+        elif (query or '').strip():
+            match['name'] = {'$regex': re.escape(query.strip()), '$options': 'i'}
+
+        pipeline: list = [
+            {'$match': match},
+            {'$lookup': {'from': 'players', 'localField': 'player_id',
+                         'foreignField': '_id', 'as': 'player'}},
+            {'$unwind': {'path': '$player', 'preserveNullAndEmptyArrays': True}},
+            {'$match': {'$or': [{'player': {'$exists': False}}, {'player.deleted_at': None}]}},
+        ]
+        if (player or '').strip():
+            pattern = {'$regex': re.escape(player.strip()), '$options': 'i'}
+            pipeline.append({'$match': {'$or': [{'player.star_citizen_id': pattern},
+                                                {'player.nickname': pattern},
+                                                {'player.player_name': pattern}]}})
+        pipeline += [
+            {'$addFields': {'name_lower': {'$toLower': '$name'},
+                            'player_key': {'$toLower': {'$ifNull': ['$player.star_citizen_id', '']}}}},
+            {'$sort': dict(cls.ADMIN_SORTS.get(sort) or cls.ADMIN_SORTS['name'])},
+            {'$facet': {
+                'rows': [{'$skip': max(0, int(offset))}, {'$limit': max(1, min(int(limit), 200))},
+                         {'$project': {'notes': 0, 'name_lower': 0, 'player_key': 0,
+                                       'player.password': 0, 'player.password_hash': 0}}],
+                'total': [{'$count': 'n'}],
+            }},
+        ]
+        result = next(iter(cls._col().aggregate(pipeline, allowDiskUse=True)), {}) or {}
+        rows = result.get('rows') or []
+        total = (result.get('total') or [{}])[0].get('n', 0)
+        masters = VehicleMaster.by_ids(r.get('vehicle_uuid') for r in rows)
+        out = []
+        for r in rows:
+            p = r.get('player') or {}
+            out.append({
+                '_id': str(r['_id']),
+                'vehicle_uuid': r.get('vehicle_uuid'),
+                'name': r.get('name'),
+                'quantity': r.get('quantity'),
+                'loadout_links': r.get('loadout_links') or [],
+                'created_at': r.get('created_at'),
+                'updated_at': r.get('updated_at'),
+                'player': {'_id': str(p['_id']) if p.get('_id') else None,
+                           'star_citizen_id': p.get('star_citizen_id'),
+                           'nickname': p.get('nickname'),
+                           'player_name': p.get('player_name')} if p else None,
+                'vehicle': _vehicle_summary(masters.get(r.get('vehicle_uuid'))),
+            })
+        return out, total
 
     # ── 公會互查：誰有這款船 ────────────────────────────────────────
 
@@ -242,6 +376,8 @@ class Fleet:
                     'discord_name': '$player.discord_name',
                     'discord_id': '$player.discord_id',
                     'discord_public': '$player.discord_public',
+                    # 玩家自己填的配件連結（公開）；沒填過的舊登記給空陣列
+                    'loadout_links': {'$ifNull': ['$loadout_links', []]},
                 }},
                 'holder_count': {'$sum': 1},
                 'total_quantity': {'$sum': '$quantity'},

@@ -1092,19 +1092,34 @@ def update_my_fleet(fleet_id):
           properties:
             quantity: {type: integer, description: "1～99"}
             notes:    {type: string}
+            loadout_links:
+              type: array
+              description: "配件網址（erkul.games 的分享代碼如 abcd1234，或完整網址），整份取代，空陣列 = 清掉；最多 10 條，會公開給其他玩家看"
+              items:
+                type: object
+                properties:
+                  label: {type: string, description: "選填，最多 50 字"}
+                  url:   {type: string, description: "erkul 分享代碼（補成 https://erkul.games/s/<代碼>）或 http(s) 網址"}
     responses:
       200:
         description: 成功
+      400:
+        description: 格式錯誤
       404:
         description: 找不到（或不是自己的）
     """
     player = _self_player_doc()
     data = request.get_json(silent=True) or {}
-    if 'quantity' not in data and 'notes' not in data:
+    if not any(k in data for k in ('quantity', 'notes', 'loadout_links')):
         raise StockError('沒有要更新的欄位。')
-    ok = Fleet.update_for_player(fleet_id, player['_id'],
-                                 quantity=data.get('quantity') if 'quantity' in data else None,
-                                 notes=data.get('notes') if 'notes' in data else None)
+    try:
+        ok = Fleet.update_for_player(
+            fleet_id, player['_id'],
+            quantity=data.get('quantity') if 'quantity' in data else None,
+            notes=data.get('notes') if 'notes' in data else None,
+            loadout_links=data.get('loadout_links') if 'loadout_links' in data else None)
+    except ValueError as exc:
+        raise StockError(str(exc))
     if not ok:
         return jsonify({'success': False, 'message': '找不到這筆艦隊紀錄'}), 404
     return jsonify({'success': True})

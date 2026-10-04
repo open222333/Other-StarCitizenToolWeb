@@ -120,6 +120,8 @@ ADMIN_ROUTES = [
     ('GET',    '/starmap/nope',       READ_ROLES),
     ('PUT',    '/starmap/nope/storage', WRITE_ROLES),
     ('PUT',    '/item/visibility/blueprints/nope', WRITE_ROLES),
+    ('PUT',    '/item/vehicles/nope/note', WRITE_ROLES),
+    ('GET',    '/item/fleet',         READ_ROLES),
     ('GET',    '/item/visibility/minerals', READ_ROLES),
     ('POST',   '/links/import',       WRITE_ROLES),
     ('POST',   '/links/',             WRITE_ROLES),

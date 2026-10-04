@@ -5,6 +5,8 @@
   - 玩家自助艦隊：批量登記、數量、改／刪只能動自己的（/player/fleet*）
   - 「查詢 › 船艦搜尋」：誰有哪款船（/player/fleet/holders）
 """
+from datetime import datetime
+
 import pytest
 
 from src.models.fleet import MAX_QUANTITY, Fleet
@@ -385,3 +387,121 @@ def test_item_vehicles_multi_select_filters(client, auth_headers, seed_vehicles)
     qs = urlencode([('role', 'Racing'), ('role', 'Passenger'), ('type', 'ground')])
     body = client.get(f'/item/vehicles?{qs}', headers=auth_headers).get_json()
     assert [r['_id'] for r in body['data']] == ['v-cyclone']
+
+
+# ═══════════════════════════════════════════════════════
+#  後台手寫的艦船說明
+# ═══════════════════════════════════════════════════════
+
+def test_vehicle_note_shown_to_players(client, auth_headers, alice, seed_vehicles):
+    url = '/item/vehicles/v-avenger/note'
+    assert client.put(url, json={'note': '新手推薦'}, headers=alice).status_code in (401, 403)
+    res = client.put(url, json={'note': '  新手推薦\n便宜好開  '}, headers=auth_headers)
+    assert res.status_code == 200 and res.get_json()['data']['note'] == '新手推薦\n便宜好開'
+
+    # 玩家：艦隊、船艦搜尋都帶得到
+    _bulk(client, alice, ['v-avenger'])
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert row['vehicle']['note'] == '新手推薦\n便宜好開'
+    found = client.get('/item/vehicles?q=avenger', headers=alice).get_json()['data']
+    assert found[0]['note'] == '新手推薦\n便宜好開'
+
+    # 重新同步（mapper 用 $set 寫回整份，沒有 note）不會蓋掉
+    get_db()['vehicle_master'].update_one({'_id': 'v-avenger'}, {'$set': {'name': 'Avenger Stalker'}})
+    assert get_db()['vehicle_master'].find_one({'_id': 'v-avenger'})['note'] == '新手推薦\n便宜好開'
+
+    assert client.put(url, json={'note': ''}, headers=auth_headers).get_json()['data']['note'] is None
+    assert client.put(url, json={'note': 'x' * 1001}, headers=auth_headers).status_code == 400
+    assert client.put(url, json={'note': 3}, headers=auth_headers).status_code == 400
+    assert client.put(url, json={}, headers=auth_headers).status_code == 400
+    assert client.put('/item/vehicles/nope/note', json={'note': 'a'}, headers=auth_headers).status_code == 404
+
+
+def test_player_loadout_links(client, auth_headers, alice, seed_vehicles):
+    """配件連結由玩家填在自己的艦隊登記上，公開給其他玩家（互查）與後台看。"""
+    _bulk(client, alice, ['v-avenger'])
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    url = f"/player/fleet/{row['_id']}"
+    links = [{'label': 'PvP', 'url': 'https://erkul.games/s/abcd1234'},
+             {'url': ' https://erkul.games/s/abc '},
+             {'label': '重複', 'url': 'abcd1234'}]
+    assert client.put(url, json={'loadout_links': links}, headers=alice).status_code == 200
+    saved = client.get('/player/fleet', headers=alice).get_json()['data'][0]['loadout_links']
+    assert [(l['label'], l['url']) for l in saved] == [('PvP', 'https://erkul.games/s/abcd1234'),
+                                                        (None, 'https://erkul.games/s/abc')], '去空白、重複只留一條'
+    first_added = get_db()['fleet'].find_one({'vehicle_uuid': 'v-avenger'})['loadout_links'][0]['added_at']
+
+    # 只改標籤 → added_at 保留；改數量不會動到連結
+    client.put(url, json={'loadout_links': [{'label': 'PvP 新', 'url': 'https://erkul.games/s/abcd1234'}]},
+               headers=alice)
+    client.put(url, json={'quantity': 2}, headers=alice)
+    kept = get_db()['fleet'].find_one({'vehicle_uuid': 'v-avenger'})['loadout_links']
+    assert len(kept) == 1 and kept[0]['label'] == 'PvP 新' and kept[0]['added_at'] == first_added
+
+    # 別的玩家：互查看得到；不能改別人的
+    bob = _register_player(client, 'Bob', 'Bob')
+    group = next(g for g in client.get('/player/fleet/holders', headers=bob).get_json()['data']
+                 if g['vehicle_uuid'] == 'v-avenger')
+    assert group['holders'][0]['loadout_links'][0]['url'] == 'https://erkul.games/s/abcd1234'
+    assert client.put(url, json={'loadout_links': []}, headers=bob).status_code == 404
+    # 後台列表也看得到
+    admin_row = client.get('/item/fleet', headers=auth_headers).get_json()['data'][0]
+    assert admin_row['loadout_links'][0]['label'] == 'PvP 新'
+
+    from src.models.fleet import normalize_loadout_url
+    assert normalize_loadout_url(' abcd1234 ') == 'https://erkul.games/s/abcd1234', '只填分享代碼'
+    assert normalize_loadout_url('erkul.games/s/abcd1234') == 'https://erkul.games/s/abcd1234'
+    assert normalize_loadout_url('https://www.spviewer.eu/x') == 'https://www.spviewer.eu/x'
+    for bad in ([{'url': 'javascript:alert(1)'}], [{'url': 'not a url'}], [{'url': 'ab'}], [{'label': 'x'}],
+                [{'url': 'https://a.b/' + 'x' * 600}], [{'label': 'x' * 51, 'url': 'https://a.b'}],
+                [{'url': f'https://a.b/{i}'} for i in range(11)], 'nope', ['x']):
+        assert client.put(url, json={'loadout_links': bad}, headers=alice).status_code == 400, bad
+    assert client.put(url, json={'loadout_links': []}, headers=alice).status_code == 200
+    assert client.get('/player/fleet', headers=alice).get_json()['data'][0]['loadout_links'] == []
+
+def test_admin_player_fleet_list(client, auth_headers, alice, seed_vehicles):
+    _bulk(client, alice, ['v-avenger', 'v-cutlass'], quantity=2)
+    bob = _register_player(client, 'Bob', 'Bobby')
+    _bulk(client, bob, ['v-avenger'])
+    assert client.get('/item/fleet', headers=alice).status_code in (401, 403)
+
+    body = client.get('/item/fleet', headers=auth_headers).get_json()
+    assert body['total'] == 3
+    first = body['data'][0]
+    assert first['name'] == 'Avenger Stalker' and first['vehicle']['manufacturer_name'] == 'Aegis Dynamics'
+    assert 'notes' not in first and set(first['player']) == {'_id', 'star_citizen_id', 'nickname', 'player_name'}
+    assert client.get('/item/fleet?player=bobby', headers=auth_headers).get_json()['total'] == 1
+    assert client.get('/item/fleet?q=cutlass', headers=auth_headers).get_json()['data'][0]['quantity'] == 2
+    assert client.get('/item/fleet?limit=1&offset=1', headers=auth_headers).get_json()['total'] == 3
+    get_db()['players'].update_one({'star_citizen_id': 'Bob'}, {'$set': {'deleted_at': datetime.utcnow()}})
+    assert client.get('/item/fleet', headers=auth_headers).get_json()['total'] == 2, '已刪除的玩家不列'
+
+
+def test_vehicle_system_notes_for_same_name_variants(client, alice, seed_vehicles):
+    """同名的變體標上 class_name 多出來的部分（系統說明），都照常顯示。"""
+    from src.models.item import VehicleMaster
+    col = get_db()['vehicle_master']
+    col.insert_many([
+        {'_id': 'f8c', 'name': 'Anvil F8C Lightning', 'name_lower': 'anvil f8c lightning', 'class_name': 'ANVL_Lightning_F8C', 'is_current': True},
+        {'_id': 'f8c-plat', 'name': 'Anvil F8C Lightning', 'name_lower': 'anvil f8c lightning', 'class_name': 'ANVL_Lightning_F8C_Plat',
+         'is_current': True},
+        {'_id': 'exec-m', 'name': 'Cutlass Black PYAM Exec', 'class_name': 'DRAK_Cutlass_Black_Exec_Military',
+         'is_current': True},
+        {'_id': 'exec-s', 'name': 'Cutlass Black PYAM Exec', 'class_name': 'DRAK_Cutlass_Black_Exec_Stealth',
+         'is_current': True},
+        {'_id': 'idris-fw', 'name': 'Aegis Idris-P', 'class_name': 'AEGS_Idris_P_FW_25', 'is_current': True},
+        {'_id': 'idris', 'name': 'Aegis Idris-P', 'class_name': 'AEGS_Idris_P', 'is_current': True},
+        {'_id': 'idris-old', 'name': 'Aegis Idris-P', 'class_name': 'AEGS_Idris_Old', 'is_current': False},
+    ])
+    assert VehicleMaster.apply_system_notes() == 4
+    note = {r['_id']: r.get('system_note') for r in col.find({}, {'system_note': 1})}
+    assert note['f8c'] is None and note['f8c-plat'] == 'Plat'
+    assert note['exec-m'] == 'Military' and note['exec-s'] == 'Stealth'
+    assert note['idris'] is None and note['idris-fw'] == 'FW 25', '下架的不算進同名'
+    assert note['v-avenger'] is None, '沒有同名的不標'
+    assert VehicleMaster.apply_system_notes() == 0
+
+    rows = client.get('/item/vehicles?q=anvil f8c', headers=alice).get_json()['data']
+    assert sorted((r['_id'], r.get('system_note')) for r in rows) == [('f8c', None), ('f8c-plat', 'Plat')]
+    _bulk(client, alice, ['f8c-plat'])
+    assert client.get('/player/fleet', headers=alice).get_json()['data'][0]['vehicle']['system_note'] == 'Plat'
