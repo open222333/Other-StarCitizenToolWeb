@@ -245,8 +245,11 @@
   color: var(--sf-text-muted) !important;
 }
 
-.scifi-page a { color: var(--sf-accent-text, var(--sf-accent)); }
-.scifi-page a:hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
+/* 一般文字連結才套強調色；做成按鈕的 <a class="btn …">（開網址、換頁）要用按鈕自己的
+ * 文字色，不然 `.scifi-page a`（權重 0,1,1）會蓋過 .btn 的 color（0,1,0），
+ * 在 btn-primary 的強調色底上變成「強調色字配強調色底」，整顆按鈕看不到字。 */
+.scifi-page a:not(.btn) { color: var(--sf-accent-text, var(--sf-accent)); }
+.scifi-page a:not(.btn):hover { color: var(--sf-accent-2-text, var(--sf-accent-2)); }
 
 /* ═══════════════════════════════════════════════════════════════════
  *  全幅工具版面（參照 erkul.games 那類 Star Citizen 工具站的做法：
@@ -505,4 +508,159 @@
 .btn-subtab:focus-visible {
   outline: 2px solid var(--sf-accent);
   outline-offset: 2px;
+}
+
+/* ── 蜂巢式下拉（玩家頁「查詢 › 持有船艦」：船艦 → 玩家 → 配件網址）──────
+ * 底色、邊框、文字都走主題變數，換配色／亮底模式會跟著變。
+ * 每一層：一列可按的長條（.sf-tree-row），展開的內容放在 .sf-tree-level
+ * （往右縮排、左邊一條線）。船艦那層用主強調色、玩家那層用次要強調色。
+ */
+.sf-tree-row {
+  display: flex; align-items: center; gap: .5rem;
+  width: 100%; text-align: left;
+  padding: .55rem .8rem;
+  font-size: 1rem; line-height: 1.35;
+  color: var(--sf-text);
+  background: var(--sf-panel);
+  border: 1px solid var(--sf-border);
+  border-left: 3px solid var(--sf-accent);
+  border-radius: 6px;
+  transition: background .15s, border-color .15s;
+}
+.sf-tree-row:hover:not(:disabled),
+.sf-tree-row[aria-expanded='true'] {
+  background: rgba(var(--sf-accent-rgb), .12);
+  border-color: rgba(var(--sf-accent-rgb), .55);
+}
+.sf-tree-row:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
+.sf-tree-row .sf-tree-title { font-weight: 700; color: var(--sf-text-strong); }
+.sf-tree-row .sf-tree-meta { margin-left: auto; white-space: nowrap; color: var(--sf-text-muted); }
+.sf-tree-row--ship { font-size: 1.08rem; }
+.sf-tree-row--player {
+  background: var(--sf-panel-2);
+  border-left-color: var(--sf-accent-2);
+}
+.sf-tree-row--player:hover:not(:disabled),
+.sf-tree-row--player[aria-expanded='true'] {
+  background: rgba(var(--sf-accent-2-rgb), .12);
+  border-color: rgba(var(--sf-accent-2-rgb), .55);
+}
+.sf-tree-row:disabled { opacity: .65; cursor: default; }
+.sf-tree-level {
+  margin: .35rem 0 .15rem 1rem;
+  padding-left: .7rem;
+  border-left: 2px solid var(--sf-border);
+}
+.sf-tree-info { font-size: .95rem; color: var(--sf-text-muted); margin-bottom: .35rem; }
+.sf-tree-chip {
+  display: inline-block; padding: .05rem .5rem; border-radius: 999px;
+  font-size: .85rem; font-weight: 600;
+  background: var(--sf-chip-bg); color: var(--sf-accent);
+  border: 1px solid rgba(var(--sf-accent-rgb), .45);
+}
+/* 配件網址按鈕（主題色版），給蜂巢式下拉最內層用 */
+.btn-sf-link {
+  background: rgba(var(--sf-accent-rgb), .14);
+  border: 1px solid rgba(var(--sf-accent-rgb), .55);
+  color: var(--sf-text-strong);
+  font-size: .95rem;
+}
+.btn-sf-link:hover {
+  background: rgba(var(--sf-accent-rgb), .28);
+  border-color: var(--sf-accent);
+  color: var(--sf-text-strong);
+}
+
+/* ── 玩家頁按鈕底色跟著主題走 ─────────────────────────────────────────
+ * 玩家頁沿用 Bootstrap 的 btn-primary／btn-info／btn-warning／btn-danger／
+ * btn-success／btn-secondary 表示「這顆按鈕是哪一類操作」（規則見 CLAUDE.md），
+ * 但在 .scifi-page 裡把它們的顏色換成主題變數，這樣：
+ *   - 換強調色、切亮底模式時按鈕會跟著變，不會出現一顆突兀的 Bootstrap 亮青／亮黃
+ *   - 共用元件（MultiSelectFilter 等）在後台照舊是 Bootstrap 原色，不受影響
+ * 用 Bootstrap 5.3 的 --bs-btn-* 變數覆寫，hover／active／disabled 一起處理。
+ */
+.scifi-page .btn-primary {        /* 主要操作：重新整理、重試、換頁、開網址 → 主強調色實心 */
+  --bs-btn-bg: var(--sf-accent);
+  --bs-btn-border-color: var(--sf-accent);
+  --bs-btn-color: var(--sf-accent-ink, #041018);
+  --bs-btn-hover-bg: var(--sf-accent);
+  --bs-btn-hover-border-color: var(--sf-accent);
+  --bs-btn-hover-color: var(--sf-accent-ink, #041018);
+  --bs-btn-active-bg: var(--sf-accent);
+  --bs-btn-active-border-color: var(--sf-accent);
+  --bs-btn-active-color: var(--sf-accent-ink, #041018);
+  --bs-btn-disabled-bg: var(--sf-accent);
+  --bs-btn-disabled-border-color: var(--sf-accent);
+  --bs-btn-disabled-color: var(--sf-accent-ink, #041018);
+  font-weight: 600;
+}
+.scifi-page .btn-primary:hover:not(:disabled) { box-shadow: 0 0 12px rgba(var(--sf-accent-rgb), .5); }
+
+.scifi-page .btn-info {           /* 查看／編輯：藍圖名稱、材料、配件網址 → 主強調色淡底 */
+  --bs-btn-bg: rgba(var(--sf-accent-rgb), .16);
+  --bs-btn-border-color: rgba(var(--sf-accent-rgb), .6);
+  --bs-btn-color: var(--sf-text-strong);
+  --bs-btn-hover-bg: rgba(var(--sf-accent-rgb), .3);
+  --bs-btn-hover-border-color: var(--sf-accent);
+  --bs-btn-hover-color: var(--sf-text-strong);
+  --bs-btn-active-bg: rgba(var(--sf-accent-rgb), .38);
+  --bs-btn-active-border-color: var(--sf-accent);
+  --bs-btn-active-color: var(--sf-text-strong);
+  --bs-btn-disabled-bg: rgba(var(--sf-accent-rgb), .1);
+  --bs-btn-disabled-border-color: rgba(var(--sf-accent-rgb), .35);
+  --bs-btn-disabled-color: var(--sf-text-muted);
+}
+
+.scifi-page .btn-warning {        /* 清除類 → 次要強調色（預設橘）淡底 */
+  --bs-btn-bg: rgba(var(--sf-accent-2-rgb), .18);
+  --bs-btn-border-color: rgba(var(--sf-accent-2-rgb), .65);
+  --bs-btn-color: var(--sf-text-strong);
+  --bs-btn-hover-bg: rgba(var(--sf-accent-2-rgb), .32);
+  --bs-btn-hover-border-color: var(--sf-accent-2);
+  --bs-btn-hover-color: var(--sf-text-strong);
+  --bs-btn-active-bg: rgba(var(--sf-accent-2-rgb), .4);
+  --bs-btn-active-border-color: var(--sf-accent-2);
+  --bs-btn-active-color: var(--sf-text-strong);
+  --bs-btn-disabled-bg: rgba(var(--sf-accent-2-rgb), .1);
+  --bs-btn-disabled-border-color: rgba(var(--sf-accent-2-rgb), .35);
+  --bs-btn-disabled-color: var(--sf-text-muted);
+}
+
+.scifi-page .btn-danger {         /* 刪除／移除 → 紅色淡底（紅色本身不跟主題換，語意固定） */
+  --bs-btn-bg: rgba(var(--bs-danger-rgb), .2);
+  --bs-btn-border-color: rgba(var(--bs-danger-rgb), .7);
+  --bs-btn-color: var(--sf-text-strong);
+  --bs-btn-hover-bg: rgba(var(--bs-danger-rgb), .38);
+  --bs-btn-hover-border-color: rgb(var(--bs-danger-rgb));
+  --bs-btn-hover-color: var(--sf-text-strong);
+  --bs-btn-active-bg: rgba(var(--bs-danger-rgb), .45);
+  --bs-btn-active-border-color: rgb(var(--bs-danger-rgb));
+  --bs-btn-active-color: var(--sf-text-strong);
+  --bs-btn-disabled-bg: rgba(var(--bs-danger-rgb), .1);
+  --bs-btn-disabled-border-color: rgba(var(--bs-danger-rgb), .35);
+  --bs-btn-disabled-color: var(--sf-text-muted);
+}
+
+.scifi-page .btn-success {        /* 新增 → 綠色淡底 */
+  --bs-btn-bg: rgba(var(--bs-success-rgb), .2);
+  --bs-btn-border-color: rgba(var(--bs-success-rgb), .7);
+  --bs-btn-color: var(--sf-text-strong);
+  --bs-btn-hover-bg: rgba(var(--bs-success-rgb), .38);
+  --bs-btn-hover-border-color: rgb(var(--bs-success-rgb));
+  --bs-btn-hover-color: var(--sf-text-strong);
+  --bs-btn-active-bg: rgba(var(--bs-success-rgb), .45);
+  --bs-btn-active-border-color: rgb(var(--bs-success-rgb));
+  --bs-btn-active-color: var(--sf-text-strong);
+}
+
+.scifi-page .btn-secondary {      /* 取消 → 中性面板色 */
+  --bs-btn-bg: var(--sf-chip-bg);
+  --bs-btn-border-color: var(--sf-border-hi);
+  --bs-btn-color: var(--sf-text);
+  --bs-btn-hover-bg: var(--sf-hover-bg);
+  --bs-btn-hover-border-color: var(--sf-border-hi);
+  --bs-btn-hover-color: var(--sf-text-strong);
+  --bs-btn-active-bg: var(--sf-hover-bg);
+  --bs-btn-active-border-color: var(--sf-border-hi);
+  --bs-btn-active-color: var(--sf-text-strong);
 }

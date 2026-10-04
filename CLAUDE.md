@@ -20,9 +20,18 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
   `<button class="btn btn-sm btn-outline-…">`（不要 `btn-link`、不要虛線底線的文字連結）；
   可點的名稱（例如藍圖名稱開解鎖任務）也做成按鈕；要開新頁的外部網址、換頁用
   `<a>`／`<RouterLink>` 但加上 `btn` 樣式，看起來是按鈕。
-  顏色用鮮明的實心按鈕（不要 outline）：重新整理／重試／換頁／開網址 `btn-primary`、
-  清除類 `btn-warning`、刪除／移除 `btn-danger`、新增 `btn-success`、
-  查看／編輯（配件網址、材料、可點的名稱）`btn-info`、取消 `btn-secondary`。
+  按鈕一律用有底色的 Bootstrap class（不要 outline），依操作種類選：重新整理／重試／換頁／
+  開網址 `btn-primary`、清除類 `btn-warning`、刪除／移除 `btn-danger`、新增 `btn-success`、
+  查看／編輯（配件網址、材料、可點的藍圖名稱）`btn-info`、取消 `btn-secondary`。
+- **玩家頁面的底色一律搭配網站主題**，不要直接用 Bootstrap 原色（亮青、亮黃那種）：
+  - 上面那幾個 `btn-*` 在 `.scifi-page` 裡已經由 `frontend/src/assets/scifi-theme.css` 改成主題色
+    （primary＝主強調色實心、info＝主強調色淡底、warning＝次要強調色淡底、danger／success＝
+    紅／綠淡底、secondary＝中性面板色），照常用 class 即可，不要另外寫死顏色。
+  - 自訂的區塊（卡片、列表、下拉）底色／邊框／文字用 `--sf-*` 主題變數（`--sf-panel`、
+    `--sf-panel-2`、`--sf-border`、`--sf-accent`、`--sf-accent-2`、`--sf-text`、`--sf-text-strong`…），
+    這樣換強調色、切亮底模式都會跟著變；可重複用的樣式放在 `scifi-theme.css`（例如蜂巢式下拉
+    `.sf-tree-*`）。
+  - 玩家頁的字不要太小：主要內容至少 1rem，次要資訊約 .9–.95rem，避免整片 `small`。
 - 畫面上的範例值用通用的假資料（例如分享代碼寫 `abcd1234`），不要用真實的代碼或帳號。
 
 ## 中文化（翻譯）原則（使用者要求，務必遵守）
