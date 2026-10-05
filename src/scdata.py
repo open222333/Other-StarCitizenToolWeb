@@ -3,7 +3,7 @@
 沒有官方 CIG API，遊戲資料一律來自社群眾包／解包的第三方 API：
 
   - Star Citizen Wiki API：物品、載具、商品規格。免費、無 token、按 patch 版本分版。
-  - UEX Corp API 2.0：價格、終端與商店位置。需要免費 token（UEX_API_TOKEN 環境變數）。
+  - UEX Corp API 2.0：價格、終端與商店位置。需要免費 token（後台「資料同步排程」頁設定，或 UEX_API_TOKEN 環境變數）。
 
 本模組只負責「抓取與欄位映射」，寫入資料庫由 tasks/scdata_sync.py 負責。
 這樣抓取邏輯可以不碰 MongoDB 單獨測試。
@@ -22,7 +22,7 @@ import httpx
 from src import (SCDATA_BULK_SIZE, SCDATA_HTTP_TIMEOUT, SCDATA_MAX_RETRIES,
                  SCDATA_PAGE_SIZES, SCDATA_REQUEST_DELAY, SCDATA_USER_AGENT,
                  SCDATA_SCUNPACKED_BASE, SCDATA_TRANSLATION_INI_URL, SCDATA_UEX_API_BASE,
-                 SCDATA_WIKI_API_BASE, UEX_API_TOKEN)
+                 SCDATA_WIKI_API_BASE)
 from src.sc_zh import (
     amenity_zh,
     clean_mission_text,
@@ -1038,4 +1038,5 @@ def uex_doc_id(row: dict, key_fields: list) -> Optional[str]:
 
 
 def has_uex_token() -> bool:
-    return bool(UEX_API_TOKEN)
+    from src.models.app_setting import UexToken   # 後台設定優先，其次環境變數
+    return bool(UexToken.get())

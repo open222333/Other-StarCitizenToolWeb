@@ -46,7 +46,7 @@ from datetime import datetime, timedelta
 from pymongo import UpdateOne
 from redis.exceptions import WatchError
 
-from src import UEX_API_TOKEN
+from src.models.app_setting import UexToken
 from src.celery_app import celery_app
 from src.mongo import get_db
 from src.models.sync_schedule import (FAILURE_BACKOFF_MIN, JOB_KEYS,  # noqa: F401（測試沿用）
@@ -509,13 +509,15 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
             logger.info('scdata_sync: 地點「可存放」更新 %d 筆', Starmap.apply_storage())
 
     elif key == 'uex':
-        if not UEX_API_TOKEN:
-            logger.warning('scdata_sync: 沒有 UEX_API_TOKEN，跳過 UEX 同步。'
+        # 後台「資料同步排程」頁設定的 token 優先，沒有就用環境變數 UEX_API_TOKEN
+        uex_token = UexToken.get()
+        if not uex_token:
+            logger.warning('scdata_sync: 沒有 UEX token，跳過 UEX 同步。'
                            '到 https://uexcorp.space/api/apps 建 app 取得免費 token')
-            return stats, ['uex: 未設定 UEX_API_TOKEN，略過'], None
+            return stats, ['uex: 未設定 UEX token，略過'], None
         for resource in UEX_RESOURCES:
             try:
-                stats.append(_sync_uex_resource(client('uex', token=UEX_API_TOKEN),
+                stats.append(_sync_uex_resource(client('uex', token=uex_token),
                                                 resource, run_id, stamp))
             except Exception as err:
                 logger.exception('scdata_sync: UEX %s 失敗', resource)

@@ -342,7 +342,7 @@ MongoDB 是獨立節點這件事會直接影響移庫的一致性保證，見[�
 | `NGINX_MODE` | `http` / `cloudflare` / `https-letsencrypt` |
 | `DOMAIN` | 對外域名（http 模式填 `_`） |
 | `CF_CERT_DIR` | Cloudflare Origin CA 憑證目錄 |
-| 🔑 `UEX_API_TOKEN` | UEX Corp API token；留空則跳過 UEX 同步。取得方式見下方[金鑰與憑證盤點](#金鑰與憑證盤點) |
+| 🔑 `UEX_API_TOKEN` | UEX Corp API token；也可以直接在後台「資料同步排程」的 UEX 那一列設定（後台設定優先）。兩邊都沒設則跳過 UEX 同步。取得方式見下方[金鑰與憑證盤點](#金鑰與憑證盤點) |
 | `WMS_SCOPE_ID` | 庫存範圍。**Web 與 bot 必須相同才會看到同一份庫存** |
 | `WMS_OPERATOR_ROLE` | 動公會共享庫需要的 Discord 角色；留空 = 退回要求 Manage Server 權限 |
 | 🔑 `DISCORD_TOKEN` | Discord bot token；留空則 bot 容器直接結束 |
@@ -365,7 +365,8 @@ MongoDB 是獨立節點這件事會直接影響移庫的一致性保證，見[�
 1. 到 [uexcorp.space](https://uexcorp.space) 註冊／登入帳號（可用 Discord 帳號登入）
 2. 前往 [My Apps](https://uexcorp.space/api/apps) 頁面
 3. 建立一個新的 App（名稱隨意，例如 `sc-tool-web`）
-4. 建立後產生的 access token 就是 `UEX_API_TOKEN`，填進 `.env` 後 `docker-compose restart api worker`
+4. 建立後產生的 access token 就是 `UEX_API_TOKEN`：在後台「資料同步排程」UEX 那一列按「設定 token」貼上即可（只有 admin，不用重啟）；
+   或照舊填進 `.env` 後 `docker-compose restart api worker`
 
 用量限制：每天 172,800 次請求（約每分鐘 120 次），超過會收到 `requests_limit_reached`。
 

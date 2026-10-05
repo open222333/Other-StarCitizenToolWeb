@@ -527,3 +527,12 @@ def test_admin_password_reset_404_for_missing_player(client, auth_headers):
     resp = client.put(f'/player/{_OID}/password', headers=auth_headers,
                       json={'new_password': 'longenough1'})
     assert resp.status_code == 404
+
+
+@pytest.mark.parametrize('method', ['GET', 'PUT'])
+def test_uex_token_admin_only(client, viewer_headers, operator_headers, player_headers, method):
+    """UEX token 是機密設定，只有 admin 能看狀態、能改（operator 也不行，所以不放 ADMIN_ROUTES）。"""
+    assert _call(client, method, '/item/sync-uex-token').status_code == 401
+    for headers in (viewer_headers, operator_headers, player_headers):
+        resp = _call(client, method, '/item/sync-uex-token', headers)
+        assert resp.status_code == 403, resp.status_code

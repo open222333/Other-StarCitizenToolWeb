@@ -4,7 +4,8 @@
   每個資料庫（翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、UEX 價格）是一個
   同步項目，各自有 cron、啟用狀態與上次結果（後端 src/models/sync_schedule.py 的
   SyncJobs，API 在 app/item/view.py 的 /item/sync-jobs）。這頁可以個別改時間、
-  個別手動同步，也可以全部一起同步。
+  個別手動同步，也可以全部一起同步。UEX 那一列另外可以直接設定 API token（只有 admin，
+  /item/sync-uex-token，後端只回末 4 碼）。
 
   不同項目可以同時同步（每一項各自一個 Celery 任務、各自一把鎖；同時跑幾個看
   worker 的 concurrency，超過的會排隊）。上方「進行中」區塊即時顯示正在跑與排隊中
@@ -99,6 +100,13 @@
                   <span v-if="job.running" class="badge bg-primary ms-1">同步中</span>
                   <span v-else-if="job.queued" class="badge bg-warning text-dark ms-1">排隊中</span>
                   <div class="text-muted font-monospace fw-normal job-key">{{ job.key }}</div>
+                  <!-- UEX 需要 token：admin 才看得到設定狀態（只顯示末 4 碼） -->
+                  <div v-if="job.key === 'uex' && isAdmin && uexStatus" class="fw-normal mt-1">
+                    <span v-if="uexStatus.configured" class="badge bg-success-subtle text-success-emphasis">
+                      token {{ uexStatus.masked }}{{ uexStatus.source === 'env' ? '（環境變數）' : '' }}
+                    </span>
+                    <span v-else class="badge bg-warning-subtle text-warning-emphasis">未設定 token</span>
+                  </div>
                 </td>
                 <td class="text-end">{{ fmtInt(job.count) }}</td>
                 <td>
@@ -133,11 +141,32 @@
                       :disabled="saving[job.key]" @click="save(job)">
                       <span v-if="saving[job.key]" class="spinner-border spinner-border-sm me-1"></span>儲存
                     </button>
+                    <button v-if="job.key === 'uex' && isAdmin" class="btn btn-sm btn-outline-primary me-1"
+                      :aria-expanded="uexEditing ? 'true' : 'false'" @click="toggleUexEdit">
+                      <i class="bi bi-key me-1"></i>設定 token
+                    </button>
                     <button class="btn btn-sm btn-outline-secondary" :disabled="job.running || job.queued || triggering"
                       @click="trigger([job.key])">
                       <i class="bi bi-arrow-repeat me-1"></i>立即同步
                     </button>
                   </template>
+                </td>
+              </tr>
+              <tr v-for="job in uexEditRows" :key="`${job.key}-token`">
+                <td colspan="7" class="ps-3 pe-3">
+                  <form class="d-flex flex-wrap align-items-center gap-2" @submit.prevent="saveUexToken(uexDraft)">
+                    <label class="fw-semibold mb-0" for="uex-token-input">UEX API token</label>
+                    <input id="uex-token-input" v-model="uexDraft" type="password" class="form-control form-control-sm uex-token-input"
+                      autocomplete="off" maxlength="500" :placeholder="uexStatus?.configured ? `目前 ${uexStatus.masked}，填新的會取代` : 'abcd1234'">
+                    <button type="submit" class="btn btn-sm btn-primary" :disabled="uexSaving || !uexDraft.trim()">
+                      <span v-if="uexSaving" class="spinner-border spinner-border-sm me-1"></span>儲存
+                    </button>
+                    <button v-if="uexStatus?.source === 'admin'" type="button" class="btn btn-sm btn-outline-danger"
+                      :disabled="uexSaving" @click="saveUexToken('')">清除</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="uexEditing = false">取消</button>
+                    <a class="small ms-auto" href="https://uexcorp.space/api/apps" target="_blank" rel="noopener">取得 token</a>
+                  </form>
+                  <div v-if="uexError" class="text-danger mt-1">{{ uexError }}</div>
                 </td>
               </tr>
             </tbody>
@@ -350,6 +379,48 @@ async function save(job) {
   }
 }
 
+// ── UEX API token（只有 admin；後端只回末 4 碼，見 src/models/app_setting.py）──
+const isAdmin = computed(() => auth.role === 'admin')
+const uexStatus = ref(null)
+const uexEditing = ref(false)
+const uexDraft = ref('')
+const uexSaving = ref(false)
+const uexError = ref('')
+// 編輯列接在項目列表後面（UEX 固定排最後一項，所以就在它正下方）
+const uexEditRows = computed(() => (uexEditing.value ? jobs.value.filter(j => j.key === 'uex') : []))
+
+async function fetchUexToken() {
+  if (!isAdmin.value) return
+  const res = await itemApi.uexToken()
+  const body = res ? await res.json().catch(() => null) : null
+  if (res?.ok && body?.success) uexStatus.value = body.data
+}
+
+function toggleUexEdit() {
+  uexEditing.value = !uexEditing.value
+  uexDraft.value = ''
+  uexError.value = ''
+}
+
+async function saveUexToken(token) {
+  uexSaving.value = true
+  uexError.value = ''
+  try {
+    const res = await itemApi.setUexToken(token.trim())
+    const body = res ? await res.json().catch(() => null) : null
+    if (!res?.ok || !body?.success) {
+      uexError.value = body?.message || '儲存失敗'
+      return
+    }
+    uexStatus.value = body.data
+    uexEditing.value = false
+    uexDraft.value = ''
+    flash(token ? '已儲存 UEX token' : '已清除後台設定的 UEX token')
+  } finally {
+    uexSaving.value = false
+  }
+}
+
 async function trigger(keys) {
   if (triggering.value) return
   triggering.value = true
@@ -445,6 +516,7 @@ function onVisibility() {
 onMounted(() => {
   fetchJobs()
   fetchSyncRuns()
+  fetchUexToken()
   tickTimer = setInterval(() => { now.value = Date.now() }, 1000)
   document.addEventListener('visibilitychange', onVisibility)
 })
@@ -459,6 +531,7 @@ onUnmounted(() => {
 <style scoped>
 .cron-input { min-width: 9rem; max-width: 11rem; font-family: var(--bs-font-monospace); }
 .job-key { font-size: .72rem; }
+.uex-token-input { max-width: 22rem; font-family: var(--bs-font-monospace); }
 .live-job {
   border: 1px solid var(--bs-border-color); border-radius: .5rem;
   padding: .6rem .75rem; height: 100%;

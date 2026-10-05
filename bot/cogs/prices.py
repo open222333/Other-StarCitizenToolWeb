@@ -66,7 +66,7 @@ class Prices(commands.Cog):
         note = {
             'uex': '資料來源：UEX Corp（社群眾包）',
             'wiki': '資料來源：Star Citizen Wiki API 內嵌的 UEX 價格'
-                    '（資料較少，設定 UEX_API_TOKEN 可取得完整價格）',
+                    '（資料較少，後台設定 UEX token 可取得完整價格）',
         }.get(rows[0].get('source'), '')
         if rows[0].get('game_version'):
             note += f" · 遊戲版本 {rows[0]['game_version']}"

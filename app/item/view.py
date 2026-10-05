@@ -655,6 +655,58 @@ def update_sync_job(key):
                     'data': _serialize_job(job, set(running_jobs()), _job_counts())})
 
 
+@app_item.route('/sync-uex-token', methods=['GET'])
+@admin_api('admin')
+def get_uex_token():
+    """UEX API token 的設定狀態（只回有沒有設定、來源、末 4 碼，不回完整 token）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: {configured, source: admin|env|null, masked, updated_at, updated_by}"
+    """
+    from src.models.app_setting import UexToken
+    return jsonify({'success': True, 'data': UexToken.status()})
+
+
+@app_item.route('/sync-uex-token', methods=['PUT'])
+@admin_api('admin')
+def set_uex_token():
+    """設定 UEX API token（只有 admin）。存檔後下一次 UEX 同步就會用，不用重啟容器。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            token: {type: string, description: "UEX 的 access token；空字串 = 清掉後台設定（改回用環境變數 UEX_API_TOKEN）"}
+    responses:
+      200:
+        description: 成功，回傳新的設定狀態
+      400:
+        description: 格式錯誤
+    """
+    from src.models.app_setting import UexToken
+    data = request.get_json(silent=True) or {}
+    if 'token' not in data:
+        return jsonify({'success': False, 'message': '沒有要更新的 token'}), 400
+    try:
+        status = UexToken.set(data.get('token'), updated_by=get_jwt_identity())
+    except ValueError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    # 操作紀錄只記「改了」，不記 token 內容
+    Log.create(get_jwt_identity(), 'update_uex_token',
+               '設定 UEX API token' if status['source'] == 'admin' else '清除後台設定的 UEX API token')
+    return jsonify({'success': True, 'data': status})
+
+
 @app_item.route('/sync', methods=['POST'])
 @jwt_required()
 @require_role(*WRITE_ROLES)

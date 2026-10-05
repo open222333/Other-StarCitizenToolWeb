@@ -904,6 +904,31 @@ def test_sync_jobs_list_and_update(client, auth_headers):
     assert client.put('/item/sync-jobs/nope', headers=auth_headers, json={}).status_code == 404
 
 
+def test_uex_token_setting(client, auth_headers, monkeypatch):
+    """後台可以直接設定 UEX token：優先於環境變數，API 只回末 4 碼。"""
+    import src.models.app_setting as app_setting
+    monkeypatch.setattr(app_setting, 'UEX_API_TOKEN', '')
+    url = '/item/sync-uex-token'
+    assert client.get(url, headers=auth_headers).get_json()['data']['configured'] is False
+
+    body = client.put(url, headers=auth_headers, json={'token': ' abcd1234wxyz '}).get_json()
+    assert body['data'] == {**body['data'], 'configured': True, 'source': 'admin', 'masked': '••••wxyz'}
+    assert 'abcd1234wxyz' not in str(client.get(url, headers=auth_headers).get_json()), '不回完整 token'
+    assert app_setting.UexToken.get() == 'abcd1234wxyz'
+    from src.scdata import has_uex_token
+    assert has_uex_token() is True
+
+    assert client.put(url, headers=auth_headers, json={'token': 'a b'}).status_code == 400
+    assert client.put(url, headers=auth_headers, json={'token': 3}).status_code == 400
+    assert client.put(url, headers=auth_headers, json={}).status_code == 400
+
+    # 清掉後台設定 → 退回環境變數
+    monkeypatch.setattr(app_setting, 'UEX_API_TOKEN', 'envtoken9999')
+    body = client.put(url, headers=auth_headers, json={'token': ''}).get_json()
+    assert body['data']['source'] == 'env' and body['data']['masked'] == '••••9999'
+    assert app_setting.UexToken.get() == 'envtoken9999'
+
+
 def test_trigger_sync_dispatches_each_job(client, auth_headers, monkeypatch):
     """手動同步：每一項各自派成一個任務；正在跑的略過，全部都在跑才回 409。"""
     import tasks.scdata_sync as sync_mod
