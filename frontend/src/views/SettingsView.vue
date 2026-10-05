@@ -2,20 +2,6 @@
   <div>
     <h4 class="fw-bold mb-4"><i class="bi bi-gear me-2"></i>系統設定</h4>
 
-    <!-- 資料同步與排程：完整功能搬到獨立頁面（見 SyncScheduleView.vue），
-         這裡只留一個入口，避免設定頁越塞越長 -->
-    <div class="card border-0 shadow-sm mb-3">
-      <div class="card-body p-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <div>
-          <h6 class="fw-semibold mb-1">資料同步與排程</h6>
-          <p class="text-muted small mb-0">立即同步、自動排程設定、歷史紀錄，都搬到獨立頁面了。</p>
-        </div>
-        <RouterLink class="btn btn-sm btn-outline-primary" to="/sync-schedule">
-          <i class="bi bi-arrow-repeat me-1"></i>前往管理
-        </RouterLink>
-      </div>
-    </div>
-
     <!-- 外觀模式 -->
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body p-4">
