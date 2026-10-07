@@ -161,6 +161,17 @@ def mining_deposit_name_zh(deposit_name: str, lang: str = DEFAULT_LANG) -> Optio
 
 # ── 藍圖 ────────────────────────────────────────────────────────────
 
+def crafting_slot_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """藍圖配方的部位名稱（例如 'Frame'、'Barrel'）→ 翻譯（遊戲 key crafting_ui_slotname_*）。"""
+    return T.by_english(name, ['crafting_ui_slotname_'], lang)
+
+
+def crafting_stat_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """品質會影響的屬性名稱（例如 'Impact Force'、'Recoil Smoothness'）→ 翻譯（遊戲 key StatName_GPP_*）。"""
+    return T.by_english(name, ['statname_gpp_', 'weapon_stats_name_'], lang)
+
+
+
 def blueprint_type_zh(output_type: str, lang: str = DEFAULT_LANG) -> Optional[str]:
     """藍圖 output_type 代碼（例如 'WeaponGun'）→ 翻譯（人工條目）。"""
     code = (output_type or '').strip()

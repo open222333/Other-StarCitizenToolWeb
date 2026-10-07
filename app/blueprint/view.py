@@ -288,6 +288,29 @@ def blueprint_holders():
     return jsonify({'success': True, 'data': rows, 'total': len(rows)})
 
 
+@app_blueprint.route('/master/<blueprint_uuid>/quality', methods=['GET'])
+@jwt_required()
+def get_master_quality(blueprint_uuid):
+    """藍圖的品質試算資料：每個部位放什麼材料、最低品質、品質 0–1000 對哪些屬性加成多少。
+    ---
+    tags: [Blueprint]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: blueprint_uuid, type: string, required: true}
+    responses:
+      200:
+        description: "data: {slots: [{key, name, name_zh, modifiers: [...], options: [...]}], craft_time_seconds}"
+      404:
+        description: 這張藍圖沒有品質資料（或還沒同步）
+    """
+    from src.models import blueprint_quality
+    doc = blueprint_quality.get(blueprint_uuid)
+    if not doc:
+        return jsonify({'success': False, 'message': '這張藍圖還沒有品質資料（等下一次「藍圖」同步）'}), 404
+    return jsonify({'success': True, 'data': doc})
+
+
 @app_blueprint.route('/master/<blueprint_uuid>', methods=['GET'])
 @jwt_required()
 def get_master(blueprint_uuid):

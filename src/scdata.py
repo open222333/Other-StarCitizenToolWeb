@@ -608,6 +608,78 @@ def map_blueprint(doc: dict) -> Optional[dict]:
     }
 
 
+def _quality_leaves(node: dict) -> list:
+    """一個部位可以放的材料（遞迴展開巢狀的 group）。"""
+    out = []
+    for child in node.get('Children') or []:
+        if child.get('Kind') == 'group':
+            out += _quality_leaves(child)
+        elif child.get('Kind') in ('resource', 'item'):
+            out.append({
+                'kind': child.get('Kind'),
+                'uuid': child.get('UUID'),
+                'name': child.get('Name'),
+                'quantity_scu': child.get('QuantityScu'),
+                'quantity': child.get('Quantity'),
+                'min_quality': child.get('MinQuality') or 0,
+            })
+    return out
+
+
+def map_blueprint_quality(doc: dict) -> Optional[dict]:
+    """藍圖的「品質試算」資料（scunpacked-data blueprints.json）。
+
+    Wiki API 的配方只有材料和數量；scunpacked 這份多了**每個部位（Frame／Barrel…）
+    的品質加成**：放進去的材料品質 0–1000 會線性影響某些屬性（例如 Impact Force
+    在 Q0 是 ×0.95、Q1000 是 ×1.05），以及每種材料的最低品質。_id 跟 blueprint_master
+    一樣是遊戲的藍圖 UUID。只取第一個 tier（目前每張藍圖都只有一個）。
+    """
+    if not doc.get('UUID'):
+        return None
+    tiers = doc.get('Tiers') if isinstance(doc.get('Tiers'), list) else []
+    tier = tiers[0] if tiers and isinstance(tiers[0], dict) else {}
+    requirements = tier.get('Requirements') if isinstance(tier.get('Requirements'), dict) else {}
+    slots = []
+    for group in requirements.get('Children') or []:
+        if not isinstance(group, dict) or group.get('Kind') != 'group':
+            continue
+        modifiers = []
+        for m in group.get('Modifiers') or []:
+            q = m.get('QualityRange') or {}
+            r = m.get('ModifierRange') if isinstance(m.get('ModifierRange'), dict) else {}
+            # linear_integer_additive（例如 Power Pips）：依品質分段，每段加減一個整數，不是倍率
+            segments = [{'q_min': seg.get('QualityMin'), 'q_max': seg.get('QualityMax'),
+                         'at_start': seg.get('AdditiveAtStart'), 'at_end': seg.get('AdditiveAtEnd')}
+                        for seg in (m.get('ValueSegments') or []) if isinstance(seg, dict)]
+            modifiers.append({
+                'key': m.get('Key'),
+                'name': m.get('Name'),
+                'unit_format': m.get('UnitFormat'),
+                'type': m.get('ValueRangeType') or 'linear',
+                'q_min': q.get('Min', 0),
+                'q_max': q.get('Max', 1000),
+                'at_min': r.get('AtMinQuality'),
+                'at_max': r.get('AtMaxQuality'),
+                **({'segments': segments} if segments else {}),
+            })
+        slots.append({
+            'key': group.get('Key'),
+            'name': group.get('Name'),
+            'required_count': group.get('RequiredCount') or 1,
+            'modifiers': modifiers,
+            'options': _quality_leaves(group),
+        })
+    # 上游偶爾有 Output 是空陣列的項目
+    output = doc.get('Output') if isinstance(doc.get('Output'), dict) else {}
+    return {
+        '_id': doc['UUID'],
+        'key': doc.get('Key'),
+        'output_name': output.get('Name'),
+        'craft_time_seconds': tier.get('CraftTimeSeconds'),
+        'slots': slots,
+    }
+
+
 def map_mining_deposit(doc: dict) -> Optional[dict]:
     """礦床成分機率表（scunpacked-data resources.json 裡 Kind == 'mineable' 的項目）。
 
@@ -1025,6 +1097,8 @@ SCUNPACKED_RESOURCES: dict = {
     'mining_deposits': ('mining_deposit_master', 'resources/resources.json', map_mining_deposit),
     'mining_locations': ('mining_location_master', 'resources/locations.json', map_mining_location),
     'starmap': ('starmap_master', 'starmap.json', map_starmap),
+    # 藍圖的品質試算資料（部位、品質加成），跟著「藍圖」同步項目一起更新
+    'blueprint_quality': ('blueprint_quality_master', 'blueprints.json', map_blueprint_quality),
 }
 
 #: 同步項目 → 它包含的 scunpacked 資源（見 src/models/sync_schedule.py 的 SYNC_JOBS）

@@ -503,6 +503,13 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
         except Exception as err:
             logger.exception('scdata_sync: %s 失敗', key)
             errors.append(f'{key}: {err}')
+        if key == 'blueprints':
+            # 品質試算資料（部位、品質加成）只有 scunpacked 有，另外抓一份（見 map_blueprint_quality）
+            try:
+                stats.append(_sync_scunpacked_resource(client('github'), 'blueprint_quality', run_id, stamp))
+            except Exception as err:
+                logger.exception('scdata_sync: scunpacked blueprint_quality 失敗')
+                errors.append(f'scunpacked:blueprint_quality: {err}')
         if key == 'blueprints' and not errors:
             # 任務的獎勵藍圖有些要靠藍圖主檔反查（見 src/scdata.py 的 parse_blueprint_pools），
             # 藍圖更新後重新對一次，任務跟藍圖誰先同步都沒關係

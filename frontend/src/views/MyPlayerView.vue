@@ -794,8 +794,19 @@
               <span v-else class="text-muted">—</span>
             </td>
             <td class="text-muted sf-wrap">{{ bp.notes || '—' }}</td>
-            <td class="text-end pe-3">
+            <td class="text-end text-nowrap pe-3">
+              <button v-if="bp.blueprint_uuid" class="btn btn-sm btn-info me-2"
+                :aria-expanded="qualityFor === bp._id ? 'true' : 'false'"
+                @click="qualityFor = qualityFor === bp._id ? null : bp._id">
+                <i class="bi me-1" :class="qualityFor === bp._id ? 'bi-chevron-up' : 'bi-sliders'"></i>品質試算
+              </button>
               <button class="btn btn-sm btn-danger" @click="removeBlueprint(bp)">刪除</button>
+            </td>
+          </tr>
+          <tr v-if="qualityFor === bp._id">
+            <td colspan="6">
+              <!-- 品質試算：拖拉每個部位的材料品質，看各屬性加成（見 components/BlueprintQuality.vue） -->
+              <BlueprintQuality :fetcher="playerAuth.playerFetch" :blueprint-uuid="bp.blueprint_uuid" />
             </td>
           </tr>
           <tr v-if="recipeFor === bp._id">
@@ -1172,6 +1183,7 @@ import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
+import BlueprintQuality from '@/components/BlueprintQuality.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
 import GameLogReader from '@/components/GameLogReader.vue'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
@@ -1979,6 +1991,8 @@ function clearBlueprintMaster() {
 
 // ── 展開某張藍圖的完整配方（點「N 種」材料時才抓，不預載）──────────
 const recipeFor     = ref(null)
+// 品質試算展開的是哪一列（跟材料展開各自獨立）
+const qualityFor    = ref(null)
 
 function showRecipe(bp) {
   // 再點一次收起來；配方與試算由 BlueprintCalculator 自己載入

@@ -133,6 +133,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 艦隊 JSON 匯入 | http://localhost:8090/me?tab=fleet（「JSON 匯入」按鈕） | 匯入 [HangarXPLOR](https://chromewebstore.google.com/detail/star-citizen-hangar-xplor/bhkgemjdepodofcnmekdobmmbifemhkc)（RSI 機庫頁的 Chrome 擴充功能，匯入區有「安裝 HangarXPLOR」按鈕）匯出的 `shiplist.json`：先預覽再確認；數量取現有與船單較大值（重複匯入不會變多），船的自訂名稱填進每艘的區別名稱。規則見 `src/models/fleet_import.py` |
 | LOG 解析 | http://localhost:8090/me?tab=gamelog | 選擇自己的 `Game.log`，整理成中文事件時間軸與本次遊玩回顧；**只在瀏覽器裡解析、不上傳**。Chrome／Edge 可「持續監看」（遊戲進行中即時更新）。規則在 `frontend/src/utils/gameLogRules.json` |
 | 中文轉碼 | http://localhost:8090/me?tab=chatcode | 上半部：遊戲聊天用的 中文 ↔ `@代碼` 互轉（自動判斷或手動指定方向），字典由伺服器從社群 chsc-tw 下載並快取 24 小時；下半部：遊戲文字代碼（localization key，例如 `vehicle_NameAEGS_Avenger_Stalker`）⇄ 中文／英文查詢，資料是翻譯資料庫 `sc_translations` |
+| 藍圖品質試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「品質試算」） | 每個部位（Frame／Barrel…）拖拉材料品質 0–1000，看各屬性倍率與綜合加成；資料來自 scunpacked-data `blueprints.json`（`blueprint_quality_master`），跟著「藍圖」同步項目更新 |
 | 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
 | 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
 | 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性），由「UEX 價格」同步項目更新（需 UEX token）；每筆列出關聯的礦物 |

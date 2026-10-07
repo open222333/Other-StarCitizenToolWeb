@@ -406,3 +406,52 @@ def test_uex_items_fetched_per_category(monkeypatch):
     rows = sync_mod._uex_item_rows(None)
     assert rows == [{'id': 10, 'id_category': 1}], '單一分類失敗略過'
     assert calls == [('categories', None), ('items', {'id_category': 1}), ('items', {'id_category': 3})]
+
+
+QUALITY_BP = {
+    'UUID': 'bp-rifle', 'Key': 'BP_CRAFT_behr_rifle_ballistic_01', 'Output': {'Name': 'P4-AR Rifle'},
+    'Tiers': [{'TierIndex': 0, 'CraftTimeSeconds': 150, 'Requirements': {'Kind': 'root', 'Children': [
+        {'Kind': 'group', 'Key': 'BARREL:', 'Name': 'Barrel', 'RequiredCount': 1,
+         'Modifiers': [{'Key': 'weapon_damage', 'Name': 'Impact Force', 'UnitFormat': '%+.2f %%',
+                        'QualityRange': {'Min': 0, 'Max': 1000},
+                        'ModifierRange': {'AtMinQuality': 0.925, 'AtMaxQuality': 1.075},
+                        'ValueRangeType': 'linear'}],
+         'Children': [{'Kind': 'resource', 'UUID': 'r-iron', 'Name': 'Iron', 'QuantityScu': 0.02, 'MinQuality': 1},
+                      {'Kind': 'group', 'Children': [{'Kind': 'item', 'UUID': 'i-1', 'Name': 'Part', 'Quantity': 2}]}]},
+        {'Kind': 'resource', 'Name': 'ignored-not-a-group'},
+    ]}}],
+}
+
+
+def test_map_blueprint_quality():
+    doc = scdata.map_blueprint_quality(QUALITY_BP)
+    assert doc['_id'] == 'bp-rifle' and doc['craft_time_seconds'] == 150
+    assert len(doc['slots']) == 1, '只取部位（group）'
+    slot = doc['slots'][0]
+    assert slot['name'] == 'Barrel' and slot['modifiers'][0] == {
+        'key': 'weapon_damage', 'name': 'Impact Force', 'unit_format': '%+.2f %%', 'type': 'linear',
+        'q_min': 0, 'q_max': 1000, 'at_min': 0.925, 'at_max': 1.075}
+    assert [o['name'] for o in slot['options']] == ['Iron', 'Part'], '巢狀 group 的材料也要展開'
+    assert slot['options'][0]['min_quality'] == 1 and slot['options'][1]['min_quality'] == 0
+    assert scdata.map_blueprint_quality({'Tiers': []}) is None
+
+    pips = {'Key': 'itemresource_powergeneration', 'Name': 'Power Pips', 'QualityRange': {'Min': 0, 'Max': 249},
+            'ModifierRange': [], 'ValueRangeType': 'linear_integer_additive',
+            'ValueSegments': [{'QualityMin': 0, 'QualityMax': 499, 'AdditiveAtStart': -1, 'AdditiveAtEnd': -1},
+                              {'QualityMin': 500, 'QualityMax': 1000, 'AdditiveAtStart': 1, 'AdditiveAtEnd': 1}]}
+    bp = {'UUID': 'x', 'Tiers': [{'Requirements': {'Children': [{'Kind': 'group', 'Name': 'Core', 'Modifiers': [pips]}]}}]}
+    m = scdata.map_blueprint_quality(bp)['slots'][0]['modifiers'][0]
+    assert m['type'] == 'linear_integer_additive' and m['at_min'] is None
+    assert m['segments'][1] == {'q_min': 500, 'q_max': 1000, 'at_start': 1, 'at_end': 1}
+
+
+def test_blueprint_quality_endpoint(client, auth_headers):
+    from src.mongo import get_db
+    doc = scdata.map_blueprint_quality(QUALITY_BP)
+    doc['is_current'] = True
+    get_db()['blueprint_quality_master'].insert_one(doc)
+    body = client.get('/blueprint/master/bp-rifle/quality', headers=auth_headers).get_json()
+    assert body['success'] and body['data']['slots'][0]['modifiers'][0]['at_max'] == 1.075
+    assert 'name_zh' in body['data']['slots'][0]
+    assert client.get('/blueprint/master/nope/quality', headers=auth_headers).status_code == 404
+    assert client.get('/blueprint/master/bp-rifle/quality').status_code == 401
