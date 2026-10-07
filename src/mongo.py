@@ -194,6 +194,7 @@ def ensure_indexes():
     db['uex_items_prices'].create_index('id_item')
     db['uex_items_prices'].create_index('id_terminal')
     db['uex_terminals'].create_index('id')
+    db['uex_commodities'].create_index('code')
     db['sync_runs'].create_index([('started_at', DESCENDING)])
 
     # ── 庫存 ──────────────────────────────────────────────────────────

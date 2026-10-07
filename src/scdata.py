@@ -942,6 +942,8 @@ UEX_RESOURCES: dict = {
     'items': ('uex_items', ['id']),
     'terminals': ('uex_terminals', ['id']),
     'items_prices_all': ('uex_items_prices', ['id_item', 'id_terminal']),
+    # 商品（含礦物）的縮寫代碼 code，例如 AGRI、QUAN；礦物資料庫靠名稱關聯（src/models/uex_commodity.py）
+    'commodities': ('uex_commodities', ['id']),
 }
 
 _UNSET_MARKERS = ('<= UNINITIALIZED =>', '<= PLACEHOLDER =>')

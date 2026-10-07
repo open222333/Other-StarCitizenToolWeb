@@ -8,12 +8,14 @@
 比照 /user/templates/ 的作法。
 """
 
-from flask import Blueprint, jsonify
-from flask_jwt_extended import jwt_required
+from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from src.permissions import viewer_sees_hidden
+from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden
 
+from src.models.log import Log
 from src.models.mining import MiningDeposit, MiningLocation
+from src.models.uex_commodity import UexCommodity
 
 app_mining = Blueprint('app_mining', __name__)
 
@@ -61,3 +63,67 @@ def list_systems():
         description: 成功
     """
     return jsonify({'success': True, 'data': MiningLocation.systems()})
+
+
+@app_mining.route('/uex-commodities', methods=['GET'])
+@admin_api(*READ_ROLES)
+def list_uex_commodities():
+    """UEX 商品清單（代碼、名稱），給後台礦物資料庫手動指定關聯用。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{id, code, name, kind, is_raw}]"
+    """
+    return jsonify({'success': True, 'data': UexCommodity.list_all()})
+
+
+@app_mining.route('/uex-commodities/detail', methods=['GET'])
+@admin_api(*READ_ROLES)
+def list_uex_commodities_detail():
+    """後台「商品資料庫」：全部 UEX 商品（縮寫、名稱、類別、參考價、屬性）＋關聯到的礦物。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{id, code, name, kind, weight_scu, price_buy, price_sell, is_*…, minerals: [...]}]"
+    """
+    return jsonify({'success': True, 'data': UexCommodity.list_detail()})
+
+
+@app_mining.route('/minerals/<path:resource_key>/uex', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_mineral_uex(resource_key):
+    """手動指定礦物對應的 UEX 商品（自動比對對不到或對錯時用）。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: resource_key, type: string, required: true}
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            uex_id: {type: string, description: "UEX 商品 id；空字串 = 不關聯；null = 改回自動比對"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 找不到這個 UEX 商品
+    """
+    data = request.get_json(silent=True) or {}
+    if 'uex_id' not in data:
+        return jsonify({'success': False, 'message': '沒有要更新的 uex_id'}), 400
+    try:
+        UexCommodity.set_link(resource_key, data.get('uex_id'), updated_by=get_jwt_identity())
+    except ValueError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    Log.create(get_jwt_identity(), 'set_mineral_uex', f'礦物 {resource_key} 的 UEX 商品：{data.get("uex_id")}')
+    return jsonify({'success': True})

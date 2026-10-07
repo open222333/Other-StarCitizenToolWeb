@@ -17,6 +17,7 @@ from typing import Optional
 
 from src.mongo import get_db
 from src.models import visibility
+from src.models.uex_commodity import UexCommodity
 from src.models.visibility import add_filter as add_visibility_filter
 
 
@@ -44,6 +45,13 @@ class MiningDeposit:
             if hidden:
                 for row in rows:
                     row['parts'] = [p for p in row.get('parts') or [] if p.get('resource_key') not in hidden]
+        # 每個礦物補上 UEX 商品縮寫（例如 QUAN），關聯規則見 src/models/uex_commodity.py
+        names = {p['resource_key']: p.get('resource_name') for row in rows
+                 for p in row.get('parts') or [] if p.get('resource_key')}
+        links = UexCommodity.links_for(names)
+        for row in rows:
+            for part in row.get('parts') or []:
+                part['uex'] = links.get(part.get('resource_key'))
         return rows
 
     @classmethod

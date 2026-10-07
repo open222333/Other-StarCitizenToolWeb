@@ -156,6 +156,12 @@ export const miningApi = {
   listDeposits:  () => apiFetch('/mining/deposits'),
   listLocations: () => apiFetch('/mining/locations'),
   listSystems:   () => apiFetch('/mining/systems'),
+  // UEX 商品縮寫（AGRI、QUAN…）與礦物的關聯；uex_id：id＝指定、''＝不關聯、null＝改回自動比對
+  uexCommodities: () => apiFetch('/mining/uex-commodities'),
+  // 後台「商品資料庫」：含類別、參考價、屬性與關聯礦物
+  uexCommodityDetail: () => apiFetch('/mining/uex-commodities/detail'),
+  setMineralUex:  (key, uexId) => apiFetch(`/mining/minerals/${encodeURIComponent(key)}/uex`,
+    { method: 'PUT', body: JSON.stringify({ uex_id: uexId }) }),
 }
 
 // ── 任務／勢力資料庫 API（遊戲資料，唯讀）─────────────────────────

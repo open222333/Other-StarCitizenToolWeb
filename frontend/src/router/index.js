@@ -127,6 +127,12 @@ const router = createRouter({
           component: () => import('@/views/MiningView.vue'),
         },
         {
+          // 商品資料庫（唯讀：UEX 商品縮寫、參考價、關聯礦物，見 CommodityListView.vue 檔頭）
+          path: 'commodities',
+          name: 'commodities',
+          component: () => import('@/views/CommodityListView.vue'),
+        },
+        {
           // 任務資料庫（唯讀，見 MissionListView.vue 檔頭）；?id= 直接展開某個任務
           path: 'missions',
           name: 'missions',

@@ -8,6 +8,8 @@
     - 礦床：mining_deposit_master（GET /mining/deposits）
     - 地點：mining_location_master（GET /mining/locations，礦床已展開成名稱）
     - 礦物：沒有獨立的 collection，從礦床的成分（parts）彙整而來
+    - UEX 縮寫：parts[].uex，後端依英文名稱對應 uex_commodities（UEX 同步項目），
+      對不到可以在礦物分頁手動指定（見 src/models/uex_commodity.py）
   三者都由 tasks/scdata_sync.py 從 scunpacked-data 同步。資料量小（約 270 個
   礦床、60 多個地點），一次載入、篩選都在前端做。
 
@@ -38,7 +40,7 @@
       <div class="card-body py-2">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <input v-model="query" type="search" class="form-control form-control-sm"
-            style="max-width: 14rem" placeholder="搜尋英文或中文名稱...">
+            style="max-width: 14rem" placeholder="搜尋名稱或 UEX 縮寫...">
           <MultiSelectFilter v-if="tab !== 'locations'" v-model="tiers" label="Tier" :options="tierOptions" />
           <MultiSelectFilter v-if="tab === 'locations'" v-model="systems" label="星系" :options="systemOptions" />
           <div class="form-check form-check-inline mb-0 ms-1">
@@ -74,6 +76,7 @@
                 <th class="ps-3">礦物（英文）</th>
                 <th>中文</th>
                 <th>Key</th>
+                <th>UEX 縮寫</th>
                 <th class="text-end">RS</th>
                 <th>所在礦床</th>
                 <th class="pe-3 text-nowrap">玩家頁面</th>
@@ -81,12 +84,29 @@
             </thead>
             <tbody>
               <tr v-if="!filteredMinerals.length">
-                <td colspan="6" class="text-center py-4 text-muted">{{ emptyText }}</td>
+                <td colspan="7" class="text-center py-4 text-muted">{{ emptyText }}</td>
               </tr>
               <tr v-for="m in filteredMinerals" :key="m.key">
                 <td class="ps-3 fw-semibold">{{ m.name }}</td>
                 <td><ZhCell :zh="m.zh" /></td>
                 <td class="small text-muted font-monospace">{{ m.key }}</td>
+                <td class="small text-nowrap">
+                  <!-- UEX 商品縮寫：依英文名稱自動對應，對不到或對錯可以手動指定（src/models/uex_commodity.py） -->
+                  <div class="d-flex align-items-center gap-1">
+                    <span v-if="m.uex?.code" class="badge bg-primary-subtle text-primary-emphasis font-monospace uex-code"
+                      :title="m.uex.name">{{ m.uex.code }}</span>
+                    <span v-else class="text-muted">—</span>
+                    <span v-if="m.uex?.raw_code" class="text-muted font-monospace" title="原礦">{{ m.uex.raw_code }}</span>
+                    <span v-if="m.uex?.source === 'manual'" class="badge bg-secondary-subtle text-secondary-emphasis">手動</span>
+                  </div>
+                  <select v-if="canWrite && uexCommodities.length" class="form-select form-select-sm mt-1 uex-select"
+                    :value="uexSelectValue(m)" :disabled="savingUex === m.key" :aria-label="`${m.name} 的 UEX 商品`"
+                    @change="setUex(m, $event.target.value)">
+                    <option value="__auto__">自動比對</option>
+                    <option value="">不關聯</option>
+                    <option v-for="c in uexCommodities" :key="c.id" :value="c.id">{{ c.code || '—' }} · {{ c.name }}</option>
+                  </select>
+                </td>
                 <td class="small text-end text-nowrap">
                   <span v-if="!m.signatures.length" class="text-muted">—</span>
                   <template v-else>{{ m.signatures.map(fmtInt).join('／') }}</template>
@@ -137,6 +157,7 @@
                 <td class="small">
                   <div v-for="(p, idx) in d.parts" :key="idx">
                     {{ pair(p.resource_name || p.resource_key, p.zh) }}
+                    <span v-if="p.uex?.code" class="badge bg-primary-subtle text-primary-emphasis font-monospace ms-1">{{ p.uex.code }}</span>
                     <span class="text-muted">· {{ fmtRange(p.min_percentage, p.max_percentage) }} · 機率 {{ fmtPct(p.probability) }}</span>
                   </div>
                 </td>
@@ -214,6 +235,7 @@
 <script setup>
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { miningApi, visibilityApi } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import { loadTranslations, translate } from '@/utils/translations'
@@ -246,6 +268,34 @@ const missingZhOnly = ref(false)
 const playerVisible = ref('')
 // 礦物的玩家頁面顯示狀態 {resource_key: {...}}（礦物沒有自己的文件，另外拿）
 const mineralStates = ref({})
+
+// ── UEX 商品縮寫的手動指定（只有 admin／operator 能改）──
+const auth = useAuthStore()
+const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
+const uexCommodities = ref([])
+const savingUex = ref('')
+
+async function loadUexCommodities() {
+  const res = await miningApi.uexCommodities()
+  const body = res?.ok ? await res.json().catch(() => null) : null
+  uexCommodities.value = body?.success ? (body.data || []) : []
+}
+
+// 下拉的值：自動比對 → __auto__；手動不關聯 → ''；手動指定 → 那筆的 id
+function uexSelectValue(m) {
+  if (m.uex?.source !== 'manual') return '__auto__'
+  return m.uex?.id || ''
+}
+
+async function setUex(m, value) {
+  savingUex.value = m.key
+  try {
+    const res = await miningApi.setMineralUex(m.key, value === '__auto__' ? null : value)
+    if (res?.ok) await load()
+  } finally {
+    savingUex.value = ''
+  }
+}
 
 // 切分頁時，只對那一頁有意義的篩選清掉，避免看不到的條件還在作用
 watch(tab, (t) => {
@@ -342,7 +392,7 @@ const minerals = computed(() => {
     d.parts.forEach((p, idx) => {
       const key = p.resource_key || p.resource_name
       if (!key) return
-      if (!byKey.has(key)) byKey.set(key, { key, name: p.resource_name || key, zh: p.zh, deposits: [], tiers: new Set() })
+      if (!byKey.has(key)) byKey.set(key, { key, name: p.resource_name || key, zh: p.zh, uex: p.uex, deposits: [], tiers: new Set() })
       const m = byKey.get(key)
       m.deposits.push({
         // 同一個礦床可能有兩筆同礦物的成分（比例區間不同），id 要帶索引
@@ -395,7 +445,7 @@ function matchesText(...texts) {
 }
 
 const filteredMinerals = computed(() => minerals.value.filter(m =>
-  matchesText(m.name, m.zh, m.key)
+  matchesText(m.name, m.zh, m.key, m.uex?.code, m.uex?.raw_code)
   && (!missingZhOnly.value || !m.zh)
   && (!tiers.value.length || tiers.value.some(t => m.tiers.has(t)))
   && matchesVisible(mineralStates.value[m.key])))
@@ -458,9 +508,14 @@ function fmtInt(v) {
   return Math.round(v).toLocaleString('en-US')
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadUexCommodities()
+})
 </script>
 
 <style scoped>
 details > summary { cursor: pointer; }
+.uex-code { font-size: .8rem; }
+.uex-select { min-width: 11rem; max-width: 14rem; }
 </style>

@@ -132,7 +132,7 @@
         </div>
         <div class="mining-echo__search mb-3">
           <i class="bi bi-search"></i>
-          <input v-model="mineralQuery" type="search" placeholder="搜尋礦物名稱（中文或英文皆可）..."
+          <input v-model="mineralQuery" type="search" placeholder="搜尋礦物名稱或 UEX 縮寫..."
             aria-label="搜尋礦物名稱">
           <button v-if="mineralQuery" type="button" class="mining-echo__clear"
             aria-label="清除" @click="mineralQuery = ''">×</button>
@@ -152,6 +152,8 @@
           <div v-for="g in filteredMineralGroups" :key="g.resource_key" class="mining-echo__panel mb-2">
             <h3 class="mining-echo__title mb-1" style="font-size: 1.05rem">
               {{ mineralLabel(g) }}
+              <!-- UEX 商品縮寫（交易／價格網站用的代碼，例如 QUAN） -->
+              <span v-if="g.uex?.code" class="mining-echo__tag mining-echo__tag--info ms-1" :title="`UEX：${g.uex.name || ''}`">{{ g.uex.code }}</span>
               <span v-if="ownSignatures(g)[0]?.tier" class="mining-echo__tag ms-1">{{ ownSignatures(g)[0].tier }}</span>
             </h3>
             <p v-if="locationsFor(g).length" class="mining-echo__hint mb-2">
@@ -241,7 +243,7 @@ const flatParts = computed(() => {
         deposit_id: d._id, deposit_name: d.deposit_name, deposit_name_zh: d.deposit_name_zh,
         tier: d.tier, signature: d.signature,
         resource_key: p.resource_key, resource_name: p.resource_name,
-        resource_name_zh: p.resource_name_zh,
+        resource_name_zh: p.resource_name_zh, uex: p.uex,
         min_percentage: p.min_percentage, max_percentage: p.max_percentage,
         probability: p.probability,
       })
@@ -360,7 +362,7 @@ const mineralGroups = computed(() => {
     if (!byKey.has(p.resource_key)) {
       byKey.set(p.resource_key, {
         resource_key: p.resource_key, resource_name: p.resource_name,
-        resource_name_zh: p.resource_name_zh, deposits: [],
+        resource_name_zh: p.resource_name_zh, uex: p.uex, deposits: [],
       })
     }
     byKey.get(p.resource_key).deposits.push(p)
@@ -381,7 +383,8 @@ const filteredMineralGroups = computed(() => {
   return mineralGroups.value.filter(g =>
     (g.resource_name || '').toLowerCase().includes(q) ||
     (g.resource_name_zh || '').includes(raw) ||
-    (g.resource_key || '').toLowerCase().includes(q))
+    (g.resource_key || '').toLowerCase().includes(q) ||
+    (g.uex?.code || '').toLowerCase().includes(q))
 })
 
 // 每種礦物「自己那個礦床」的單顆訊號值 —— 礦床名稱跟礦物名稱相同的那一筆

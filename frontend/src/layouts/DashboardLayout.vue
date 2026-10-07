@@ -53,6 +53,9 @@
         <RouterLink class="nav-link" to="/mining" @click="sidebarOpen = false">
           <i class="bi bi-gem"></i>礦物
         </RouterLink>
+        <RouterLink class="nav-link" to="/commodities" @click="sidebarOpen = false">
+          <i class="bi bi-boxes"></i>商品
+        </RouterLink>
         <RouterLink class="nav-link" to="/missions" @click="sidebarOpen = false">
           <i class="bi bi-flag"></i>任務
         </RouterLink>
