@@ -33,3 +33,26 @@ export function loadMaterialZh(recipe) {
   loadTranslations('mining_resource', mats.filter(isResource).map(m => m.name).filter(Boolean))
   loadTranslations('item', names)
 }
+
+// ── sc-datahub.com 對應頁面 ──────────────────────────────────────────
+// 藍圖：https://sc-datahub.com/tools/crafting/<名稱 slug>（例如 10-series-greatsword-cannon）
+// 礦物：https://sc-datahub.com/tools/mining/ores/<名稱 slug>（例如 iron）
+// slug＝英文名稱轉小寫、非英數字換成 -。物品類材料 sc-datahub 沒有對應頁面，不給連結。
+const SC_DATAHUB = 'https://sc-datahub.com/tools'
+
+export function scDatahubSlug(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+export function blueprintDatahubUrl(name) {
+  const slug = scDatahubSlug(name)
+  return slug ? `${SC_DATAHUB}/crafting/${slug}` : ''
+}
+
+export function materialDatahubUrl(m) {
+  if (!isResource(m)) return ''
+  // Iron (Ore)／Raw Ouratite 這種寫法對應到同一種礦：去掉 (Ore)／(Raw) 後綴與 Raw 前綴
+  const base = String(m?.name || '').replace(/\s*\((ore|raw)\)\s*$/i, '').replace(/^raw\s+/i, '')
+  const slug = scDatahubSlug(base)
+  return slug ? `${SC_DATAHUB}/mining/ores/${slug}` : ''
+}

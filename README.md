@@ -129,7 +129,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 玩家自助註冊 | http://localhost:8090/register | 公開，不需登入 |
 | **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
 | **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
-| 藍圖材料試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「材料」展開） | 填現有材料算最多可做幾個，「帶入」來源是自己的個人庫（後台沒有這個功能） |
+| 藍圖材料試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「材料」展開） | 輸入要做幾個，列出每種材料總共需要多少；藍圖與礦物材料附 sc-datahub.com 對應頁面的按鈕（後台沒有這個功能） |
 | 艦隊 JSON 匯入 | http://localhost:8090/me?tab=fleet（「JSON 匯入」按鈕） | 匯入 [HangarXPLOR](https://chromewebstore.google.com/detail/star-citizen-hangar-xplor/bhkgemjdepodofcnmekdobmmbifemhkc)（RSI 機庫頁的 Chrome 擴充功能，匯入區有「安裝 HangarXPLOR」按鈕）匯出的 `shiplist.json`：先預覽再確認；數量取現有與船單較大值（重複匯入不會變多），船的自訂名稱填進每艘的區別名稱。規則見 `src/models/fleet_import.py` |
 | LOG 解析 | http://localhost:8090/me?tab=gamelog | 選擇自己的 `Game.log`，整理成中文事件時間軸與本次遊玩回顧；**只在瀏覽器裡解析、不上傳**。Chrome／Edge 可「持續監看」（遊戲進行中即時更新）。規則在 `frontend/src/utils/gameLogRules.json` |
 | 中文轉碼 | http://localhost:8090/me?tab=chatcode | 上半部：遊戲聊天用的 中文 ↔ `@代碼` 互轉（自動判斷或手動指定方向），字典由伺服器從社群 chsc-tw 下載並快取 24 小時；下半部：遊戲文字代碼（localization key，例如 `vehicle_NameAEGS_Avenger_Stalker`）⇄ 中文／英文查詢，資料是翻譯資料庫 `sc_translations` |

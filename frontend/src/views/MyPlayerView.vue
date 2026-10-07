@@ -801,10 +801,10 @@
           <tr v-if="recipeFor === bp._id">
             <!-- colspan 要跟 thead 的欄數一致（移除「狀態」欄後是 6） -->
             <td colspan="6">
-              <!-- 材料試算（原本的「試算」分頁併進來）：填現有數量算夠做幾個，可以從個人庫帶入 -->
+              <!-- 材料試算：輸入要做幾個，列出每種材料需要多少（附 sc-datahub 對應頁面） -->
               <BlueprintCalculator :fetcher="playerAuth.playerFetch"
                 :blueprint="{ _id: bp.blueprint_uuid, name: bp.name, name_zh: bp.master?.name_zh }"
-                :stock-loader="loadMyStock" stock-label="我的個人庫" card-class="card scifi-card" />
+                card-class="card scifi-card" />
             </td>
           </tr>
           </template>
@@ -1473,17 +1473,6 @@ const bulkRegisterRef = ref(null)
 /** 批量登記完成後，把「我的藍圖」那一頁的清單也更新（否則要手動重新整理）。 */
 async function onBulkRegistered() {
   await loadBlueprints()
-}
-
-// ── 藍圖材料試算的庫存來源 ────────────────────────────────────
-//
-// 個人庫的清單一次就撈得完（後端 limit 200，一般玩家遠低於此），
-// 所以不像後台那頁需要逐材料查詢。回傳原始庫存列，換算交給
-// utils/craftCalc.js 的 stockToHaveMap（同一份邏輯兩邊共用）。
-async function loadMyStock() {
-  const res = await playerAuth.playerFetch('/player/inventory')
-  const data = res ? await res.json().catch(() => null) : null
-  return data?.success ? (data.data || []) : []
 }
 
 // ── Discord 綁定碼 ────────────────────────────────────────────
