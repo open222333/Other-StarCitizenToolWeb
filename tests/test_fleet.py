@@ -534,3 +534,42 @@ def test_vehicle_system_notes_for_same_name_variants(client, alice, seed_vehicle
     assert sorted((r['_id'], r.get('system_note')) for r in rows) == [('f8c', None), ('f8c-plat', 'Plat')]
     _bulk(client, alice, ['f8c-plat'])
     assert client.get('/player/fleet', headers=alice).get_json()['data'][0]['vehicle']['system_note'] == 'Plat'
+
+
+def test_import_hangarxplor_json(client, alice, seed_vehicles):
+    """匯入 HangarXPLOR 的 shiplist.json：先預覽再寫入，重複匯入不會越加越多，自訂名稱填進區別名稱。"""
+    get_db()['vehicle_master'].update_one({'_id': 'v-cutlass'}, {'$set': {
+        'web_url': 'https://robertsspaceindustries.com/pledge/ships/drake-cutlass/Cutlass-Black',
+        'game_name': 'Drake Cutlass Black'}})
+    _bulk(client, alice, ['v-avenger'])          # 已經登記 1 艘（遊戲內買的）
+    ships = [
+        {'ship_code': 'DRAK_Cutlass_Black', 'name': 'Cutlass Black', 'ship_name': '黑鴉一號', 'entity_type': 'ship'},
+        {'ship_code': 'DRAK_Cutlass_Black', 'name': 'Cutlass Black', 'ship_name': 'Cutlass Black', 'entity_type': 'ship'},
+        {'ship_code': 'AEGS_Avenger_Stalker', 'name': 'Avenger Stalker', 'ship_name': 'Avenger Stalker'},
+        {'ship_code': 'XXXX_Mystery', 'name': 'Mystery Ship', 'ship_name': 'Mystery Ship'},
+        {'entity_type': 'skin', 'name': 'Paint'},
+    ]
+    url = '/player/fleet/import'
+    preview = client.post(url, json={'ships': ships}, headers=alice).get_json()['data']
+    rows = {r['vehicle_uuid']: r for r in preview['rows']}
+    assert rows['v-cutlass']['count'] == 2 and rows['v-cutlass']['nicknames'] == ['黑鴉一號'], 'ship_code 對網址'
+    assert rows['v-avenger']['existing_quantity'] == 1 and rows['v-avenger']['new_quantity'] == 1
+    assert [u['name'] for u in preview['unmatched']] == ['Mystery Ship']
+    assert preview['total'] == 4, '塗裝等非船艦不算'
+    assert len(client.get('/player/fleet', headers=alice).get_json()['data']) == 1, '預覽不寫入'
+
+    done = client.post(url, json={'ships': ships, 'apply': True}, headers=alice).get_json()['data']
+    assert (done['added'], done['updated'], done['unchanged'], done['unmatched']) == (1, 0, 1, 1)
+    fleet = {r['vehicle_uuid']: r for r in client.get('/player/fleet', headers=alice).get_json()['data']}
+    assert fleet['v-cutlass']['quantity'] == 2 and fleet['v-cutlass']['unit_names'] == ['黑鴉一號']
+
+    # 再匯入一次：不會變多；玩家自己改過的名稱不被覆蓋
+    client.put(f"/player/fleet/{fleet['v-cutlass']['_id']}", json={'unit_names': ['主力', '']}, headers=alice)
+    again = client.post(url, json={'ships': ships, 'apply': True}, headers=alice).get_json()['data']
+    assert again['added'] == 0
+    fleet = {r['vehicle_uuid']: r for r in client.get('/player/fleet', headers=alice).get_json()['data']}
+    assert fleet['v-cutlass']['quantity'] == 2 and fleet['v-cutlass']['unit_names'] == ['主力', '黑鴉一號']
+
+    for bad in ('nope', {'x': 1}, [], [{'entity_type': 'skin'}], [{}] * 1001):
+        assert client.post(url, json={'ships': bad}, headers=alice).status_code == 400, bad
+    assert client.post(url, json={'ships': ships}).status_code == 401

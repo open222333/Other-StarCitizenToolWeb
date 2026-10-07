@@ -19,6 +19,7 @@ from src.models.blueprint import (ACQUISITION_METHODS, DEFAULT_UNLOCK_STATUS,
                                   UNLOCK_STATUSES, Blueprint as BlueprintModel)
 from src.models.inventory import OWNER_PLAYER, Inventory, InventoryLog, StockError
 from src.models.fleet import MAX_QUANTITY as FLEET_MAX_QUANTITY, Fleet, clamp_quantity
+from src.models import fleet_import
 from src.models.item import BlueprintMaster, ItemMaster, VehicleMaster
 from src.models.log import Log
 from src.models.mission import Mission
@@ -1122,6 +1123,46 @@ def add_my_fleet_bulk():
         'not_found': len(not_found),
         'added_uuids': result['added'],
     })
+
+
+@app_player.route('/fleet/import', methods=['POST'])
+@player_required
+@limiter.limit('30 per minute')
+def import_my_fleet():
+    """「艦隊 › JSON 匯入」：匯入 HangarXPLOR 匯出的機庫船單（規則見 src/models/fleet_import.py）。
+
+    先帶 apply=false 拿預覽（每款船匯入幾艘、現有、匯入後、自訂名稱、對不到的），
+    確認後再帶 apply=true 寫入。重複匯入同一份不會越加越多（數量取較大值）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          required: [ships]
+          properties:
+            ships: {type: array, description: "HangarXPLOR 的 shiplist.json 內容（最多 1000 艘）"}
+            apply: {type: boolean, description: "false＝只預覽（預設）；true＝寫入"}
+    responses:
+      200:
+        description: "預覽：data {rows, unmatched, total}；寫入：data {added, updated, unchanged, unmatched, ...}"
+      400:
+        description: 格式不對
+    """
+    player = _self_player_doc()
+    data = request.get_json(silent=True) or {}
+    try:
+        if data.get('apply'):
+            result = fleet_import.apply(player['_id'], data.get('ships'))
+            Log.create(f'player:{player.get("star_citizen_id")}', 'import_fleet',
+                       f'匯入機庫船單：新增 {result["added"]} 款、更新 {result["updated"]} 款、'
+                       f'沒變 {result["unchanged"]} 款、對不到 {result["unmatched"]} 款', success=True)
+        else:
+            result = fleet_import.plan(player['_id'], data.get('ships'))
+    except fleet_import.FleetImportError as err:
+        raise StockError(str(err))
+    return jsonify({'success': True, 'data': result, 'max_items': fleet_import.MAX_IMPORT_ITEMS})
 
 
 @app_player.route('/fleet/<fleet_id>', methods=['PUT'])

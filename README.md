@@ -124,14 +124,18 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 
 | 頁面 | URL | 說明 |
 |------|-----|------|
-| **管理後台** | http://localhost:8080/admin/ | 使用者／玩家／藍圖／庫存管理、操作紀錄、系統設定（含資料同步排程）。需後台帳號登入 |
+| **管理後台** | http://localhost:8080/admin/ | 使用者／玩家／藍圖／庫存管理、操作紀錄、資料同步排程、系統設定。需後台帳號登入 |
 | 後台登入 | http://localhost:8080/admin/login | 預設帳號 `admin`，密碼見 `.env` 的 `ADMIN_PASSWORD`（**必須改掉，否則 api 會拒絕啟動**） |
 | 玩家自助註冊 | http://localhost:8090/register | 公開，不需登入 |
 | **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
 | **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
 | 藍圖材料試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「材料」展開） | 填現有材料算最多可做幾個，「帶入」來源是自己的個人庫（後台沒有這個功能） |
+| 艦隊 JSON 匯入 | http://localhost:8090/me?tab=fleet（「JSON 匯入」按鈕） | 匯入 [HangarXPLOR](https://chromewebstore.google.com/detail/star-citizen-hangar-xplor/bhkgemjdepodofcnmekdobmmbifemhkc)（RSI 機庫頁的 Chrome 擴充功能，匯入區有「安裝 HangarXPLOR」按鈕）匯出的 `shiplist.json`：先預覽再確認；數量取現有與船單較大值（重複匯入不會變多），船的自訂名稱填進每艘的區別名稱。規則見 `src/models/fleet_import.py` |
+| LOG 解析 | http://localhost:8090/me?tab=gamelog | 選擇自己的 `Game.log`，整理成中文事件時間軸與本次遊玩回顧；**只在瀏覽器裡解析、不上傳**。Chrome／Edge 可「持續監看」（遊戲進行中即時更新）。規則在 `frontend/src/utils/gameLogRules.json` |
+| 中文轉碼 | http://localhost:8090/me?tab=chatcode | 上半部：遊戲聊天用的 中文 ↔ `@代碼` 互轉（自動判斷或手動指定方向），字典由伺服器從社群 chsc-tw 下載並快取 24 小時；下半部：遊戲文字代碼（localization key，例如 `vehicle_NameAEGS_Avenger_Stalker`）⇄ 中文／英文查詢，資料是翻譯資料庫 `sc_translations` |
 | 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
 | 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
+| 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性），由「UEX 價格」同步項目更新（需 UEX token）；每筆列出關聯的礦物 |
 | 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務 |
 | 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
 | 玩家站上的後台登入 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面。管理員平常請走 8080 |
@@ -978,6 +982,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 | `vehicle_master` | 遊戲 uuid | ~290 | 載具，含 SCU 容量與置物容器 |
 | `commodity_master` | 遊戲 uuid | ~205 | 貨物，含可用箱體規格 |
 | `uex_items` / `uex_items_prices` / `uex_terminals` | UEX id | — | 價格與終端（需 token） |
+| `uex_commodities` | UEX id | — | UEX 商品與縮寫代碼 `code`（例如 AGRI、QUAN）；礦物資料庫依英文名稱自動關聯，後台礦物頁可手動指定（`mineral_uex_links`）（需 token） |
 | `sync_runs` | run uuid | — | 每輪同步的統計與錯誤 |
 | `sync_jobs` | 同步項目 key（`items`、`missions`…） | 10 | 各資料庫的同步排程與上次結果（cron / enabled / last_*） |
 | `inventory` | ObjectId | — | 庫存 |

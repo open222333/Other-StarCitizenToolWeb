@@ -841,6 +841,10 @@
         <FleetBulkRegister ref="fleetBulkRef" :fetcher="playerAuth.playerFetch"
           card-class="card scifi-card" @registered="loadFleet" />
       </div>
+      <!-- JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue） -->
+      <div v-if="fleetImportOpen" class="mb-3">
+        <FleetImport :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
+      </div>
 
       <div v-if="fleet.length" class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
@@ -880,6 +884,10 @@
           </template>
         </span>
         <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
+            :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
+            <i class="bi me-1" :class="fleetImportOpen ? 'bi-x-lg' : 'bi-filetype-json'"></i>{{ fleetImportOpen ? '收起匯入' : 'JSON 匯入' }}
+          </button>
           <button class="btn btn-sm" :class="fleetBulkOpen ? 'btn-secondary' : 'btn-success'"
             :aria-expanded="fleetBulkOpen ? 'true' : 'false'" @click="fleetBulkOpen = !fleetBulkOpen">
             <i class="bi me-1" :class="fleetBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ fleetBulkOpen ? '收起登記' : '批量登記' }}
@@ -1171,6 +1179,7 @@ import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetBulkRegister from '@/components/FleetBulkRegister.vue'
+import FleetImport from '@/components/FleetImport.vue'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
 import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
@@ -1286,6 +1295,7 @@ const stockMode = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].inclu
   ? route.query.sub : '')
 // 艦隊的批量登記同理：舊網址 ?tab=fleet&sub=bulk 直接展開
 const fleetBulkOpen = ref(activeTab.value === 'fleet' && route.query.sub === 'bulk')
+const fleetImportOpen = ref(false)
 function toggleStockMode(mode) {
   stockMode.value = stockMode.value === mode ? '' : mode
 }
@@ -2491,6 +2501,11 @@ async function saveLoadouts(row) {
   } else {
     showFleetError(data?.message || '儲存配件網址失敗，請稍後再試')
   }
+}
+
+async function onFleetImported() {
+  await loadFleet()
+  fleetBulkRef.value?.refresh()   // 批量登記的「已登記」標記也要跟著更新
 }
 
 async function removeFleet(row) {
