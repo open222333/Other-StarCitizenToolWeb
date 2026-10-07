@@ -121,6 +121,11 @@ def get_json(client: httpx.Client, url: str, params: Optional[dict] = None) -> d
                 delay = min(delay * 2, 60)
                 continue
 
+            if 400 <= resp.status_code < 500:
+                # 4xx（429 除外）是請求本身有問題（缺參數、token 錯…），重試幾次結果都一樣，
+                # 直接回報，順便帶上回應內容——UEX 會在 body 說明缺什麼參數
+                raise ScDataError(f'{url} HTTP {resp.status_code}: {resp.text[:300].strip()}')
+
             resp.raise_for_status()
             payload = resp.json()
             if not isinstance(payload, dict):
@@ -236,9 +241,9 @@ def wiki_detail(client: httpx.Client, resource: str, uuid: str) -> Optional[dict
     return data if isinstance(data, dict) else None
 
 
-def uex_rows(client: httpx.Client, resource: str) -> list:
+def uex_rows(client: httpx.Client, resource: str, params: Optional[dict] = None) -> list:
     """UEX 回應格式：{"status": "ok", "data": [...]}"""
-    payload = get_json(client, f'{SCDATA_UEX_API_BASE}/{resource}/')
+    payload = get_json(client, f'{SCDATA_UEX_API_BASE}/{resource}/', params=params)
     status = payload.get('status')
     if status != 'ok':
         raise ScDataError(f'UEX {resource} 回傳 status={status}')

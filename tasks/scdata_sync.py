@@ -289,12 +289,37 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
             'written': written, 'skipped': skipped, 'retired': retired}
 
 
+def _uex_item_rows(client) -> list:
+    """UEX /items 一定要帶 id_category（或 id_company／uuid），不帶會回 400。
+
+    所以先抓 /categories，再逐個「物品類」分類抓 /items?id_category=…（約幾十個請求，
+    每週一次的同步可以接受）。單一分類失敗只記 log、略過，不讓整份物品清單失敗。
+    """
+    categories = uex_rows(client, 'categories')
+    item_categories = [c for c in categories
+                       if c.get('id') is not None and (c.get('type') in (None, '', 'item'))]
+    rows, failed = [], 0
+    for i, cat in enumerate(item_categories, 1):
+        _report(phase=f'下載 UEX items（分類 {i}/{len(item_categories)}）')
+        if i > 1:
+            # UEX 配額 120 req/min：至少隔 0.5 秒，避免幾十個分類連打撞到 429
+            time.sleep(max(SCDATA_REQUEST_DELAY, 0.5))
+        try:
+            rows.extend(uex_rows(client, 'items', params={'id_category': cat['id']}))
+        except Exception as err:
+            failed += 1
+            logger.warning('scdata_sync: UEX items 分類 %s 失敗：%s', cat.get('id'), err)
+    if item_categories and failed == len(item_categories):
+        raise ScDataError(f'UEX items 全部 {failed} 個分類都失敗')
+    return rows
+
+
 def _sync_uex_resource(client, resource: str, run_id: str, stamp: datetime) -> dict:
     collection_name, key_fields = UEX_RESOURCES[resource]
     logger.info('scdata_sync: 同步 UEX %s -> %s', resource, collection_name)
     _report(force=True, phase=f'下載 UEX {resource}')
 
-    rows = uex_rows(client, resource)
+    rows = _uex_item_rows(client) if resource == 'items' else uex_rows(client, resource)
     _report(force=True, phase=f'寫入 UEX {resource}', seen=0, total=len(rows))
     ops: list = []
     skipped = 0

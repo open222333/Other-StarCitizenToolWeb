@@ -368,3 +368,41 @@ def test_scunpacked_resource_maps_are_consistent():
         assert collection.endswith('_master'), resource
         assert path, resource
         assert mapper({}) is None, resource
+
+
+def test_get_json_does_not_retry_4xx(monkeypatch):
+    """400 這類請求本身的錯誤不重試，直接帶回應內容報錯（例如 UEX 說缺 id_category）。"""
+    import httpx
+    import pytest
+    calls = []
+
+    def handler(request):
+        calls.append(request.url)
+        return httpx.Response(400, json={'status': 'missing_id_category'})
+
+    monkeypatch.setattr(scdata.time, 'sleep', lambda s: None)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(scdata.ScDataError) as err:
+            scdata.get_json(client, 'https://example.test/items/')
+    assert len(calls) == 1
+    assert 'missing_id_category' in str(err.value)
+
+
+def test_uex_items_fetched_per_category(monkeypatch):
+    """UEX /items 要帶 id_category：先抓分類，再逐個物品分類抓。"""
+    import tasks.scdata_sync as sync_mod
+    calls = []
+
+    def fake_rows(client, resource, params=None):
+        calls.append((resource, params))
+        if resource == 'categories':
+            return [{'id': 1, 'type': 'item'}, {'id': 2, 'type': 'service'}, {'id': 3, 'type': 'item'}]
+        if params['id_category'] == 3:
+            raise scdata.ScDataError('boom')
+        return [{'id': 10, 'id_category': params['id_category']}]
+
+    monkeypatch.setattr(sync_mod, 'uex_rows', fake_rows)
+    monkeypatch.setattr(sync_mod.time, 'sleep', lambda s: None)
+    rows = sync_mod._uex_item_rows(None)
+    assert rows == [{'id': 10, 'id_category': 1}], '單一分類失敗略過'
+    assert calls == [('categories', None), ('items', {'id_category': 1}), ('items', {'id_category': 3})]
