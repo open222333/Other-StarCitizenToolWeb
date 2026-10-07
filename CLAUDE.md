@@ -58,6 +58,8 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
   那裡新增一個），前端用 `frontend/src/utils/translations.js`。**不要再另外做 JSON 對照表**。
 - 翻譯包沒有、必須人工補的條目放 `src/data/sc_translation_manual.json`（同步時寫進同一張表，
   source=manual，不會被翻譯包覆蓋）；翻譯包有的一律以翻譯包為準。
+- 例外：玩家頁「中文轉碼」的字典（社群 chsc-tw 的 textinput.txt，聊天輸入用的「中文字 ↔ @代碼」）是
+  **字元編碼表、不是翻譯**，不放 `sc_translations`，另外快取在 `chat_code_dictionary`（見 `src/models/chat_code.py`）。
 
 ## 目錄結構速查
 

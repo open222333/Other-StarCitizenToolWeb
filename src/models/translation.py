@@ -400,6 +400,63 @@ def manual_domain(domain: str, lang: str = DEFAULT_LANG) -> dict:
     return _cached(('d', domain, lang), load)
 
 
+SEARCH_MODES = ('auto', 'key', 'zh', 'en')
+SEARCH_LIMIT = 50
+
+
+def guess_search_mode(query: str) -> str:
+    """有中文 → 中文反查代碼；有底線或沒有空白的英數字 → 代碼；其餘當英文。"""
+    q = (query or '').strip()
+    if _CJK.search(q):
+        return 'zh'
+    if '_' in q or (q and ' ' not in q and re.fullmatch(r'[\w.,@-]+', q) and re.search(r'[A-Z].*[a-z]|[a-z].*[A-Z]|\d', q)):
+        return 'key'
+    return 'en'
+
+
+def search(query: str, mode: str = 'auto', lang: str = DEFAULT_LANG, limit: int = SEARCH_LIMIT) -> tuple:
+    """玩家頁「中文轉碼 › 遊戲文字代碼」：代碼 ⇄ 中文（也可以用英文找）。
+
+    mode：key＝以代碼找（完全相同排第一，再來是開頭相同、包含）；zh＝中文包含；
+    en＝英文包含；auto＝依輸入猜（guess_search_mode）。只查遊戲本身的文字（不含人工條目）。
+    回傳 (結果 [{key, en, zh}], 實際用的 mode)。
+    """
+    q = (query or '').strip()[:100]
+    if mode not in SEARCH_MODES:
+        mode = 'auto'
+    if mode == 'auto':
+        mode = guess_search_mode(q)
+    if not q:
+        return [], mode
+    limit = max(1, min(int(limit), SEARCH_LIMIT))
+    base = {'source': SOURCE_GAME}
+    fields = {'text': 1}
+    pattern = re.escape(q.lower())
+
+    if mode == 'key':
+        k = q.lstrip('@').lower()
+        esc = re.escape(k)
+        docs, seen = [], set()
+        for filt in ({'key_lower': k}, {'key_lower': {'$regex': f'^{esc}'}}, {'key_lower': {'$regex': esc}}):
+            for doc in _col().find({**base, **filt}, fields).limit(limit):
+                if doc['_id'] not in seen:
+                    seen.add(doc['_id'])
+                    docs.append(doc)
+            if len(docs) >= limit:
+                break
+        docs = docs[:limit]
+    elif mode == 'zh':
+        docs = list(_col().find({**base, f'text.{lang}': {'$regex': re.escape(q)}}, fields).limit(limit))
+        # 短的（最接近輸入的）排前面
+        docs.sort(key=lambda d: len((d.get('text') or {}).get(lang) or ''))
+    else:
+        docs = list(_col().find({**base, 'en_lower': {'$regex': pattern}}, fields).limit(limit))
+        docs.sort(key=lambda d: len((d.get('text') or {}).get(LANG_EN) or ''))
+
+    return [{'key': d['_id'], 'en': (d.get('text') or {}).get(LANG_EN),
+             'zh': _translation_of(d, lang)} for d in docs], mode
+
+
 def status() -> dict:
     return get_db()[META_COLLECTION].find_one({'_id': 'status'}) or {}
 

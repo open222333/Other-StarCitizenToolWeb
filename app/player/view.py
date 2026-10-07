@@ -24,6 +24,7 @@ from src.models.log import Log
 from src.models.mission import Mission
 from src.models.player import ROSTER_MAX, Player, PlayerError
 from src.models.tool_link import ToolLink
+from src.models.chat_code import ChatCodeError, get_dictionary as get_chat_code_dictionary
 from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api
 from app._shared import attach_item_names
 
@@ -414,6 +415,51 @@ def search_players():
         limit = 20 if q else ROSTER_MAX
     rows = Player.search_basic(q, limit=limit)
     return jsonify({'success': True, 'data': rows})
+
+
+@app_player.route('/chat-code/dictionary', methods=['GET'])
+@player_required
+def chat_code_dictionary():
+    """玩家頁「中文轉碼」：聊天輸入用的中文 ↔ @xxx 代碼表原文（社群 chsc-tw 的 textinput.txt）。
+
+    伺服器快取 24 小時，過期才重新下載；下載失敗沿用舊版（stale=true）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: {text, fetched_at, entries, stale}"
+      503:
+        description: 從來沒有成功下載過，也下載不到
+    """
+    try:
+        return jsonify({'success': True, 'data': get_chat_code_dictionary()})
+    except ChatCodeError as err:
+        return jsonify({'success': False, 'message': str(err)}), 503
+
+
+@app_player.route('/game-text', methods=['GET'])
+@player_required
+@limiter.limit('60 per minute')
+def search_game_text():
+    """玩家頁「中文轉碼 › 遊戲文字代碼」：遊戲文字代碼（localization key）⇄ 中文，也可以用英文找。
+
+    資料是全站翻譯的唯一來源 sc_translations（src/models/translation.py 的 search）。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: q, type: string, required: true, description: "代碼（例如 vehicle_NameAEGS_Avenger_Stalker）、中文或英文"}
+      - {in: query, name: mode, type: string, default: auto, description: "auto／key（代碼→中文）／zh（中文→代碼）／en（英文）"}
+    responses:
+      200:
+        description: "data: [{key, en, zh}]，最多 50 筆；mode：實際用的查法"
+    """
+    from src.models import translation
+    rows, mode = translation.search(request.args.get('q') or '', request.args.get('mode') or 'auto')
+    return jsonify({'success': True, 'data': rows, 'mode': mode})
 
 
 @app_player.route('/tool-links', methods=['GET'])

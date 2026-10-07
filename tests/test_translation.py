@@ -289,3 +289,40 @@ def test_ensure_indexes_never_tests_database_truthiness(client):
     fake = pymongo.MongoClient('mongodb://127.0.0.1:1', connect=False)['x']
     with pytest.raises(NotImplementedError):
         bool(fake)   # 確認假設本身：真的 pymongo Database 確實禁止 bool()
+
+
+# ═══════════════════════════════════════════════════════
+#  玩家頁「中文轉碼 › 遊戲文字代碼」查詢
+# ═══════════════════════════════════════════════════════
+
+def test_search_game_text(client):
+    from tests.test_fleet import _register_player
+    T.replace_source(_entries({
+        'vehicle_NameAEGS_Avenger_Stalker': ('Aegis Avenger Stalker', '聖盾 復仇者 追獵'),
+        'vehicle_NameAEGS_Avenger_Titan': ('Aegis Avenger Titan', '聖盾 復仇者 泰坦'),
+        'item_NameAvenger': ('Avenger', '復仇者'),
+        'ui_Untranslated': ('Hello', 'Hello'),
+    }), T.SOURCE_GAME, datetime.utcnow())
+
+    assert T.guess_search_mode('vehicle_NameAEGS') == 'key'
+    assert T.guess_search_mode('復仇者') == 'zh'
+    assert T.guess_search_mode('avenger titan') == 'en'
+
+    rows, mode = T.search('vehicle_nameaegs_avenger_stalker', mode='key')
+    assert mode == 'key' and rows[0]['key'] == 'vehicle_NameAEGS_Avenger_Stalker' and rows[0]['zh'] == '聖盾 復仇者 追獵'
+    rows, _ = T.search('vehicle_NameAEGS_Avenger')
+    assert {r['key'] for r in rows} == {'vehicle_NameAEGS_Avenger_Stalker', 'vehicle_NameAEGS_Avenger_Titan'}
+    rows, mode = T.search('復仇者')
+    assert mode == 'zh' and rows[0]['key'] == 'item_NameAvenger', '最短的排前面'
+    rows, mode = T.search('titan')
+    assert mode == 'en' and [r['key'] for r in rows] == ['vehicle_NameAEGS_Avenger_Titan']
+    rows, _ = T.search('ui_Untranslated', mode='key')
+    assert rows[0]['zh'] is None, '跟英文一樣的不算翻譯'
+    assert T.search('  ')[0] == []
+    assert T.search('a.(b', mode='en')[0] == [], '正則字元要跳脫'
+
+    url = '/player/game-text'
+    assert client.get(url + '?q=x').status_code == 401
+    player = _register_player(client, 'TextPilot', 'Text')
+    body = client.get(url, query_string={'q': '泰坦'}, headers=player).get_json()
+    assert body['mode'] == 'zh' and body['data'][0]['key'] == 'vehicle_NameAEGS_Avenger_Titan'

@@ -964,6 +964,17 @@
         card-class="card scifi-card" />
     </div>
 
+    <!-- ══════════ LOG 解析（Game.log 在瀏覽器裡解析，不上傳；見 components/GameLogReader.vue）══════════ -->
+    <div v-show="activeTab === 'gamelog'" role="tabpanel" id="panel-gamelog" :aria-labelledby="'tab-gamelog'">
+      <GameLogReader card-class="card scifi-card" />
+    </div>
+
+    <!-- ══════════ 中文轉碼（遊戲聊天用的 中文 ↔ @代碼，見 components/ChatCodeTranslator.vue）══════════ -->
+    <div v-show="activeTab === 'chatcode'" role="tabpanel" id="panel-chatcode" :aria-labelledby="'tab-chatcode'">
+      <ChatCodeTranslator :fetcher="playerAuth.playerFetch" :active="activeTab === 'chatcode'"
+        card-class="card scifi-card" />
+    </div>
+
     <!-- ══════════ 工具網站（後台維護的外部連結） ══════════ -->
     <div v-show="activeTab === 'tools'" role="tabpanel" id="panel-tools" :aria-labelledby="'tab-tools'">
       <div v-if="loadingToolLinks && !toolLinks.length" class="text-muted small">載入中…</div>
@@ -1154,6 +1165,8 @@ import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
+import GameLogReader from '@/components/GameLogReader.vue'
+import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
@@ -1239,6 +1252,8 @@ const tabs = [
       { key: 'fleet',      label: '持有船艦' },
     ],
   },
+  { key: 'gamelog',   label: 'LOG 解析', icon: 'bi bi-journal-code' },
+  { key: 'chatcode',  label: '中文轉碼', icon: 'bi bi-translate' },
   { key: 'tools',     label: '工具網站', icon: 'bi bi-link-45deg' },
   { key: 'profile',   label: '個人資料', icon: 'bi bi-person-gear' },
 ]
