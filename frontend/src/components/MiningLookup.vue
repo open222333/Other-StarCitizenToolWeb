@@ -130,23 +130,36 @@
         <div class="mining-echo__label">
           <span>礦物訊號參考</span>
         </div>
+        <!-- 跟「查詢 › 持有藍圖」的名稱欄位同一套互動：打部分文字 → 下拉列出可能的礦物 →
+             點選或用方向鍵＋Enter 選定，下面才顯示那一種礦物（純打字不會顯示結果） -->
         <div class="mining-echo__search mb-3">
           <i class="bi bi-search"></i>
-          <input v-model="mineralQuery" type="search" placeholder="搜尋礦物名稱或 UEX 縮寫..."
-            aria-label="搜尋礦物名稱">
+          <input :value="mineralQuery" type="text" placeholder="輸入礦物名稱或 UEX 縮寫…"
+            role="combobox" aria-autocomplete="list" aria-label="礦物名稱"
+            :aria-expanded="showMineralSuggest ? 'true' : 'false'" :aria-controls="mineralListId"
+            :aria-activedescendant="mineralHighlight >= 0 ? `${mineralListId}-${mineralHighlight}` : undefined"
+            autocomplete="off"
+            @input="onMineralInput($event.target.value)" @focus="showMineralSuggest = !!mineralQuery.trim()"
+            @keydown="onMineralKeydown" @blur="onMineralBlur">
           <button v-if="mineralQuery" type="button" class="mining-echo__clear"
-            aria-label="清除" @click="mineralQuery = ''">×</button>
+            aria-label="清除" @mousedown.prevent="clearMineral">×</button>
+          <ul v-if="showMineralSuggest" :id="mineralListId" role="listbox" class="mining-echo__suggest">
+            <li v-if="!mineralSuggestions.length" class="mining-echo__suggest-hint">沒有符合的礦物</li>
+            <li v-for="(g, i) in mineralSuggestions" v-else :id="`${mineralListId}-${i}`" :key="g.resource_key"
+              role="option" :aria-selected="i === mineralHighlight"
+              class="mining-echo__suggest-item" :class="{ 'is-active': i === mineralHighlight }"
+              @mousedown.prevent="pickMineral(g)" @mousemove="mineralHighlight = i">
+              {{ mineralLabel(g) }}<span v-if="g.uex?.code" class="mining-echo__suggest-code">{{ g.uex.code }}</span>
+            </li>
+          </ul>
         </div>
 
         <div v-if="loadingDeposits" class="mining-echo__panel text-center py-4">
           <span class="spinner-border spinner-border-sm me-2"></span>載入中...
         </div>
         <!-- 搜尋框沒輸入時只顯示提示（跟左側「回波」同樣的空狀態樣式），輸入了才列出符合的礦物 -->
-        <div v-else-if="!mineralQuery.trim()" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
-          請輸入礦物名稱
-        </div>
         <div v-else-if="!filteredMineralGroups.length" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
-          找不到符合「{{ mineralQuery }}」的礦物
+          請輸入礦物名稱
         </div>
         <div v-else class="mining-echo__mineral-list">
           <div v-for="g in filteredMineralGroups" :key="g.resource_key" class="mining-echo__panel mb-2">
@@ -373,19 +386,72 @@ const mineralGroups = computed(() => {
     .sort((a, b) => mineralLabel(a).localeCompare(mineralLabel(b), 'zh-Hant'))
 })
 
-// 沒輸入就不列（畫面上什麼都不顯示），輸入了才用子字串篩選——一律是「包含」
-// 不是「完全相等」，邊打邊即時篩選（Vue 的 computed 本來就會跟著 v-model
-// 重算，不用另外做防抖或按鈕觸發）。
-const filteredMineralGroups = computed(() => {
+// 名稱欄位的候選：子字串「包含」比對（中文、英文、resource key、UEX 縮寫），最多列 20 筆。
+// 開頭就對上的排前面，比較接近輸入的意思（打「Ti」先出 Titanium 而不是 Hephaestanite）。
+const MINERAL_SUGGEST_MAX = 20
+const mineralListId = `mining-mineral-${Math.random().toString(36).slice(2, 8)}`
+const selectedMineralKey = ref('')
+const showMineralSuggest = ref(false)
+const mineralHighlight = ref(-1)
+
+const mineralSuggestions = computed(() => {
   const raw = mineralQuery.value.trim()
   if (!raw) return []
   const q = raw.toLowerCase()
-  return mineralGroups.value.filter(g =>
-    (g.resource_name || '').toLowerCase().includes(q) ||
-    (g.resource_name_zh || '').includes(raw) ||
-    (g.resource_key || '').toLowerCase().includes(q) ||
-    (g.uex?.code || '').toLowerCase().includes(q))
+  const fields = g => [(g.resource_name || '').toLowerCase(), g.resource_name_zh || '',
+    (g.resource_key || '').toLowerCase(), (g.uex?.code || '').toLowerCase()]
+  return mineralGroups.value
+    .filter(g => fields(g).some(f => f.includes(q) || f.includes(raw)))
+    .map(g => ({ g, starts: fields(g).some(f => f.startsWith(q) || f.startsWith(raw)) }))
+    .sort((a, b) => Number(b.starts) - Number(a.starts))
+    .slice(0, MINERAL_SUGGEST_MAX)
+    .map(x => x.g)
 })
+
+// 下面只顯示選定的那一種礦物；純打字（還沒選）不顯示結果
+const filteredMineralGroups = computed(() =>
+  mineralGroups.value.filter(g => g.resource_key === selectedMineralKey.value))
+
+function onMineralInput(value) {
+  mineralQuery.value = value
+  selectedMineralKey.value = ''   // 文字改了就撤銷上一次的選定
+  mineralHighlight.value = -1
+  showMineralSuggest.value = !!value.trim()
+}
+
+function pickMineral(g) {
+  if (!g) return
+  mineralQuery.value = mineralLabel(g)
+  selectedMineralKey.value = g.resource_key
+  showMineralSuggest.value = false
+}
+
+function clearMineral() {
+  mineralQuery.value = ''
+  selectedMineralKey.value = ''
+  showMineralSuggest.value = false
+}
+
+function onMineralKeydown(event) {
+  if (event.key === 'Escape') { showMineralSuggest.value = false; return }
+  const list = mineralSuggestions.value
+  if (!showMineralSuggest.value || !list.length) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    mineralHighlight.value = (mineralHighlight.value + 1) % list.length
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    mineralHighlight.value = mineralHighlight.value <= 0 ? list.length - 1 : mineralHighlight.value - 1
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    pickMineral(list[mineralHighlight.value >= 0 ? mineralHighlight.value : 0])
+  }
+}
+
+function onMineralBlur() {
+  // 延遲關閉，讓候選的 mousedown 先選定（跟 AutocompleteField.vue 同樣的理由）
+  setTimeout(() => { showMineralSuggest.value = false }, 120)
+}
 
 // 每種礦物「自己那個礦床」的單顆訊號值 —— 礦床名稱跟礦物名稱相同的那一筆
 // （例如「Hephaestanite (R)」礦床，成分 100% 是 Hephaestanite），也就是
@@ -519,7 +585,9 @@ function locationsFor(group) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mining-echo__suggest-item:hover { background: rgba(var(--sf-accent-rgb), .12); }
+.mining-echo__suggest-item:hover,
+.mining-echo__suggest-item.is-active { background: rgba(var(--sf-accent-rgb), .12); }
+.mining-echo__suggest-code { margin-left: .5rem; color: var(--me-accent); font-family: var(--bs-font-monospace); font-size: .9em; }
 .mining-echo__suggest-hint {
   padding: .4rem .6rem;
   color: var(--me-text-dim);
