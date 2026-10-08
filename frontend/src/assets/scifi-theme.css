@@ -779,3 +779,12 @@
   font-size: 1.05rem; font-weight: 700; margin: 0 0 .7rem;
   color: var(--sf-accent-text, var(--sf-accent));
 }
+
+/* ── 原生下拉選單（<select>）的選項：瀏覽器預設白底，文字又繼承主題的淺色 → 白底白字看不到。
+ * 選項底色／文字改用主題色；深色模式另外宣告 color-scheme，讓瀏覽器原生的下拉面板也是深色。 */
+.scifi-page select option,
+.scifi-page select optgroup {
+  background-color: var(--sf-panel);
+  color: var(--sf-text);
+}
+:root:not([data-sf-mode='light']) .scifi-page select { color-scheme: dark; }
