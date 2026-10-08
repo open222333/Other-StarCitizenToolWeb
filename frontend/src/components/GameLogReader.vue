@@ -5,10 +5,13 @@
   程式在 utils/gameLog.js）。**解析完全在瀏覽器裡做，Game.log 不會上傳到伺服器**。
 
   讀檔兩種方式：
-    - Chrome／Edge：File System Access API（showOpenFilePicker）選檔，拿到檔案控制代碼，
-      可以「重新讀取」，也可以「持續監看」——每 2 秒看檔案有沒有變長，只讀新增的部分
-      （遊戲重開會重寫 Game.log，檔案變短就整份重讀）
-    - 其他瀏覽器：一般的檔案選擇／拖放，只能讀當下那一份
+    - 「選擇 Game.log」：一般的檔案選擇（<input type=file>），所有瀏覽器都能用，讀當下那一份。
+      ⚠️ 這是預設的方式：遊戲常裝在 C:\Program Files 底下，Chrome／Edge 的 File System Access
+      API 會把這類「系統資料夾」整個擋掉（選檔視窗直接說含有系統檔案、不能開），一般檔案選擇不受影響。
+    - 「選擇並監看」（只有 Chrome／Edge）：showOpenFilePicker 拿到檔案控制代碼，可以「重新讀取」
+      與「持續監看」——每 2 秒看檔案有沒有變長，只讀新增的部分（遊戲重開會重寫 Game.log，
+      檔案變短就整份重讀）。遊戲裝在系統資料夾時會被擋，就只能用上面那種。
+    - 拖放：先試著拿控制代碼（拿得到就能監看），拿不到就當一般檔案讀。
 -->
 <template>
   <div>
@@ -16,10 +19,16 @@
       @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2">
-          <button type="button" class="btn btn-primary" :disabled="loading" @click="pickFile">
+          <button type="button" class="btn btn-primary" :disabled="loading" @click="fileInput?.click()">
             <i class="bi bi-file-earmark-text me-1"></i>選擇 Game.log
           </button>
           <FieldHint :text="`Game.log 在遊戲安裝資料夾裡，例如 ${DEFAULT_PATH}；也可以把檔案直接拖進這個區塊。`" />
+          <template v-if="supportsPicker && !handle">
+            <button type="button" class="btn btn-success" :disabled="loading" @click="pickWatchFile">
+              <i class="bi bi-broadcast me-1"></i>選擇並監看
+            </button>
+            <FieldHint text="遊戲進行中自動更新（Chrome／Edge）。遊戲裝在 C:\Program Files 這類系統資料夾時，瀏覽器會擋下這個選檔，請改用「選擇 Game.log」或把檔案拖進來。" />
+          </template>
           <template v-if="handle">
             <button type="button" class="btn btn-primary" :disabled="loading" @click="reload">
               <i class="bi bi-arrow-clockwise me-1"></i>重新讀取
@@ -166,11 +175,8 @@ async function readWhole(file) {
   }
 }
 
-async function pickFile() {
-  if (!supportsPicker) {
-    fileInput.value?.click()
-    return
-  }
+// 選檔後直接開始監看（Chrome／Edge 的 File System Access API；系統資料夾會被瀏覽器擋，見檔頭）
+async function pickWatchFile() {
   try {
     const [h] = await window.showOpenFilePicker({
       types: [{ description: 'Game.log', accept: { 'text/plain': ['.log', '.txt'] } }],
@@ -178,6 +184,7 @@ async function pickFile() {
     stopWatch()
     handle.value = h
     await readWhole(await h.getFile())
+    if (!error.value) toggleWatch()
   } catch (e) {
     if (e?.name !== 'AbortError') error.value = `無法開啟檔案：${e.message || e}`
   }
