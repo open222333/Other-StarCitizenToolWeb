@@ -1,12 +1,12 @@
 <!--
   玩家個人頁（需要玩家登入，不是後台登入）。滿版版面，4 個主分頁：
 
-  - 倉庫（我自己的物品，看現況也在這裡動）
+  - 倉庫（我自己的物品，看現況也在這裡動；一頁，下面三個用按鈕展開，比照艦隊）
       · 物品庫存：目前登記了哪些物品。上方有篩選區（物品／地點，預設全部）
-      · 新增：一次登記多筆「還沒有的物品」
+      · 新增物品：一次登記多筆「還沒有的物品」
       · 庫存異動：對已登記的物品增減數量，每列各自可選「＋增加」或「－減少」
       · 庫存紀錄：增加／減少的歷史。上方同樣有篩選區
-  - 藍圖：自己的藍圖名冊，可增刪。**只能從主檔選**，不接受自由輸入
+  - 藍圖：自己的藍圖名冊，可增刪（一頁；「藍圖資料」「批量登記」用按鈕展開）。**只能從主檔選**，不接受自由輸入
     （見 src/models/blueprint.py 與 app/player/view.py 的 add_my_blueprint）。
     玩家端不顯示也不選「狀態」—— 登記的意思就是「我有這張圖」，一律送
     obtained（已取得）。後端與後台管理頁仍保留完整的 UNLOCK_STATUSES，
@@ -119,7 +119,7 @@
 
     <!-- ══════════ 倉庫 › 物品庫存 › 新增（登記還沒有的物品）══════════
          原本是獨立的「新增」分頁，併進物品庫存：按上方「新增物品」才展開，顯示在列表上面 -->
-    <div v-show="activeTab === 'warehouse' && activeSub === 'stock' && stockMode === 'add'"
+    <div v-show="activeTab === 'warehouse' && stockMode === 'add'"
          id="panel-warehouse-add">
       <Transition name="alert-slide">
         <div v-if="depositSuccess" class="alert alert-success py-2">{{ depositSuccess }}</div>
@@ -214,7 +214,7 @@
 
     <!-- ══════════ 倉庫 › 物品庫存 › 庫存異動（對已登記的物品增減數量）══════════
          原本是獨立的「庫存異動」分頁，併進物品庫存：按上方「庫存異動」或列表每一列的「異動」展開 -->
-    <div v-show="activeTab === 'warehouse' && activeSub === 'stock' && stockMode === 'adjust'"
+    <div v-show="activeTab === 'warehouse' && stockMode === 'adjust'"
          id="panel-warehouse-adjust">
       <Transition name="alert-slide">
         <div v-if="withdrawSuccess" class="alert alert-success py-2">{{ withdrawSuccess }}</div>
@@ -589,58 +589,10 @@
       </div>
     </div>
 
-    <!-- ══════════ 倉庫 › 物品庫存 ══════════ -->
-    <div v-show="activeTab === 'warehouse' && activeSub === 'stock'" role="tabpanel"
-         id="panel-warehouse-stock" aria-labelledby="subtab-warehouse-stock">
-      <InventoryFilterBar
-        :rows="myInventory" :matched="filteredInventory.length" :loc-label="locLabel"
-        v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
-
-      <div class="d-flex flex-wrap justify-content-end gap-2 mb-2">
-        <button class="btn btn-sm" :class="stockMode === 'add' ? 'btn-secondary' : 'btn-success'"
-          :aria-expanded="stockMode === 'add' ? 'true' : 'false'" @click="toggleStockMode('add')">
-          <i class="bi me-1" :class="stockMode === 'add' ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ stockMode === 'add' ? '收起新增' : '新增物品' }}
-        </button>
-        <button class="btn btn-sm" :class="stockMode === 'adjust' ? 'btn-secondary' : 'btn-info'"
-          :aria-expanded="stockMode === 'adjust' ? 'true' : 'false'" @click="toggleStockMode('adjust')">
-          <i class="bi me-1" :class="stockMode === 'adjust' ? 'bi-x-lg' : 'bi-arrow-left-right'"></i>{{ stockMode === 'adjust' ? '收起異動' : '庫存異動' }}
-        </button>
-        <button class="btn btn-sm btn-primary" @click="loadMyInventory">重新整理</button>
-      </div>
-      <div v-if="loadingInventory" class="text-muted small">載入中…</div>
-      <div v-else-if="!myInventory.length" class="text-muted small">目前沒有登記任何物品。</div>
-      <div v-else-if="!filteredInventory.length" class="text-muted small">
-        沒有符合篩選條件的物品。
-      </div>
-      <div v-else class="card scifi-card">
-      <div class="card-body p-0">
-      <div style="overflow-x: auto">
-      <table class="table table-hover align-middle mb-0">
-        <thead class="table-light">
-          <tr><th class="ps-3">物品</th><th>地點</th><th class="text-end">數量</th><th class="pe-3"></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in filteredInventory" :key="row.item_id + row.location + (row.container || '')">
-            <td class="ps-3">
-              <span class="fw-semibold">{{ row.item_name_zh || row.item_name }}</span>
-              <span v-if="row.item_name_zh" class="small text-muted ms-1">{{ row.item_name }}</span>
-            </td>
-            <td>{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
-            <td class="text-end">{{ row.quantity }}</td>
-            <td class="text-end pe-3">
-              <button type="button" class="btn btn-sm btn-info" @click="adjustStockRow(row)">異動</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-      </div>
-      </div>
-    </div>
-
-    <!-- ══════════ 倉庫 › 庫存紀錄 ══════════ -->
-    <div v-show="activeTab === 'warehouse' && activeSub === 'history'" role="tabpanel"
-         id="panel-warehouse-history" aria-labelledby="subtab-warehouse-history">
+    <!-- ══════════ 倉庫 › 庫存紀錄（原本的獨立分頁，改成物品庫存上方按「庫存紀錄」展開；
+         舊網址 ?tab=warehouse&sub=history 直接展開）══════════ -->
+    <div v-show="activeTab === 'warehouse' && historyOpen" class="mb-4">
+      <h3 class="h6 fw-bold mb-2"><i class="bi bi-clock-history me-1"></i>庫存紀錄</h3>
       <InventoryFilterBar
         :rows="history" :matched="filteredHistory.length" :loc-label="locLabel"
         v-model:item="historyFilter.item" v-model:location="historyFilter.location" />
@@ -682,9 +634,78 @@
       </div>
     </div>
 
+    <!-- ══════════ 倉庫 › 物品庫存 ══════════ -->
+    <div v-show="activeTab === 'warehouse'" role="tabpanel"
+         id="panel-warehouse" :aria-labelledby="'tab-warehouse'">
+      <InventoryFilterBar
+        :rows="myInventory" :matched="filteredInventory.length" :loc-label="locLabel"
+        v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
+
+      <div class="d-flex flex-wrap justify-content-end gap-2 mb-2">
+        <button class="btn btn-sm" :class="stockMode === 'add' ? 'btn-secondary' : 'btn-success'"
+          :aria-expanded="stockMode === 'add' ? 'true' : 'false'" @click="toggleStockMode('add')">
+          <i class="bi me-1" :class="stockMode === 'add' ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ stockMode === 'add' ? '收起新增' : '新增物品' }}
+        </button>
+        <button class="btn btn-sm" :class="stockMode === 'adjust' ? 'btn-secondary' : 'btn-info'"
+          :aria-expanded="stockMode === 'adjust' ? 'true' : 'false'" @click="toggleStockMode('adjust')">
+          <i class="bi me-1" :class="stockMode === 'adjust' ? 'bi-x-lg' : 'bi-arrow-left-right'"></i>{{ stockMode === 'adjust' ? '收起異動' : '庫存異動' }}
+        </button>
+        <button class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
+          :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
+          <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i>{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}
+        </button>
+        <button class="btn btn-sm btn-primary" @click="loadMyInventory">重新整理</button>
+      </div>
+      <div v-if="loadingInventory" class="text-muted small">載入中…</div>
+      <div v-else-if="!myInventory.length" class="text-muted small">目前沒有登記任何物品。</div>
+      <div v-else-if="!filteredInventory.length" class="text-muted small">
+        沒有符合篩選條件的物品。
+      </div>
+      <div v-else class="card scifi-card">
+      <div class="card-body p-0">
+      <div style="overflow-x: auto">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr><th class="ps-3">物品</th><th>地點</th><th class="text-end">數量</th><th class="pe-3"></th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in filteredInventory" :key="row.item_id + row.location + (row.container || '')">
+            <td class="ps-3">
+              <span class="fw-semibold">{{ row.item_name_zh || row.item_name }}</span>
+              <span v-if="row.item_name_zh" class="small text-muted ms-1">{{ row.item_name }}</span>
+            </td>
+            <td>{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
+            <td class="text-end">{{ row.quantity }}</td>
+            <td class="text-end pe-3">
+              <button type="button" class="btn btn-sm btn-info" @click="adjustStockRow(row)">異動</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      </div>
+      </div>
+    </div>
+
+    <!-- ══════════ 藍圖 › 藍圖資料／批量登記（原本的下層分頁，改成「我的藍圖」上方按按鈕展開；
+         舊網址 ?tab=blueprints&sub=data|bulk 直接展開）══════════ -->
+    <!-- 藍圖資料：遊戲藍圖資料庫，唯讀；有任務的名稱可點開看解鎖任務 -->
+    <div v-show="activeTab === 'blueprints' && bpDataOpen" class="mb-4">
+      <h3 class="h6 fw-bold mb-2"><i class="bi bi-journal-text me-1"></i>藍圖資料</h3>
+      <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
+        :active="activeTab === 'blueprints' && bpDataOpen" />
+    </div>
+
+    <!-- ══════════ 藍圖批量登記 ══════════ -->
+    <div v-show="activeTab === 'blueprints' && bpBulkOpen" class="mb-4">
+      <h3 class="h6 fw-bold mb-2"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
+      <BlueprintBulkRegister ref="bulkRegisterRef" :fetcher="playerAuth.playerFetch"
+        card-class="card scifi-card" @registered="onBulkRegistered" />
+    </div>
+
     <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
-    <div v-show="activeTab === 'blueprints' && activeSub === 'mine'" role="tabpanel"
-         id="panel-blueprints-mine" aria-labelledby="subtab-blueprints-mine">
+    <div v-show="activeTab === 'blueprints'" role="tabpanel"
+         id="panel-blueprints" :aria-labelledby="'tab-blueprints'">
       <Transition name="alert-slide">
         <div v-if="blueprintError" class="alert alert-danger py-2">{{ blueprintError }}</div>
       </Transition>
@@ -759,6 +780,14 @@
           <span v-if="myBpTypes.length" class="small text-muted">
             符合 {{ filteredBlueprints.length }} / {{ blueprints.length }} 張
           </span>
+          <button class="btn btn-sm" :class="bpDataOpen ? 'btn-secondary' : 'btn-info'"
+            :aria-expanded="bpDataOpen ? 'true' : 'false'" @click="bpDataOpen = !bpDataOpen">
+            <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i>{{ bpDataOpen ? '收起資料' : '藍圖資料' }}
+          </button>
+          <button class="btn btn-sm" :class="bpBulkOpen ? 'btn-secondary' : 'btn-success'"
+            :aria-expanded="bpBulkOpen ? 'true' : 'false'" @click="bpBulkOpen = !bpBulkOpen">
+            <i class="bi me-1" :class="bpBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ bpBulkOpen ? '收起登記' : '批量登記' }}
+          </button>
           <button class="btn btn-sm btn-primary" @click="loadBlueprints">重新整理</button>
         </div>
       </div>
@@ -827,20 +856,6 @@
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->
-    <!-- ══════════ 藍圖 › 藍圖資料（遊戲藍圖資料庫，唯讀；有任務的名稱可點開看解鎖任務） ══════════ -->
-    <div v-show="activeTab === 'blueprints' && activeSub === 'data'" role="tabpanel"
-         id="panel-blueprints-data" aria-labelledby="subtab-blueprints-data">
-      <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
-        :active="activeTab === 'blueprints' && activeSub === 'data'" />
-    </div>
-
-    <!-- ══════════ 藍圖批量登記 ══════════ -->
-    <div v-show="activeTab === 'blueprints' && activeSub === 'bulk'" role="tabpanel"
-         id="panel-blueprints-bulk" aria-labelledby="subtab-blueprints-bulk">
-      <BlueprintBulkRegister ref="bulkRegisterRef" :fetcher="playerAuth.playerFetch"
-        card-class="card scifi-card" @registered="onBulkRegistered" />
-    </div>
-
     <!-- ══════════ 艦隊（我的艦隊＋批量登記） ══════════ -->
     <div v-show="activeTab === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'">
       <Transition name="alert-slide">
@@ -1242,23 +1257,16 @@ function holderLabel(nickname, playerName, scid) {
   return name ? `${name}（${id}）` : id
 }
 
-// 主分頁。「倉庫」與「查詢」各自有下層分頁（subTabs），
+// 主分頁。只有「查詢」還有下層分頁（subTabs），
 // 頂層 6 個項目，手機上放不下時分頁列可以左右滑（見 scifi-theme.css 的 .scifi-tabs）。
 const tabs = [
   {
+    // 原本的「物品庫存／庫存紀錄」合併成一頁，庫存紀錄改成按鈕展開（比照艦隊）
     key: 'warehouse', label: '倉庫',   icon: 'bi bi-box-seam',
-    subTabs: [
-      { key: 'stock',      label: '物品庫存' },
-      { key: 'history',    label: '庫存紀錄' },
-    ],
   },
   {
+    // 原本的「我的藍圖／藍圖資料／批量登記」合併成一頁，後兩個改成按鈕展開（比照艦隊）
     key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
-    subTabs: [
-      { key: 'mine',   label: '我的藍圖' },
-      { key: 'data',   label: '藍圖資料' },
-      { key: 'bulk',   label: '批量登記' },
-    ],
   },
   {
     // 原本的「我的艦隊／批量登記」兩個下層分頁合併成一頁，批量登記改成按鈕展開
@@ -1307,6 +1315,10 @@ const stockMode = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].inclu
   ? route.query.sub : '')
 // 艦隊的批量登記同理：舊網址 ?tab=fleet&sub=bulk 直接展開
 const fleetBulkOpen = ref(activeTab.value === 'fleet' && route.query.sub === 'bulk')
+// 倉庫的庫存紀錄、藍圖的藍圖資料／批量登記同理（舊網址 ?sub=history|data|bulk 直接展開）
+const historyOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'history')
+const bpDataOpen = ref(activeTab.value === 'blueprints' && route.query.sub === 'data')
+const bpBulkOpen = ref(activeTab.value === 'blueprints' && route.query.sub === 'bulk')
 const fleetImportOpen = ref(false)
 function toggleStockMode(mode) {
   stockMode.value = stockMode.value === mode ? '' : mode
