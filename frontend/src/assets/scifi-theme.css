@@ -758,3 +758,24 @@
   color: var(--sf-text-strong);
 }
 .scifi-page .sf-search .multi-select-filter__btn:hover { background-color: rgba(var(--sf-accent-rgb), .18); }
+
+/* ── 分頁最上面的工具列：展開區塊的開關＋重新整理（倉庫／藍圖／艦隊） ── */
+.scifi-page .sf-toolbar {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem;
+  margin-bottom: .9rem;
+}
+
+/* ── 按按鈕在列表上方展開的區塊（倉庫的新增／異動／紀錄、藍圖的資料／批量登記、艦隊的批量登記／匯入）──
+ * 加淡淡的強調色底＋邊框（左邊加粗），跟下面的主列表分得出來。 */
+.scifi-page .sf-drawer {
+  background: rgba(var(--sf-accent-rgb), .06);
+  border: 1px solid rgba(var(--sf-accent-rgb), .45);
+  border-left: 4px solid var(--sf-accent);
+  border-radius: 10px;
+  padding: .9rem 1rem .5rem;
+  margin-bottom: 1.25rem;
+}
+.scifi-page .sf-drawer__title {
+  font-size: 1.05rem; font-weight: 700; margin: 0 0 .7rem;
+  color: var(--sf-accent-text, var(--sf-accent));
+}

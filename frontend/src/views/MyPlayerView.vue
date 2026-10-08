@@ -117,10 +117,28 @@
     <div v-if="loadingPlayer" class="text-muted small mb-3">載入中…</div>
     <div v-else-if="playerError" class="alert alert-danger">{{ playerError }}</div>
 
+    <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
+    <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
+      <button class="btn btn-sm" :class="stockMode === 'add' ? 'btn-secondary' : 'btn-success'"
+        :aria-expanded="stockMode === 'add' ? 'true' : 'false'" @click="toggleStockMode('add')">
+        <i class="bi me-1" :class="stockMode === 'add' ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ stockMode === 'add' ? '收起新增' : '新增物品' }}
+      </button>
+      <button class="btn btn-sm" :class="stockMode === 'adjust' ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="stockMode === 'adjust' ? 'true' : 'false'" @click="toggleStockMode('adjust')">
+        <i class="bi me-1" :class="stockMode === 'adjust' ? 'bi-x-lg' : 'bi-arrow-left-right'"></i>{{ stockMode === 'adjust' ? '收起異動' : '庫存異動' }}
+      </button>
+      <button class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
+        <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i>{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}
+      </button>
+      <button class="btn btn-sm btn-primary" @click="loadMyInventory">重新整理</button>
+    </div>
+
     <!-- ══════════ 倉庫 › 物品庫存 › 新增（登記還沒有的物品）══════════
          原本是獨立的「新增」分頁，併進物品庫存：按上方「新增物品」才展開，顯示在列表上面 -->
     <div v-show="activeTab === 'warehouse' && stockMode === 'add'"
-         id="panel-warehouse-add">
+         id="panel-warehouse-add" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>新增物品</h3>
       <Transition name="alert-slide">
         <div v-if="depositSuccess" class="alert alert-success py-2">{{ depositSuccess }}</div>
       </Transition>
@@ -215,7 +233,8 @@
     <!-- ══════════ 倉庫 › 物品庫存 › 庫存異動（對已登記的物品增減數量）══════════
          原本是獨立的「庫存異動」分頁，併進物品庫存：按上方「庫存異動」或列表每一列的「異動」展開 -->
     <div v-show="activeTab === 'warehouse' && stockMode === 'adjust'"
-         id="panel-warehouse-adjust">
+         id="panel-warehouse-adjust" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-arrow-left-right me-1"></i>庫存異動</h3>
       <Transition name="alert-slide">
         <div v-if="withdrawSuccess" class="alert alert-success py-2">{{ withdrawSuccess }}</div>
       </Transition>
@@ -591,8 +610,8 @@
 
     <!-- ══════════ 倉庫 › 庫存紀錄（原本的獨立分頁，改成物品庫存上方按「庫存紀錄」展開；
          舊網址 ?tab=warehouse&sub=history 直接展開）══════════ -->
-    <div v-show="activeTab === 'warehouse' && historyOpen" class="mb-4">
-      <h3 class="h6 fw-bold mb-2"><i class="bi bi-clock-history me-1"></i>庫存紀錄</h3>
+    <div v-show="activeTab === 'warehouse' && historyOpen" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-clock-history me-1"></i>庫存紀錄</h3>
       <InventoryFilterBar
         :rows="history" :matched="filteredHistory.length" :loc-label="locLabel"
         v-model:item="historyFilter.item" v-model:location="historyFilter.location" />
@@ -641,21 +660,6 @@
         :rows="myInventory" :matched="filteredInventory.length" :loc-label="locLabel"
         v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
 
-      <div class="d-flex flex-wrap justify-content-end gap-2 mb-2">
-        <button class="btn btn-sm" :class="stockMode === 'add' ? 'btn-secondary' : 'btn-success'"
-          :aria-expanded="stockMode === 'add' ? 'true' : 'false'" @click="toggleStockMode('add')">
-          <i class="bi me-1" :class="stockMode === 'add' ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ stockMode === 'add' ? '收起新增' : '新增物品' }}
-        </button>
-        <button class="btn btn-sm" :class="stockMode === 'adjust' ? 'btn-secondary' : 'btn-info'"
-          :aria-expanded="stockMode === 'adjust' ? 'true' : 'false'" @click="toggleStockMode('adjust')">
-          <i class="bi me-1" :class="stockMode === 'adjust' ? 'bi-x-lg' : 'bi-arrow-left-right'"></i>{{ stockMode === 'adjust' ? '收起異動' : '庫存異動' }}
-        </button>
-        <button class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
-          :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
-          <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i>{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}
-        </button>
-        <button class="btn btn-sm btn-primary" @click="loadMyInventory">重新整理</button>
-      </div>
       <div v-if="loadingInventory" class="text-muted small">載入中…</div>
       <div v-else-if="!myInventory.length" class="text-muted small">目前沒有登記任何物品。</div>
       <div v-else-if="!filteredInventory.length" class="text-muted small">
@@ -687,18 +691,31 @@
       </div>
     </div>
 
+    <!-- ══════════ 藍圖 › 工具列（同倉庫：開關＋重新整理放最上面）══════════ -->
+    <div v-show="activeTab === 'blueprints'" class="sf-toolbar">
+      <button class="btn btn-sm" :class="bpDataOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="bpDataOpen ? 'true' : 'false'" @click="bpDataOpen = !bpDataOpen">
+        <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i>{{ bpDataOpen ? '收起資料' : '藍圖資料' }}
+      </button>
+      <button class="btn btn-sm" :class="bpBulkOpen ? 'btn-secondary' : 'btn-success'"
+        :aria-expanded="bpBulkOpen ? 'true' : 'false'" @click="bpBulkOpen = !bpBulkOpen">
+        <i class="bi me-1" :class="bpBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ bpBulkOpen ? '收起登記' : '批量登記' }}
+      </button>
+      <button class="btn btn-sm btn-primary" @click="loadBlueprints">重新整理</button>
+    </div>
+
     <!-- ══════════ 藍圖 › 藍圖資料／批量登記（原本的下層分頁，改成「我的藍圖」上方按按鈕展開；
          舊網址 ?tab=blueprints&sub=data|bulk 直接展開）══════════ -->
     <!-- 藍圖資料：遊戲藍圖資料庫，唯讀；有任務的名稱可點開看解鎖任務 -->
-    <div v-show="activeTab === 'blueprints' && bpDataOpen" class="mb-4">
-      <h3 class="h6 fw-bold mb-2"><i class="bi bi-journal-text me-1"></i>藍圖資料</h3>
+    <div v-show="activeTab === 'blueprints' && bpDataOpen" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-journal-text me-1"></i>藍圖資料</h3>
       <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
         :active="activeTab === 'blueprints' && bpDataOpen" />
     </div>
 
     <!-- ══════════ 藍圖批量登記 ══════════ -->
-    <div v-show="activeTab === 'blueprints' && bpBulkOpen" class="mb-4">
-      <h3 class="h6 fw-bold mb-2"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
+    <div v-show="activeTab === 'blueprints' && bpBulkOpen" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
       <BlueprintBulkRegister ref="bulkRegisterRef" :fetcher="playerAuth.playerFetch"
         card-class="card scifi-card" @registered="onBulkRegistered" />
     </div>
@@ -780,15 +797,6 @@
           <span v-if="myBpTypes.length" class="small text-muted">
             符合 {{ filteredBlueprints.length }} / {{ blueprints.length }} 張
           </span>
-          <button class="btn btn-sm" :class="bpDataOpen ? 'btn-secondary' : 'btn-info'"
-            :aria-expanded="bpDataOpen ? 'true' : 'false'" @click="bpDataOpen = !bpDataOpen">
-            <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i>{{ bpDataOpen ? '收起資料' : '藍圖資料' }}
-          </button>
-          <button class="btn btn-sm" :class="bpBulkOpen ? 'btn-secondary' : 'btn-success'"
-            :aria-expanded="bpBulkOpen ? 'true' : 'false'" @click="bpBulkOpen = !bpBulkOpen">
-            <i class="bi me-1" :class="bpBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ bpBulkOpen ? '收起登記' : '批量登記' }}
-          </button>
-          <button class="btn btn-sm btn-primary" @click="loadBlueprints">重新整理</button>
         </div>
       </div>
       <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
@@ -862,13 +870,28 @@
         <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
       </Transition>
 
+      <!-- 工具列（同倉庫：開關＋重新整理放最上面） -->
+      <div class="sf-toolbar">
+        <button class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
+          :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
+          <i class="bi me-1" :class="fleetImportOpen ? 'bi-x-lg' : 'bi-filetype-json'"></i>{{ fleetImportOpen ? '收起匯入' : 'JSON 匯入' }}
+        </button>
+        <button class="btn btn-sm" :class="fleetBulkOpen ? 'btn-secondary' : 'btn-success'"
+          :aria-expanded="fleetBulkOpen ? 'true' : 'false'" @click="fleetBulkOpen = !fleetBulkOpen">
+          <i class="bi me-1" :class="fleetBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ fleetBulkOpen ? '收起登記' : '批量登記' }}
+        </button>
+        <button class="btn btn-sm btn-primary" @click="loadFleet">重新整理</button>
+      </div>
+
       <!-- 批量登記（原本的獨立分頁）：按「批量登記」才展開；舊網址 ?tab=fleet&sub=bulk 直接打開 -->
-      <div v-show="fleetBulkOpen" class="mb-3">
+      <div v-show="fleetBulkOpen" class="sf-drawer">
+        <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
         <FleetBulkRegister ref="fleetBulkRef" :fetcher="playerAuth.playerFetch"
           card-class="card scifi-card" @registered="loadFleet" />
       </div>
       <!-- JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue） -->
-      <div v-if="fleetImportOpen" class="mb-3">
+      <div v-if="fleetImportOpen" class="sf-drawer">
+        <h3 class="sf-drawer__title"><i class="bi bi-filetype-json me-1"></i>JSON 匯入</h3>
         <FleetImport :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
       </div>
 
@@ -909,17 +932,6 @@
             共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘
           </template>
         </span>
-        <div class="d-flex flex-wrap gap-2">
-          <button class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
-            :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
-            <i class="bi me-1" :class="fleetImportOpen ? 'bi-x-lg' : 'bi-filetype-json'"></i>{{ fleetImportOpen ? '收起匯入' : 'JSON 匯入' }}
-          </button>
-          <button class="btn btn-sm" :class="fleetBulkOpen ? 'btn-secondary' : 'btn-success'"
-            :aria-expanded="fleetBulkOpen ? 'true' : 'false'" @click="fleetBulkOpen = !fleetBulkOpen">
-            <i class="bi me-1" :class="fleetBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ fleetBulkOpen ? '收起登記' : '批量登記' }}
-          </button>
-          <button class="btn btn-sm btn-primary" @click="loadFleet">重新整理</button>
-        </div>
       </div>
       <div v-if="loadingFleet" class="text-muted small">載入中…</div>
       <div v-else-if="fleetLoaded && !fleet.length" class="text-muted small">還沒有登記任何船／載具。</div>
