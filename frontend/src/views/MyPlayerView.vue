@@ -12,7 +12,8 @@
     obtained（已取得）。後端與後台管理頁仍保留完整的 UNLOCK_STATUSES，
     管理員設過的非 obtained 狀態在「查詢 › 持有藍圖」還是會標出來。
   - 查詢（別人的東西，唯讀）
-      · 物品庫存：一個關鍵字同時搜物品名稱／地點／玩家暱稱／玩家遊戲ID
+      · 持有物品（原「物品庫存」）：一個關鍵字同時搜物品名稱／地點／玩家暱稱／玩家遊戲ID
+        （查詢的三區改成上方按鈕點開才顯示，比照倉庫／藍圖／艦隊）
         （公會庫＋所有玩家個人庫，見 app/inventory/view.py 的 search_stock）
       · 持有藍圖：某張藍圖誰登記了
   - 個人資料：暱稱／Discord／備註可以自己改，遊戲ID（star_citizen_id）不開放修改
@@ -346,9 +347,19 @@
       </div>
     </div>
 
-    <!-- ══════════ 查詢 › 物品庫存 ══════════ -->
-    <div v-show="activeTab === 'search' && activeSub === 'items'" role="tabpanel"
-         id="panel-search-items" aria-labelledby="subtab-search-items">
+    <!-- ══════════ 查詢 › 工具列：持有物品／持有藍圖／持有船艦，點開才顯示（比照倉庫／藍圖／艦隊）══════════
+         舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開對應的區塊 -->
+    <div v-show="activeTab === 'search'" class="sf-toolbar">
+      <button v-for="sec in SEARCH_SECTIONS" :key="sec.key" class="btn btn-sm"
+        :class="searchOpen[sec.key] ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="searchOpen[sec.key] ? 'true' : 'false'" @click="searchOpen[sec.key] = !searchOpen[sec.key]">
+        <i class="bi me-1" :class="searchOpen[sec.key] ? 'bi-x-lg' : sec.icon"></i>{{ searchOpen[sec.key] ? `收起${sec.label}` : sec.label }}
+      </button>
+    </div>
+
+    <!-- ══════════ 查詢 › 持有物品（原「物品庫存」）══════════ -->
+    <div v-show="activeTab === 'search' && searchOpen.items" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-box-seam me-1"></i>持有物品</h3>
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
@@ -438,8 +449,8 @@
     <!-- ══════════ 查詢 › 持有藍圖 ══════════ -->
     <!-- 這裡查的是「誰登記了這張藍圖」，也就是別人的名冊 ——
          跟頂層的「藍圖」分頁（自己的名冊，可增刪）是不同的資料範圍。 -->
-    <div v-show="activeTab === 'search' && activeSub === 'blueprints'" role="tabpanel"
-         id="panel-search-blueprints" aria-labelledby="subtab-search-blueprints">
+    <div v-show="activeTab === 'search' && searchOpen.blueprints" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-diagram-3 me-1"></i>持有藍圖</h3>
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
@@ -507,8 +518,8 @@
     </div>
 
     <!-- ══════════ 查詢 › 持有船艦：誰有哪款船 ══════════ -->
-    <div v-show="activeTab === 'search' && activeSub === 'fleet'" role="tabpanel"
-         id="panel-search-fleet" aria-labelledby="subtab-search-fleet">
+    <div v-show="activeTab === 'search' && searchOpen.fleet" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-rocket-takeoff me-1"></i>持有船艦</h3>
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
@@ -1269,7 +1280,7 @@ function holderLabel(nickname, playerName, scid) {
   return name ? `${name}（${id}）` : id
 }
 
-// 主分頁。只有「查詢」還有下層分頁（subTabs），
+// 主分頁。目前都沒有下層分頁（subTabs，保留機制備用），
 // 頂層 6 個項目，手機上放不下時分頁列可以左右滑（見 scifi-theme.css 的 .scifi-tabs）。
 const tabs = [
   {
@@ -1286,12 +1297,8 @@ const tabs = [
   },
   { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
   {
+    // 原本的三個下層分頁合併成一頁，改成上方按鈕點開（SEARCH_SECTIONS）
     key: 'search',    label: '查詢',   icon: 'bi bi-search',
-    subTabs: [
-      { key: 'items',      label: '物品庫存' },
-      { key: 'blueprints', label: '持有藍圖' },
-      { key: 'fleet',      label: '持有船艦' },
-    ],
   },
   { key: 'gamelog',   label: 'LOG 解析', icon: 'bi bi-journal-code' },
   { key: 'chatcode',  label: '中文轉碼', icon: 'bi bi-translate' },
@@ -1327,6 +1334,14 @@ const stockMode = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].inclu
   ? route.query.sub : '')
 // 艦隊的批量登記同理：舊網址 ?tab=fleet&sub=bulk 直接展開
 const fleetBulkOpen = ref(activeTab.value === 'fleet' && route.query.sub === 'bulk')
+// 查詢的三個區塊：點開才顯示、才載入資料（舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開）
+const SEARCH_SECTIONS = [
+  { key: 'items', label: '持有物品', icon: 'bi bi-box-seam' },
+  { key: 'blueprints', label: '持有藍圖', icon: 'bi bi-diagram-3' },
+  { key: 'fleet', label: '持有船艦', icon: 'bi bi-rocket-takeoff' },
+]
+const searchOpen = reactive(Object.fromEntries(SEARCH_SECTIONS.map(sec =>
+  [sec.key, activeTab.value === 'search' && route.query.sub === sec.key])))
 // 倉庫的庫存紀錄、藍圖的藍圖資料／批量登記同理（舊網址 ?sub=history|data|bulk 直接展開）
 const historyOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'history')
 const bpDataOpen = ref(activeTab.value === 'blueprints' && route.query.sub === 'data')
@@ -1373,20 +1388,9 @@ function setSub(key) {
 // 都會直接以該分頁開場，此時 watch 不會觸發（值沒變過），資料就永遠不會載。
 // 不用 { immediate: true } 是因為 masterCount / bpHolders 宣告在下面，
 // 立即執行會踩到 const 的 TDZ。
-function loadForTab(tab, sub) {
-  if (tab === 'search' && sub === 'items' && !itemTypes.value.length) {
-    loadItemTypes()
-  }
-  if (tab === 'search' && sub === 'blueprints') {
-    if (!blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
-    if (!bpHolders.value.length) loadBlueprintHolders()
-  }
-  // 「查詢」各分頁的玩家id／暱稱欄位都用同一份玩家名單，先載起來
-  if (tab === 'search') ensureRoster()
-  if (tab === 'search' && sub === 'fleet') {
-    if (!vehicleFacetsLoaded) loadVehicleFacets()
-    if (!fleetHolders.value.length) loadFleetHolders()
-  }
+function loadForTab(tab) {
+  // 「查詢」：點開哪一區才載入那一區的資料（見 loadSearchSections）
+  if (tab === 'search') loadSearchSections()
   if (tab === 'fleet' && !fleetLoaded.value) loadFleet()
   if (tab === 'tools') loadToolLinks()
   // 進「藍圖」才查主檔筆數（決定要不要顯示「尚未同步」提示）
@@ -1396,6 +1400,23 @@ function loadForTab(tab, sub) {
 }
 
 watch([activeTab, activeSub], ([tab, sub]) => loadForTab(tab, sub))
+
+// 「查詢」點開的區塊才載入資料；玩家id／暱稱欄位三區共用同一份玩家名單
+function loadSearchSections() {
+  if (!Object.values(searchOpen).some(Boolean)) return
+  ensureRoster()
+  if (searchOpen.items && !itemTypes.value.length) loadItemTypes()
+  if (searchOpen.blueprints) {
+    if (!blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
+    if (!bpHolders.value.length) loadBlueprintHolders()
+  }
+  if (searchOpen.fleet) {
+    if (!vehicleFacetsLoaded) loadVehicleFacets()
+    if (!fleetHolders.value.length) loadFleetHolders()
+  }
+}
+// 不用 immediate：setup 當下後面的 let／const 還沒宣告（TDZ）；開頁時由 onMounted 的 loadForTab 補載
+watch(() => ({ ...searchOpen }), () => { if (activeTab.value === 'search') loadSearchSections() })
 
 // 使用者直接改網址（或按上一頁）時，畫面要跟著走
 watch(() => [route.query.tab, route.query.sub], ([tab, sub]) => {
@@ -2117,7 +2138,7 @@ async function removeBlueprint(bp) {
   if (res.ok && data?.success) loadBlueprints()
 }
 
-// ── 查詢 › 物品庫存：物品名稱／類型／地點／玩家id／玩家暱稱，AND 篩選 ──
+// ── 查詢 › 持有物品（原「物品庫存」）：物品名稱／類型／地點／玩家id／玩家暱稱，AND 篩選 ──
 //
 // 舊版是一個關鍵字同時比對物品／玩家／地點取聯集（OR）。現在拆成 5 個各自
 // autocomplete 選定的欄位，AND 語意（同時符合才顯示）——打 /inventory/search
