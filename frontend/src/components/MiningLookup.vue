@@ -48,8 +48,10 @@
           <i class="bi bi-search"></i>
           <input v-model="resonanceInput" type="number" min="0" step="1"
             placeholder="輸入掃描到的訊號值（RS）" aria-label="輸入掃描到的訊號值">
-          <button v-if="resonanceInput !== ''" type="button" class="mining-echo__clear"
-            aria-label="清除" @click="resonanceInput = ''">×</button>
+          <button type="button" class="btn btn-sm btn-warning mining-echo__clear"
+            :disabled="resonanceInput === ''" @click="resonanceInput = ''">
+            <i class="bi bi-x-lg me-1"></i>清除
+          </button>
         </div>
 
         <div v-if="loadingDeposits" class="mining-echo__panel text-center py-4">
@@ -141,8 +143,10 @@
             autocomplete="off"
             @input="onMineralInput($event.target.value)" @focus="showMineralSuggest = !!mineralQuery.trim()"
             @keydown="onMineralKeydown" @blur="onMineralBlur">
-          <button v-if="mineralQuery" type="button" class="mining-echo__clear"
-            aria-label="清除" @mousedown.prevent="clearMineral">×</button>
+          <button type="button" class="btn btn-sm btn-warning mining-echo__clear"
+            :disabled="!mineralQuery && !selectedMineralKey" @mousedown.prevent="clearMineral">
+            <i class="bi bi-x-lg me-1"></i>清除
+          </button>
           <ul v-if="showMineralSuggest" :id="mineralListId" role="listbox" class="mining-echo__suggest">
             <li v-if="!mineralSuggestions.length" class="mining-echo__suggest-hint">沒有符合的礦物</li>
             <li v-for="(g, i) in mineralSuggestions" v-else :id="`${mineralListId}-${i}`" :key="g.resource_key"
@@ -550,15 +554,12 @@ function locationsFor(group) {
 }
 .mining-echo__search input::placeholder { color: var(--me-text-dim); }
 .mining-echo__chevron { color: var(--me-text-dim); }
+/* 搜尋框右側的「清除」按鈕（btn-warning，配色由 scifi-theme.css 統一） */
 .mining-echo__clear {
-  background: transparent;
-  border: 0;
-  color: var(--me-text-dim);
-  font-size: 1.1rem;
-  line-height: 1;
-  padding: 0 .25rem;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 1rem;
 }
-.mining-echo__clear:hover { color: var(--me-text); }
 
 .mining-echo__suggest {
   position: absolute;
