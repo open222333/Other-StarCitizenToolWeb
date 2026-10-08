@@ -267,6 +267,7 @@ UNGUARDED_ALLOWLIST = {
     'app_blueprint.master_output_types',
     'app_blueprint.master_for_item',
     'app_blueprint.get_master',
+    'app_blueprint.get_master_quality',   # 品質試算表，同 get_master 是公開遊戲資料
     # 礦物回波參考表（同樣是公開遊戲資料，來源是 scunpacked-data；
     # 純查詢對照表，沒有寫入動作，後台/玩家兩種身分都應該看得到）
     'app_mining.list_deposits',
