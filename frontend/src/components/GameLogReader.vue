@@ -14,45 +14,49 @@
     - 拖放：先試著拿控制代碼（拿得到就能監看），拿不到就當一般檔案讀。
 -->
 <template>
-  <div>
-    <div :class="[cardClass, 'mb-3', { 'gamelog-drop': dragging }]"
-      @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
-      <div class="card-body">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <button type="button" class="btn btn-primary" :disabled="loading" @click="fileInput?.click()">
-            <i class="bi bi-file-earmark-text me-1"></i>選擇 Game.log
-          </button>
-          <FieldHint :text="`Game.log 在遊戲安裝資料夾裡，例如 ${DEFAULT_PATH}；也可以把檔案直接拖進這個區塊。`" />
-          <template v-if="supportsPicker && !handle">
-            <button type="button" class="btn btn-success" :disabled="loading" @click="pickWatchFile">
-              <i class="bi bi-broadcast me-1"></i>選擇並監看
-            </button>
-            <FieldHint text="遊戲進行中自動更新（Chrome／Edge）。遊戲裝在 C:\Program Files 這類系統資料夾時，瀏覽器會擋下這個選檔，請改用「選擇 Game.log」或把檔案拖進來。" />
-          </template>
-          <template v-if="handle">
-            <button type="button" class="btn btn-primary" :disabled="loading" @click="reload">
-              <i class="bi bi-arrow-clockwise me-1"></i>重新讀取
-            </button>
-            <button type="button" class="btn" :class="watching ? 'btn-secondary' : 'btn-success'"
-              :disabled="loading" :aria-pressed="watching ? 'true' : 'false'" @click="toggleWatch">
-              <i class="bi me-1" :class="watching ? 'bi-pause-fill' : 'bi-broadcast'"></i>{{ watching ? '停止監看' : '持續監看' }}
-            </button>
-          </template>
-          <button v-if="fileName" type="button" class="btn btn-warning" :disabled="loading" @click="clearAll">清除</button>
-          <input ref="fileInput" type="file" accept=".log,.txt,text/plain" class="d-none" @change="onInputFile">
-        </div>
+  <!-- 整個分頁都可以拖放 Game.log 進來 -->
+  <div class="gamelog" :class="{ 'gamelog-drop': dragging }"
+    @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
+    <!-- 工具列：功能按鈕放最上面（比照倉庫／藍圖／艦隊） -->
+    <div class="sf-toolbar align-items-center">
+      <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="fileInput?.click()">
+        <i class="bi bi-file-earmark-text me-1"></i>選擇 Game.log
+      </button>
+      <template v-if="supportsPicker && !handle">
+        <button type="button" class="btn btn-sm btn-success" :disabled="loading" @click="pickWatchFile">
+          <i class="bi bi-broadcast me-1"></i>選擇並監看
+        </button>
+      </template>
+      <template v-if="handle">
+        <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="reload">
+          <i class="bi bi-arrow-clockwise me-1"></i>重新讀取
+        </button>
+        <button type="button" class="btn btn-sm" :class="watching ? 'btn-secondary' : 'btn-success'"
+          :disabled="loading" :aria-pressed="watching ? 'true' : 'false'" @click="toggleWatch">
+          <i class="bi me-1" :class="watching ? 'bi-pause-fill' : 'bi-broadcast'"></i>{{ watching ? '停止監看' : '持續監看' }}
+        </button>
+      </template>
+      <button v-if="fileName" type="button" class="btn btn-sm btn-warning" :disabled="loading" @click="clearAll">清除</button>
+      <FieldHint :text="`Game.log 在遊戲安裝資料夾裡，例如 ${DEFAULT_PATH}；也可以把檔案直接拖進來。「選擇並監看」（Chrome／Edge）會在遊戲進行中自動更新，但遊戲裝在 C:\\Program Files 這類系統資料夾時會被瀏覽器擋下，請改用「選擇 Game.log」或拖放。`" />
+      <input ref="fileInput" type="file" accept=".log,.txt,text/plain" class="d-none" @change="onInputFile">
+    </div>
 
-        <div v-if="fileName" class="mt-2 gamelog-meta">
+    <div v-if="fileName || loading || error" :class="[cardClass, 'mb-3']">
+      <div class="card-body py-2">
+        <div v-if="fileName" class="gamelog-meta">
           <i class="bi bi-file-earmark me-1"></i>{{ fileName }} · {{ fmtSize(fileSize) }}
           <span v-if="readAt"> · 讀取於 {{ fmtClock(readAt) }}</span>
           <span v-if="watching" class="ms-2 gamelog-live"><i class="bi bi-circle-fill me-1"></i>監看中</span>
         </div>
-        <div v-if="loading" class="progress mt-2" role="progressbar" :aria-valuenow="Math.round(progress * 100)"
+        <div v-if="loading" class="progress my-1" role="progressbar" :aria-valuenow="Math.round(progress * 100)"
           aria-valuemin="0" aria-valuemax="100" style="height: 6px">
           <div class="progress-bar" :style="{ width: `${Math.round(progress * 100)}%` }"></div>
         </div>
-        <div v-if="error" class="alert alert-danger py-2 mt-2 mb-0">{{ error }}</div>
+        <div v-if="error" class="alert alert-danger py-2 my-1">{{ error }}</div>
       </div>
+    </div>
+    <div v-else class="gamelog-dropzone">
+      <i class="bi bi-file-earmark-arrow-down me-1"></i>Game.log
     </div>
 
     <template v-if="fileName && !loading">
@@ -318,5 +322,10 @@ const fmtClock = d => d.toLocaleTimeString('zh-TW', { hour12: false })
 .gamelog-live { color: rgb(var(--bs-success-rgb)); }
 .gamelog-live .bi { font-size: .6rem; vertical-align: middle; }
 .gamelog-summary li { margin-bottom: .25rem; }
-.gamelog-drop { outline: 2px dashed var(--sf-accent); outline-offset: -6px; }
+.gamelog { min-height: 12rem; border-radius: 10px; }
+.gamelog-drop { outline: 2px dashed var(--sf-accent); outline-offset: 4px; }
+.gamelog-dropzone {
+  border: 2px dashed var(--sf-border); border-radius: 10px;
+  padding: 2rem 1rem; text-align: center; font-size: 1.05rem; color: var(--sf-text-muted);
+}
 </style>

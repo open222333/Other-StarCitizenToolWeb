@@ -11,7 +11,21 @@
 -->
 <template>
   <div>
-    <h3 class="h6 fw-bold mb-2"><i class="bi bi-chat-dots me-1"></i>聊天代碼</h3>
+    <!-- 工具列：兩區的開關＋字典重新整理放最上面（比照倉庫／藍圖／艦隊） -->
+    <div class="sf-toolbar">
+      <button type="button" class="btn btn-sm" :class="chatOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="chatOpen ? 'true' : 'false'" @click="chatOpen = !chatOpen">
+        <i class="bi me-1" :class="chatOpen ? 'bi-x-lg' : 'bi-chat-dots'"></i>{{ chatOpen ? '收起聊天代碼' : '聊天代碼' }}
+      </button>
+      <button type="button" class="btn btn-sm" :class="textOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="textOpen ? 'true' : 'false'" @click="textOpen = !textOpen">
+        <i class="bi me-1" :class="textOpen ? 'bi-x-lg' : 'bi-code-square'"></i>{{ textOpen ? '收起遊戲文字代碼' : '遊戲文字代碼' }}
+      </button>
+      <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="load">重新整理字典</button>
+    </div>
+
+    <div v-show="chatOpen" class="sf-drawer">
+    <h3 class="sf-drawer__title"><i class="bi bi-chat-dots me-1"></i>聊天代碼</h3>
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
@@ -30,7 +44,6 @@
             <template v-if="dict">字典 {{ dict.entries.toLocaleString('en-US') }} 字<template v-if="fetchedAt"> · 更新於 {{ fetchedAt }}</template></template>
             <template v-else-if="loading">字典載入中…</template>
           </span>
-          <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="load">重新整理</button>
         </div>
         <div v-if="stale" class="alert alert-warning py-2 mt-2 mb-0">字典暫時無法更新，目前用的是舊版。</div>
         <div v-if="error" class="alert alert-danger py-2 mt-2 mb-0">{{ error }}</div>
@@ -54,10 +67,12 @@
     </div>
     <div v-else-if="result.type === 'unknown'" class="chat-code-meta">看不出是中文還是 @代碼。</div>
 
-    <div class="chat-code-meta mt-2 mb-4">字典來源：社群專案 taksito/chsc-tw</div>
+    <div class="chat-code-meta mt-2 mb-2">字典來源：社群專案 taksito/chsc-tw</div>
+    </div>
 
     <!-- ── 遊戲文字代碼（localization key）⇄ 中文：查全站翻譯資料庫（GET /player/game-text）── -->
-    <h3 class="h6 fw-bold mb-2"><i class="bi bi-code-square me-1"></i>遊戲文字代碼</h3>
+    <div v-show="textOpen" class="sf-drawer">
+    <h3 class="sf-drawer__title"><i class="bi bi-code-square me-1"></i>遊戲文字代碼</h3>
     <div class="sf-search sf-search--inline d-flex flex-wrap align-items-center gap-2 mb-2">
       <input v-model="textQuery" type="search" class="form-control" style="max-width: 24rem"
         placeholder="代碼、中文或英文" aria-label="遊戲文字代碼、中文或英文">
@@ -96,6 +111,7 @@
       </div>
     </div>
     <div v-if="textRows && textRows.length >= 50" class="chat-code-meta mt-1">只列前 50 筆，請再輸入完整一點。</div>
+    </div>
   </div>
 </template>
 
@@ -108,6 +124,10 @@ const props = defineProps({
   active: { type: Boolean, default: false },
   cardClass: { type: String, default: 'card' },
 })
+
+// 兩區的開關（聊天代碼預設打開）
+const chatOpen = ref(true)
+const textOpen = ref(false)
 
 const dict = shallowRef(null)
 const loading = ref(false)
