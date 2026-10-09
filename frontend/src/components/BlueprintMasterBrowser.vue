@@ -13,6 +13,9 @@
   解鎖任務的連結：後台跳到任務資料庫頁；玩家頁沒有那一頁，藍圖名稱（有任務的才是
   連結）與明細裡的任務都開 BlueprintMissionsModal。
 
+  玩家頁傳 sharedFilters（{ q, types }）時，名稱／類型改用「藍圖」分頁頂端的共用搜尋卡，
+  這裡自己的名稱框與類型選單就不顯示（只留「預設可用」「需任務解鎖」這些本區專用的勾選）。
+
   玩家頁面顯示（後台才有的欄位與篩選）：PlayerVisibleToggle，規則見 src/models/visibility.py；
   玩家 token 呼叫 /blueprint/master 時後端本來就只回顯示的。
 
@@ -25,11 +28,13 @@
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-2">
         <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="nameQuery" type="search" class="form-control form-control-sm"
-            style="max-width: 14rem" placeholder="搜尋英文或中文名稱..." :aria-label="'搜尋藍圖名稱'"
-            @change="reload(0)">
-          <MultiSelectFilter :model-value="selectedTypes" label="類型" :options="typeOptions" searchable
-            @update:model-value="v => { selectedTypes = v; reload(0) }" />
+          <template v-if="!shared">
+            <input v-model="nameQuery" type="search" class="form-control form-control-sm"
+              style="max-width: 14rem" placeholder="搜尋英文或中文名稱..." :aria-label="'搜尋藍圖名稱'"
+              @change="reload(0)">
+            <MultiSelectFilter :model-value="selectedTypes" label="類型" :options="typeOptions" searchable
+              @update:model-value="v => { selectedTypes = v; reload(0) }" />
+          </template>
           <div class="form-check form-check-inline mb-0 ms-1">
             <input :id="`${uid}-available`" v-model="availableOnly" class="form-check-input" type="checkbox"
               @change="reload(0)">
@@ -198,7 +203,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { apiFetch } from '@/api'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -215,6 +220,8 @@ const props = defineProps({
   cardClass: { type: String, default: 'card shadow-sm border-0' },
   /** 玩家頁分頁用 v-show 一直掛著，第一次變成可見才載入（跟 MiningLookup 一樣） */
   active: { type: Boolean, default: true },
+  /** 玩家頁「藍圖」分頁的共用搜尋卡 { q, types }；null＝用這裡自己的名稱框與類型選單（後台） */
+  sharedFilters: { type: Object, default: null },
 })
 
 let uidSeq = 0
@@ -235,11 +242,16 @@ const missingZhOnly = ref(false)
 const hasMissionsOnly = ref(false)
 const playerVisible = ref('')
 
+const shared = computed(() => props.sharedFilters !== null)
+const effectiveQuery = computed(() => (shared.value ? (props.sharedFilters.q || '') : nameQuery.value).trim())
+const effectiveTypes = computed(() => (shared.value ? (props.sharedFilters.types || []) : selectedTypes.value))
+
 const colspan = computed(() => (props.player ? 7 : 9))
 const typeOptions = computed(() => types.value.map(t => ({ value: t, label: blueprintTypeLabel(t) })))
 
+// 共用搜尋卡的條件由分頁頂端自己清，這裡的「清除全部篩選」只管本區的勾選
 const hasActiveFilters = computed(() =>
-  !!nameQuery.value.trim() || selectedTypes.value.length > 0 || availableOnly.value || missingZhOnly.value
+  (!shared.value && (!!nameQuery.value.trim() || selectedTypes.value.length > 0)) || availableOnly.value || missingZhOnly.value
   || hasMissionsOnly.value || !!playerVisible.value)
 
 const expandedId = ref('')
@@ -269,8 +281,8 @@ async function reload(newOffset = 0) {
   loadFailed.value = false
   expandedId.value = ''
   const body = await getJson(`/blueprint/master${query({
-    q: nameQuery.value.trim(),
-    output_type: selectedTypes.value,
+    q: effectiveQuery.value,
+    output_type: effectiveTypes.value,
     available: availableOnly.value ? 1 : '',
     missing_zh: missingZhOnly.value ? 1 : '',
     has_missions: hasMissionsOnly.value ? 1 : '',
@@ -344,9 +356,18 @@ let loaded = false
 watch(() => props.active, (v) => {
   if (!v || loaded) return
   loaded = true
-  loadTypes()
+  if (!shared.value) loadTypes()
   reload(0)
 }, { immediate: true })
+
+// 共用搜尋卡每打一個字就會換一次，等停手 300ms 再查；還沒展開過（未載入）就先不查
+let sharedTimer = null
+watch(() => props.sharedFilters, () => {
+  if (!loaded) return
+  clearTimeout(sharedTimer)
+  sharedTimer = setTimeout(() => reload(0), 300)
+}, { deep: true })
+onBeforeUnmount(() => clearTimeout(sharedTimer))
 </script>
 
 <style scoped>

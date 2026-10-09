@@ -1,5 +1,6 @@
 <!--
-  庫存清單的篩選區（物品／地點），倉庫的「物品庫存」與「庫存紀錄」共用。
+  庫存清單的篩選區（物品／地點）。倉庫分頁頂端只有這一張，同一組條件同時篩
+  「物品庫存」與展開的「庫存紀錄」（rows 傳兩份清單合起來的列，選項才會涵蓋兩邊）。
 
   刻意做成純前端篩選：兩份清單都已經整包載在記憶體裡（個人庫存最多幾百筆、
   紀錄上限 200 筆），改選項就即時反應，不用再打一次 API。哪天資料量大到
@@ -31,13 +32,15 @@
         </div>
 
         <div class="col-12 col-md-2 d-flex gap-2">
-          <button class="btn btn-sm btn-scifi-outline flex-grow-1"
+          <button class="btn btn-sm btn-warning flex-grow-1"
                   :disabled="!item && !location" @click="clear">清除</button>
         </div>
       </div>
 
       <div v-if="item || location" class="form-text py-0 mt-1">
-        顯示 {{ matched }} / {{ rows.length }} 筆
+        <template v-for="(c, i) in counts" :key="c.label">
+          <template v-if="i"> · </template>{{ c.label }} {{ c.matched }} / {{ c.total }} 筆
+        </template>
       </div>
     </div>
   </div>
@@ -47,12 +50,12 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  // 要篩選的原始資料（個人庫存列 或 庫存紀錄列）
+  // 用來產生選項的資料列（物品庫存＋庫存紀錄合起來）
   rows:     { type: Array,  required: true },
   item:     { type: String, default: '' },   // '' = 全部
   location: { type: String, default: '' },
-  // 篩選後剩幾筆，由父層算好傳進來（父層才知道完整的篩選規則）
-  matched:  { type: Number, default: 0 },
+  // 各清單篩選後剩幾筆：[{ label, matched, total }]，由父層算好傳進來（父層才知道完整的篩選規則）
+  counts:   { type: Array,  default: () => [] },
   // 地點的顯示文字（英文＋中文對照），由父層的 locLabel 提供
   locLabel: { type: Function, default: (v) => v },
 })

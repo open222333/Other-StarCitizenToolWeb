@@ -132,8 +132,12 @@
         :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
         <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i>{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}
       </button>
-      <button class="btn btn-sm btn-primary" @click="loadMyInventory">重新整理</button>
+      <button class="btn btn-sm btn-primary" @click="refreshWarehouse">重新整理</button>
     </div>
+    <!-- 倉庫 › 共用篩選：只有這一張，同時篩「物品庫存」跟展開的「庫存紀錄」 -->
+    <InventoryFilterBar v-show="activeTab === 'warehouse'"
+      :rows="warehouseFilterRows" :counts="warehouseFilterCounts" :loc-label="locLabel"
+      v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
 
     <!-- ══════════ 倉庫 › 物品庫存 › 新增（登記還沒有的物品）══════════
          原本是獨立的「新增」分頁，併進物品庫存：按上方「新增物品」才展開，顯示在列表上面 -->
@@ -623,13 +627,6 @@
          舊網址 ?tab=warehouse&sub=history 直接展開）══════════ -->
     <div v-show="activeTab === 'warehouse' && historyOpen" class="sf-drawer">
       <h3 class="sf-drawer__title"><i class="bi bi-clock-history me-1"></i>庫存紀錄</h3>
-      <InventoryFilterBar
-        :rows="history" :matched="filteredHistory.length" :loc-label="locLabel"
-        v-model:item="historyFilter.item" v-model:location="historyFilter.location" />
-
-      <div class="d-flex justify-content-end mb-2">
-        <button class="btn btn-sm btn-primary" @click="loadHistory">重新整理</button>
-      </div>
       <div v-if="loadingHistory" class="text-muted small">載入中…</div>
       <div v-else-if="!history.length" class="text-muted small">目前沒有任何紀錄。</div>
       <div v-else-if="!filteredHistory.length" class="text-muted small">
@@ -667,10 +664,6 @@
     <!-- ══════════ 倉庫 › 物品庫存 ══════════ -->
     <div v-show="activeTab === 'warehouse'" role="tabpanel"
          id="panel-warehouse" :aria-labelledby="'tab-warehouse'">
-      <InventoryFilterBar
-        :rows="myInventory" :matched="filteredInventory.length" :loc-label="locLabel"
-        v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
-
       <div v-if="loadingInventory" class="text-muted small">載入中…</div>
       <div v-else-if="!myInventory.length" class="text-muted small">目前沒有登記任何物品。</div>
       <div v-else-if="!filteredInventory.length" class="text-muted small">
@@ -714,6 +707,27 @@
       </button>
       <button class="btn btn-sm btn-primary" @click="loadBlueprints">重新整理</button>
     </div>
+    <!-- 藍圖 › 共用搜尋：同一組名稱／類型同時篩「我的藍圖」「藍圖資料」「批量登記」 -->
+    <div v-show="activeTab === 'blueprints'" class="card scifi-card sf-search mb-3">
+      <div class="card-body py-3">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-7">
+            <label class="form-label small fw-semibold mb-1" for="bp-filter-q">名稱關鍵字</label>
+            <input id="bp-filter-q" v-model="bpFilterQuery" type="search" class="form-control form-control-sm"
+              placeholder="搜尋藍圖名稱（中英文皆可）" autocomplete="off">
+          </div>
+          <div class="col-12 col-md-5">
+            <label class="form-label small fw-semibold mb-1" for="bp-filter-type">類型</label>
+            <MultiSelectFilter id="bp-filter-type" v-model="myBpTypes" :options="blueprintTypeOptions"
+              label="類型" placeholder="全部" block searchable />
+          </div>
+        </div>
+        <div v-if="bpFilterActive" class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+          <span class="small text-muted">我的藍圖 符合 {{ filteredBlueprints.length }} / {{ blueprints.length }} 張</span>
+          <button type="button" class="btn btn-sm btn-warning" @click="clearBpFilter">清除篩選</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ══════════ 藍圖 › 藍圖資料／批量登記（原本的下層分頁，改成「我的藍圖」上方按按鈕展開；
          舊網址 ?tab=blueprints&sub=data|bulk 直接展開）══════════ -->
@@ -721,14 +735,14 @@
     <div v-show="activeTab === 'blueprints' && bpDataOpen" class="sf-drawer">
       <h3 class="sf-drawer__title"><i class="bi bi-journal-text me-1"></i>藍圖資料</h3>
       <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
-        :active="activeTab === 'blueprints' && bpDataOpen" />
+        :active="activeTab === 'blueprints' && bpDataOpen" :shared-filters="bpFilters" />
     </div>
 
     <!-- ══════════ 藍圖批量登記 ══════════ -->
     <div v-show="activeTab === 'blueprints' && bpBulkOpen" class="sf-drawer">
       <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
       <BlueprintBulkRegister ref="bulkRegisterRef" :fetcher="playerAuth.playerFetch"
-        card-class="card scifi-card" @registered="onBulkRegistered" />
+        card-class="card scifi-card" :filters="bpFilters" @registered="onBulkRegistered" />
     </div>
 
     <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
@@ -797,19 +811,6 @@
         </div>
       </div>
 
-      <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2">
-        <div v-if="blueprints.length" class="my-bp-filter sf-search sf-search--inline">
-          <label class="form-label small mb-1" for="mybp-type">類型</label>
-          <MultiSelectFilter id="mybp-type" v-model="myBpTypes" :options="myBpTypeOptions"
-            label="類型" placeholder="全部" block searchable />
-        </div>
-        <span v-else></span>
-        <div class="d-flex align-items-center gap-2">
-          <span v-if="myBpTypes.length" class="small text-muted">
-            符合 {{ filteredBlueprints.length }} / {{ blueprints.length }} 張
-          </span>
-        </div>
-      </div>
       <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
       <div v-else-if="!blueprints.length" class="text-muted small">目前沒有登記任何藍圖。</div>
       <div v-else-if="!filteredBlueprints.length" class="text-muted small">沒有符合篩選條件的藍圖。</div>
@@ -894,37 +895,31 @@
         <button class="btn btn-sm btn-primary" @click="loadFleet">重新整理</button>
       </div>
 
-      <!-- 批量登記（原本的獨立分頁）：按「批量登記」才展開；舊網址 ?tab=fleet&sub=bulk 直接打開 -->
-      <div v-show="fleetBulkOpen" class="sf-drawer">
-        <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
-        <FleetBulkRegister ref="fleetBulkRef" :fetcher="playerAuth.playerFetch"
-          card-class="card scifi-card" @registered="loadFleet" />
-      </div>
-      <!-- JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue） -->
-      <div v-if="fleetImportOpen" class="sf-drawer">
-        <h3 class="sf-drawer__title"><i class="bi bi-filetype-json me-1"></i>JSON 匯入</h3>
-        <FleetImport :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
-      </div>
-
-      <div v-if="fleet.length" class="card scifi-card sf-search mb-3">
+      <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「批量登記」 -->
+      <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
-            <div class="col-6 col-md-3">
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1" for="myfleet-q">名稱關鍵字</label>
+              <input id="myfleet-q" v-model="myFleetQuery" type="search" class="form-control form-control-sm"
+                placeholder="搜尋船艦名稱（中英文皆可）" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-2">
               <label class="form-label small mb-1" for="myfleet-type">類型</label>
               <MultiSelectFilter id="myfleet-type" v-model="myFleetTypes" :options="myFleetTypeOptions"
                 label="類型" placeholder="全部" block />
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
               <label class="form-label small mb-1" for="myfleet-size">尺寸</label>
               <MultiSelectFilter id="myfleet-size" v-model="myFleetSizes" :options="myFleetSizeOptions"
                 label="尺寸" placeholder="全部" block />
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
               <label class="form-label small mb-1" for="myfleet-mfr">廠商</label>
               <MultiSelectFilter id="myfleet-mfr" v-model="myFleetMfrs" :options="myFleetMfrOptions"
                 label="廠商" placeholder="全部" block searchable />
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
               <label class="form-label small mb-1" for="myfleet-role">角色</label>
               <MultiSelectFilter id="myfleet-role" v-model="myFleetRoles" :options="myFleetRoleOptions"
                 label="角色" placeholder="全部" block searchable />
@@ -934,6 +929,18 @@
             <button type="button" class="btn btn-sm btn-warning" @click="clearMyFleetFilters">清除篩選</button>
           </div>
         </div>
+      </div>
+
+      <!-- 批量登記（原本的獨立分頁）：按「批量登記」才展開；舊網址 ?tab=fleet&sub=bulk 直接打開 -->
+      <div v-show="fleetBulkOpen" class="sf-drawer">
+        <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
+        <FleetBulkRegister ref="fleetBulkRef" :fetcher="playerAuth.playerFetch"
+          card-class="card scifi-card" :filters="fleetFilters" @registered="loadFleet" />
+      </div>
+      <!-- JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue） -->
+      <div v-if="fleetImportOpen" class="sf-drawer">
+        <h3 class="sf-drawer__title"><i class="bi bi-filetype-json me-1"></i>JSON 匯入</h3>
+        <FleetImport :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
       </div>
 
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -1397,6 +1404,9 @@ function loadForTab(tab) {
   if (tab === 'blueprints' && masterCount.value === null) {
     loadMasterCount()
   }
+  // 共用搜尋卡的類型選項（主檔全部類型）、艦隊共用搜尋卡的類型／尺寸／廠商／角色選項
+  if (tab === 'blueprints' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
+  if (tab === 'fleet' && !vehicleFacetsLoaded) loadVehicleFacets()
 }
 
 watch([activeTab, activeSub], ([tab, sub]) => loadForTab(tab, sub))
@@ -1834,13 +1844,10 @@ function submitWithdrawRows() {
   })
 }
 
-// ── 篩選區（倉庫 › 物品庫存／庫存紀錄 各自一份狀態）────────────────
-//
-// 兩份刻意分開：在庫存頁篩「Laranite @ Area18」之後切到紀錄頁，
-// 通常是想看全部歷史，不是延續同一組條件。共用一份會很煩。
+// ── 篩選區（倉庫分頁頂端共用一張：同一組條件同時篩物品庫存與庫存紀錄）──────
+// 庫存紀錄已經併成同一頁的展開區塊，上下兩份清單看同一個物品／地點才直覺。
 // '' = 全部。用 item_id 比對而不是名稱，見 InventoryFilterBar 的說明。
 const stockFilter   = reactive({ item: '', location: '' })
-const historyFilter = reactive({ item: '', location: '' })
 
 function applyFilter(rows, f) {
   return rows.filter(r =>
@@ -1866,7 +1873,21 @@ async function loadMyInventory() {
 // ── 庫存紀錄（增加／減少歷史） ────────────────────────────────
 const history        = ref([])
 const loadingHistory  = ref(false)
-const filteredHistory = computed(() => applyFilter(history.value, historyFilter))
+const filteredHistory = computed(() => applyFilter(history.value, stockFilter))
+// 共用篩選的選項涵蓋兩份清單；紀錄區塊收起時只顯示庫存的筆數
+const warehouseFilterRows = computed(() => [...myInventory.value, ...history.value])
+const warehouseFilterCounts = computed(() => [
+  { label: '物品庫存', matched: filteredInventory.value.length, total: myInventory.value.length },
+  ...(historyOpen.value
+    ? [{ label: '庫存紀錄', matched: filteredHistory.value.length, total: history.value.length }]
+    : []),
+])
+
+// 倉庫工具列的「重新整理」：庫存一定重抓，紀錄有展開才一起重抓
+function refreshWarehouse() {
+  loadMyInventory()
+  if (historyOpen.value) loadHistory()
+}
 
 async function loadHistory() {
   loadingHistory.value = true
@@ -1887,21 +1908,28 @@ const PLAYER_BLUEPRINT_STATUS = 'obtained'
 const blueprints           = ref([])
 const loadingBlueprints    = ref(false)
 
-// 「我的藍圖」的類型篩選（可多選、取聯集）：清單整份載入，直接在前端篩。
-// 選項只列自己登記過的類型；自由輸入、沒對到主檔的藍圖沒有類型，歸在「未分類」。
-const BP_TYPE_NONE = '__none__'
+// 「藍圖」分頁頂端的共用搜尋（名稱關鍵字＋類型可多選、取聯集）：
+// 「我的藍圖」整份已載入，直接在前端篩；「藍圖資料」「批量登記」把同一組條件帶去後端查主檔。
+// 類型選項用主檔的全部類型（/blueprint/master/types），三區才會一致。
+const bpFilterQuery = ref('')
 const myBpTypes = ref([])
-const bpTypeOf = bp => bp.master?.output_type || BP_TYPE_NONE
-const myBpTypeOptions = computed(() => {
-  const types = [...new Set(blueprints.value.map(bpTypeOf))]
-  return types
-    .map(t => ({ value: t, label: t === BP_TYPE_NONE ? '未分類' : blueprintTypeLabel(t) }))
-    .sort((a, b) => (a.value === BP_TYPE_NONE) - (b.value === BP_TYPE_NONE)
-      || a.label.localeCompare(b.label, 'zh-Hant'))
+const bpFilters = computed(() => ({ q: bpFilterQuery.value.trim(), types: myBpTypes.value }))
+const bpFilterActive = computed(() => !!(bpFilters.value.q || myBpTypes.value.length))
+function clearBpFilter() {
+  bpFilterQuery.value = ''
+  myBpTypes.value = []
+}
+const filteredBlueprints = computed(() => {
+  const q = bpFilters.value.q.toLowerCase()
+  const types = myBpTypes.value
+  if (!q && !types.length) return blueprints.value
+  return blueprints.value.filter(bp => {
+    if (types.length && !types.includes(bp.master?.output_type)) return false
+    if (!q) return true
+    return [bp.name, bp.master?.name, bp.master?.name_zh]
+      .some(t => (t || '').toLowerCase().includes(q))
+  })
 })
-const filteredBlueprints = computed(() => (myBpTypes.value.length
-  ? blueprints.value.filter(bp => myBpTypes.value.includes(bpTypeOf(bp)))
-  : blueprints.value))
 // blueprint_uuid 對應遊戲藍圖主檔（blueprint_master）。
 // 有值＝從自動完成選的，名稱以主檔為準；空值＝自由輸入。
 const blueprintForm        = reactive({ name: '', notes: '', blueprint_uuid: '' })
@@ -2392,17 +2420,24 @@ const savingFleetId    = ref('')
 const fleetBulkRef     = ref(null)
 const fleetShipCount   = computed(() => fleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
 
-// 「我的艦隊」的篩選：清單本來就整份載入，直接在前端篩（同一欄位取聯集、欄位之間 AND）。
-// 選項只列自己艦隊裡實際有的值，不會出現勾了也篩不到東西的選項。
+// 「艦隊」分頁頂端的共用搜尋（同一欄位取聯集、欄位之間 AND）：
+// 「我的艦隊」整份已載入，直接在前端篩；「批量登記」把同一組條件帶去後端查載具主檔。
+// 選項＝載具主檔的 facets（批量登記查得到的）再補上自己艦隊裡有、但主檔已下架的值。
+// 尺寸統一用字串比對（facets 跟後端 size_class 參數都是字串）。
+const myFleetQuery = ref('')
 const myFleetTypes = ref([])
 const myFleetSizes = ref([])
 const myFleetMfrs  = ref([])
 const myFleetRoles = ref([])
-const myFleetHasFilter = computed(() => !!(myFleetTypes.value.length || myFleetSizes.value.length
-  || myFleetMfrs.value.length || myFleetRoles.value.length))
+const myFleetHasFilter = computed(() => !!(myFleetQuery.value.trim() || myFleetTypes.value.length
+  || myFleetSizes.value.length || myFleetMfrs.value.length || myFleetRoles.value.length))
+const fleetFilters = computed(() => ({
+  q: myFleetQuery.value.trim(), types: myFleetTypes.value, sizes: myFleetSizes.value,
+  manufacturers: myFleetMfrs.value, roles: myFleetRoles.value,
+}))
 
-function fleetOptions(pick, label, sortKey = o => o.label) {
-  const seen = new Map()
+function fleetOptions(pick, label, sortKey = o => o.label, base = []) {
+  const seen = new Map(base.map(o => [o.value, o]))
   for (const row of fleet.value) {
     const v = row.vehicle
     if (!v) continue
@@ -2417,21 +2452,27 @@ function fleetOptions(pick, label, sortKey = o => o.label) {
 }
 const TYPE_ORDER = ['ship', 'ground', 'gravlev']
 const myFleetTypeOptions = computed(() => fleetOptions(
-  v => v.vehicle_type, v => vehicleTypeLabel(v.vehicle_type), o => TYPE_ORDER.indexOf(o.value)))
+  v => v.vehicle_type, v => vehicleTypeLabel(v.vehicle_type), o => TYPE_ORDER.indexOf(o.value),
+  vehicleFacets.value.types))
 const myFleetSizeOptions = computed(() => fleetOptions(
-  v => v.size_class, v => vehicleSizeLabel(v.size_class), o => o.value))
+  v => (v.size_class === null || v.size_class === undefined ? '' : String(v.size_class)),
+  v => vehicleSizeLabel(v.size_class), o => Number(o.value), vehicleSizeOptions.value))
 const myFleetMfrOptions = computed(() => fleetOptions(
-  v => v.manufacturer_code, v => manufacturerLabel(v.manufacturer_name, v.manufacturer_code)))
+  v => v.manufacturer_code, v => manufacturerLabel(v.manufacturer_name, v.manufacturer_code),
+  undefined, manufacturerOptions.value))
 const myFleetRoleOptions = computed(() => fleetOptions(
-  v => v.role, v => vehicleRoleLabel(v.role, v.role_zh)))
+  v => v.role, v => vehicleRoleLabel(v.role, v.role_zh), undefined, vehicleFacets.value.roles))
 
 const filteredFleet = computed(() => {
   if (!myFleetHasFilter.value) return fleet.value
   const match = (selected, value) => !selected.length || selected.includes(value)
+  const q = myFleetQuery.value.trim().toLowerCase()
   return fleet.value.filter(row => {
     const v = row.vehicle || {}
+    if (q && ![row.name, v.name, v.name_zh, ...(row.unit_names || [])]
+      .some(t => (t || '').toLowerCase().includes(q))) return false
     return match(myFleetTypes.value, v.vehicle_type)
-      && match(myFleetSizes.value, v.size_class)
+      && match(myFleetSizes.value, v.size_class === null || v.size_class === undefined ? '' : String(v.size_class))
       && match(myFleetMfrs.value, v.manufacturer_code)
       && match(myFleetRoles.value, v.role)
   })
@@ -2440,6 +2481,7 @@ const filteredFleetShipCount = computed(() =>
   filteredFleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
 
 function clearMyFleetFilters() {
+  myFleetQuery.value = ''
   myFleetTypes.value = []
   myFleetSizes.value = []
   myFleetMfrs.value = []

@@ -2,37 +2,15 @@
   藍圖主檔清單 ＋ 勾選批量登記。
 
   取代「只能用搜尋框一張一張登記」的流程：4.10 一次解鎖十幾張圖的時候，
-  逐張搜尋、選取、送出要重複十幾次。這裡直接把主檔列出來（可依名稱／類型
-  篩選、分頁），勾選後一次送出。
+  逐張搜尋、選取、送出要重複十幾次。這裡直接把主檔列出來（分頁），勾選後一次送出。
+  名稱／類型篩選用「藍圖」分頁頂端那張共用搜尋卡（MyPlayerView 傳進 filters），
+  同一組條件同時篩「我的藍圖」「藍圖資料」跟這裡。
 
   已經登記過的會標成「已登記」且不能再勾 —— 後端也會再擋一次
   （見 Blueprint.bulk_create_for_player），因為畫面上的資料可能已經過時。
 -->
 <template>
   <div>
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div :class="[cardClass, 'sf-search', 'mb-3']">
-      <div class="card-body">
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-7">
-            <label class="form-label small fw-semibold" :for="qId">名稱關鍵字</label>
-            <input :id="qId" v-model="keyword" type="text" class="form-control form-control-sm"
-              placeholder="中英文都可以，例如 Laser、醫療" @input="onKeywordInput">
-          </div>
-          <div class="col-12 col-md-5">
-            <label class="form-label small fw-semibold" :for="typeId">類型</label>
-            <select :id="typeId" v-model="outputType" class="form-select form-select-sm"
-              @change="reload(0)">
-              <option value="">全部</option>
-              <option v-for="t in types" :key="t" :value="t">
-                {{ blueprintTypeLabel(t) }}
-              </option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
 
     <!-- ── 清單 ────────────────────────────────────────────── -->
@@ -73,7 +51,7 @@
               </tr>
               <tr v-else-if="!rows.length">
                 <td colspan="5" class="text-center py-4 hint">
-                  {{ keyword || outputType
+                  {{ keyword.trim() || outputTypes.length
                      ? '沒有符合條件的藍圖，換個關鍵字或類型看看。'
                      : '藍圖主檔還是空的 —— 請先在後台「系統設定 → 遊戲資料同步」跑一次同步。' }}
                 </td>
@@ -148,7 +126,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 
@@ -156,6 +134,8 @@ const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
   fetcher: { type: Function, required: true },
   cardClass: { type: String, default: 'card shadow-sm border-0' },
+  /** 篩選條件（「藍圖」分頁頂端的共用搜尋卡）：{ q, types }，types 可多選、取聯集 */
+  filters: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['registered'])
 
@@ -165,9 +145,6 @@ const missionsRef = ref(null)
 // 跟後端的 MAX_BULK_BLUEPRINTS 一致
 const maxBulk = 200
 
-const uid = Math.random().toString(36).slice(2, 8)
-const qId = `bpbulk-q-${uid}`
-const typeId = `bpbulk-type-${uid}`
 
 const rows = ref([])
 const total = ref(0)
@@ -176,10 +153,9 @@ const offset = ref(0)
 const loading = ref(false)
 /** 上一次載入是不是失敗（跟「查詢結果為空」要分開顯示） */
 const loadFailed = ref(false)
-const types = ref([])
 
-const keyword = ref('')
-const outputType = ref('')
+const keyword = computed(() => props.filters.q || '')
+const outputTypes = computed(() => props.filters.types || [])
 
 /** 已登記的主檔 uuid（畫面標記＋禁止再勾，後端也會再擋一次） */
 const registered = reactive(new Set())
@@ -216,7 +192,7 @@ async function reload(nextOffset = 0) {
     offset: String(offset.value),
   })
   if (keyword.value.trim()) params.set('q', keyword.value.trim())
-  if (outputType.value) params.set('output_type', outputType.value)
+  outputTypes.value.forEach(t => params.append('output_type', t))
 
   const res = await props.fetcher(`/blueprint/master?${params.toString()}`)
   if (mine !== seq) return
@@ -236,10 +212,11 @@ async function reload(nextOffset = 0) {
   loading.value = false
 }
 
-function onKeywordInput() {
+// 共用搜尋卡每打一個字就會換一次 filters，等停手 300ms 再查
+watch(() => props.filters, () => {
   clearTimeout(keywordTimer)
   keywordTimer = setTimeout(() => reload(0), 300)
-}
+}, { deep: true })
 
 /** 我已經登記過哪些（用來標記清單） */
 async function loadRegistered() {
@@ -255,12 +232,6 @@ async function loadRegistered() {
   for (const row of data.data || []) {
     if (row.blueprint_uuid) registered.add(row.blueprint_uuid)
   }
-}
-
-async function loadTypes() {
-  const res = await props.fetcher('/blueprint/master/types')
-  const data = res ? await res.json().catch(() => null) : null
-  if (data?.success) types.value = data.data || []
 }
 
 // ── 勾選 ──────────────────────────────────────────────────────
@@ -326,7 +297,6 @@ async function submit() {
 }
 
 onMounted(() => {
-  loadTypes()
   loadRegistered()
   reload(0)
 })

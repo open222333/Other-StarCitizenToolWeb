@@ -1,49 +1,14 @@
 <!--
   載具主檔清單 ＋ 勾選批量登記到「我的艦隊」。
 
-  比照 BlueprintBulkRegister.vue：把主檔列出來（可依名稱／類型／尺寸／
-  廠商／角色篩選、分頁），勾選後一次送出。已經登記過的款式標成「已登記」
+  比照 BlueprintBulkRegister.vue：把主檔列出來（分頁），勾選後一次送出。
+  名稱／類型／尺寸／廠商／角色的篩選不在這裡——用的是「艦隊」分頁頂端那張共用搜尋卡
+  （MyPlayerView 傳進 filters），同一組條件同時篩「我的艦隊」跟這裡。已經登記過的款式標成「已登記」
   且不能再勾——要多登記幾艘請到「我的艦隊」改數量。後端也會再擋一次
   （見 Fleet.bulk_create_for_player），因為畫面上的資料可能已經過時。
 -->
 <template>
   <div>
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div :class="[cardClass, 'sf-search', 'mb-3']">
-      <div class="card-body">
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-4">
-            <label class="form-label small fw-semibold" :for="`${uid}-q`">名稱關鍵字</label>
-            <input :id="`${uid}-q`" v-model="keyword" type="text" class="form-control form-control-sm"
-              placeholder="例如 Cutlass、Cyclone" @input="onKeywordInput">
-          </div>
-          <div class="col-6 col-md-2">
-            <label class="form-label small fw-semibold" :for="`${uid}-type`">類型</label>
-            <MultiSelectFilter :id="`${uid}-type`" v-model="vehicleTypes" :options="facets.types"
-              label="類型" placeholder="全部" block />
-          </div>
-          <div class="col-6 col-md-2">
-            <label class="form-label small fw-semibold" :for="`${uid}-size`">尺寸</label>
-            <MultiSelectFilter :id="`${uid}-size`" v-model="sizes" :options="sizeOptions"
-              label="尺寸" placeholder="全部" block />
-          </div>
-          <div class="col-6 col-md-2">
-            <label class="form-label small fw-semibold" :for="`${uid}-mfr`">廠商</label>
-            <MultiSelectFilter :id="`${uid}-mfr`" v-model="manufacturers" :options="manufacturerOptions"
-              label="廠商" placeholder="全部" block searchable />
-          </div>
-          <div class="col-6 col-md-2">
-            <label class="form-label small fw-semibold" :for="`${uid}-role`">角色</label>
-            <MultiSelectFilter :id="`${uid}-role`" v-model="roles" :options="facets.roles"
-              label="角色" placeholder="全部" block searchable />
-          </div>
-        </div>
-        <div v-if="hasFilter" class="text-end mt-2">
-          <button type="button" class="btn btn-sm btn-warning" @click="clearFilters">清除篩選</button>
-        </div>
-      </div>
-    </div>
-
     <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
 
     <!-- ── 清單 ────────────────────────────────────────────── -->
@@ -157,13 +122,17 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
   fetcher: { type: Function, required: true },
   cardClass: { type: String, default: 'card shadow-sm border-0' },
+  /**
+   * 篩選條件（由「艦隊」分頁頂端的共用搜尋卡傳進來）：
+   * { q, types, sizes, manufacturers, roles }，陣列內同一欄位取聯集、欄位之間 AND。
+   */
+  filters: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['registered'])
 
@@ -179,23 +148,13 @@ const limit = ref(50)
 const offset = ref(0)
 const loading = ref(false)
 const loadFailed = ref(false)
-const facets = ref({ size_classes: [], types: [], manufacturers: [], roles: [] })
-
-const keyword = ref('')
-// 類型／尺寸／廠商／角色可多選（同一欄位取聯集、欄位之間 AND）
-const vehicleTypes = ref([])
-const sizes = ref([])
-const manufacturers = ref([])
-const roles = ref([])
+const keyword = computed(() => props.filters.q || '')
+const vehicleTypes = computed(() => props.filters.types || [])
+const sizes = computed(() => props.filters.sizes || [])
+const manufacturers = computed(() => props.filters.manufacturers || [])
+const roles = computed(() => props.filters.roles || [])
 const hasFilter = computed(() => !!(keyword.value.trim() || vehicleTypes.value.length
   || sizes.value.length || manufacturers.value.length || roles.value.length))
-
-const sizeOptions = computed(() =>
-  facets.value.size_classes.map(n => ({ value: String(n), label: vehicleSizeLabel(n) })))
-const manufacturerOptions = computed(() =>
-  facets.value.manufacturers.map(m => ({ value: m.value, label: manufacturerLabel(m.label, m.value) })))
-
-watch([vehicleTypes, sizes, manufacturers, roles], () => reload(0))
 
 /** 已登記的載具 uuid */
 const registered = reactive(new Set())
@@ -256,18 +215,11 @@ async function reload(nextOffset = 0) {
   loading.value = false
 }
 
-function onKeywordInput() {
+// 共用搜尋卡每打一個字就會換一次 filters，等停手 300ms 再查
+watch(() => props.filters, () => {
   clearTimeout(keywordTimer)
   keywordTimer = setTimeout(() => reload(0), 300)
-}
-
-function clearFilters() {
-  keyword.value = ''
-  vehicleTypes.value = []
-  sizes.value = []
-  manufacturers.value = []
-  roles.value = []   // 陣列換新會觸發上面的 watch 重新載入，不用另外 reload
-}
+}, { deep: true })
 
 async function loadRegistered() {
   const res = await props.fetcher('/player/fleet')
@@ -280,12 +232,6 @@ async function loadRegistered() {
   for (const row of data.data || []) {
     if (row.vehicle_uuid) registered.add(row.vehicle_uuid)
   }
-}
-
-async function loadFacets() {
-  const res = await props.fetcher('/item/vehicles/facets')
-  const data = res ? await res.json().catch(() => null) : null
-  if (data?.success) facets.value = { ...facets.value, ...(data.data || {}) }
 }
 
 // ── 勾選 ──────────────────────────────────────────────────────
@@ -352,7 +298,6 @@ async function submit() {
 }
 
 onMounted(() => {
-  loadFacets()
   loadRegistered()
   reload(0)
 })
