@@ -23,6 +23,18 @@ export function fmtScu(value) {
   return `${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })} SCU`
 }
 
+/** 船艦「取得方式」篩選（UEX 遊戲內價格；多選取聯集），後端參數 acquire */
+export const VEHICLE_ACQUIRE_OPTIONS = [
+  { value: 'buy', label: '可用遊戲幣購買' },
+  { value: 'rent', label: '可租船' },
+]
+
+/** 官網現金價（vehicle_master.msrp，美金） */
+export function fmtUsd(value) {
+  if (value === null || value === undefined || value === '' || Number(value) === 0) return '—'
+  return `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+}
+
 /** UEX 的時間是 unix 秒數 */
 export function fmtUexTime(value) {
   const n = Number(value)

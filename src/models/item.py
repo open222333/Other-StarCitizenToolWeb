@@ -332,7 +332,7 @@ class VehicleMaster(_MasterBase):
     @classmethod
     def _build_query(cls, *, careers=None, roles=None, manufacturer_codes=None,
                       size_classes=None, query: str = '', types=None,
-                      visible_only: bool = False, visibility=None) -> dict:
+                      visible_only: bool = False, visibility=None, ids=None) -> dict:
         filt: dict = {'is_current': True}
         add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
         # 類型（太空船／地面載具／懸浮載具）：玩家頁「艦隊」「查詢 › 持有船艦」用，
@@ -366,17 +366,24 @@ class VehicleMaster(_MasterBase):
         elif keyword:
             pattern = escape_regex(keyword)
             filt['name_lower'] = {'$regex': pattern.lower()}
+        if ids is not None:
+            # 限定在這些 uuid 裡（例如「只看可租船／可用遊戲幣購買」，見 uex_vehicle_price.vehicle_ids_with）；
+            # 中文名稱搜尋已經限定過 _id 的話取交集
+            allowed = set(ids)
+            if '_id' in filt:
+                allowed &= set(filt['_id']['$in'])
+            filt['_id'] = {'$in': sorted(allowed)}
         return filt
 
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0, careers=None, roles=None,
                  manufacturer_codes=None, size_classes=None, query: str = '',
                  sort_by: str = 'name', sort_dir: int = 1, types=None,
-                 visible_only: bool = False, visibility=None) -> tuple:
+                 visible_only: bool = False, visibility=None, ids=None) -> tuple:
         filt = cls._build_query(careers=careers, roles=roles,
                                  manufacturer_codes=manufacturer_codes,
                                  size_classes=size_classes, query=query, types=types,
-                                 visible_only=visible_only, visibility=visibility)
+                                 visible_only=visible_only, visibility=visibility, ids=ids)
         sort_field = sort_by if sort_by in cls.SORTABLE_FIELDS else 'name'
         total = cls._col().count_documents(filt)
         rows = list(cls._col().find(filt, cls.PROJECTION)

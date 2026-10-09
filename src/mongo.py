@@ -198,6 +198,9 @@ def ensure_indexes():
     db['uex_commodities_prices'].create_index('id_commodity')
     db['uex_commodities_prices'].create_index('id_terminal')
     db['uex_commodities_prices'].create_index('price_buy')
+    db['uex_vehicles'].create_index('uuid')
+    db['uex_vehicles_purchases'].create_index('id_vehicle')
+    db['uex_vehicles_rentals'].create_index('id_vehicle')
     db['sync_runs'].create_index([('started_at', DESCENDING)])
 
     # ── 庫存 ──────────────────────────────────────────────────────────

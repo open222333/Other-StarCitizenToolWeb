@@ -130,6 +130,7 @@ def _vehicle_summary(master: dict | None) -> dict | None:
         'role': master.get('role'),
         'role_zh': master.get('role_zh'),
         'career': master.get('career'),
+        'msrp': master.get('msrp'),   # 官網現金價（美金）
         'is_current': master.get('is_current'),
         'note': master.get('note'),   # 後台手寫的說明
         'system_note': master.get('system_note'),   # 同名變體的區別（自動產生）

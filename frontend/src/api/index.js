@@ -221,6 +221,9 @@ export const vehicleApi = {
     { method: 'PUT', body: JSON.stringify({ note }) }),
   // 後台「玩家擁有艦船」：玩家登記的船（每筆登記一列）
   playerFleet:   (params) => apiFetch(`/item/fleet${qs(params)}`),
+  // 遊戲內購買價／租船價（UEX）：某艘船的地點清單；後台價格表原始內容（kind：purchase／rental）
+  prices:        (id) => apiFetch(`/item/vehicles/${encodeURIComponent(id)}/prices`),
+  uexPrices:     (params) => apiFetch(`/item/uex-vehicle-prices${qs(params)}`),
 }
 
 // ── 工具網站連結（後台維護，玩家頁「工具網站」分頁顯示）──────────

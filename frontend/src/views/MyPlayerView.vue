@@ -821,7 +821,7 @@
       <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
       <div v-else-if="!blueprints.length" class="text-muted small">目前沒有登記任何藍圖。</div>
       <div v-else-if="!filteredBlueprints.length" class="text-muted small">沒有符合篩選條件的藍圖。</div>
-      <!-- 列表外觀比照批量登記（FleetBulkRegister）：卡片＋一般字級的 hover 表格 -->
+      <!-- 列表外觀：卡片＋一般字級的 hover 表格 -->
       <div v-else class="card scifi-card">
       <div class="card-body p-0">
       <div style="overflow-x: auto">
@@ -883,7 +883,7 @@
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->
-    <!-- ══════════ 艦隊（我的艦隊＋批量登記） ══════════ -->
+    <!-- ══════════ 艦隊（我的艦隊＋船艦資料／JSON 匯入） ══════════ -->
     <div v-show="activeTab === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'">
       <Transition name="alert-slide">
         <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
@@ -891,42 +891,47 @@
 
       <!-- 工具列（同倉庫：開關＋重新整理放最上面） -->
       <div class="sf-toolbar">
+        <button class="btn btn-sm" :class="fleetDataOpen ? 'btn-secondary' : 'btn-info'"
+          :aria-expanded="fleetDataOpen ? 'true' : 'false'" @click="fleetDataOpen = !fleetDataOpen">
+          <i class="bi me-1" :class="fleetDataOpen ? 'bi-x-lg' : 'bi-info-circle'"></i>{{ fleetDataOpen ? '收起資料' : '船艦資料' }}
+        </button>
         <button class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
           :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
           <i class="bi me-1" :class="fleetImportOpen ? 'bi-x-lg' : 'bi-filetype-json'"></i>{{ fleetImportOpen ? '收起匯入' : 'JSON 匯入' }}
         </button>
-        <button class="btn btn-sm" :class="fleetBulkOpen ? 'btn-secondary' : 'btn-success'"
-          :aria-expanded="fleetBulkOpen ? 'true' : 'false'" @click="fleetBulkOpen = !fleetBulkOpen">
-          <i class="bi me-1" :class="fleetBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ fleetBulkOpen ? '收起登記' : '批量登記' }}
-        </button>
         <button class="btn btn-sm btn-primary" @click="loadFleet">重新整理</button>
       </div>
 
-      <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「批量登記」 -->
+      <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「船艦資料」 -->
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="myfleet-q">名稱關鍵字</label>
               <input id="myfleet-q" v-model="myFleetQuery" type="search" class="form-control form-control-sm"
                 placeholder="搜尋船艦名稱（中英文皆可）" autocomplete="off">
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small mb-1" for="myfleet-acquire">取得方式</label>
+              <MultiSelectFilter id="myfleet-acquire" v-model="myFleetAcquire" :options="VEHICLE_ACQUIRE_OPTIONS"
+                label="取得方式" placeholder="全部" block />
+            </div>
+            <div class="col-6 col-md-3">
               <label class="form-label small mb-1" for="myfleet-type">類型</label>
               <MultiSelectFilter id="myfleet-type" v-model="myFleetTypes" :options="myFleetTypeOptions"
                 label="類型" placeholder="全部" block />
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-md-3">
               <label class="form-label small mb-1" for="myfleet-size">尺寸</label>
               <MultiSelectFilter id="myfleet-size" v-model="myFleetSizes" :options="myFleetSizeOptions"
                 label="尺寸" placeholder="全部" block />
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-md-3">
               <label class="form-label small mb-1" for="myfleet-mfr">廠商</label>
               <MultiSelectFilter id="myfleet-mfr" v-model="myFleetMfrs" :options="myFleetMfrOptions"
                 label="廠商" placeholder="全部" block searchable />
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-md-3">
               <label class="form-label small mb-1" for="myfleet-role">角色</label>
               <MultiSelectFilter id="myfleet-role" v-model="myFleetRoles" :options="myFleetRoleOptions"
                 label="角色" placeholder="全部" block searchable />
@@ -938,11 +943,13 @@
         </div>
       </div>
 
-      <!-- 批量登記（原本的獨立分頁）：按「批量登記」才展開；舊網址 ?tab=fleet&sub=bulk 直接打開 -->
-      <div v-show="fleetBulkOpen" class="sf-drawer">
-        <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
-        <FleetBulkRegister ref="fleetBulkRef" :fetcher="playerAuth.playerFetch"
-          card-class="card scifi-card" :filters="fleetFilters" @registered="loadFleet" />
+      <!-- 船艦資料：載具主檔的基本資訊＋官網價／遊戲內購買價／租船價，並在這裡登記（單艘或勾選批量），
+           原本的「批量登記」併進來（components/VehicleDataBrowser.vue）；舊網址 ?tab=fleet&sub=data|bulk 直接展開 -->
+      <div v-show="fleetDataOpen" class="sf-drawer">
+        <h3 class="sf-drawer__title"><i class="bi bi-info-circle me-1"></i>船艦資料</h3>
+        <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters"
+          :registered-uuids="fleetVehicleUuids" :active="activeTab === 'fleet' && fleetDataOpen"
+          @registered="loadFleet" />
       </div>
       <!-- JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue） -->
       <div v-if="fleetImportOpen" class="sf-drawer">
@@ -984,6 +991,7 @@
               {{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) }} ·
               {{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) }}
             </div>
+            <div v-if="fleetPriceLine(row.vehicle)" class="sf-tree-info">{{ fleetPriceLine(row.vehicle) }}</div>
             <div v-if="row.vehicle?.note" class="sf-tree-info vehicle-note">{{ row.vehicle.note }}</div>
             <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
               <label class="mb-0" :for="`fleet-qty-${row._id}`">數量</label>
@@ -1238,12 +1246,13 @@ import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import BlueprintQuality from '@/components/BlueprintQuality.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
 import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
+import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
+import { fmtAuec, fmtUsd, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
-import FleetBulkRegister from '@/components/FleetBulkRegister.vue'
 import FleetImport from '@/components/FleetImport.vue'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
 import FieldHint from '@/components/FieldHint.vue'
@@ -1307,7 +1316,7 @@ const tabs = [
     key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
   },
   {
-    // 原本的「我的艦隊／批量登記」兩個下層分頁合併成一頁，批量登記改成按鈕展開
+    // 原本的「我的艦隊／批量登記」兩個下層分頁合併成一頁；批量登記後來併進按鈕展開的「船艦資料」
     key: 'fleet', label: '艦隊',  icon: 'bi bi-rocket-takeoff',
   },
   { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
@@ -1347,8 +1356,8 @@ function validSub(tabKey, sub) {
 // 舊網址 ?tab=warehouse&sub=add|adjust（原本的獨立分頁）直接打開對應的表單。
 const stockMode = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].includes(route.query.sub)
   ? route.query.sub : '')
-// 艦隊的批量登記同理：舊網址 ?tab=fleet&sub=bulk 直接展開
-const fleetBulkOpen = ref(activeTab.value === 'fleet' && route.query.sub === 'bulk')
+// 艦隊的「船艦資料」（?tab=fleet&sub=data 直接展開；原本的批量登記已併進來，舊網址 sub=bulk 也展開它）
+const fleetDataOpen = ref(activeTab.value === 'fleet' && ['data', 'bulk'].includes(route.query.sub))
 // 查詢的三個區塊：點開才顯示、才載入資料（舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開）
 const SEARCH_SECTIONS = [
   { key: 'items', label: '持有物品', icon: 'bi bi-box-seam' },
@@ -2426,7 +2435,8 @@ const fleetLoaded      = ref(false)
 const fleetError       = ref('')
 const fleetMaxQuantity = ref(99)
 const savingFleetId    = ref('')
-const fleetBulkRef     = ref(null)
+// 已經在我的艦隊裡的載具（船艦資料標「已登記」、不能再勾）
+const fleetVehicleUuids = computed(() => fleet.value.map(r => r.vehicle_uuid).filter(Boolean))
 const fleetShipCount   = computed(() => fleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
 
 // 「艦隊」分頁頂端的共用搜尋（同一欄位取聯集、欄位之間 AND）：
@@ -2434,15 +2444,18 @@ const fleetShipCount   = computed(() => fleet.value.reduce((n, r) => n + (r.quan
 // 選項＝載具主檔的 facets（批量登記查得到的）再補上自己艦隊裡有、但主檔已下架的值。
 // 尺寸統一用字串比對（facets 跟後端 size_class 參數都是字串）。
 const myFleetQuery = ref('')
+// 取得方式：只看可用遊戲幣購買／可租船（UEX 價格 vehicle.uex_price，多選取聯集）
+const myFleetAcquire = ref([])
 const myFleetTypes = ref([])
 const myFleetSizes = ref([])
 const myFleetMfrs  = ref([])
 const myFleetRoles = ref([])
-const myFleetHasFilter = computed(() => !!(myFleetQuery.value.trim() || myFleetTypes.value.length
+const myFleetHasFilter = computed(() => !!(myFleetQuery.value.trim() || myFleetAcquire.value.length
+  || myFleetTypes.value.length
   || myFleetSizes.value.length || myFleetMfrs.value.length || myFleetRoles.value.length))
 const fleetFilters = computed(() => ({
   q: myFleetQuery.value.trim(), types: myFleetTypes.value, sizes: myFleetSizes.value,
-  manufacturers: myFleetMfrs.value, roles: myFleetRoles.value,
+  manufacturers: myFleetMfrs.value, roles: myFleetRoles.value, acquire: myFleetAcquire.value,
 }))
 
 function fleetOptions(pick, label, sortKey = o => o.label, base = []) {
@@ -2480,6 +2493,8 @@ const filteredFleet = computed(() => {
     const v = row.vehicle || {}
     if (q && ![row.name, v.name, v.name_zh, ...(row.unit_names || [])]
       .some(t => (t || '').toLowerCase().includes(q))) return false
+    if (myFleetAcquire.value.length && !myFleetAcquire.value.some(a =>
+      (a === 'buy' && v.uex_price?.buy_min) || (a === 'rent' && v.uex_price?.rent_min))) return false
     return match(myFleetTypes.value, v.vehicle_type)
       && match(myFleetSizes.value, v.size_class === null || v.size_class === undefined ? '' : String(v.size_class))
       && match(myFleetMfrs.value, v.manufacturer_code)
@@ -2489,8 +2504,20 @@ const filteredFleet = computed(() => {
 const filteredFleetShipCount = computed(() =>
   filteredFleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
 
+// 我的艦隊每艘船的價格：官網美金價（msrp）＋遊戲內最低購買價／租船價（UEX，vehicle.uex_price）
+function fleetPriceLine(v) {
+  if (!v) return ''
+  const p = v.uex_price || {}
+  const parts = []
+  if (v.msrp) parts.push(`官網 ${fmtUsd(v.msrp)}`)
+  if (p.buy_min) parts.push(`遊戲內 ${fmtAuec(p.buy_min)} 起`)
+  if (p.rent_min) parts.push(`租船 ${fmtAuec(p.rent_min)} 起`)
+  return parts.join(' · ')
+}
+
 function clearMyFleetFilters() {
   myFleetQuery.value = ''
+  myFleetAcquire.value = []
   myFleetTypes.value = []
   myFleetSizes.value = []
   myFleetMfrs.value = []
@@ -2603,8 +2630,7 @@ async function saveLoadouts(row) {
 }
 
 async function onFleetImported() {
-  await loadFleet()
-  fleetBulkRef.value?.refresh()   // 批量登記的「已登記」標記也要跟著更新
+  await loadFleet()   // 船艦資料的「已登記」標記跟著 fleetVehicleUuids 更新
 }
 
 async function removeFleet(row) {
@@ -2612,8 +2638,7 @@ async function removeFleet(row) {
   if (!res) return
   const data = await res.json().catch(() => null)
   if (res.ok && data?.success) {
-    await loadFleet()
-    fleetBulkRef.value?.refresh()   // 批量登記的「已登記」標記也要跟著解除
+    await loadFleet()   // 船艦資料的「已登記」標記跟著解除
   } else {
     showFleetError(data?.message || '刪除失敗，請稍後再試')
   }

@@ -127,6 +127,7 @@ ADMIN_ROUTES = [
     ('GET',    '/mining/uex-commodities/detail', READ_ROLES),
     ('GET',    '/mining/uex-commodity-prices', READ_ROLES),
     ('GET',    '/mining/uex-terminals', READ_ROLES),
+    ('GET',    '/item/uex-vehicle-prices?kind=purchase', READ_ROLES),
     ('PUT',    '/mining/minerals/nope/uex', WRITE_ROLES),
     ('POST',   '/links/import',       WRITE_ROLES),
     ('POST',   '/links/',             WRITE_ROLES),
@@ -253,6 +254,7 @@ UNGUARDED_ALLOWLIST = {
     'app_item.list_types',
     'app_item.get_item',
     'app_item.get_item_prices',
+    'app_item.get_vehicle_prices',   # 載具遊戲內價格，跟 get_item_prices 同一類（@jwt_required）
     'app_item.list_vehicles',
     # 艦船篩選下拉的 distinct 值清單，跟 list_vehicles 同一類唯讀公開資料
     'app_item.list_vehicle_careers',

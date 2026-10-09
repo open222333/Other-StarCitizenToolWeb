@@ -1108,9 +1108,12 @@ def list_my_fleet():
       200:
         description: 成功（另帶 max_quantity 給前端的數量輸入框用）
     """
+    from src.models import uex_vehicle_price
     player = _self_player_doc()
-    return jsonify({'success': True, 'data': Fleet.find_for_player(player['_id']),
-                    'max_quantity': FLEET_MAX_QUANTITY})
+    rows = Fleet.find_for_player(player['_id'])
+    # 每艘船附遊戲內最低購買價／租船價（vehicle.uex_price；官網美金價是 vehicle.msrp）
+    uex_vehicle_price.attach_summaries(rows, key='vehicle_uuid', target='vehicle')
+    return jsonify({'success': True, 'data': rows, 'max_quantity': FLEET_MAX_QUANTITY})
 
 
 @app_player.route('/fleet/bulk', methods=['POST'])

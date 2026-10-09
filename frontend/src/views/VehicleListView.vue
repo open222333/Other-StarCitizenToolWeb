@@ -25,6 +25,11 @@
   ⚠️ 「建議售價」是 msrp 欄位，數值是遊戲官網的美金標價（真實貨幣，不是
   遊戲內 UEC），例如新手船 100i 是 50（代表 $50 USD）、Idris-P 巡防艦是
   1900（$1,900 USD）——不要跟遊戲內經濟的 UEC 價格搞混。
+
+  遊戲內價格（aUEC）另外來自 UEX（src/models/uex_vehicle_price.py，「UEX 價格」同步項目，需 token）：
+  列表的「遊戲內購買」「租船」是最低價與地點數（/item/vehicles?with_prices=1），點價格展開地點清單
+  （components/VehiclePriceDetail.vue）。「購買價格」「租船價格」分頁直接列 UEX 價格表的原始內容
+  （components/UexVehiclePriceTable.vue），用來檢查哪些 UEX 載具對不到主檔。
 -->
 <template>
   <div>
@@ -39,6 +44,16 @@
       <li class="nav-item">
         <button type="button" class="nav-link" :class="{ active: tab === 'owned' }" @click="tab = 'owned'">
           玩家擁有艦船
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link" :class="{ active: tab === 'purchase' }" @click="tab = 'purchase'">
+          購買價格
+        </button>
+      </li>
+      <li class="nav-item">
+        <button type="button" class="nav-link" :class="{ active: tab === 'rental' }" @click="tab = 'rental'">
+          租船價格
         </button>
       </li>
     </ul>
@@ -63,6 +78,9 @@
           </MultiSelectFilter>
           <MultiSelectFilter :model-value="selectedSizeClasses" label="尺寸" :options="sizeClassOptions"
             @update:model-value="onSizeClassesChange">
+          </MultiSelectFilter>
+          <MultiSelectFilter :model-value="selectedAcquire" label="取得方式" :options="VEHICLE_ACQUIRE_OPTIONS"
+            @update:model-value="onAcquireChange">
           </MultiSelectFilter>
           <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示"
             @change="reload(0)">
@@ -123,18 +141,20 @@
                   <i v-if="sortBy === 'msrp'" class="bi ms-1"
                     :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
                 </th>
+                <th class="text-end text-nowrap">遊戲內購買</th>
+                <th class="text-end text-nowrap">租船</th>
                 <th class="text-nowrap">玩家頁面</th>
                 <th class="pe-3">說明</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="10" class="text-center py-4 text-muted">
+                <td colspan="12" class="text-center py-4 text-muted">
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
-                <td colspan="10" class="text-center py-4">
+                <td colspan="12" class="text-center py-4">
                   <span class="text-warning">
                     <i class="bi bi-exclamation-triangle me-1"></i>讀取艦船資料失敗。
                   </span>
@@ -142,7 +162,7 @@
                 </td>
               </tr>
               <tr v-else-if="!vehicles.length">
-                <td colspan="10" class="text-center py-4 text-muted">
+                <td colspan="12" class="text-center py-4 text-muted">
                   {{ hasActiveFilters ? '沒有符合篩選條件的艦船。' : '尚無艦船資料 —— 請先在「系統設定 → 資料同步」跑一次同步。' }}
                 </td>
               </tr>
@@ -163,6 +183,14 @@
                   <td class="text-end small">{{ fmtNum(v.cargo_capacity_scu) }}</td>
                   <td class="text-end small">{{ fmtNum(v.mass_hull) }}</td>
                   <td class="text-end small">{{ v.msrp ? '$' + fmtNum(v.msrp) : '—' }}</td>
+                  <td v-for="k in PRICE_KINDS" :key="k.key" class="text-end small text-nowrap">
+                    <button v-if="v.uex_price?.[k.min]" type="button" class="btn btn-link btn-sm p-0"
+                      :aria-expanded="priceOpenId === v._id ? 'true' : 'false'"
+                      :title="`${v.uex_price[k.count]} 個地點，點開看清單`" @click="togglePrices(v._id)">
+                      {{ fmtAuec(v.uex_price[k.min]) }}
+                    </button>
+                    <span v-else class="text-muted">—</span>
+                  </td>
                   <td><PlayerVisibleToggle dataset="vehicles" :doc-id="v._id" :row="v" /></td>
                   <td class="pe-3 small note-cell">
                     <span v-if="v.note" class="note-text" :title="v.note">{{ v.note }}</span>
@@ -173,8 +201,13 @@
                     </button>
                   </td>
                 </tr>
+                <tr v-if="priceOpenId === v._id">
+                  <td colspan="12" class="ps-3 pe-3 py-2 edit-cell">
+                    <VehiclePriceDetail :vehicle-uuid="v._id" />
+                  </td>
+                </tr>
                 <tr v-if="editingId === v._id">
-                  <td colspan="10" class="ps-3 pe-3 py-2 edit-cell">
+                  <td colspan="12" class="ps-3 pe-3 py-2 edit-cell">
                     <label class="form-label small fw-semibold mb-1" :for="`note-${v._id}`">說明</label>
                     <textarea :id="`note-${v._id}`" v-model="noteDraft" class="form-control form-control-sm" rows="3"
                       :maxlength="NOTE_MAX"></textarea>
@@ -217,6 +250,7 @@
     </div>
 
     <FleetOwnersBrowser v-show="tab === 'owned'" :active="tab === 'owned'" />
+    <UexVehiclePriceTable v-if="tab === 'purchase' || tab === 'rental'" :kind="tab" />
   </div>
 </template>
 
@@ -226,6 +260,9 @@ import { vehicleApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import FleetOwnersBrowser from '@/components/FleetOwnersBrowser.vue'
+import UexVehiclePriceTable from '@/components/UexVehiclePriceTable.vue'
+import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
+import { fmtAuec, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import { useAuthStore } from '@/stores/auth'
 
 const vehicles   = ref([])
@@ -244,14 +281,26 @@ const selectedCareers       = ref([])
 const selectedRoles         = ref([])
 const selectedManufacturers = ref([])
 const selectedSizeClasses   = ref([])
+// 取得方式：只看可用遊戲幣購買／可租船（UEX 價格，多選取聯集）
+const selectedAcquire       = ref([])
 const nameQuery = ref('')
 const sortBy  = ref('name')
 const sortDir = ref('asc')
 const playerVisible = ref('')
-// 分頁：艦船資料庫／玩家擁有艦船（components/FleetOwnersBrowser.vue）
+// 分頁：艦船資料庫／玩家擁有艦船（components/FleetOwnersBrowser.vue）／購買價格／租船價格
 const tab = ref('master')
 
-// ── 手寫說明（玩家頁的艦隊、持有船艦、批量登記會顯示）──
+// 遊戲內價格（UEX）：列表顯示最低價，點了展開地點清單
+const PRICE_KINDS = [
+  { key: 'buy', min: 'buy_min', count: 'buy_count' },
+  { key: 'rent', min: 'rent_min', count: 'rent_count' },
+]
+const priceOpenId = ref('')
+function togglePrices(id) {
+  priceOpenId.value = priceOpenId.value === id ? '' : id
+}
+
+// ── 手寫說明（玩家頁的艦隊、持有船艦、船艦資料會顯示）──
 const NOTE_MAX = 1000
 const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
@@ -285,6 +334,7 @@ async function saveNote(v) {
 const hasActiveFilters = computed(() =>
   selectedCareers.value.length || selectedRoles.value.length ||
   selectedManufacturers.value.length || selectedSizeClasses.value.length || nameQuery.value
+  || selectedAcquire.value.length
   || playerVisible.value)
 
 function crewLabel(v) {
@@ -314,8 +364,10 @@ function onCareersChange(values) { selectedCareers.value = values; reload(0) }
 function onRolesChange(values) { selectedRoles.value = values; reload(0) }
 function onManufacturersChange(values) { selectedManufacturers.value = values; reload(0) }
 function onSizeClassesChange(values) { selectedSizeClasses.value = values; reload(0) }
+function onAcquireChange(values) { selectedAcquire.value = values; reload(0) }
 
 function resetFilters() {
+  selectedAcquire.value = []
   selectedCareers.value = []
   selectedRoles.value = []
   selectedManufacturers.value = []
@@ -334,10 +386,12 @@ async function reload(newOffset = 0) {
     role: selectedRoles.value,
     manufacturer_code: selectedManufacturers.value,
     size_class: selectedSizeClasses.value,
+    acquire: selectedAcquire.value,
     q: nameQuery.value,
     sort_by: sortBy.value,
     sort_dir: sortDir.value,
     player_visible: playerVisible.value,
+    with_prices: 1,
     limit, offset: newOffset,
   })
   if (res && res.ok) {

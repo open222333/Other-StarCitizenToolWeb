@@ -13,6 +13,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from src.limiter import limiter
 from src.models.item import CommodityMaster, ItemMaster, SyncRun, VehicleMaster
+from src.models import uex_vehicle_price
 from src.models.mission import Faction, Mission
 from src.models.inventory import uscu_to_scu
 from src.models.log import Log
@@ -192,6 +193,8 @@ def list_vehicles():
       - {in: query, name: player_visible,     type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的（玩家 token 一律只看得到顯示的）"}
       - {in: query, name: sort_by,            type: string, description: "name（預設）／crew_max／cargo_capacity_scu／mass_hull／msrp／size_class"}
       - {in: query, name: sort_dir,           type: string, description: "asc（預設）／desc"}
+      - {in: query, name: acquire,            type: array, items: {type: string}, description: "取得方式：buy（可用遊戲幣購買）／rent（可租船），可重複帶多個（取聯集），資料來自 UEX"}
+      - {in: query, name: with_prices,        type: integer, description: "1 = 每筆附 uex_price（遊戲內最低購買價／租船價與地點數，見 src/models/uex_vehicle_price.py）"}
       - {in: query, name: limit,              type: integer, default: 50}
       - {in: query, name: offset,             type: integer, default: 0}
     responses:
@@ -205,13 +208,14 @@ def list_vehicles():
     manufacturer_codes = request.args.getlist('manufacturer_code')
     size_classes = request.args.getlist('size_class')
     types = request.args.getlist('type')
+    acquire = [a for a in request.args.getlist('acquire') if a in uex_vehicle_price.ACQUIRE_FIELDS]
     sort_by = request.args.get('sort_by', 'name')
     sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
 
     hide = not viewer_sees_hidden()
     visibility = None if hide else visibility_arg(request.args)
     has_filters = bool(careers or roles or manufacturer_codes or size_classes or types
-                       or visibility is not None)
+                       or visibility is not None or acquire)
 
     if query and not has_filters:
         # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
@@ -226,18 +230,70 @@ def list_vehicles():
             limit=limit, offset=offset, careers=careers, roles=roles,
             manufacturer_codes=manufacturer_codes, size_classes=size_classes,
             query=query, sort_by=sort_by, sort_dir=sort_dir, types=types,
-            visible_only=hide, visibility=visibility)
+            visible_only=hide, visibility=visibility,
+            ids=uex_vehicle_price.vehicle_ids_with(acquire) if acquire else None)
 
     for row in rows:
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
+    if request.args.get('with_prices') == '1':
+        uex_vehicle_price.attach_summaries(rows)
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset})
+
+
+@app_item.route('/vehicles/<vehicle_id>/prices', methods=['GET'])
+@jwt_required()
+def get_vehicle_prices(vehicle_id):
+    """載具的遊戲內購買價／租船價（UEX，aUEC），各自依價格由低到高，附交易終端與回報時間。
+
+    官網現金價（美金）是載具本身的 msrp 欄位，不在這裡。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: {purchase: [{terminal, price, date_modified}], rental: [...]}"
+    """
+    return jsonify({'success': True, 'data': uex_vehicle_price.prices_for(vehicle_id)})
+
+
+@app_item.route('/uex-vehicle-prices', methods=['GET'])
+@admin_api(*READ_ROLES)
+def list_uex_vehicle_prices():
+    """後台「艦船 › 購買價格／租船價格」：UEX 載具價格表原始內容（分頁），附對應到的載具主檔。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: kind, type: string, required: true, description: "purchase（購買）／rental（租船）"}
+      - {in: query, name: q, type: string, description: "載具或終端名稱"}
+      - {in: query, name: star_system, type: string}
+      - {in: query, name: limit, type: integer, default: 50}
+      - {in: query, name: offset, type: integer, default: 0}
+    responses:
+      200:
+        description: "data: [{id, uex_vehicle, vehicle, terminal, price, date_modified}]、total、star_systems"
+      400:
+        description: kind 不對
+    """
+    from src.models.uex_commodity_price import UexCommodityPrice
+    args = request.args
+    try:
+        rows, total = uex_vehicle_price.admin_list(
+            args.get('kind') or '', q=args.get('q') or '', star_system=args.get('star_system') or '',
+            limit=int(args.get('limit') or 50), offset=int(args.get('offset') or 0))
+    except ValueError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    return jsonify({'success': True, 'data': rows, 'total': total,
+                    'star_systems': UexCommodityPrice.star_systems()})
 
 
 @app_item.route('/vehicles/<vehicle_id>/note', methods=['PUT'])
 @admin_api(*WRITE_ROLES)
 def set_vehicle_note(vehicle_id):
-    """後台手寫的艦船說明（玩家頁的艦隊、持有船艦、批量登記都會顯示）。
+    """後台手寫的艦船說明（玩家頁的艦隊、持有船艦、船艦資料都會顯示）。
     ---
     tags: [Item]
     security:

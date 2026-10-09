@@ -137,6 +137,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
 | 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
 | 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，由「UEX 價格」同步項目更新（需 UEX token）。三個分頁直接列資料庫內容方便檢查：「商品」UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性，每筆列出關聯的礦物）；「商品價格」`uex_commodities_prices`（商品 × 交易終端的買價／庫存／賣價／更新時間，後端分頁）；「交易終端」`uex_terminals`（地點、類型、屬性、可買／可賣商品數） |
+| 船艦資料／船艦價格 | http://localhost:8090/me?tab=fleet&sub=data | 玩家頁「艦隊 › 船艦資料」：用艦隊分頁頂端的共用搜尋卡篩選載具主檔（含「取得方式」：只看可用遊戲幣購買／可租船，多選取聯集；後台艦船列表也有，API 參數 `acquire=buy|rent`），列表直接顯示類型、尺寸、廠商、角色；每列有「登記」按鈕（登記 1 艘到我的艦隊），也能勾選多款一次登記（原本的「批量登記」併進來，已登記的標示並禁止重複）。點開看載員、貨艙、質量與價格：官網現金價（`msrp`，美金）、遊戲內最低購買價與租船價（UEX，aUEC）以及每個購買／租船地點。我的艦隊每艘船也顯示這三個價格。後台「艦船」列表多「遊戲內購買」「租船」兩欄（點開看地點），另有「購買價格」「租船價格」分頁列 UEX 價格表原始內容（含對不到載具主檔的） |
 | 商品購買地點 | http://localhost:8090/me?tab=search&sub=commodities | 玩家頁「查詢」：篩選並勾選多種商品（最多 20 種），列出**全部都買得到**的交易終端（蜂巢式下拉：終端 → 每種商品的買價、庫存、UEX 回報時間），可限定星系；沒有結果時列出每種商品各自買得到的地點數。資料是 `uex_commodities_prices`（`src/models/uex_commodity_price.py`） |
 | 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務 |
 | 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
@@ -984,6 +985,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 | `vehicle_master` | 遊戲 uuid | ~290 | 載具，含 SCU 容量與置物容器 |
 | `commodity_master` | 遊戲 uuid | ~205 | 貨物，含可用箱體規格 |
 | `uex_items` / `uex_items_prices` / `uex_terminals` | UEX id | — | 價格與終端（需 token） |
+| `uex_vehicles` / `uex_vehicles_purchases` / `uex_vehicles_rentals` | UEX id／`id_vehicle:id_terminal` | — | UEX 載具與遊戲內購買價（`price_buy`）／租船價（`price_rent`），需 token；UEX 載具用 uuid（對不到再用名稱）對應 `vehicle_master`（`src/models/uex_vehicle_price.py`）。兩張價格表同步完會刪掉這次沒出現的舊列 |
 | `uex_commodities_prices` | `id_commodity:id_terminal` | — | 商品（貨物）在每個交易終端的買賣價、庫存（UEX `/commodities_prices_all`，需 token）；price_buy > 0 才算買得到。同步完會刪掉這次沒出現的舊列（筆數少於上次一半時不刪） |
 | `uex_commodities` | UEX id | — | UEX 商品與縮寫代碼 `code`（例如 AGRI、QUAN）；礦物資料庫依英文名稱自動關聯，後台礦物頁可手動指定（`mineral_uex_links`）（需 token） |
 | `sync_runs` | run uuid | — | 每輪同步的統計與錯誤 |
