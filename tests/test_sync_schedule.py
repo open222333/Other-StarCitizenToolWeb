@@ -134,8 +134,10 @@ def test_job_keys_match_sync_sources():
     from src.scdata import WIKI_RESOURCES
     assert set(WIKI_JOB_KEYS) == set(WIKI_RESOURCES)
     assert set(JOB_KEYS) == set(WIKI_RESOURCES) | {'translations', 'mining', 'locations', 'uex'}
-    from src.scdata import SCUNPACKED_JOBS, SCUNPACKED_RESOURCES
-    assert sorted(r for rs in SCUNPACKED_JOBS.values() for r in rs) == sorted(SCUNPACKED_RESOURCES)
+    from src.scdata import SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_RESOURCES
+    assert set(SCUNPACKED_EXTRA) <= set(WIKI_RESOURCES), '額外的 scunpacked 資源掛在 Wiki 同步項目後面'
+    synced = [r for jobs in (SCUNPACKED_JOBS, SCUNPACKED_EXTRA) for rs in jobs.values() for r in rs]
+    assert sorted(synced) == sorted(SCUNPACKED_RESOURCES)
 
 
 def test_update_job(app):

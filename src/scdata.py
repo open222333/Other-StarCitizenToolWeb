@@ -1117,6 +1117,11 @@ def uex_doc_id(row: dict, key_fields: list) -> Optional[str]:
         parts.append(str(value))
     return ':'.join(parts)
 
+#: 掛在 Wiki 同步項目後面一起跑的 scunpacked 資源（例如藍圖品質試算資料只有 scunpacked 有）
+SCUNPACKED_EXTRA: dict = {
+    'blueprints': ['blueprint_quality'],
+}
+
 
 def has_uex_token() -> bool:
     from src.models.app_setting import UexToken   # 後台設定優先，其次環境變數

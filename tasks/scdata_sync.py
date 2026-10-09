@@ -59,7 +59,7 @@ from src.models import visibility
 from src.models.item import VehicleMaster
 from src.models.starmap import Starmap
 from src import SCDATA_REQUEST_DELAY
-from src.scdata import (BULK_SIZE, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_RESOURCES,
+from src.scdata import (BULK_SIZE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_RESOURCES,
                         UEX_RESOURCES,
                         WIKI_DETAIL_RESOURCES, WIKI_RESOURCES, ScDataError, build_client,
                         fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
@@ -503,13 +503,13 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
         except Exception as err:
             logger.exception('scdata_sync: %s 失敗', key)
             errors.append(f'{key}: {err}')
-        if key == 'blueprints':
-            # 品質試算資料（部位、品質加成）只有 scunpacked 有，另外抓一份（見 map_blueprint_quality）
+        # 例如藍圖的品質試算資料（部位、品質加成）只有 scunpacked 有，另外抓一份（見 map_blueprint_quality）
+        for extra in SCUNPACKED_EXTRA.get(key, []):
             try:
-                stats.append(_sync_scunpacked_resource(client('github'), 'blueprint_quality', run_id, stamp))
+                stats.append(_sync_scunpacked_resource(client('github'), extra, run_id, stamp))
             except Exception as err:
-                logger.exception('scdata_sync: scunpacked blueprint_quality 失敗')
-                errors.append(f'scunpacked:blueprint_quality: {err}')
+                logger.exception('scdata_sync: scunpacked %s 失敗', extra)
+                errors.append(f'scunpacked:{extra}: {err}')
         if key == 'blueprints' and not errors:
             # 任務的獎勵藍圖有些要靠藍圖主檔反查（見 src/scdata.py 的 parse_blueprint_pools），
             # 藍圖更新後重新對一次，任務跟藍圖誰先同步都沒關係
