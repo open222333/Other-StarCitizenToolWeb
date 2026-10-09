@@ -463,6 +463,51 @@ def search_game_text():
     return jsonify({'success': True, 'data': rows, 'mode': mode})
 
 
+@app_player.route('/commodities/buyable', methods=['GET'])
+@player_required
+def list_buyable_commodities():
+    """玩家頁「查詢 › 商品購買地點」：至少在一個交易終端買得到的商品（UEX 價格表），附終端數。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{id, code, name, kind, is_illegal, terminal_count}]、star_systems"
+    """
+    from src.models.uex_commodity_price import UexCommodityPrice
+    return jsonify({'success': True, 'data': UexCommodityPrice.buyable_commodities(),
+                    'star_systems': UexCommodityPrice.star_systems()})
+
+
+@app_player.route('/commodities/buy-locations', methods=['GET'])
+@player_required
+@limiter.limit('60 per minute')
+def commodity_buy_locations():
+    """玩家頁「查詢 › 商品購買地點」：勾選的商品「全部」都買得到的交易終端。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: id, type: array, items: {type: string}, collectionFormat: multi, required: true,
+         description: "UEX 商品 id，可重複帶多個（最多 20 個）"}
+      - {in: query, name: star_system, type: array, items: {type: string}, collectionFormat: multi}
+    responses:
+      200:
+        description: "data: {locations: [{terminal, items: [{id, code, name, price_buy, scu_buy, date_modified}]}], commodities: [{…, terminal_count}]}"
+      400:
+        description: 選太多種
+    """
+    from src.models.uex_commodity_price import UexCommodityPrice
+    try:
+        data = UexCommodityPrice.buy_locations(request.args.getlist('id'),
+                                               request.args.getlist('star_system'))
+    except ValueError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    return jsonify({'success': True, 'data': data})
+
+
 @app_player.route('/tool-links', methods=['GET'])
 @player_required
 def list_tool_links():

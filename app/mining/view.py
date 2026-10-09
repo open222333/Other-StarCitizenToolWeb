@@ -16,6 +16,7 @@ from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidd
 from src.models.log import Log
 from src.models.mining import MiningDeposit, MiningLocation
 from src.models.uex_commodity import UexCommodity
+from src.models.uex_commodity_price import UexCommodityPrice
 
 app_mining = Blueprint('app_mining', __name__)
 
@@ -93,6 +94,54 @@ def list_uex_commodities_detail():
         description: "data: [{id, code, name, kind, weight_scu, price_buy, price_sell, is_*…, minerals: [...]}]"
     """
     return jsonify({'success': True, 'data': UexCommodity.list_detail()})
+
+
+@app_mining.route('/uex-commodity-prices', methods=['GET'])
+@admin_api(*READ_ROLES)
+def list_uex_commodity_prices():
+    """後台「商品資料庫 › 商品價格」：UEX 商品在各交易終端的買賣價（uex_commodities_prices），分頁。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: q, type: string, description: "商品縮寫／名稱、終端名稱"}
+      - {in: query, name: commodity, type: string, description: "UEX 商品 id"}
+      - {in: query, name: star_system, type: string}
+      - {in: query, name: side, type: string, description: "buy＝只看買得到的、sell＝只看能賣的"}
+      - {in: query, name: limit, type: integer, default: 50}
+      - {in: query, name: offset, type: integer, default: 0}
+    responses:
+      200:
+        description: "data: [{id, commodity, terminal, price_buy, scu_buy, price_sell, …, date_modified}]、total"
+    """
+    args = request.args
+    try:
+        limit = int(args.get('limit') or 50)
+        offset = int(args.get('offset') or 0)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'limit／offset 必須是整數'}), 400
+    rows, total = UexCommodityPrice.admin_list(
+        q=args.get('q') or '', commodity=args.get('commodity') or '',
+        star_system=args.get('star_system') or '', side=args.get('side') or '',
+        limit=limit, offset=offset)
+    return jsonify({'success': True, 'data': rows, 'total': total,
+                    'star_systems': UexCommodityPrice.star_systems()})
+
+
+@app_mining.route('/uex-terminals', methods=['GET'])
+@admin_api(*READ_ROLES)
+def list_uex_terminals():
+    """後台「商品資料庫 › 交易終端」：UEX 交易終端（uex_terminals）全部，附可買／可賣的商品數。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{id, name, code, type, location, star_system_name, …, commodity_buy_count, commodity_sell_count}]"
+    """
+    return jsonify({'success': True, 'data': UexCommodityPrice.admin_terminals()})
 
 
 @app_mining.route('/minerals/<path:resource_key>/uex', methods=['PUT'])

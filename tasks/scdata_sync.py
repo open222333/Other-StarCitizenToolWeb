@@ -60,7 +60,7 @@ from src.models.item import VehicleMaster
 from src.models.starmap import Starmap
 from src import SCDATA_REQUEST_DELAY
 from src.scdata import (BULK_SIZE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_RESOURCES,
-                        UEX_RESOURCES,
+                        UEX_PRUNE_MIN_RATIO, UEX_PRUNE_RESOURCES, UEX_RESOURCES,
                         WIKI_DETAIL_RESOURCES, WIKI_RESOURCES, ScDataError, build_client,
                         fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
                         normalize_labels, uex_doc_id, uex_rows, wiki_detail, wiki_rows)
@@ -320,6 +320,7 @@ def _sync_uex_resource(client, resource: str, run_id: str, stamp: datetime) -> d
     _report(force=True, phase=f'下載 UEX {resource}')
 
     rows = _uex_item_rows(client) if resource == 'items' else uex_rows(client, resource)
+    previous = get_db()[collection_name].count_documents({}) if resource in UEX_PRUNE_RESOURCES else 0
     _report(force=True, phase=f'寫入 UEX {resource}', seen=0, total=len(rows))
     ops: list = []
     skipped = 0
@@ -346,9 +347,21 @@ def _sync_uex_resource(client, resource: str, run_id: str, stamp: datetime) -> d
             ops = []
 
     _flush(collection_name, ops)
-    logger.info('scdata_sync: UEX %s 完成 %d 筆（跳過 %d）', resource, len(rows), skipped)
+
+    # 價格表：這次沒出現的舊列刪掉（終端已經不賣／不收了）。抓到的筆數異常少時不刪，見 UEX_PRUNE_MIN_RATIO
+    retired = 0
+    written = len(rows) - skipped
+    if resource in UEX_PRUNE_RESOURCES:
+        if written and written >= previous * UEX_PRUNE_MIN_RATIO:
+            retired = get_db()[collection_name].delete_many(
+                {'_sync.run_id': {'$ne': run_id}}).deleted_count
+        else:
+            logger.warning('scdata_sync: UEX %s 這次只有 %d 筆（上次 %d 筆），不刪舊列',
+                           resource, written, previous)
+
+    logger.info('scdata_sync: UEX %s 完成 %d 筆（跳過 %d、刪除舊列 %d）', resource, len(rows), skipped, retired)
     return {'resource': f'uex:{resource}', 'collection': collection_name,
-            'seen': len(rows), 'written': len(rows) - skipped, 'skipped': skipped}
+            'seen': len(rows), 'written': written, 'skipped': skipped, 'retired': retired}
 
 
 def _sync_scunpacked_resource(client, resource: str, run_id: str, stamp: datetime) -> dict:

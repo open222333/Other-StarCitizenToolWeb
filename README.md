@@ -136,7 +136,8 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 藍圖品質試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「品質試算」） | 每個部位（Frame／Barrel…）拖拉材料品質 0–1000，看各屬性倍率與綜合加成；資料來自 scunpacked-data `blueprints.json`（`blueprint_quality_master`），跟著「藍圖」同步項目更新 |
 | 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
 | 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
-| 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性），由「UEX 價格」同步項目更新（需 UEX token）；每筆列出關聯的礦物 |
+| 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，由「UEX 價格」同步項目更新（需 UEX token）。三個分頁直接列資料庫內容方便檢查：「商品」UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性，每筆列出關聯的礦物）；「商品價格」`uex_commodities_prices`（商品 × 交易終端的買價／庫存／賣價／更新時間，後端分頁）；「交易終端」`uex_terminals`（地點、類型、屬性、可買／可賣商品數） |
+| 商品購買地點 | http://localhost:8090/me?tab=search&sub=commodities | 玩家頁「查詢」：篩選並勾選多種商品（最多 20 種），列出**全部都買得到**的交易終端（蜂巢式下拉：終端 → 每種商品的買價、庫存、UEX 回報時間），可限定星系；沒有結果時列出每種商品各自買得到的地點數。資料是 `uex_commodities_prices`（`src/models/uex_commodity_price.py`） |
 | 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務 |
 | 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
 | 玩家站上的後台登入 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面。管理員平常請走 8080 |
@@ -983,6 +984,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 | `vehicle_master` | 遊戲 uuid | ~290 | 載具，含 SCU 容量與置物容器 |
 | `commodity_master` | 遊戲 uuid | ~205 | 貨物，含可用箱體規格 |
 | `uex_items` / `uex_items_prices` / `uex_terminals` | UEX id | — | 價格與終端（需 token） |
+| `uex_commodities_prices` | `id_commodity:id_terminal` | — | 商品（貨物）在每個交易終端的買賣價、庫存（UEX `/commodities_prices_all`，需 token）；price_buy > 0 才算買得到。同步完會刪掉這次沒出現的舊列（筆數少於上次一半時不刪） |
 | `uex_commodities` | UEX id | — | UEX 商品與縮寫代碼 `code`（例如 AGRI、QUAN）；礦物資料庫依英文名稱自動關聯，後台礦物頁可手動指定（`mineral_uex_links`）（需 token） |
 | `sync_runs` | run uuid | — | 每輪同步的統計與錯誤 |
 | `sync_jobs` | 同步項目 key（`items`、`missions`…） | 10 | 各資料庫的同步排程與上次結果（cron / enabled / last_*） |

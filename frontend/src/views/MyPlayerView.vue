@@ -351,7 +351,7 @@
       </div>
     </div>
 
-    <!-- ══════════ 查詢 › 工具列：持有物品／持有藍圖／持有船艦，點開才顯示（比照倉庫／藍圖／艦隊）══════════
+    <!-- ══════════ 查詢 › 工具列：持有物品／持有藍圖／持有船艦／商品購買地點，點開才顯示（比照倉庫／藍圖／艦隊）══════════
          舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開對應的區塊 -->
     <div v-show="activeTab === 'search'" class="sf-toolbar">
       <button v-for="sec in SEARCH_SECTIONS" :key="sec.key" class="btn btn-sm"
@@ -621,6 +621,13 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ══════════ 查詢 › 商品購買地點：勾選多種商品，列出全部都買得到的交易終端（UEX 價格表）══════════ -->
+    <div v-show="activeTab === 'search' && searchOpen.commodities" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-cart3 me-1"></i>商品購買地點</h3>
+      <CommodityBuyFinder :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
+        :active="activeTab === 'search' && searchOpen.commodities" />
     </div>
 
     <!-- ══════════ 倉庫 › 庫存紀錄（原本的獨立分頁，改成物品庫存上方按「庫存紀錄」展開；
@@ -1230,6 +1237,7 @@ import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import BlueprintQuality from '@/components/BlueprintQuality.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
+import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
 import GameLogReader from '@/components/GameLogReader.vue'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
@@ -1346,6 +1354,7 @@ const SEARCH_SECTIONS = [
   { key: 'items', label: '持有物品', icon: 'bi bi-box-seam' },
   { key: 'blueprints', label: '持有藍圖', icon: 'bi bi-diagram-3' },
   { key: 'fleet', label: '持有船艦', icon: 'bi bi-rocket-takeoff' },
+  { key: 'commodities', label: '商品購買地點', icon: 'bi bi-cart3' },
 ]
 const searchOpen = reactive(Object.fromEntries(SEARCH_SECTIONS.map(sec =>
   [sec.key, activeTab.value === 'search' && route.query.sub === sec.key])))

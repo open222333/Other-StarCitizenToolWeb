@@ -162,6 +162,14 @@ export const miningApi = {
   uexCommodityDetail: () => apiFetch('/mining/uex-commodities/detail'),
   setMineralUex:  (key, uexId) => apiFetch(`/mining/minerals/${encodeURIComponent(key)}/uex`,
     { method: 'PUT', body: JSON.stringify({ uex_id: uexId }) }),
+  // 後台「商品資料庫 › 商品價格」（分頁；params：q、commodity、star_system、side、limit、offset）
+  uexCommodityPrices: (params = {}) => {
+    const sp = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) if (v !== '' && v !== null && v !== undefined) sp.append(k, v)
+    return apiFetch(`/mining/uex-commodity-prices?${sp.toString()}`)
+  },
+  // 後台「商品資料庫 › 交易終端」
+  uexTerminals: () => apiFetch('/mining/uex-terminals'),
 }
 
 // ── 任務／勢力資料庫 API（遊戲資料，唯讀）─────────────────────────

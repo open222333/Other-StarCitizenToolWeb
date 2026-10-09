@@ -10,11 +10,28 @@
 
   中文名稱：UEX 只有英文，用 utils/translations.js 查資料庫 sc_translations
   （先查礦物，再查物品），查不到顯示「—」。
+
+  另外兩個分頁直接列出資料庫內容，方便檢查同步下來的資料：
+    - 商品價格：uex_commodities_prices（components/UexCommodityPriceTable.vue，後端分頁）
+    - 交易終端：uex_terminals（components/UexTerminalTable.vue）
+  分頁記在網址 ?tab=prices|terminals。
 -->
 <template>
   <div>
     <h5 class="mb-3 fw-bold"><i class="bi bi-boxes me-2 text-primary"></i>商品資料庫</h5>
 
+    <ul class="nav nav-tabs mb-3">
+      <li v-for="t in TABS" :key="t.key" class="nav-item">
+        <button type="button" class="nav-link" :class="{ active: tab === t.key }" @click="tab = t.key">
+          {{ t.label }}
+        </button>
+      </li>
+    </ul>
+
+    <UexCommodityPriceTable v-if="tab === 'prices'" />
+    <UexTerminalTable v-else-if="tab === 'terminals'" />
+
+    <template v-else>
     <!-- ── 篩選 ────────────────────────────────────────────── -->
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-body py-2">
@@ -97,13 +114,29 @@
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { miningApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import UexCommodityPriceTable from '@/components/UexCommodityPriceTable.vue'
+import UexTerminalTable from '@/components/UexTerminalTable.vue'
+
+const TABS = [
+  { key: 'commodities', label: '商品' },
+  { key: 'prices', label: '商品價格' },
+  { key: 'terminals', label: '交易終端' },
+]
+const route = useRoute()
+const router = useRouter()
+const tab = ref(TABS.some(t => t.key === route.query.tab) ? route.query.tab : 'commodities')
+watch(tab, (t) => {
+  router.replace({ query: { ...route.query, tab: t === 'commodities' ? undefined : t } })
+})
 import { loadTranslations, translate } from '@/utils/translations'
 
 // 屬性篩選與標籤（UEX 的 is_* 欄位，1／0）

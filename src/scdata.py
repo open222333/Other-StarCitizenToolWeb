@@ -1016,7 +1016,16 @@ UEX_RESOURCES: dict = {
     'items_prices_all': ('uex_items_prices', ['id_item', 'id_terminal']),
     # 商品（含礦物）的縮寫代碼 code，例如 AGRI、QUAN；礦物資料庫靠名稱關聯（src/models/uex_commodity.py）
     'commodities': ('uex_commodities', ['id']),
+    # 商品（貨物）在每個交易終端的買賣價：玩家頁「查詢 › 商品購買地點」、後台「商品資料庫 › 商品價格」
+    # （src/models/uex_commodity_price.py）
+    'commodities_prices_all': ('uex_commodities_prices', ['id_commodity', 'id_terminal']),
 }
+
+#: 同步完要把「這次沒出現的舊列」刪掉的 UEX 資源：價格表的一列＝某終端有在賣／收某商品，
+#: 上游不再回報就代表已經不賣了，留著會讓玩家以為還買得到。
+UEX_PRUNE_RESOURCES = {'commodities_prices_all'}
+#: 這次抓到的筆數不到上次的這個比例就不刪（上游異常回傳變短時，不要把整張表清掉）
+UEX_PRUNE_MIN_RATIO = 0.5
 
 _UNSET_MARKERS = ('<= UNINITIALIZED =>', '<= PLACEHOLDER =>')
 
@@ -1107,6 +1116,11 @@ SCUNPACKED_JOBS: dict = {
     'locations': ['starmap'],
 }
 
+#: 掛在 Wiki 同步項目後面一起跑的 scunpacked 資源（例如藍圖品質試算資料只有 scunpacked 有）
+SCUNPACKED_EXTRA: dict = {
+    'blueprints': ['blueprint_quality'],
+}
+
 
 def uex_doc_id(row: dict, key_fields: list) -> Optional[str]:
     parts = []
@@ -1116,11 +1130,6 @@ def uex_doc_id(row: dict, key_fields: list) -> Optional[str]:
             return None
         parts.append(str(value))
     return ':'.join(parts)
-
-#: 掛在 Wiki 同步項目後面一起跑的 scunpacked 資源（例如藍圖品質試算資料只有 scunpacked 有）
-SCUNPACKED_EXTRA: dict = {
-    'blueprints': ['blueprint_quality'],
-}
 
 
 def has_uex_token() -> bool:

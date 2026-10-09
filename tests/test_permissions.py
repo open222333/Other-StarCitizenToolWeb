@@ -125,6 +125,8 @@ ADMIN_ROUTES = [
     ('GET',    '/item/visibility/minerals', READ_ROLES),
     ('GET',    '/mining/uex-commodities', READ_ROLES),
     ('GET',    '/mining/uex-commodities/detail', READ_ROLES),
+    ('GET',    '/mining/uex-commodity-prices', READ_ROLES),
+    ('GET',    '/mining/uex-terminals', READ_ROLES),
     ('PUT',    '/mining/minerals/nope/uex', WRITE_ROLES),
     ('POST',   '/links/import',       WRITE_ROLES),
     ('POST',   '/links/',             WRITE_ROLES),
