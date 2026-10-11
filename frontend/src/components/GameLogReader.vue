@@ -12,6 +12,11 @@
       與「持續監看」——每 2 秒看檔案有沒有變長，只讀新增的部分（遊戲重開會重寫 Game.log，
       檔案變短就整份重讀）。遊戲裝在系統資料夾時會被擋，就只能用上面那種。
     - 拖放：先試著拿控制代碼（拿得到就能監看），拿不到就當一般檔案讀。
+    - 「貼上文字」：直接貼一段 log 文字解析（例如隊友傳來的片段），一樣只在瀏覽器裡解析。
+
+  「你」是誰：log 裡有登入紀錄（Handle[...]）就用它，沒有的話（例如只貼一段）用玩家頁登入的遊戲ID
+  （playerName）。用來判斷哪一筆死亡是你的、可能是被誰殺的、原因是什麼（規則見 gameLogRules.json 的
+  「擊殺／死亡紀錄」）。
 -->
 <template>
   <!-- 整個分頁都可以拖放 Game.log 進來 -->
@@ -36,9 +41,27 @@
           <i class="bi me-1" :class="watching ? 'bi-pause-fill' : 'bi-broadcast'"></i>{{ watching ? '停止監看' : '持續監看' }}
         </button>
       </template>
+      <button type="button" class="btn btn-sm" :class="pasteOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="pasteOpen ? 'true' : 'false'" @click="pasteOpen = !pasteOpen">
+        <i class="bi me-1" :class="pasteOpen ? 'bi-x-lg' : 'bi-clipboard'"></i>{{ pasteOpen ? '收起貼上' : '貼上文字' }}
+      </button>
       <button v-if="fileName" type="button" class="btn btn-sm btn-warning" :disabled="loading" @click="clearAll">清除</button>
       <FieldHint :text="`Game.log 在遊戲安裝資料夾裡，例如 ${DEFAULT_PATH}；也可以把檔案直接拖進來。「選擇並監看」（Chrome／Edge）會在遊戲進行中自動更新，但遊戲裝在 C:\\Program Files 這類系統資料夾時會被瀏覽器擋下，請改用「選擇 Game.log」或拖放。`" />
       <input ref="fileInput" type="file" accept=".log,.txt,text/plain" class="d-none" @change="onInputFile">
+    </div>
+
+    <!-- 貼上文字：直接貼一段 log 解析 -->
+    <div v-if="pasteOpen" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-clipboard me-1"></i>貼上文字</h3>
+      <textarea v-model="pasteText" class="form-control font-monospace gamelog-paste" rows="8"
+        placeholder="貼上 Game.log 的內容…" aria-label="貼上 Game.log 的內容" spellcheck="false"></textarea>
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+        <button type="button" class="btn btn-sm btn-primary" :disabled="loading || !pasteText.trim()" @click="parsePasted">
+          <i class="bi bi-play-fill me-1"></i>解析
+        </button>
+        <button type="button" class="btn btn-sm btn-warning" :disabled="!pasteText" @click="pasteText = ''">清除</button>
+        <span class="gamelog-meta">{{ pasteLineCount }} 行</span>
+      </div>
     </div>
 
     <div v-if="fileName || loading || error" :class="[cardClass, 'mb-3']">
@@ -47,6 +70,7 @@
           <i class="bi bi-file-earmark me-1"></i>{{ fileName }} · {{ fmtSize(fileSize) }}
           <span v-if="readAt"> · 讀取於 {{ fmtClock(readAt) }}</span>
           <span v-if="watching" class="ms-2 gamelog-live"><i class="bi bi-circle-fill me-1"></i>監看中</span>
+          <span v-if="playerId"> · 你的遊戲 ID：{{ playerId }}</span>
         </div>
         <div v-if="loading" class="progress my-1" role="progressbar" :aria-valuenow="Math.round(progress * 100)"
           aria-valuemin="0" aria-valuemax="100" style="height: 6px">
@@ -98,8 +122,24 @@
                       <div class="gamelog-meta">{{ casualDate(r.ev.when) }}</div>
                     </td>
                     <td class="pe-3">
-                      <span class="me-1">{{ r.ev.icon }}</span>{{ r.ev.text }}
-                      <span v-if="r.count > 1" class="sf-tree-chip ms-1">連續 {{ r.count }} 次</span>
+                      <div class="d-flex flex-wrap align-items-start gap-2">
+                        <span class="flex-grow-1">
+                          <span class="me-1">{{ r.ev.icon }}</span>{{ r.ev.text }}
+                          <span v-if="r.count > 1" class="sf-tree-chip ms-1">連續 {{ r.count }} 次</span>
+                        </span>
+                        <button v-if="r.ev.line" type="button" class="btn btn-sm btn-info py-0"
+                          :aria-expanded="openLine === r.ev ? 'true' : 'false'" @click="openLine = openLine === r.ev ? null : r.ev">
+                          {{ openLine === r.ev ? '收起原文' : '原始紀錄' }}
+                        </button>
+                      </div>
+                      <!-- 明確數據：每個抓到的欄位；美化／對照過的附上 log 原文 -->
+                      <dl v-if="r.ev.details?.length" class="gamelog-details mb-0 mt-1">
+                        <div v-for="d in r.ev.details" :key="d.label" class="gamelog-detail">
+                          <dt>{{ d.label }}</dt>
+                          <dd>{{ d.value }}<code v-if="d.raw" class="ms-1">{{ d.raw }}</code></dd>
+                        </div>
+                      </dl>
+                      <pre v-if="openLine === r.ev" class="gamelog-raw mb-0 mt-1">{{ r.ev.line }}</pre>
                     </td>
                   </tr>
                 </tbody>
@@ -120,7 +160,11 @@ import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import FieldHint from '@/components/FieldHint.vue'
 import { CATEGORY_LABELS, GameLogParser, casualDate, casualTime, summaryLines, timeline } from '@/utils/gameLog'
 
-defineProps({ cardClass: { type: String, default: 'card' } })
+const props = defineProps({
+  cardClass: { type: String, default: 'card' },
+  /** 玩家頁登入的遊戲ID：log 裡沒有登入紀錄時，用它判斷哪一筆死亡／擊殺是「你」 */
+  playerName: { type: String, default: '' },
+})
 
 const DEFAULT_PATH = 'C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE\\Game.log'
 const WATCH_MS = 2000
@@ -143,6 +187,11 @@ const watching = ref(false)
 const query = ref('')
 const category = ref('')
 const shownCount = ref(PAGE)
+const playerId = ref('')
+const openLine = shallowRef(null)   // 正在看「原始紀錄」的事件
+const pasteOpen = ref(false)
+const pasteText = ref('')
+const pasteLineCount = computed(() => (pasteText.value ? pasteText.value.split(/\r?\n/).filter(l => l.trim()).length : 0))
 
 let offset = 0                       // 已經讀到第幾個 byte（只會停在換行之後）
 let watchTimer = null
@@ -150,7 +199,7 @@ let polling = false
 
 function newParser() {
   try {
-    parser = new GameLogParser()
+    parser = new GameLogParser(undefined, { player: props.playerName })
     return true
   } catch (e) {
     error.value = `解析規則有問題：${e.message}`
@@ -158,25 +207,35 @@ function newParser() {
   }
 }
 
-async function readWhole(file) {
+/** 整份重新解析：source 是 File（讀檔）或 { text, name }（貼上的文字） */
+async function readWhole(source) {
   error.value = ''
   if (!newParser()) return
   loading.value = true
   progress.value = 0
   try {
-    const text = await file.text()
+    const text = typeof source.text === 'function' ? await source.text() : source.text
+    const size = source.size ?? new Blob([text]).size
     await parser.parseText(text, p => { progress.value = p })
-    offset = file.size
-    fileName.value = file.name
-    fileSize.value = file.size
+    offset = size
+    fileName.value = source.name
+    fileSize.value = size
     readAt.value = new Date()
     events.value = [...parser.events]
+    playerId.value = parser.player || ''
     shownCount.value = PAGE
   } catch (e) {
     error.value = `讀取失敗：${e.message || e}`
   } finally {
     loading.value = false
   }
+}
+
+async function parsePasted() {
+  if (!pasteText.value.trim()) return
+  stopWatch()
+  handle.value = null
+  await readWhole({ text: pasteText.value, name: '貼上的文字' })
 }
 
 // 選檔後直接開始監看（Chrome／Edge 的 File System Access API；系統資料夾會被瀏覽器擋，見檔頭）
@@ -255,6 +314,7 @@ async function pollOnce() {
     fileSize.value = file.size
     readAt.value = new Date()
     if (added) events.value = [...parser.events]
+    playerId.value = parser.player || ''
   } catch (e) {
     error.value = `監看中斷：${e.message || e}`
     stopWatch()
@@ -288,6 +348,7 @@ function clearAll() {
   fileSize.value = 0
   readAt.value = null
   events.value = []
+  playerId.value = ''
   error.value = ''
   query.value = ''
   category.value = ''
@@ -322,6 +383,17 @@ const fmtClock = d => d.toLocaleTimeString('zh-TW', { hour12: false })
 .gamelog-live { color: rgb(var(--bs-success-rgb)); }
 .gamelog-live .bi { font-size: .6rem; vertical-align: middle; }
 .gamelog-summary li { margin-bottom: .25rem; }
+.gamelog-paste { font-size: 1rem; min-height: 10rem; }
+.gamelog-details { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: 1rem; }
+.gamelog-detail { display: flex; gap: .4rem; }
+.gamelog-detail dt { font-weight: 400; color: var(--sf-text-muted); }
+.gamelog-detail dd { margin: 0; color: var(--sf-text-strong); font-weight: 600; }
+.gamelog-detail code { color: var(--sf-text-muted); font-weight: 400; font-size: .95em; }
+.gamelog-raw {
+  white-space: pre-wrap; word-break: break-all; font-size: 1rem;
+  padding: .5rem .7rem; border-radius: 6px;
+  background: var(--sf-panel-2); border: 1px solid var(--sf-border); color: var(--sf-text);
+}
 .gamelog { min-height: 12rem; border-radius: 10px; }
 .gamelog-drop { outline: 2px dashed var(--sf-accent); outline-offset: 4px; }
 .gamelog-dropzone {

@@ -1035,7 +1035,7 @@
 
     <!-- ══════════ LOG 解析（Game.log 在瀏覽器裡解析，不上傳；見 components/GameLogReader.vue）══════════ -->
     <div v-show="activeTab === 'gamelog'" role="tabpanel" id="panel-gamelog" :aria-labelledby="'tab-gamelog'">
-      <GameLogReader card-class="card scifi-card" />
+      <GameLogReader card-class="card scifi-card" :player-name="playerAuth.starCitizenId" />
     </div>
 
     <!-- ══════════ 中文轉碼（遊戲聊天用的 中文 ↔ @代碼，見 components/ChatCodeTranslator.vue）══════════ -->

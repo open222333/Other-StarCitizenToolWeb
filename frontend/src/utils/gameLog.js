@@ -21,6 +21,16 @@ const OPTIONAL_SEGMENT = /〔([^〔〕]*)〕/g
 const PLACEHOLDER = /\{([^{}]+)\}/g
 
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const sameName = (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
+
+// NPC 的實體名稱（PU_Human_Enemy_GroundCombat_NPC_Pyro_Outlaw_Sniper_123456）：認得出來就講成「NPC（Pyro Outlaw Sniper）」
+const NPC_NAME = /(^PU_|_NPC_|^NPC_|^AIModule|^Kopion|^Quasi|^Vlk|^Vanduul|_Pilot_|_Soldier_|_Guard_|_Security_)/i
+const NPC_NOISE = new Set(['pu', 'human', 'enemy', 'npc', 'groundcombat', 'ai', 'aimodule', 'template', 'default'])
+export function npcLabel(name) {
+  if (!name || !NPC_NAME.test(name)) return null
+  const words = name.replace(/_\d{5,}$/, '').split('_').filter(w => w && !/^\d+$/.test(w) && !NPC_NOISE.has(w.toLowerCase()))
+  return `NPC（${words.join(' ') || name}）`
+}
 
 // ── 小工具 ───────────────────────────────────────────────────────────
 
@@ -147,6 +157,20 @@ function sayTrade(line) {
 
 const HANDLERS = { 交易: sayTrade }
 
+// 處理器事件（交易）的明確數據：資料欄位 → 顯示名稱
+const TRADE_DETAIL_LABELS = { side: '買賣', item: '商品', qty: '數量（SCU）', money: '金額（aUEC）', location: '地點' }
+const SIDE_LABELS = { buy: '買進', sell: '賣出' }
+
+function tradeDetails(data) {
+  return Object.entries(TRADE_DETAIL_LABELS)
+    .filter(([k]) => data[k] !== null && data[k] !== undefined && data[k] !== '')
+    .map(([k, label]) => ({
+      label,
+      value: k === 'side' ? (SIDE_LABELS[data[k]] || data[k]) : k === 'money' ? fmtMoney(data[k]) : String(data[k]),
+      raw: null,
+    }))
+}
+
 // ── 規則 ────────────────────────────────────────────────────────────
 
 function compile(spec, where) {
@@ -174,8 +198,14 @@ function extract(line, spec) {
     const m = line.match(spec._re)
     if (m) value = m.length > 1 ? m[1] : m[0]
   }
+  if (value !== null && value !== undefined
+      && (spec['忽略值'] || []).some(v => v.toLowerCase() === value.trim().toLowerCase())) value = null
   if (value === null || value === undefined) return spec['預設'] ?? null
   value = value.trim()
+  if (spec['NPC美化']) {
+    const npc = npcLabel(value)
+    if (npc) return npc
+  }
   for (const [key, name] of Object.entries(spec['對照'] || {})) {
     if (value.toLowerCase().includes(key.toLowerCase())) return name
   }
@@ -220,18 +250,37 @@ class EventRule {
     return this.groups.every(g => groupMatches(line, g))
   }
 
-  /** [句子, 資料, 圖示]；沒有一句適用回 null */
-  describe(line) {
+  /**
+   * [句子, 資料, 圖示, 明確數據]；沒有一句適用回 null。ctx.player＝玩家自己的遊戲 ID（判斷「你」用）。
+   * 明確數據：[{ label, value, raw }]，每個抓到的欄位一筆（raw＝log 裡的原文，跟 value 一樣時是 null）。
+   */
+  describe(line, ctx = {}) {
     if (this.handler) {
       const d = this.handler(line)
-      return d ? [...d, this.icon] : null
+      return d ? [d[0], d[1], this.icon, tradeDetails(d[1])] : null
     }
     const values = {}
-    for (const [name, spec] of Object.entries(this.fields)) values[name] = extract(line, spec)
+    const rawValues = {}
+    for (const [name, spec] of Object.entries(this.fields)) {
+      values[name] = extract(line, spec)
+      rawValues[name] = extract(line, { ...spec, 'NPC美化': false, '美化': false, '對照': null })
+    }
     for (const s of this.sentences) {
       if (!groupMatches(line, s['條件'])) continue
       if ((s['需要欄位'] || []).some(n => values[n] === null || values[n] === undefined)) continue
-      return [render(s['文字'], values, this.fields), fillData(s['資料'], values), s['圖示'] || this.icon]
+      // 欄位相同：兩個欄位的原始值一樣（例如死者＝兇手＝自殺／意外）；是自己：這個欄位是玩家自己
+      const same = s['欄位相同']
+      if (same && !sameName(rawValues[same[0]], rawValues[same[1]])) continue
+      if (s['是自己'] && !sameName(rawValues[s['是自己']], ctx.player)) continue
+      const details = Object.keys(this.fields)
+        .filter(n => values[n] !== null && values[n] !== undefined && !this.fields[n]['不顯示'])
+        .map(n => ({
+          label: this.fields[n]['標題'] || n,
+          value: String(values[n]),
+          raw: rawValues[n] !== null && rawValues[n] !== undefined && String(rawValues[n]) !== String(values[n])
+            ? String(rawValues[n]) : null,
+        }))
+      return [render(s['文字'], values, this.fields), fillData(s['資料'], values), s['圖示'] || this.icon, details]
     }
     return null
   }
@@ -259,7 +308,8 @@ export function loadRules(config = RULES_CONFIG) {
     })
   })
   const multiline = (config['多行合併'] || []).map(s => [new RegExp(s['開頭']), new RegExp(s['結束'])])
-  return { rules, ignore: config['略過'] || [], multiline }
+  const playerPatterns = (config['玩家名稱'] || []).map(p => new RegExp(p, 'i'))
+  return { rules, ignore: config['略過'] || [], multiline, playerPatterns }
 }
 
 // ── 解析器 ──────────────────────────────────────────────────────────
@@ -267,16 +317,28 @@ export function loadRules(config = RULES_CONFIG) {
 const sameData = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
 export class GameLogParser {
-  constructor({ rules, ignore, multiline } = loadRules()) {
+  /** player：玩家自己的遊戲 ID（玩家頁登入的帳號）；log 裡有登入紀錄的話以 log 的為準 */
+  constructor({ rules, ignore, multiline, playerPatterns = [] } = loadRules(), { player = '' } = {}) {
     this.rules = rules
     this.ignore = ignore
     this.multiline = multiline
+    this.playerPatterns = playerPatterns
+    this.defaultPlayer = player || null
     this.reset()
   }
 
   reset() {
     this.events = []
     this.pending = null   // [已合併的文字, 結束正則, 已合併行數]
+    this.player = this.defaultPlayer
+  }
+
+  /** 登入紀錄（例如 Handle[abcd1234]）→ 記下玩家自己的遊戲 ID */
+  detectPlayer(line) {
+    for (const re of this.playerPatterns) {
+      const m = line.match(re)
+      if (m?.[1]) { this.player = m[1]; return }
+    }
   }
 
   /** 同一件事 1 秒內寫好幾行（例如陣亡時每件裝備一行）只算一次；交易不合併，免得少算錢 */
@@ -314,12 +376,14 @@ export class GameLogParser {
     if (!line) return null
     line = this.joinMultiline(line)
     if (!line || this.ignore.some(k => line.includes(k))) return null
+    this.detectPlayer(line)
     for (const rule of this.rules) {
       if (!rule.matches(line)) continue
-      const d = rule.describe(line)
+      const d = rule.describe(line, { player: this.player })
       if (!d) continue
-      const [text, data, icon] = d
-      const ev = { category: rule.category, icon, when: parseTime(line), text, data }
+      const [text, data, icon, details] = d
+      // line：整行原文（畫面上「原始紀錄」按鈕顯示）
+      const ev = { category: rule.category, icon, when: parseTime(line), text, data, details: details || [], line }
       if (this.isRepeat(ev)) return null
       this.events.push(ev)
       return ev
@@ -408,10 +472,31 @@ export function summaryLines(events) {
   if (jumps) lines.push(`量子航行了 ${jumps} 趟。`)
 
   const downs = runs.filter(e => e.data.health === 'down').length
-  const deaths = runs.filter(e => e.data.health === 'dead').length
+  // 同一次陣亡常同時有「裝備留在遺體」跟「<Actor Death>」兩種紀錄，30 秒內的算同一次
+  const deathRuns = []
+  for (const e of runs.filter(e => e.data.health === 'dead')) {
+    const last = deathRuns[deathRuns.length - 1]
+    if (last && last.when && e.when && Math.abs(e.when - last.when) <= 30000) {
+      if (!last.data.killer && !last.data.cause) deathRuns[deathRuns.length - 1] = e   // 留有原因的那筆
+      continue
+    }
+    deathRuns.push(e)
+  }
+  const deaths = deathRuns.length
   if (downs || deaths) {
     lines.push([downs ? `倒地 ${downs} 次` : '', deaths ? `陣亡 ${deaths} 次` : ''].filter(Boolean).join('、') + '，辛苦了 🫡')
   }
+  const tally = (list) => {
+    const counts = new Map()
+    for (const v of list) counts.set(v, (counts.get(v) || 0) + 1)
+    return [...counts.entries()].map(([v, n]) => (n > 1 ? `${v} ×${n}` : v)).join('、')
+  }
+  const killers = deathRuns.map(e => e.data.killer).filter(Boolean)
+  const causes = deathRuns.map(e => e.data.cause).filter(Boolean)
+  if (killers.length) lines.push(`可能是被誰殺的：${tally(killers)}。`)
+  if (causes.length) lines.push(`死亡原因：${tally(causes)}。`)
+  const kills = runs.filter(e => e.data.kill).map(e => e.data.kill)
+  if (kills.length) lines.push(`擊殺了 ${kills.length} 個目標：${tally(kills)}。`)
 
   const join = runs.filter(e => e.data.party === 'join').length
   const leave = runs.filter(e => e.data.party === 'leave').length
