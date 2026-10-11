@@ -6,7 +6,7 @@
       · 新增物品：一次登記多筆「還沒有的物品」
       · 庫存異動：對已登記的物品增減數量，每列各自可選「＋增加」或「－減少」
       · 庫存紀錄：增加／減少的歷史。上方同樣有篩選區
-  - 藍圖：自己的藍圖名冊，可增刪（一頁；「藍圖資料」「批量登記」用按鈕展開）。**只能從主檔選**，不接受自由輸入
+  - 藍圖：自己的藍圖名冊，可增刪（一頁；「登記藍圖資料」用按鈕展開，原本的藍圖資料＋批量登記合併）。**只能從主檔選**，不接受自由輸入
     （見 src/models/blueprint.py 與 app/player/view.py 的 add_my_blueprint）。
     玩家端不顯示也不選「狀態」—— 登記的意思就是「我有這張圖」，一律送
     obtained（已取得）。後端與後台管理頁仍保留完整的 UNLOCK_STATUSES，
@@ -706,15 +706,11 @@
     <div v-show="activeTab === 'blueprints'" class="sf-toolbar">
       <button class="btn btn-sm" :class="bpDataOpen ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="bpDataOpen ? 'true' : 'false'" @click="bpDataOpen = !bpDataOpen">
-        <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i>{{ bpDataOpen ? '收起資料' : '藍圖資料' }}
-      </button>
-      <button class="btn btn-sm" :class="bpBulkOpen ? 'btn-secondary' : 'btn-success'"
-        :aria-expanded="bpBulkOpen ? 'true' : 'false'" @click="bpBulkOpen = !bpBulkOpen">
-        <i class="bi me-1" :class="bpBulkOpen ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ bpBulkOpen ? '收起登記' : '批量登記' }}
+        <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i>{{ bpDataOpen ? '收起登記' : '登記藍圖資料' }}
       </button>
       <button class="btn btn-sm btn-primary" @click="loadBlueprints">重新整理</button>
     </div>
-    <!-- 藍圖 › 共用搜尋：同一組名稱／類型同時篩「我的藍圖」「藍圖資料」「批量登記」 -->
+    <!-- 藍圖 › 共用搜尋：同一組名稱／類型同時篩「我的藍圖」「登記藍圖資料」 -->
     <div v-show="activeTab === 'blueprints'" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
@@ -736,20 +732,14 @@
       </div>
     </div>
 
-    <!-- ══════════ 藍圖 › 藍圖資料／批量登記（原本的下層分頁，改成「我的藍圖」上方按按鈕展開；
-         舊網址 ?tab=blueprints&sub=data|bulk 直接展開）══════════ -->
-    <!-- 藍圖資料：遊戲藍圖資料庫，唯讀；有任務的名稱可點開看解鎖任務 -->
+    <!-- ══════════ 藍圖 › 登記藍圖資料（原本的「藍圖資料」「批量登記」兩個區塊合併，比照艦隊的登記船艦資料；
+         舊網址 ?tab=blueprints&sub=data|bulk 直接展開）══════════
+         遊戲藍圖資料庫：點一列看配方與解鎖任務；每列「登記」按鈕，或勾選多張一次登記 -->
     <div v-show="activeTab === 'blueprints' && bpDataOpen" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-journal-text me-1"></i>藍圖資料</h3>
+      <h3 class="sf-drawer__title"><i class="bi bi-journal-text me-1"></i>登記藍圖資料</h3>
       <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
-        :active="activeTab === 'blueprints' && bpDataOpen" :shared-filters="bpFilters" />
-    </div>
-
-    <!-- ══════════ 藍圖批量登記 ══════════ -->
-    <div v-show="activeTab === 'blueprints' && bpBulkOpen" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>批量登記</h3>
-      <BlueprintBulkRegister ref="bulkRegisterRef" :fetcher="playerAuth.playerFetch"
-        card-class="card scifi-card" :filters="bpFilters" @registered="onBulkRegistered" />
+        :active="activeTab === 'blueprints' && bpDataOpen" :shared-filters="bpFilters"
+        :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </div>
 
     <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
@@ -1250,7 +1240,6 @@ import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { fmtAuec, fmtUsd, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
-import BlueprintBulkRegister from '@/components/BlueprintBulkRegister.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetImport from '@/components/FleetImport.vue'
@@ -1312,7 +1301,7 @@ const tabs = [
     key: 'warehouse', label: '倉庫',   icon: 'bi bi-box-seam',
   },
   {
-    // 原本的「我的藍圖／藍圖資料／批量登記」合併成一頁，後兩個改成按鈕展開（比照艦隊）
+    // 原本的「我的藍圖／藍圖資料／批量登記」合併成一頁，後兩個再合併成按鈕展開的「登記藍圖資料」（比照艦隊）
     key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
   },
   {
@@ -1367,10 +1356,10 @@ const SEARCH_SECTIONS = [
 ]
 const searchOpen = reactive(Object.fromEntries(SEARCH_SECTIONS.map(sec =>
   [sec.key, activeTab.value === 'search' && route.query.sub === sec.key])))
-// 倉庫的庫存紀錄、藍圖的藍圖資料／批量登記同理（舊網址 ?sub=history|data|bulk 直接展開）
+// 倉庫的庫存紀錄同理（舊網址 ?sub=history 直接展開）
 const historyOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'history')
-const bpDataOpen = ref(activeTab.value === 'blueprints' && route.query.sub === 'data')
-const bpBulkOpen = ref(activeTab.value === 'blueprints' && route.query.sub === 'bulk')
+// 藍圖的「登記藍圖資料」（原本的藍圖資料＋批量登記合併；舊網址 sub=data|bulk 都展開它）
+const bpDataOpen = ref(activeTab.value === 'blueprints' && ['data', 'bulk'].includes(route.query.sub))
 const fleetImportOpen = ref(false)
 function toggleStockMode(mode) {
   stockMode.value = stockMode.value === mode ? '' : mode
@@ -1553,7 +1542,8 @@ async function changePassword() {
 }
 
 // ── 藍圖批量登記 ──────────────────────────────────────────────
-const bulkRegisterRef = ref(null)
+// 我的藍圖已登記的主檔 uuid（登記藍圖資料標「已登記」、不能再勾）
+const myBlueprintUuids = computed(() => blueprints.value.map(bp => bp.blueprint_uuid).filter(Boolean))
 
 /** 批量登記完成後，把「我的藍圖」那一頁的清單也更新（否則要手動重新整理）。 */
 async function onBulkRegistered() {
@@ -1927,7 +1917,7 @@ const blueprints           = ref([])
 const loadingBlueprints    = ref(false)
 
 // 「藍圖」分頁頂端的共用搜尋（名稱關鍵字＋類型可多選、取聯集）：
-// 「我的藍圖」整份已載入，直接在前端篩；「藍圖資料」「批量登記」把同一組條件帶去後端查主檔。
+// 「我的藍圖」整份已載入，直接在前端篩；「登記藍圖資料」把同一組條件帶去後端查主檔。
 // 類型選項用主檔的全部類型（/blueprint/master/types），三區才會一致。
 const bpFilterQuery = ref('')
 const myBpTypes = ref([])

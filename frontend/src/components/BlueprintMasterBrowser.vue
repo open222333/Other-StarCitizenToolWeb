@@ -13,6 +13,12 @@
   解鎖任務的連結：後台跳到任務資料庫頁；玩家頁沒有那一頁，藍圖名稱（有任務的才是
   連結）與明細裡的任務都開 BlueprintMissionsModal。
 
+  玩家頁「藍圖 › 登記藍圖資料」再傳 registeredUuids（我的藍圖的 blueprint_uuid）就變成可登記：
+  每列前面有勾選框（批量登記，勾選跨頁保留，底部出現登記列＋共用的「取得方式」）、最後一欄
+  「登記」按鈕（登記這一張）；已登記的標「已登記」且不能再勾。都走 POST /player/blueprints/bulk，
+  後端也會再擋重複（Blueprint.bulk_create_for_player）。登記完 emit('registered') 讓父層重抓我的藍圖。
+  原本獨立的「批量登記」元件已併進這裡（已刪除）。
+
   玩家頁傳 sharedFilters（{ q, types }）時，名稱／類型改用「藍圖」分頁頂端的共用搜尋卡，
   這裡自己的名稱框與類型選單就不顯示（只留「預設可用」「需任務解鎖」這些本區專用的勾選）。
 
@@ -63,20 +69,28 @@
       </div>
     </div>
 
+    <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
+
     <div :class="cardClass">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">{{ player ? '名稱' : '藍圖（英文）' }}</th>
+                <th v-if="registerable" class="ps-3" style="width: 2.5rem">
+                  <input class="form-check-input" type="checkbox" aria-label="全選本頁"
+                    :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
+                    :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
+                </th>
+                <th :class="{ 'ps-3': !registerable }">{{ player ? '名稱' : '藍圖（英文）' }}</th>
                 <th v-if="!player">中文</th>
                 <th>類型</th>
                 <th>等級</th>
                 <th>製作時間</th>
                 <th class="text-end">材料數</th>
                 <th>預設可用</th>
-                <th class="text-end" :class="{ 'pe-3': player }">解鎖任務</th>
+                <th class="text-end" :class="{ 'pe-3': player && !registerable }">解鎖任務</th>
+                <th v-if="registerable" class="pe-3"></th>
                 <th v-if="!player" class="pe-3">玩家頁面</th>
               </tr>
             </thead>
@@ -99,9 +113,15 @@
               </tr>
               <template v-else>
                 <template v-for="bp in rows" :key="bp._id">
-                  <tr class="bp-row" role="button" tabindex="0" :aria-expanded="expandedId === bp._id ? 'true' : 'false'"
+                  <tr class="bp-row" :class="{ 'bp-registered': registerable && isRegistered(bp) }"
+                    role="button" tabindex="0" :aria-expanded="expandedId === bp._id ? 'true' : 'false'"
                     @click="toggle(bp)" @keydown.enter.self="toggle(bp)">
-                    <td class="ps-3">
+                    <td v-if="registerable" class="ps-3" @click.stop>
+                      <input class="form-check-input" type="checkbox" :checked="selected.has(bp._id)"
+                        :disabled="isRegistered(bp)" :aria-label="`勾選 ${bp.name_zh || bp.name}`"
+                        @change="toggleOne(bp._id, $event.target.checked)">
+                    </td>
+                    <td :class="{ 'ps-3': !registerable }">
                       <i class="bi me-1 small text-muted" :class="expandedId === bp._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                       <template v-if="player">
                         <button v-if="bp.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start fw-semibold"
@@ -123,9 +143,16 @@
                     <td :class="{ small: !player }">{{ bp.craft_time_label || fmtSeconds(bp.craft_time_seconds) }}</td>
                     <td class="text-end" :class="{ small: !player }">{{ bp.ingredient_count ?? '—' }}</td>
                     <td :class="{ small: !player }">{{ bp.is_available_by_default ? '是' : '否' }}</td>
-                    <td class="text-end" :class="{ small: !player, 'pe-3': player }">
+                    <td class="text-end" :class="{ small: !player, 'pe-3': player && !registerable }">
                       <span v-if="bp.mission_count">{{ bp.mission_count }} 個</span>
                       <span v-else class="text-muted">—</span>
+                    </td>
+                    <td v-if="registerable" class="pe-3 text-end text-nowrap" @click.stop>
+                      <span v-if="isRegistered(bp)" class="sf-tree-chip">已登記</span>
+                      <button v-else type="button" class="btn btn-sm btn-success" :disabled="submitting"
+                        :aria-label="`登記 ${bp.name_zh || bp.name}`" @click="register([bp._id])">
+                        <i class="bi bi-plus-lg me-1"></i>登記
+                      </button>
                     </td>
                     <td v-if="!player" class="pe-3">
                       <PlayerVisibleToggle dataset="blueprints" :doc-id="bp._id" :row="bp" />
@@ -198,12 +225,33 @@
       </div>
     </div>
 
+    <!-- ── 批量登記列（有勾選才出現；勾選跨頁保留）──────────────── -->
+    <div v-if="registerable && selected.size" :class="[cardClass, 'sf-search', 'mt-3', 'bp-submit']">
+      <div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="fw-semibold">已選 {{ selected.size }} 張</span>
+          <button type="button" class="btn btn-sm btn-warning" @click="selected.clear()">清除勾選</button>
+          <span class="flex-grow-1"></span>
+          <input v-model="acquisitionMethod" type="text" class="form-control form-control-sm"
+            style="max-width: 12rem" placeholder="取得方式（可留空）" aria-label="取得方式（套用到這批全部）">
+          <button type="button" class="btn btn-sm btn-success" :disabled="submitting || selected.size > maxBulk"
+            @click="register([...selected], acquisitionMethod)">
+            <span v-if="submitting" class="spinner-border spinner-border-sm me-1"></span>
+            登記這 {{ selected.size }} 張
+          </button>
+        </div>
+        <div v-if="selected.size > maxBulk" class="small text-danger mt-1">
+          一次最多 {{ maxBulk }} 張，請先取消一些。
+        </div>
+      </div>
+    </div>
+
     <BlueprintMissionsModal v-if="player" ref="missionsRef" :fetcher="fetcher" />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -222,7 +270,10 @@ const props = defineProps({
   active: { type: Boolean, default: true },
   /** 玩家頁「藍圖」分頁的共用搜尋卡 { q, types }；null＝用這裡自己的名稱框與類型選單（後台） */
   sharedFilters: { type: Object, default: null },
+  /** 玩家頁「登記藍圖資料」：我的藍圖已登記的 blueprint_uuid；null＝不能登記（後台／純瀏覽） */
+  registeredUuids: { type: Array, default: null },
 })
+const emit = defineEmits(['registered'])
 
 let uidSeq = 0
 const uid = `bp-master-${props.player ? 'p' : 'a'}${++uidSeq}`
@@ -246,7 +297,73 @@ const shared = computed(() => props.sharedFilters !== null)
 const effectiveQuery = computed(() => (shared.value ? (props.sharedFilters.q || '') : nameQuery.value).trim())
 const effectiveTypes = computed(() => (shared.value ? (props.sharedFilters.types || []) : selectedTypes.value))
 
-const colspan = computed(() => (props.player ? 7 : 9))
+const registerable = computed(() => props.player && props.registeredUuids !== null)
+const colspan = computed(() => (props.player ? 7 + (registerable.value ? 2 : 0) : 9))
+
+// ── 登記（玩家頁「登記藍圖資料」）────────────────────────────
+// 跟後端的 MAX_BULK_BLUEPRINTS 一致
+const maxBulk = 200
+const registeredSet = computed(() => new Set(props.registeredUuids || []))
+const isRegistered = bp => registeredSet.value.has(bp._id)
+/** 勾選中的 uuid，跨頁保留 */
+const selected = reactive(new Set())
+const acquisitionMethod = ref('')
+const submitting = ref(false)
+const message = ref('')
+const messageType = ref('alert-success')
+const selectableRows = computed(() => rows.value.filter(bp => !isRegistered(bp)))
+const allSelectableChecked = computed(() =>
+  selectableRows.value.length > 0 && selectableRows.value.every(bp => selected.has(bp._id)))
+const someSelectableChecked = computed(() => selectableRows.value.some(bp => selected.has(bp._id)))
+
+function toggleOne(id, checked) {
+  if (checked) selected.add(id)
+  else selected.delete(id)
+}
+
+function togglePage(checked) {
+  for (const bp of selectableRows.value) {
+    if (checked) selected.add(bp._id)
+    else selected.delete(bp._id)
+  }
+}
+
+// 別處（單張登記、我的藍圖刪除）改了名冊，已登記的就不該還勾著
+watch(registeredSet, (set) => { for (const id of [...selected]) if (set.has(id)) selected.delete(id) })
+
+let flashTimer = null
+function flash(text, type = 'alert-success') {
+  message.value = text
+  messageType.value = type
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => { message.value = '' }, 6000)
+}
+
+async function register(uuids, method = '') {
+  if (!uuids.length || submitting.value) return
+  submitting.value = true
+  try {
+    const res = await props.fetcher('/player/blueprints/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ blueprint_uuids: uuids, acquisition_method: (method || '').trim() }),
+    })
+    if (!res) { flash('網路錯誤，請稍後再試', 'alert-warning'); return }
+    const data = await res.json().catch(() => null)
+    if (!res.ok || !data?.success) {
+      flash(data?.message || '登記失敗，請稍後再試', 'alert-warning')
+      return
+    }
+    // 誠實回報：跳過與查不到的也要講，不然使用者會以為全部都登記進去了
+    const parts = [`新增 ${data.added} 張`]
+    if (data.skipped) parts.push(`跳過 ${data.skipped} 張（已登記過）`)
+    if (data.not_found) parts.push(`${data.not_found} 張在主檔查不到`)
+    flash(parts.join('，'), data.added ? 'alert-success' : 'alert-warning')
+    uuids.forEach(id => selected.delete(id))
+    emit('registered', data)
+  } finally {
+    submitting.value = false
+  }
+}
 const typeOptions = computed(() => types.value.map(t => ({ value: t, label: blueprintTypeLabel(t) })))
 
 // 共用搜尋卡的條件由分頁頂端自己清，這裡的「清除全部篩選」只管本區的勾選
@@ -367,10 +484,12 @@ watch(() => props.sharedFilters, () => {
   clearTimeout(sharedTimer)
   sharedTimer = setTimeout(() => reload(0), 300)
 }, { deep: true })
-onBeforeUnmount(() => clearTimeout(sharedTimer))
+onBeforeUnmount(() => { clearTimeout(sharedTimer); clearTimeout(flashTimer) })
 </script>
 
 <style scoped>
 .bp-row { cursor: pointer; }
 .bp-detail > td { background: var(--bs-tertiary-bg); }
+.bp-registered > td { opacity: .6; }
+.bp-submit { position: sticky; bottom: .5rem; z-index: 10; }
 </style>

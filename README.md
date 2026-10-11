@@ -134,7 +134,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | LOG 解析 | http://localhost:8090/me?tab=gamelog | 選擇自己的 `Game.log`，整理成中文事件時間軸與本次遊玩回顧；**只在瀏覽器裡解析、不上傳**。Chrome／Edge 可「持續監看」（遊戲進行中即時更新）。規則在 `frontend/src/utils/gameLogRules.json` |
 | 中文轉碼 | http://localhost:8090/me?tab=chatcode | 上半部：遊戲聊天用的 中文 ↔ `@代碼` 互轉（自動判斷或手動指定方向），字典由伺服器從社群 chsc-tw 下載並快取 24 小時；下半部：遊戲文字代碼（localization key，例如 `vehicle_NameAEGS_Avenger_Stalker`）⇄ 中文／英文查詢，資料是翻譯資料庫 `sc_translations` |
 | 藍圖品質試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「品質試算」） | 每個部位（Frame／Barrel…）拖拉材料品質 0–1000，看各屬性倍率與綜合加成；資料來自 scunpacked-data `blueprints.json`（`blueprint_quality_master`），跟著「藍圖」同步項目更新 |
-| 藍圖批量登記 | http://localhost:8090/me?tab=blueprints&sub=bulk | 從遊戲藍圖主檔勾選，一次登記多張到自己名下（已登記的會標示並禁止重複勾） |
+| 登記藍圖資料 | http://localhost:8090/me?tab=blueprints&sub=data | 遊戲藍圖資料庫（點一列看配方與解鎖任務）＋登記：每列「登記」按鈕登記一張，或勾選多張一次登記（已登記的會標示並禁止重複勾）；原本的「藍圖資料」「批量登記」合併在這裡（舊網址 `sub=bulk` 也會打開） |
 | 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
 | 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，由「UEX 價格」同步項目更新（需 UEX token）。三個分頁直接列資料庫內容方便檢查：「商品」UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性，每筆列出關聯的礦物）；「商品價格」`uex_commodities_prices`（商品 × 交易終端的買價／庫存／賣價／更新時間，後端分頁）；「交易終端」`uex_terminals`（地點、類型、屬性、可買／可賣商品數） |
 | 登記船艦資料／船艦價格 | http://localhost:8090/me?tab=fleet&sub=data | 玩家頁「艦隊 › 登記船艦資料」：用艦隊分頁頂端的共用搜尋卡篩選載具主檔（含「取得方式」：只看可用遊戲幣購買／可租船，多選取聯集；後台艦船列表也有，API 參數 `acquire=buy|rent`），列表直接顯示類型、尺寸、廠商、角色；每列有「登記」按鈕（登記 1 艘到我的艦隊），也能勾選多款一次登記（原本的「批量登記」併進來，已登記的標示並禁止重複）。點開看載員、貨艙、質量與價格：官網現金價（`msrp`，美金）、遊戲內最低購買價與租船價（UEX，aUEC）以及每個購買／租船地點。我的艦隊每艘船也顯示這三個價格。後台「艦船」列表多「遊戲內購買」「租船」兩欄（點開看地點），另有「購買價格」「租船價格」分頁列 UEX 價格表原始內容（含對不到載具主檔的） |
@@ -191,7 +191,7 @@ Docker 的 port 發佈會直接寫 iptables、繞過 ufw，綁 0.0.0.0 等於對
 - [Docker 部署](#docker-部署)
 - [域名部署（HTTPS）](#域名部署https)
 - [主機 nginx 部署](#主機-nginx-部署)
-- [藍圖批量登記](#藍圖批量登記)
+- [登記藍圖資料（批量登記）](#登記藍圖資料批量登記)
 - [藍圖材料試算](#藍圖材料試算)
 - [遊戲資料同步](#遊戲資料同步)
 - [Discord bot](#discord-bot)
@@ -813,12 +813,12 @@ sudo certbot renew --dry-run                         # 測試自動續約
 
 ---
 
-## 藍圖批量登記
+## 登記藍圖資料（批量登記）
 
-玩家頁「藍圖 → 批量登記」（`components/BlueprintBulkRegister.vue`）。
+玩家頁「藍圖 → 登記藍圖資料」（`components/BlueprintMasterBrowser.vue` 的玩家模式，傳 `registeredUuids` 就能登記）。
 原本只能用搜尋框一張一張登記，遊戲一次解鎖十幾張圖時要重複十幾次；
-現在直接列出主檔（分頁），勾選後一次送出。名稱關鍵字／類型用「藍圖」分頁頂端的共用搜尋卡，
-同一組條件同時篩「我的藍圖」「藍圖資料」跟這裡（倉庫、艦隊分頁也是同樣做法：每個分頁一張共用搜尋卡）。
+現在直接列出主檔（分頁），每列有「登記」按鈕，也能勾選多張一次送出。名稱關鍵字／類型用「藍圖」分頁頂端的共用搜尋卡，
+同一組條件同時篩「我的藍圖」跟這裡（倉庫、艦隊分頁也是同樣做法：每個分頁一張共用搜尋卡）。
 
 - 已登記的整列淡化、標示「已登記」且不能再勾。
 - 勾選狀態**跨頁保留**：翻頁去看其他類型再回來，勾過的不會消失。
