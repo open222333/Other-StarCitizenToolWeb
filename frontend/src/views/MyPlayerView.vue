@@ -883,7 +883,7 @@
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->
-    <!-- ══════════ 艦隊（我的艦隊＋船艦資料／JSON 匯入） ══════════ -->
+    <!-- ══════════ 艦隊（我的艦隊＋登記船艦資料／JSON 匯入） ══════════ -->
     <div v-show="activeTab === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'">
       <Transition name="alert-slide">
         <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
@@ -893,7 +893,7 @@
       <div class="sf-toolbar">
         <button class="btn btn-sm" :class="fleetDataOpen ? 'btn-secondary' : 'btn-info'"
           :aria-expanded="fleetDataOpen ? 'true' : 'false'" @click="fleetDataOpen = !fleetDataOpen">
-          <i class="bi me-1" :class="fleetDataOpen ? 'bi-x-lg' : 'bi-info-circle'"></i>{{ fleetDataOpen ? '收起資料' : '船艦資料' }}
+          <i class="bi me-1" :class="fleetDataOpen ? 'bi-x-lg' : 'bi-info-circle'"></i>{{ fleetDataOpen ? '收起登記' : '登記船艦資料' }}
         </button>
         <button class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
           :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
@@ -902,7 +902,7 @@
         <button class="btn btn-sm btn-primary" @click="loadFleet">重新整理</button>
       </div>
 
-      <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「船艦資料」 -->
+      <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「登記船艦資料」 -->
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
@@ -943,10 +943,10 @@
         </div>
       </div>
 
-      <!-- 船艦資料：載具主檔的基本資訊＋官網價／遊戲內購買價／租船價，並在這裡登記（單艘或勾選批量），
+      <!-- 登記船艦資料：載具主檔的基本資訊＋官網價／遊戲內購買價／租船價，並在這裡登記（單艘或勾選批量），
            原本的「批量登記」併進來（components/VehicleDataBrowser.vue）；舊網址 ?tab=fleet&sub=data|bulk 直接展開 -->
       <div v-show="fleetDataOpen" class="sf-drawer">
-        <h3 class="sf-drawer__title"><i class="bi bi-info-circle me-1"></i>船艦資料</h3>
+        <h3 class="sf-drawer__title"><i class="bi bi-info-circle me-1"></i>登記船艦資料</h3>
         <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters"
           :registered-uuids="fleetVehicleUuids" :active="activeTab === 'fleet' && fleetDataOpen"
           @registered="loadFleet" />
@@ -1316,7 +1316,7 @@ const tabs = [
     key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
   },
   {
-    // 原本的「我的艦隊／批量登記」兩個下層分頁合併成一頁；批量登記後來併進按鈕展開的「船艦資料」
+    // 原本的「我的艦隊／批量登記」兩個下層分頁合併成一頁；批量登記後來併進按鈕展開的「登記船艦資料」
     key: 'fleet', label: '艦隊',  icon: 'bi bi-rocket-takeoff',
   },
   { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
@@ -1356,7 +1356,7 @@ function validSub(tabKey, sub) {
 // 舊網址 ?tab=warehouse&sub=add|adjust（原本的獨立分頁）直接打開對應的表單。
 const stockMode = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].includes(route.query.sub)
   ? route.query.sub : '')
-// 艦隊的「船艦資料」（?tab=fleet&sub=data 直接展開；原本的批量登記已併進來，舊網址 sub=bulk 也展開它）
+// 艦隊的「登記船艦資料」（?tab=fleet&sub=data 直接展開；原本的批量登記已併進來，舊網址 sub=bulk 也展開它）
 const fleetDataOpen = ref(activeTab.value === 'fleet' && ['data', 'bulk'].includes(route.query.sub))
 // 查詢的三個區塊：點開才顯示、才載入資料（舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開）
 const SEARCH_SECTIONS = [
@@ -2435,7 +2435,7 @@ const fleetLoaded      = ref(false)
 const fleetError       = ref('')
 const fleetMaxQuantity = ref(99)
 const savingFleetId    = ref('')
-// 已經在我的艦隊裡的載具（船艦資料標「已登記」、不能再勾）
+// 已經在我的艦隊裡的載具（登記船艦資料標「已登記」、不能再勾）
 const fleetVehicleUuids = computed(() => fleet.value.map(r => r.vehicle_uuid).filter(Boolean))
 const fleetShipCount   = computed(() => fleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
 
@@ -2630,7 +2630,7 @@ async function saveLoadouts(row) {
 }
 
 async function onFleetImported() {
-  await loadFleet()   // 船艦資料的「已登記」標記跟著 fleetVehicleUuids 更新
+  await loadFleet()   // 登記船艦資料的「已登記」標記跟著 fleetVehicleUuids 更新
 }
 
 async function removeFleet(row) {
@@ -2638,7 +2638,7 @@ async function removeFleet(row) {
   if (!res) return
   const data = await res.json().catch(() => null)
   if (res.ok && data?.success) {
-    await loadFleet()   // 船艦資料的「已登記」標記跟著解除
+    await loadFleet()   // 登記船艦資料的「已登記」標記跟著解除
   } else {
     showFleetError(data?.message || '刪除失敗，請稍後再試')
   }
