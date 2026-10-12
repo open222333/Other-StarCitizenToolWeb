@@ -148,6 +148,10 @@
                       <span v-else class="text-muted">—</span>
                     </td>
                     <td v-if="registerable" class="pe-3 text-end text-nowrap" @click.stop>
+                      <button type="button" class="btn btn-sm btn-info me-1"
+                        :aria-expanded="qualityId === bp._id ? 'true' : 'false'" @click="qualityId = qualityId === bp._id ? '' : bp._id">
+                        <i class="bi me-1" :class="qualityId === bp._id ? 'bi-chevron-up' : 'bi-sliders'"></i>品質試算
+                      </button>
                       <span v-if="isRegistered(bp)" class="sf-tree-chip">已登記</span>
                       <button v-else type="button" class="btn btn-sm btn-success" :disabled="submitting"
                         :aria-label="`登記 ${bp.name_zh || bp.name}`" @click="register([bp._id])">
@@ -156,6 +160,12 @@
                     </td>
                     <td v-if="!player" class="pe-3">
                       <PlayerVisibleToggle dataset="blueprints" :doc-id="bp._id" :row="bp" />
+                    </td>
+                  </tr>
+                  <!-- 品質試算（跟我的藍圖同一個元件），登記前就能先試算 -->
+                  <tr v-if="registerable && qualityId === bp._id" class="bp-detail">
+                    <td :colspan="colspan" class="px-3 py-2">
+                      <BlueprintQuality :fetcher="fetcher" :blueprint-uuid="bp._id" />
                     </td>
                   </tr>
                   <tr v-if="expandedId === bp._id" class="bp-detail">
@@ -254,6 +264,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
+import BlueprintQuality from '@/components/BlueprintQuality.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
@@ -290,7 +301,8 @@ const nameQuery = ref('')
 const selectedTypes = ref([])
 const availableOnly = ref(false)
 const missingZhOnly = ref(false)
-const hasMissionsOnly = ref(false)
+// 玩家頁「登記藍圖資料」預設只看需任務解鎖的（預設可用的不用特地登記）
+const hasMissionsOnly = ref(props.player && props.registeredUuids !== null)
 const playerVisible = ref('')
 
 const shared = computed(() => props.sharedFilters !== null)
@@ -298,6 +310,8 @@ const effectiveQuery = computed(() => (shared.value ? (props.sharedFilters.q || 
 const effectiveTypes = computed(() => (shared.value ? (props.sharedFilters.types || []) : selectedTypes.value))
 
 const registerable = computed(() => props.player && props.registeredUuids !== null)
+/** 正在品質試算的藍圖（登記藍圖資料） */
+const qualityId = ref('')
 const colspan = computed(() => (props.player ? 7 + (registerable.value ? 2 : 0) : 9))
 
 // ── 登記（玩家頁「登記藍圖資料」）────────────────────────────

@@ -3,7 +3,7 @@
 
 每張藍圖分成幾個部位（Frame、Barrel…），每個部位放一種材料；材料品質 0–1000
 線性影響該部位列出的屬性（modifiers：q_min／q_max 對應 at_min／at_max 倍率）。
-試算本身在前端做（frontend/src/utils/craftQuality.js），這裡只補上中文。
+試算本身在前端做（frontend/src/utils/craftQuality.js），這裡只補上中文與成品的基礎數值（base_stats）。
 """
 
 from typing import Optional
@@ -27,4 +27,7 @@ def get(blueprint_uuid: str) -> Optional[dict]:
             name = opt.get('name') or ''
             opt['name_zh'] = (mining_resource_name_zh(name=name) if opt.get('kind') == 'resource'
                               else item_name_zh(name))
+    # 成品的基礎數值（前端把倍率換算成實際數值，例如傷害減免 40% × 1.15 → 46%），見 src/models/item_stats.py
+    from src.models.item_stats import for_blueprint
+    doc['base_stats'] = for_blueprint(blueprint_uuid)
     return doc

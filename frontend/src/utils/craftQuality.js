@@ -78,3 +78,54 @@ export function fmtPercent(value) {
   if (Math.abs(pct) < 0.05) return '±0%'
   return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`
 }
+
+/** 品質屬性名稱正規化（跟後端 src/models/item_stats.py 的 norm 一樣：小寫、只留英數字），用來查 base_stats */
+export const statKey = name => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** 基礎數值套上倍率（加減值型就相加）：40 × 1.15 → 46 */
+export function applyToBase(base, value, additive) {
+  if (base === null || base === undefined || value === null || value === undefined) return null
+  return additive ? base + value : base * value
+}
+
+/** 數值顯示：最多 2 位小數、去掉多餘的 0，接單位（% 和 ° 開頭的不空格） */
+export function fmtStat(value, unit = '') {
+  if (value === null || value === undefined) return '—'
+  const n = Number(value.toFixed(2)).toLocaleString('en-US', { maximumFractionDigits: 2 })
+  if (!unit) return n
+  return /^[%°]/.test(unit) ? `${n}${unit}` : `${n} ${unit}`
+}
+
+/**
+ * 反推：要讓屬性 key 的綜合加成達到 target（倍率；加減值型是加減值），影響這個屬性的部位
+ * 品質都設成同一個值時，最少要多少品質。其他部位維持 qualities 目前的值。
+ * 回傳 { quality, slotKeys, reachable, worst, best }：
+ *   - reachable=false：Q1000 也到不了（best 是做得到的最好值）
+ *   - quality=0：目標不比 Q0 好，最低品質就夠了
+ * 假設品質越高、數值越往同一個方向走（資料都是線性或分段單調，這個假設成立）。
+ */
+export function requiredQuality(slots, qualities, key, target) {
+  const related = (slots || []).filter(s => (s.modifiers || []).some(m => (m.key || m.name) === key))
+  if (!related.length || target === null || target === undefined || Number.isNaN(Number(target))) return null
+  const valueAt = (q) => {
+    const qs = { ...qualities }
+    for (const s of related) qs[s.key] = q
+    return combine(slots, qs).find(r => r.key === key)?.value ?? null
+  }
+  const worst = valueAt(QUALITY_MIN)
+  const best = valueAt(QUALITY_MAX)
+  if (worst === null || best === null) return null
+  const up = best >= worst
+  const ok = v => (up ? v >= target - 1e-9 : v <= target + 1e-9)
+  const slotKeys = related.map(s => s.key)
+  if (!ok(best)) return { quality: null, slotKeys, reachable: false, worst, best }
+  if (ok(worst)) return { quality: QUALITY_MIN, slotKeys, reachable: true, worst, best }
+  let lo = QUALITY_MIN
+  let hi = QUALITY_MAX
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (ok(valueAt(mid))) hi = mid
+    else lo = mid
+  }
+  return { quality: hi, slotKeys, reachable: true, worst, best }
+}

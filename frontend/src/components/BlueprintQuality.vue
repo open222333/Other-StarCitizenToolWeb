@@ -4,7 +4,8 @@
 
   資料：GET /blueprint/master/<uuid>/quality（scunpacked-data，見 src/models/blueprint_quality.py）；
   計算：utils/craftQuality.js（純函式、有測試）。這裡只負責畫面。
-  只顯示倍率／加減值，不顯示成品的實際數值（例如射速 RPM）——成品基礎數值目前沒有可靠來源。
+  成品基礎數值：後端回傳 base_stats（物品主檔 raw 裡的數值，見 src/models/item_stats.py），
+  屬性名稱對得上的會顯示「原始 → 加成後」（例如傷害減免 40% → 46%）；對不上的只顯示倍率。
 -->
 <template>
   <div class="bq">
@@ -46,7 +47,41 @@
                   {{ fmtModifier(r.value, r.additive) }}
                   <span v-if="!r.additive" class="bq-pct">{{ fmtPercent(r.value) }}</span>
                 </div>
+                <!-- 原始數值 → 加成後（物品資料裡有這個屬性的才顯示） -->
+                <div v-if="baseOf(r)" class="bq-stat">
+                  <span class="bq-muted">{{ fmtStat(baseOf(r).value, baseOf(r).unit) }}</span>
+                  <i class="bi bi-arrow-right mx-1 bq-muted"></i>
+                  <span class="fw-bold" :class="r.better === true ? 'bq-good' : r.better === false ? 'bq-bad' : ''">
+                    {{ fmtStat(applyToBase(baseOf(r).value, r.value, r.additive), baseOf(r).unit) }}
+                  </span>
+                </div>
                 <div v-if="r.name_zh" class="bq-muted bq-small">{{ r.name }}</div>
+                <!-- 反推：拉條（範圍＝Q0 到 Q1000 做得到的值）或輸入想要的數值（有原始數值時用實際單位，
+                     沒有就用倍率），即時算出要多少品質 -->
+                <div v-if="rangeOf(r)" class="mt-2">
+                  <div class="bq-target">
+                    <span class="bq-muted text-nowrap">目標</span>
+                    <input :value="targetValue(r)" type="number" step="any" class="form-control form-control-sm bq-tnum"
+                      :placeholder="targetPlaceholder(r)" :aria-label="`${r.name_zh || r.name} 的目標數值（輸入）`"
+                      @change="setTarget(r, $event.target.value)">
+                    <span v-if="usesBase(r)" class="bq-muted">{{ baseOf(r).unit }}</span>
+                  </div>
+                  <input :value="targetValue(r)" type="range" class="w-100 bq-range mt-2"
+                    :min="rangeOf(r).lo" :max="rangeOf(r).hi" :step="rangeOf(r).step"
+                    :style="{ '--bq-fill': `${rangeOf(r).fill(targetValue(r))}%` }"
+                    :aria-label="`${r.name_zh || r.name} 的目標數值`" @input="setTarget(r, $event.target.value, true)">
+                  <div class="d-flex justify-content-between bq-muted bq-small">
+                    <span>{{ fmtTargetEnd(r, rangeOf(r).lo) }}</span><span>{{ fmtTargetEnd(r, rangeOf(r).hi) }}</span>
+                  </div>
+                </div>
+                <div v-if="targetResults[r.key]" class="bq-small mt-1">
+                  <template v-if="targetResults[r.key].reachable">
+                    需要品質 <span class="fw-bold bq-accent">Q{{ targetResults[r.key].quality }}</span>
+                    <span class="bq-muted">（{{ targetResults[r.key].slotNames }}）</span>
+                    <button type="button" class="btn btn-sm btn-success py-0 ms-1" @click="applyTarget(r)">套用</button>
+                  </template>
+                  <span v-else class="bq-warn">Q1000 也到不了，最多 {{ targetResults[r.key].bestLabel }}</span>
+                </div>
               </div>
             </div>
             <div v-if="!combined.length" class="col-12 bq-muted">這張藍圖的材料品質不影響任何屬性。</div>
@@ -108,7 +143,8 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import {
-  QUALITY_MAX, QUALITY_MIN, combine, fmtModifier, fmtPercent, improves, isAdditive, modifierAt,
+  QUALITY_MAX, QUALITY_MIN, applyToBase, combine, fmtModifier, fmtPercent, fmtStat, improves, isAdditive,
+  modifierAt, requiredQuality, statKey,
 } from '@/utils/craftQuality'
 import { loadTranslations, translate } from '@/utils/translations'
 
@@ -138,6 +174,8 @@ async function load(id) {
       return
     }
     for (const k of Object.keys(qualities)) delete qualities[k]
+    for (const k of Object.keys(targets)) delete targets[k]
+    for (const k of Object.keys(targetResults)) delete targetResults[k]
     for (const slot of body.data.slots || []) qualities[slot.key] = 500
     data.value = body.data
     // 材料名稱的中文（後端沒查到的再用前端翻譯快取補）
@@ -152,6 +190,77 @@ async function load(id) {
 watch(() => props.blueprintUuid, (id) => { if (id) load(id) }, { immediate: true })
 
 const combined = computed(() => (data.value ? combine(data.value.slots, qualities) : []))
+
+/** 這個屬性的成品基礎數值（base_stats 用正規化的英文名稱查） */
+const baseOf = r => data.value?.base_stats?.[statKey(r.name)] || null
+
+// ── 反推品質：輸入目標數值 → 影響這個屬性的部位最少要多少品質 ──────────────
+const targets = reactive({})
+const targetResults = reactive({})
+
+/** 有原始數值（而且不是 0）就用實際數值輸入，否則輸入倍率／加減值 */
+const usesBase = r => !!baseOf(r) && (r.additive || baseOf(r).value !== 0)
+
+function targetPlaceholder(r) {
+  if (usesBase(r)) return `目標數值${baseOf(r).unit ? `（${baseOf(r).unit}）` : ''}`
+  return r.additive ? '目標加減值' : '目標倍率，例如 1.1'
+}
+
+/** 拉條範圍：Q0 到 Q1000 這個屬性做得到的值（其他部位維持目前品質），用畫面上的單位 */
+function rangeOf(r) {
+  const res = requiredQuality(data.value?.slots, qualities, r.key, 1)
+  if (!res) return null
+  const base = usesBase(r) ? baseOf(r) : null
+  const show = v => (base ? applyToBase(base.value, v, r.additive) : v)
+  const a = show(res.worst)
+  const b = show(res.best)
+  const lo = Math.min(a, b)
+  const hi = Math.max(a, b)
+  if (!(hi > lo)) return null
+  const step = r.additive && !base ? 1 : Number(((hi - lo) / 1000).toPrecision(2))
+  return { lo, hi, step, fill: v => ((Number(v) - lo) / (hi - lo)) * 100 }
+}
+
+/** 目前的目標值：沒設過就用現在的數值 */
+function targetValue(r) {
+  if (targets[r.key] !== undefined && targets[r.key] !== '') return targets[r.key]
+  const base = usesBase(r) ? baseOf(r) : null
+  const v = base ? applyToBase(base.value, r.value, r.additive) : r.value
+  return Number(v.toFixed(3))
+}
+
+/** fromSlider：拉條的值四捨五入到 2 位小數（倍率 3 位），避免出現 -79.996 這種數字 */
+function setTarget(r, value, fromSlider = false) {
+  const digits = usesBase(r) ? 2 : 3
+  targets[r.key] = fromSlider ? String(Number(Number(value).toFixed(digits))) : value
+  calcTarget(r)
+}
+
+function fmtTargetEnd(r, v) {
+  return usesBase(r) ? fmtStat(v, baseOf(r).unit) : fmtModifier(v, r.additive)
+}
+
+function calcTarget(r) {
+  const t = Number(targets[r.key])
+  if (targets[r.key] === '' || Number.isNaN(t)) return
+  const base = usesBase(r) ? baseOf(r) : null
+  const goal = base ? (r.additive ? t - base.value : t / base.value) : t
+  const res = requiredQuality(data.value.slots, qualities, r.key, goal)
+  if (!res) { delete targetResults[r.key]; return }
+  const names = (data.value.slots || []).filter(s => res.slotKeys.includes(s.key)).map(s => s.name_zh || s.name)
+  targetResults[r.key] = {
+    ...res,
+    slotNames: names.join('、'),
+    bestLabel: base ? fmtStat(applyToBase(base.value, res.best, r.additive), base.unit)
+      : `${fmtModifier(res.best, r.additive)}`,
+  }
+}
+
+function applyTarget(r) {
+  const res = targetResults[r.key]
+  if (!res?.reachable) return
+  for (const k of res.slotKeys) qualities[k] = res.quality
+}
 
 function setAll(q) {
   for (const k of Object.keys(qualities)) qualities[k] = q
@@ -201,6 +310,9 @@ function betterClass(m, value) {
 .bq-warn { color: var(--sf-accent-2); font-weight: 600; font-size: .95rem; }
 .bq-value { font-size: 1.4rem; font-weight: 700; color: var(--sf-text-strong); }
 .bq-pct { font-size: .95rem; margin-left: .35rem; }
+.bq-stat { font-size: 1.05rem; margin-top: .15rem; }
+.bq-target { display: flex; align-items: center; gap: .5rem; }
+.bq-tnum { width: 7rem; flex: 0 0 auto; }
 .bq-good { color: rgb(var(--bs-success-rgb)); }
 .bq-bad { color: rgb(var(--bs-danger-rgb)); }
 .bq-range {
