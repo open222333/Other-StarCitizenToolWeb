@@ -961,6 +961,8 @@
       <!-- 蜂巢式下拉：船艦 → 每一艘（依數量），每艘可取只有自己看得到的區別名稱（樣式見 scifi-theme.css） -->
       <div v-else-if="fleet.length" class="holder-tree">
         <div v-for="row in filteredFleet" :key="row._id" class="holder-ship">
+          <!-- 船名列：右邊是刪除整筆（這款船全部艘數） -->
+          <div class="myfleet-head">
           <button type="button" class="sf-tree-row sf-tree-row--ship"
             :aria-expanded="openMyFleet.has(row._id) ? 'true' : 'false'"
             @click="toggleMyFleet(row._id)">
@@ -974,27 +976,64 @@
               <template v-if="row.loadout_links?.length">配件網址 {{ row.loadout_links.length }} · </template>× {{ row.quantity }}
             </span>
           </button>
+          <button type="button" class="btn btn-sm btn-danger text-nowrap"
+            :aria-label="`刪除 ${row.vehicle?.name_zh || row.name}（全部 ${row.quantity} 艘）`" @click="removeFleet(row)">
+            <i class="bi bi-trash me-1"></i>刪除
+          </button>
+          </div>
           <div v-if="openMyFleet.has(row._id)" class="sf-tree-level">
-            <div class="sf-tree-info">
-              {{ vehicleTypeLabel(row.vehicle?.vehicle_type) }} ·
-              {{ vehicleSizeLabel(row.vehicle?.size_class) }} ·
-              {{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) }} ·
-              {{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) }}
+            <!-- 船艦資訊：欄位名稱＋值的格子，比一長串「·」好讀 -->
+            <div class="myfleet-info">
+              <div v-for="f in fleetInfoFields(row.vehicle)" :key="f.label" class="myfleet-info__item">
+                <span class="myfleet-info__label">{{ f.label }}</span>
+                <span class="myfleet-info__value">{{ f.value }}</span>
+              </div>
             </div>
-            <div v-if="fleetPriceLine(row.vehicle)" class="sf-tree-info">{{ fleetPriceLine(row.vehicle) }}</div>
             <div v-if="row.vehicle?.note" class="sf-tree-info vehicle-note">{{ row.vehicle.note }}</div>
+            <!-- 數量：－／＋ 一次加減 1，也可以直接輸入數字 -->
             <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
               <label class="mb-0" :for="`fleet-qty-${row._id}`">數量</label>
-              <input :id="`fleet-qty-${row._id}`" type="number" min="1" :max="fleetMaxQuantity"
-                class="form-control form-control-sm" style="width: 6rem" :value="row.quantity"
-                :disabled="savingFleetId === row._id" @change="updateFleetQuantity(row, $event)">
-              <button class="btn btn-sm btn-info" :aria-expanded="loadoutEditId === row._id ? 'true' : 'false'"
-                @click="toggleLoadoutEdit(row)">配件網址</button>
-              <button class="btn btn-sm btn-danger" @click="removeFleet(row)">刪除</button>
+              <div class="input-group input-group-sm myfleet-qty">
+                <button type="button" class="btn btn-secondary" aria-label="減少 1 艘"
+                  :disabled="savingFleetId === row._id || row.quantity <= 1"
+                  @click="setFleetQuantity(row, row.quantity - 1)"><i class="bi bi-dash-lg"></i></button>
+                <input :id="`fleet-qty-${row._id}`" type="number" min="1" :max="fleetMaxQuantity"
+                  class="form-control text-center" :value="row.quantity"
+                  :disabled="savingFleetId === row._id" @change="updateFleetQuantity(row, $event)">
+                <button type="button" class="btn btn-success" aria-label="增加 1 艘"
+                  :disabled="savingFleetId === row._id || row.quantity >= fleetMaxQuantity"
+                  @click="setFleetQuantity(row, row.quantity + 1)"><i class="bi bi-plus-lg"></i></button>
+              </div>
             </div>
-            <VehicleLoadoutLinks v-if="loadoutEditId !== row._id" :links="row.loadout_links" />
-            <div v-if="loadoutEditId === row._id" class="sf-tree-leaf d-block mb-2">
-              <div class="mb-1">配件網址（其他玩家查詢船艦時看得到）</div>
+            <!-- 每一艘一列：區別名稱只存在自己的登記上，不給其他玩家、後台看；
+                 配件網址設在每一艘上（「設置配件網址」），公開給其他玩家（互查看到的是所有艘的合併） -->
+            <template v-for="n in row.quantity" :key="n">
+            <div class="sf-tree-leaf">
+              <span class="sf-tree-title text-nowrap">第 {{ n }} 艘</span>
+              <input :id="`unit-name-${row._id}-${n}`" type="text" class="form-control form-control-sm" style="max-width: 18rem"
+                maxlength="50" placeholder="識別名稱" :value="row.unit_names?.[n - 1] || ''"
+                :aria-label="`${row.vehicle?.name_zh || row.name} 第 ${n} 艘的識別名稱`"
+                :disabled="savingFleetId === row._id" @keydown.enter="saveUnitName(row, n - 1, $event)">
+              <!-- 輸入後按這個（或 Enter）才存 -->
+              <button type="button" class="btn btn-sm btn-primary text-nowrap" :disabled="savingFleetId === row._id"
+                @click="saveUnitNameFromInput(row, n)">設置識別名稱</button>
+              <VehicleLoadoutLinks v-if="loadoutEditId !== `${row._id}:${n}` && row.unit_loadouts?.[n - 1]?.length"
+                :links="row.unit_loadouts[n - 1]" button-class="btn-sf-link" hide-label />
+              <span class="ms-auto text-muted" title="識別名稱只有自己看得到"><i class="bi bi-lock"></i></span>
+              <!-- 設置按鈕放最右、用綠色，跟左邊已設好的網址按鈕（主題色）區分 -->
+              <button type="button" class="btn btn-sm btn-success text-nowrap"
+                :aria-expanded="loadoutEditId === `${row._id}:${n}` ? 'true' : 'false'"
+                @click="toggleLoadoutEdit(row, n)">
+                <i class="bi me-1" :class="loadoutEditId === `${row._id}:${n}` ? 'bi-x-lg' : 'bi-gear'"></i>設置配件網址
+              </button>
+              <!-- 好幾艘時可以只刪這一艘（只剩 1 艘時用船名右邊的刪除） -->
+              <button v-if="row.quantity > 1" type="button" class="btn btn-sm btn-danger text-nowrap"
+                :aria-label="`刪除第 ${n} 艘`" :disabled="savingFleetId === row._id" @click="removeFleetUnit(row, n)">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+            <div v-if="loadoutEditId === `${row._id}:${n}`" class="sf-tree-leaf d-block">
+              <div class="mb-1">第 {{ n }} 艘的配件網址（其他玩家查詢船艦時看得到）</div>
               <div v-for="(link, i) in loadoutDraft" :key="i" class="d-flex gap-2 mb-1">
                 <input v-model="link.label" type="text" class="form-control form-control-sm" style="max-width: 10rem"
                   placeholder="標籤（選填）" maxlength="50" :aria-label="`第 ${i + 1} 條標籤`">
@@ -1007,19 +1046,11 @@
                 <button v-if="loadoutDraft.length < 10" type="button" class="btn btn-sm btn-success"
                   @click="loadoutDraft.push({ label: '', url: '' })"><i class="bi bi-plus-lg me-1"></i>新增</button>
                 <button type="button" class="btn btn-sm btn-primary" :disabled="savingFleetId === row._id"
-                  @click="saveLoadouts(row)">儲存</button>
+                  @click="saveLoadouts(row, n)">儲存</button>
                 <button type="button" class="btn btn-sm btn-secondary" @click="loadoutEditId = ''">取消</button>
               </div>
             </div>
-            <!-- 每一艘一列：區別名稱只存在自己的登記上，不給其他玩家、後台看 -->
-            <div v-for="n in row.quantity" :key="n" class="sf-tree-leaf">
-              <span class="sf-tree-title text-nowrap">第 {{ n }} 艘</span>
-              <input type="text" class="form-control form-control-sm" style="max-width: 18rem"
-                maxlength="50" placeholder="區別名稱" :value="row.unit_names?.[n - 1] || ''"
-                :aria-label="`${row.vehicle?.name_zh || row.name} 第 ${n} 艘的區別名稱`"
-                :disabled="savingFleetId === row._id" @change="saveUnitName(row, n - 1, $event)">
-              <span class="sf-tree-meta" title="只有自己看得到"><i class="bi bi-lock"></i></span>
-            </div>
+            </template>
           </div>
         </div>
       </div>
@@ -2494,17 +2525,6 @@ const filteredFleet = computed(() => {
 const filteredFleetShipCount = computed(() =>
   filteredFleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
 
-// 我的艦隊每艘船的價格：官網美金價（msrp）＋遊戲內最低購買價／租船價（UEX，vehicle.uex_price）
-function fleetPriceLine(v) {
-  if (!v) return ''
-  const p = v.uex_price || {}
-  const parts = []
-  if (v.msrp) parts.push(`官網 ${fmtUsd(v.msrp)}`)
-  if (p.buy_min) parts.push(`遊戲內 ${fmtAuec(p.buy_min)} 起`)
-  if (p.rent_min) parts.push(`租船 ${fmtAuec(p.rent_min)} 起`)
-  return parts.join(' · ')
-}
-
 function clearMyFleetFilters() {
   myFleetQuery.value = ''
   myFleetAcquire.value = []
@@ -2542,7 +2562,12 @@ async function updateFleetQuantity(row, event) {
     showFleetError(`數量要介於 1 到 ${fleetMaxQuantity.value} 之間。`)
     return
   }
-  if (qty === row.quantity) return
+  await setFleetQuantity(row, qty, input)
+}
+
+/** 改數量（－／＋ 按鈕或輸入框）；改少時多出來那幾艘的區別名稱／配件網址後端會一起截掉 */
+async function setFleetQuantity(row, qty, input = null) {
+  if (qty < 1 || qty > fleetMaxQuantity.value || qty === row.quantity) return
   savingFleetId.value = row._id
   const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, {
     method: 'PUT', body: JSON.stringify({ quantity: qty }),
@@ -2552,10 +2577,40 @@ async function updateFleetQuantity(row, event) {
   if (res?.ok && data?.success) {
     row.quantity = qty
     if (row.unit_names?.length > qty) row.unit_names = row.unit_names.slice(0, qty)   // 後端也一起截掉
+    if (row.unit_loadouts?.length > qty) await loadFleet()   // 配件網址合併要重算，直接重抓
   } else {
-    input.value = row.quantity
+    if (input) input.value = row.quantity
     showFleetError(data?.message || '更新數量失敗，請稍後再試')
   }
+}
+
+/** 好幾艘時刪掉其中一艘（後面的往前補） */
+async function removeFleetUnit(row, n) {
+  savingFleetId.value = row._id
+  const res = await playerAuth.playerFetch(`/player/fleet/${row._id}/units/${n}`, { method: 'DELETE' })
+  savingFleetId.value = ''
+  const data = res ? await res.json().catch(() => null) : null
+  if (res?.ok && data?.success) {
+    loadoutEditId.value = ''
+    await loadFleet()
+  } else {
+    showFleetError(data?.message || '刪除失敗，請稍後再試')
+  }
+}
+
+/** 展開後的船艦資訊格子 */
+function fleetInfoFields(v) {
+  if (!v) return []
+  const p = v.uex_price || {}
+  return [
+    { label: '類型', value: vehicleTypeLabel(v.vehicle_type) || '—' },
+    { label: '尺寸', value: vehicleSizeLabel(v.size_class) || '—' },
+    { label: '廠商', value: manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' },
+    { label: '角色', value: vehicleRoleLabel(v.role, v.role_zh) || '—' },
+    { label: '官網售價', value: fmtUsd(v.msrp) },
+    { label: '遊戲內購買', value: p.buy_min ? `${fmtAuec(p.buy_min)} 起` : '—' },
+    { label: '租船', value: p.rent_min ? `${fmtAuec(p.rent_min)} 起` : '—' },
+  ]
 }
 
 // ── 我的艦隊：蜂巢式下拉（船艦 → 每一艘）＋每艘的區別名稱（只有自己看得到）──
@@ -2563,6 +2618,11 @@ const openMyFleet = reactive(new Set())
 function toggleMyFleet(id) {
   if (openMyFleet.has(id)) openMyFleet.delete(id)
   else openMyFleet.add(id)
+}
+
+function saveUnitNameFromInput(row, n) {
+  const input = document.getElementById(`unit-name-${row._id}-${n}`)
+  if (input) saveUnitName(row, n - 1, { target: input })
 }
 
 async function saveUnitName(row, index, event) {
@@ -2586,28 +2646,30 @@ async function saveUnitName(row, index, event) {
   }
 }
 
-// ── 我的艦隊：配件網址（存在自己的登記上，公開給其他玩家，見 src/models/fleet.py）──
+// ── 我的艦隊：配件網址（設在每一艘上，公開給其他玩家，見 src/models/fleet.py 的 unit_loadouts）──
+// loadoutEditId＝「登記 id:第幾艘」
 const loadoutEditId = ref('')
 const loadoutDraft = ref([])
 
-function toggleLoadoutEdit(row) {
-  if (loadoutEditId.value === row._id) {
+function toggleLoadoutEdit(row, n) {
+  const key = `${row._id}:${n}`
+  if (loadoutEditId.value === key) {
     loadoutEditId.value = ''
     return
   }
-  loadoutEditId.value = row._id
-  loadoutDraft.value = (row.loadout_links || []).map(l => ({ label: l.label || '', url: l.url }))
+  loadoutEditId.value = key
+  loadoutDraft.value = (row.unit_loadouts?.[n - 1] || []).map(l => ({ label: l.label || '', url: l.url }))
   if (!loadoutDraft.value.length) loadoutDraft.value.push({ label: '', url: '' })
 }
 
-async function saveLoadouts(row) {
+async function saveLoadouts(row, n) {
   // 整列都空白的直接略過
   const links = loadoutDraft.value
     .map(l => ({ label: (l.label || '').trim(), url: (l.url || '').trim() }))
     .filter(l => l.url || l.label)
   savingFleetId.value = row._id
   const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, {
-    method: 'PUT', body: JSON.stringify({ loadout_links: links }),
+    method: 'PUT', body: JSON.stringify({ unit_loadout: { unit: n, links } }),
   })
   savingFleetId.value = ''
   const data = res ? await res.json().catch(() => null) : null
@@ -2769,6 +2831,16 @@ onBeforeUnmount(() => {
 <style scoped>
 /* 持有船艦的蜂巢式下拉（列的樣式在 scifi-theme.css 的 .sf-tree-*） */
 .holder-ship { margin-bottom: .4rem; }
+.myfleet-head { display: flex; align-items: center; gap: .5rem; }
+.myfleet-head > .sf-tree-row { flex: 1 1 auto; min-width: 0; }
+.myfleet-info {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: .3rem 1rem; margin-bottom: .6rem;
+}
+.myfleet-info__item { display: flex; gap: .5rem; font-size: 1rem; min-width: 0; }
+.myfleet-info__label { color: var(--sf-text-muted); white-space: nowrap; }
+.myfleet-info__value { color: var(--sf-text-strong); font-weight: 600; }
+.myfleet-qty { width: 9.5rem; }
 .holder-player { margin-top: .35rem; }
 
 /* 後台手寫的艦船說明（換行照原樣顯示） */

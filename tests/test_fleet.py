@@ -573,3 +573,65 @@ def test_import_hangarxplor_json(client, alice, seed_vehicles):
     for bad in ('nope', {'x': 1}, [], [{'entity_type': 'skin'}], [{}] * 1001):
         assert client.post(url, json={'ships': bad}, headers=alice).status_code == 400, bad
     assert client.post(url, json={'ships': ships}).status_code == 401
+
+
+def test_player_unit_loadouts(client, auth_headers, alice, seed_vehicles):
+    """配件網址設在每一艘上（unit_loadout）；整筆的 loadout_links 是所有艘的合併，給互查／後台。"""
+    _bulk(client, alice, ['v-avenger'], quantity=3)
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    url = f"/player/fleet/{row['_id']}"
+    assert row['unit_loadouts'] == []
+    assert client.put(url, json={'unit_loadout': {'unit': 2, 'links': [{'url': 'abcd1234'}]}},
+                      headers=alice).status_code == 200
+    assert client.put(url, json={'unit_loadout': {'unit': 3, 'links': [{'url': 'abcd1234'}, {'url': 'efgh5678'}]}},
+                      headers=alice).status_code == 200
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert [[l['url'][-8:] for l in u] for u in row['unit_loadouts']] == [[], ['abcd1234'], ['abcd1234', 'efgh5678']]
+    assert [l['url'][-8:] for l in row['loadout_links']] == ['abcd1234', 'efgh5678'], '合併、同網址只留一次'
+
+    # 數量改少：多的那艘的配件網址截掉，合併跟著重算
+    client.put(url, json={'quantity': 2}, headers=alice)
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert len(row['unit_loadouts']) == 2 and [l['url'][-8:] for l in row['loadout_links']] == ['abcd1234']
+
+    # 清掉第 2 艘的
+    client.put(url, json={'unit_loadout': {'unit': 2, 'links': []}}, headers=alice)
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert row['unit_loadouts'] == [] and row['loadout_links'] == []
+
+    for bad in ({'unit': 5, 'links': []}, {'unit': 0, 'links': []}, {'unit': 'x', 'links': []},
+                {'unit': 1, 'links': 'nope'}, 'nope'):
+        assert client.put(url, json={'unit_loadout': bad}, headers=alice).status_code == 400, bad
+
+
+def test_legacy_loadout_links_count_as_first_unit(client, alice, seed_vehicles):
+    """舊資料只有整筆的 loadout_links：顯示成第 1 艘的，改別艘時保留下來。"""
+    _bulk(client, alice, ['v-avenger'], quantity=2)
+    get_db()['fleet'].update_one({'vehicle_uuid': 'v-avenger'}, {'$set': {
+        'loadout_links': [{'label': None, 'url': 'https://erkul.games/s/oldold11', 'added_at': None}]}})
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert [l['url'][-8:] for l in row['unit_loadouts'][0]] == ['oldold11']
+    client.put(f"/player/fleet/{row['_id']}", json={'unit_loadout': {'unit': 2, 'links': [{'url': 'newnew22'}]}},
+               headers=alice)
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert [[l['url'][-8:] for l in u] for u in row['unit_loadouts']] == [['oldold11'], ['newnew22']]
+
+
+def test_player_remove_one_unit(client, alice, seed_vehicles):
+    """好幾艘時刪掉其中一艘：數量減 1，那艘的區別名稱／配件網址拿掉，後面的往前補。"""
+    _bulk(client, alice, ['v-avenger'], quantity=3)
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    url = f"/player/fleet/{row['_id']}"
+    client.put(url, json={'unit_names': ['A', 'B', 'C']}, headers=alice)
+    client.put(url, json={'unit_loadout': {'unit': 2, 'links': [{'url': 'bbbbbbbb'}]}}, headers=alice)
+    client.put(url, json={'unit_loadout': {'unit': 3, 'links': [{'url': 'cccccccc'}]}}, headers=alice)
+    assert client.delete(f'{url}/units/2', headers=alice).status_code == 200
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert row['quantity'] == 2 and row['unit_names'] == ['A', 'C']
+    assert [[l['url'][-8:] for l in u] for u in row['unit_loadouts']] == [[], ['cccccccc']]
+    assert [l['url'][-8:] for l in row['loadout_links']] == ['cccccccc']
+    assert client.delete(f'{url}/units/5', headers=alice).status_code == 400
+    assert client.delete(f'{url}/units/1', headers=alice).status_code == 200
+    assert client.delete(f'{url}/units/1', headers=alice).status_code == 400, '只剩 1 艘要刪整筆'
+    bob = _register_player(client, 'Bob', 'Bob')
+    assert client.delete(f'{url}/units/1', headers=bob).status_code == 404

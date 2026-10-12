@@ -1239,6 +1239,12 @@ def update_my_fleet(fleet_id):
               type: array
               description: "每艘船的區別名稱（第 i 個對應第 i 艘，空字串 = 沒取名），整份取代；每個最多 50 字，只有自己看得到"
               items: {type: string}
+            unit_loadout:
+              type: object
+              description: "只設定某一艘的配件網址（整筆的 loadout_links 會重算成所有艘的合併）"
+              properties:
+                unit:  {type: integer, description: "第幾艘（1 起算）"}
+                links: {type: array, items: {type: object}, description: "同 loadout_links 的格式，空陣列 = 清掉這艘的"}
     responses:
       200:
         description: 成功
@@ -1249,7 +1255,7 @@ def update_my_fleet(fleet_id):
     """
     player = _self_player_doc()
     data = request.get_json(silent=True) or {}
-    if not any(k in data for k in ('quantity', 'notes', 'loadout_links', 'unit_names')):
+    if not any(k in data for k in ('quantity', 'notes', 'loadout_links', 'unit_names', 'unit_loadout')):
         raise StockError('沒有要更新的欄位。')
     try:
         ok = Fleet.update_for_player(
@@ -1257,7 +1263,34 @@ def update_my_fleet(fleet_id):
             quantity=data.get('quantity') if 'quantity' in data else None,
             notes=data.get('notes') if 'notes' in data else None,
             loadout_links=data.get('loadout_links') if 'loadout_links' in data else None,
-            unit_names=data.get('unit_names') if 'unit_names' in data else None)
+            unit_names=data.get('unit_names') if 'unit_names' in data else None,
+            unit_loadout=data.get('unit_loadout') if 'unit_loadout' in data else None)
+    except ValueError as exc:
+        raise StockError(str(exc))
+    if not ok:
+        return jsonify({'success': False, 'message': '找不到這筆艦隊紀錄'}), 404
+    return jsonify({'success': True})
+
+
+@app_player.route('/fleet/<fleet_id>/units/<int:unit>', methods=['DELETE'])
+@player_required
+def delete_my_fleet_unit(fleet_id, unit):
+    """同款船有好幾艘時刪掉其中一艘（第 unit 艘，1 起算）：數量減 1，那艘的區別名稱／配件網址一起拿掉。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 只剩 1 艘（請刪整筆）或沒有這一艘
+      404:
+        description: 找不到（或不是自己的）
+    """
+    player = _self_player_doc()
+    try:
+        ok = Fleet.remove_unit(fleet_id, player['_id'], unit)
     except ValueError as exc:
         raise StockError(str(exc))
     if not ok:

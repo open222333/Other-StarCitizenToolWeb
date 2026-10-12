@@ -108,6 +108,36 @@ def clean_unit_names(names, quantity: int) -> list:
     return out
 
 
+def unit_loadouts_of(doc: dict) -> list:
+    """每艘船各自的配件網址 [[{label, url, added_at}], ...]（第 i 個對應第 i 艘）。
+
+    舊資料只有整筆的 loadout_links（還沒分艘）：當作第 1 艘的。"""
+    units = doc.get('unit_loadouts')
+    if isinstance(units, list) and units:
+        return [u if isinstance(u, list) else [] for u in units]
+    legacy = doc.get('loadout_links') or []
+    return [legacy] if legacy else []
+
+
+def merge_unit_loadouts(units: list) -> list:
+    """所有艘的配件網址合併（同網址只留一次）——存回整筆的 loadout_links，
+    給「查詢 › 持有船艦」與後台列表用（那邊不分艘）。"""
+    out, seen = [], set()
+    for links in units:
+        for link in links or []:
+            if link.get('url') and link['url'] not in seen:
+                seen.add(link['url'])
+                out.append(link)
+    return out
+
+
+def _trim_units(units: list, quantity: int) -> list:
+    units = [list(u or []) for u in units[:max(0, int(quantity))]]
+    while units and not units[-1]:
+        units.pop()
+    return units
+
+
 def clamp_quantity(value, default: int = 1) -> int:
     """把 client 傳來的數量轉成 1..MAX_QUANTITY 的整數；轉不了就用 default。"""
     try:
@@ -166,6 +196,7 @@ class Fleet:
         masters = VehicleMaster.by_ids(r.get('vehicle_uuid') for r in rows)
         for row in rows:
             row['vehicle'] = _vehicle_summary(masters.get(row.get('vehicle_uuid')))
+            row['unit_loadouts'] = unit_loadouts_of(row)   # 每艘各自的配件網址（舊資料算第 1 艘的）
         return rows
 
     @classmethod
@@ -249,11 +280,13 @@ class Fleet:
     @classmethod
     def update_for_player(cls, fleet_id: str, player_id: str, *,
                           quantity=None, notes=None, loadout_links=None,
-                          unit_names=None) -> bool:
+                          unit_names=None, unit_loadout=None) -> bool:
         """改自己名下某筆登記的數量／備註／配件連結／每艘的區別名稱（只能改自己的）。
 
+        unit_loadout＝{unit: 第幾艘（1 起算）, links: [...]}：只改那一艘的配件網址
+        （存在 unit_loadouts，整筆的 loadout_links 跟著重算成所有艘的合併）。
         loadout_links、unit_names 格式不對丟 ValueError（見 clean_loadout_links、
-        clean_unit_names）。數量改少時，多出來那幾艘的區別名稱一起截掉。
+        clean_unit_names）。數量改少時，多出來那幾艘的區別名稱、配件網址一起截掉。
         """
         try:
             query = {'_id': ObjectId(fleet_id), 'player_id': ObjectId(player_id),
@@ -262,9 +295,10 @@ class Fleet:
             return False
         set_fields: dict = {}
         current = None
-        if loadout_links is not None or unit_names is not None or quantity is not None:
+        if (loadout_links is not None or unit_names is not None or quantity is not None
+                or unit_loadout is not None):
             current = cls._col().find_one(
-                query, {'loadout_links': 1, 'unit_names': 1, 'quantity': 1})
+                query, {'loadout_links': 1, 'unit_names': 1, 'quantity': 1, 'unit_loadouts': 1})
             if not current:
                 return False
         if quantity is not None:
@@ -279,10 +313,65 @@ class Fleet:
                 set_fields['unit_names'] = clean_unit_names(unit_names, qty)
             elif current.get('unit_names') and len(current['unit_names']) > qty:
                 set_fields['unit_names'] = clean_unit_names(current['unit_names'], qty)
+            # 舊 API 的 loadout_links（整筆取代）＝全部算第 1 艘的
+            units = [set_fields['loadout_links']] if loadout_links is not None else unit_loadouts_of(current)
+            if unit_loadout is not None:
+                if not isinstance(unit_loadout, dict):
+                    raise ValueError('配件網址格式錯誤')
+                try:
+                    idx = int(unit_loadout.get('unit')) - 1
+                except (TypeError, ValueError):
+                    raise ValueError('要設定第幾艘的配件網址？')
+                if not 0 <= idx < qty:
+                    raise ValueError(f'只有 {qty} 艘，沒有第 {idx + 1} 艘')
+                units += [[] for _ in range(idx + 1 - len(units))]
+                units[idx] = clean_loadout_links(unit_loadout.get('links'), units[idx])
+            if (unit_loadout is not None or loadout_links is not None or len(units) > qty
+                    or ('unit_loadouts' not in current and units)):
+                units = _trim_units(units, qty)
+                set_fields['unit_loadouts'] = units
+                set_fields['loadout_links'] = merge_unit_loadouts(units)
         if not set_fields:
             return False
         set_fields['updated_at'] = datetime.utcnow()
         return cls._col().update_one(query, {'$set': set_fields}).matched_count > 0
+
+    @classmethod
+    def remove_unit(cls, fleet_id: str, player_id: str, unit) -> bool:
+        """同款船有好幾艘時，刪掉其中一艘（第 unit 艘，1 起算）：數量減 1，
+        那一艘的區別名稱、配件網址一起拿掉，後面的往前補。只剩 1 艘時請刪整筆，丟 ValueError。"""
+        try:
+            query = {'_id': ObjectId(fleet_id), 'player_id': ObjectId(player_id), 'deleted_at': None}
+        except Exception:
+            return False
+        current = cls._col().find_one(
+            query, {'loadout_links': 1, 'unit_names': 1, 'quantity': 1, 'unit_loadouts': 1})
+        if not current:
+            return False
+        qty = clamp_quantity(current.get('quantity'))
+        try:
+            idx = int(unit) - 1
+        except (TypeError, ValueError):
+            raise ValueError('要刪第幾艘？')
+        if qty <= 1:
+            raise ValueError('只剩 1 艘，請刪除整筆登記')
+        if not 0 <= idx < qty:
+            raise ValueError(f'只有 {qty} 艘，沒有第 {idx + 1} 艘')
+        names = list(current.get('unit_names') or [])
+        units = unit_loadouts_of(current)
+        if idx < len(names):
+            names.pop(idx)
+        if idx < len(units):
+            units.pop(idx)
+        units = _trim_units(units, qty - 1)
+        cls._col().update_one(query, {'$set': {
+            'quantity': qty - 1,
+            'unit_names': clean_unit_names(names, qty - 1),
+            'unit_loadouts': units,
+            'loadout_links': merge_unit_loadouts(units),
+            'updated_at': datetime.utcnow(),
+        }})
+        return True
 
     @classmethod
     def soft_delete(cls, fleet_id: str, player_id: str) -> bool:
