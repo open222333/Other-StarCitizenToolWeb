@@ -1454,6 +1454,11 @@ Log.create(username=get_jwt_identity(), action='create_product',
 
 ## 注意事項
 
+**登入防暴力破解**（後台 `/auth/login`、玩家 `/player/login`）：
+- 每 IP 限速：每分鐘 10 次、每小時 60 次（Flask-Limiter，Redis）。
+- 失敗鎖定（`src/models/login_guard.py`）：同一帳號 15 分鐘內失敗 5 次、或同一 IP 失敗 20 次，暫停登入 15 分鐘（回 429，鎖定期間密碼對也不放行）；登入成功清掉該帳號的失敗次數。失敗紀錄存在 `login_failures`，1 天後自動清掉。
+- 登入失敗與鎖定都會寫進「操作紀錄」，每筆紀錄附 **IP 來源**（經 nginx 的 X-Forwarded-For，ProxyFix 還原成真正的用戶端 IP）。
+
 | 項目 | 說明 |
 |---|---|
 | `conf/flask.json` | 首次啟動自動產生，已 gitignore，**勿提交版控**；屬機密，備份要保護 |

@@ -334,6 +334,7 @@ def register_player():
 
 @app_player.route('/login', methods=['POST'])
 @limiter.limit('10 per minute')
+@limiter.limit('60 per hour')
 def login_player():
     """玩家登入：用遊戲ID（star_citizen_id）＋密碼，回傳玩家專用 JWT。
 
@@ -348,9 +349,21 @@ def login_player():
     if not star_citizen_id or not password:
         return jsonify({'success': False, 'message': '遊戲ID 或密碼不得為空'}), 400
 
+    # 防暴力破解：同帳號／同 IP 失敗太多次就暫時鎖定（見 src/models/login_guard.py）
+    from src.models import login_guard
+    ip = request.remote_addr
+    actor = f'player:{star_citizen_id}'
+    wait = login_guard.locked_seconds('player', star_citizen_id, ip)
+    if wait:
+        Log.create(actor, 'player_login', '失敗次數太多，暫時鎖定', success=False)
+        return jsonify({'success': False, 'message': login_guard.locked_message(wait)}), 429
+
     player = Player.find_by_star_citizen_id(star_citizen_id, include_password=True)
     if not player or not Player.check_password(password, player.get('password')):
+        login_guard.record_failure('player', star_citizen_id, ip)
+        Log.create(actor, 'player_login', '遊戲ID 或密碼錯誤', success=False)
         return jsonify({'success': False, 'message': '遊戲ID 或密碼錯誤'}), 401
+    login_guard.clear('player', star_citizen_id)
 
     identity = _player_identity(star_citizen_id)
     claims = {PLAYER_CLAIM: True}

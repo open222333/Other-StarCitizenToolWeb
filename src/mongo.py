@@ -199,6 +199,10 @@ def ensure_indexes():
     db['uex_commodities_prices'].create_index('id_terminal')
     db['uex_commodities_prices'].create_index('price_buy')
     db['uex_vehicles'].create_index('uuid')
+    # 登入失敗紀錄（src/models/login_guard.py）：1 天後自動清掉
+    db['login_failures'].create_index('at', expireAfterSeconds=86400)
+    db['login_failures'].create_index([('scope', ASCENDING), ('account', ASCENDING), ('at', DESCENDING)])
+    db['login_failures'].create_index([('ip', ASCENDING), ('at', DESCENDING)])
     db['uex_vehicles_purchases'].create_index('id_vehicle')
     db['uex_vehicles_rentals'].create_index('id_vehicle')
     db['sync_runs'].create_index([('started_at', DESCENDING)])

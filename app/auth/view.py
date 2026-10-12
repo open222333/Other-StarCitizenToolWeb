@@ -7,12 +7,14 @@ from src.models.user import User
 from src.models.user_template import UserTemplate
 from src.models.log import Log
 from src.limiter import limiter
+from src.models import login_guard
 
 app_auth = Blueprint('auth', __name__)
 
 
 @app_auth.route('/login', methods=['POST'])
 @limiter.limit('10 per minute')
+@limiter.limit('60 per hour')
 def login():
     """
     帳號密碼登入，回傳 JWT token
@@ -42,6 +44,8 @@ def login():
             template_id:   {type: string}
       401:
         description: 帳號或密碼錯誤
+      429:
+        description: 失敗次數太多，暫時鎖定（同帳號 15 分鐘內 5 次、同 IP 20 次，見 src/models/login_guard.py）
     """
     data = request.get_json()
     if not data:
@@ -53,10 +57,18 @@ def login():
     if not username or not password:
         return jsonify({'success': False, 'message': 'username 或 password 不得為空'}), 400
 
+    ip = request.remote_addr
+    wait = login_guard.locked_seconds('admin', username, ip)
+    if wait:
+        Log.create(username, 'login', '失敗次數太多，暫時鎖定', success=False)
+        return jsonify({'success': False, 'message': login_guard.locked_message(wait)}), 429
+
     user = User.find_by_username(username)
     if not user or not User.check_password(password, user['password']):
+        login_guard.record_failure('admin', username, ip)
         Log.create(username or 'unknown', 'login', '帳號或密碼錯誤', success=False)
         return jsonify({'success': False, 'message': '帳號或密碼錯誤'}), 401
+    login_guard.clear('admin', username)
 
     template_id = user.get('template_id')
     resp = {
