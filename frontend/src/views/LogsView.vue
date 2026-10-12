@@ -54,17 +54,18 @@
                 <th>操作者</th>
                 <th>動作</th>
                 <th>詳細</th>
+                <th>IP 來源</th>
                 <th class="pe-3">結果</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="5" class="text-center py-4 text-muted">
+                <td colspan="6" class="text-center py-4 text-muted">
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
-                <td colspan="5" class="text-center py-4">
+                <td colspan="6" class="text-center py-4">
                   <span class="text-warning">
                     <i class="bi bi-exclamation-triangle me-1"></i>讀取紀錄失敗。
                   </span>
@@ -72,7 +73,7 @@
                 </td>
               </tr>
               <tr v-else-if="!logs.length">
-                <td colspan="5" class="text-center py-4 text-muted">
+                <td colspan="6" class="text-center py-4 text-muted">
                   {{ hasActiveFilters ? '沒有符合篩選條件的紀錄。' : '尚無紀錄' }}
                 </td>
               </tr>
@@ -81,6 +82,7 @@
                 <td class="fw-semibold">{{ l.username }}</td>
                 <td>{{ l.action }}</td>
                 <td class="text-muted small">{{ l.detail || '—' }}</td>
+                <td class="small font-monospace text-nowrap">{{ l.ip || '—' }}</td>
                 <td class="pe-3">
                   <span :class="`badge bg-${l.success ? 'success' : 'danger'}`">
                     {{ l.success ? '成功' : '失敗' }}

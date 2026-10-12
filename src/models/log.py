@@ -12,6 +12,16 @@ from typing import Optional
 
 from src.mongo import get_db
 
+
+def _request_ip() -> Optional[str]:
+    """目前這個 request 的來源 IP（ProxyFix 已經把 X-Forwarded-For 換成真正的用戶端 IP，見 app/__init__.py）；
+    不在 request 裡（例如 Celery 任務、Discord bot）回 None。"""
+    try:
+        from flask import has_request_context, request
+        return request.remote_addr if has_request_context() else None
+    except Exception:
+        return None
+
 # 排序白名單 —— 目前只有「時間」這一欄有排序 UI，但用白名單而不是直接把
 # 呼叫端傳進來的欄位名塞進 .sort()，是為了避免之後隨便加一個排序按鈕就
 # 意外變成可以排序到任意欄位（雖然這裡不是使用者輸入，風險低，但保持一致）。
@@ -26,12 +36,15 @@ class Log:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def create(cls, username: str, action: str, detail: str = '', success: bool = True) -> str:
+    def create(cls, username: str, action: str, detail: str = '', success: bool = True,
+               ip: Optional[str] = None) -> str:
+        """ip 沒給就自動抓目前 request 的來源 IP（後台「操作紀錄」顯示用）。"""
         result = cls._col().insert_one({
             'username': username,
             'action': action,
             'detail': detail,
             'success': success,
+            'ip': ip or _request_ip(),
             'created_at': datetime.utcnow()
         })
         return str(result.inserted_id)
