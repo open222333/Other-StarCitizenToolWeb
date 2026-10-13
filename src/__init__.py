@@ -73,8 +73,9 @@ SCDATA_WIKI_API_BASE = config.get(
     'SCDATA', 'WIKI_API_BASE', fallback='https://api.star-citizen.wiki/api').rstrip('/')
 SCDATA_UEX_API_BASE = config.get(
     'SCDATA', 'UEX_API_BASE', fallback='https://api.uexcorp.uk/2.0').rstrip('/')
-# scunpacked-data（GitHub 上的解包資料集，StarCitizenWiki 維護）：目前只用來抓礦物回波
-# 相關的靜態參考表（礦床成分機率、地點機率），純公開靜態檔案、無需 token、無速率限制。
+# scunpacked-data（GitHub 上的解包資料集，StarCitizenWiki 維護）：翻譯英文表（labels.json）、
+# 礦物、地點（starmap.json）、藍圖品質試算資料。純公開靜態檔案、無需 token；GitHub raw 沒有
+# 公開配額數字，但流量過大會回 429（上游次數限制一覽見 src/scdata.py 的 UPSTREAM_PROVIDERS）。
 SCDATA_SCUNPACKED_BASE = config.get(
     'SCDATA', 'SCUNPACKED_BASE',
     fallback='https://raw.githubusercontent.com/StarCitizenWiki/scunpacked-data/master').rstrip('/')

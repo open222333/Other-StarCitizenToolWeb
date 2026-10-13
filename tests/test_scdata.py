@@ -455,3 +455,19 @@ def test_blueprint_quality_endpoint(client, auth_headers):
     assert 'name_zh' in body['data']['slots'][0]
     assert client.get('/blueprint/master/nope/quality', headers=auth_headers).status_code == 404
     assert client.get('/blueprint/master/bp-rifle/quality').status_code == 401
+
+
+def test_build_client_counts_requests_and_429():
+    """build_client 計算實際送出的請求數與 429 次數（後台排程頁顯示上次用量）。"""
+    import httpx
+    from src.scdata import build_client, request_counts, requests_used
+
+    codes = iter([429, 200, 200])
+    c = build_client(transport=httpx.MockTransport(lambda req: httpx.Response(next(codes), json={})))
+    before = request_counts({'wiki': c})
+    for _ in range(3):
+        c.get('https://example.invalid/x')
+    assert requests_used(before, request_counts({'wiki': c})) == {'wiki': {'requests': 3, 'rate_limited': 1}}
+    assert requests_used(before, before) == {}, '沒打就不列'
+    c.close()
+

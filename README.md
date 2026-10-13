@@ -381,8 +381,9 @@ MongoDB 是獨立節點這件事會直接影響移庫的一致性保證，見[�
 
 | 服務 | 用途 | 風險 | 備註 |
 |---|---|---|---|
-| [Star Citizen Wiki API](https://api.star-citizen.wiki) | 物品 / 載具 / 商品規格 | 社群自費維運，無 SLA、無公開配額 | 全量同步約 130 次請求 |
+| [Star Citizen Wiki API](https://api.star-citizen.wiki) | 物品 / 載具 / 商品 / 藍圖 / 勢力 / 任務 | 社群自費維運，無 SLA、無公開配額 | 見[排程打的上游 API](#排程打的上游-api) |
 | [UEX Corp API 2.0](https://uexcorp.space/api/documentation) | 價格、終端位置 | 眾包資料可能與伺服器有落差 | 配額 120 req/min |
+| GitHub raw（[scunpacked-data](https://github.com/StarCitizenWiki/scunpacked-data)、[繁中翻譯包](https://github.com/cosmo-chang-1701/sc-translation-pack)） | 翻譯、礦物、地點、藍圖品質 | 沒公開配額，流量大會回 429 | 全部項目共 6 個檔案 |
 | Discord API | bot 指令 | 全域指令傳播最久約 1 小時 | — |
 
 ---
@@ -993,6 +994,48 @@ curl -s -X POST http://localhost:8090/item/sync \
 ```
 
 同步狀態：`GET /item/sync-status`，或直接查 `sync_runs` collection。
+
+### 排程打的上游 API
+
+全部只有 GET。base URL 都能在 `conf/config.ini` 的 `[SCDATA]` 覆寫（`WIKI_API_BASE`、`UEX_API_BASE`、
+`SCUNPACKED_BASE`、`TRANSLATION_INI_URL`）。後台「資料同步排程」頁的「上游 API」區塊會列出同一份清單
+（`src/scdata.py` 的 `UPSTREAM_PROVIDERS`／`job_upstreams()`，經 `GET /item/sync-jobs` 的
+`providers`、`jobs[].upstreams` 回傳），並顯示上次同步實際打了幾次。
+
+**次數限制**（2026-10 查證）：
+
+| 上游 | 驗證 | 次數限制 | 本站的節流 |
+|---|---|---|---|
+| Star Citizen Wiki API `https://api.star-citizen.wiki/api` | 不需要 | **無公開配額**。依 [原始碼](https://github.com/StarCitizenWiki/API)（develop 分支），列表／明細 GET 沒掛 throttle，只有 search 類端點 60 次/分/IP（本站不用）。社群自費維運，請自律 | 每次請求隔 `REQUEST_DELAY`（0.25 秒） |
+| UEX Corp API 2.0 `https://api.uexcorp.uk/2.0` | token | **有配額**：120 次/分、172,800 次/日，超過回 `requests_limit_reached` | `/items` 逐分類抓時每次至少隔 0.5 秒 |
+| GitHub raw `https://raw.githubusercontent.com` | 不需要 | **會限流但沒公開數字**，流量過大回 429；檔案有 5 分鐘 CDN 快取（`cache-control: max-age=300`） | 全部項目共 6 個檔案 |
+
+三個上游的 429 都會依 `Retry-After` 等待後重試（最多 `MAX_RETRIES` 次，其他錯誤指數退避）。
+
+**各同步項目打的端點**：
+
+| 項目 | 上游 | 端點 | 備註 |
+|---|---|---|---|
+| 翻譯 | GitHub raw | `StarCitizenWiki/scunpacked-data/master/labels.json` | 英文原文 |
+| | GitHub raw | `cosmo-chang-1701/sc-translation-pack/main/chinese_(traditional)/global.ini` | 繁中翻譯（約 10MB）；之後重新比對任務、勢力、地點中文 |
+| 物品 | Wiki | `/items?page[size]=100&page[number]=N` | 分頁 |
+| 載具 | Wiki | `/vehicles?page[size]=5&page[number]=N` | 單筆約 40KB，頁要開小；之後套用星系備註 |
+| 商品 | Wiki | `/commodities?page[size]=100&page[number]=N` | |
+| 藍圖 | Wiki | `/blueprints?page[size]=50&page[number]=N&include=ingredients,output,dismantle_returns` | 帶 include 免逐筆打明細；之後重連任務獎勵 |
+| | GitHub raw | `scunpacked-data/master/blueprints.json` | 品質試算資料 |
+| 勢力 | Wiki | `/factions?page[size]=100&page[number]=N` | |
+| | Wiki | `/factions/<uuid>` | 每筆明細一次（約 64 次） |
+| 任務 | Wiki | `/missions?page[size]=100&page[number]=N&include=blueprints` | |
+| 礦物 | GitHub raw | `scunpacked-data/master/resources/resources.json`、`resources/locations.json` | |
+| 地點 | GitHub raw | `scunpacked-data/master/starmap.json` | 之後重建階層、套用設施／倉儲／居住地 |
+| UEX 價格 | UEX | `/categories/` → `/items/?id_category=<id>` | 每個物品分類一次 |
+| | UEX | `/terminals/`、`/items_prices_all/`、`/commodities/`、`/commodities_prices_all/`、`/vehicles/`、`/vehicles_purchases_prices_all/`、`/vehicles_rentals_prices_all/` | 價格表會刪掉這次沒出現的舊列（新筆數 ≥ 舊的 50% 才刪） |
+
+沒設定 UEX token 時 UEX 價格項目直接略過。聊天用的代碼字典（chsc-tw）是用到才抓，不在排程裡。
+
+**請求數紀錄**：`build_client()` 會計算每個 client 實際送出的請求（含重試、轉址）與收到的 429，
+每一項同步完寫進 `sync_jobs.last_requests`（例如 `{"wiki": {"requests": 48, "rate_limited": 0}}`），
+整輪的加總寫進 `sync_runs.requests`。
 
 ### Collections
 

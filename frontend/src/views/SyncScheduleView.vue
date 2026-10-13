@@ -7,6 +7,9 @@
   個別手動同步，也可以全部一起同步。UEX 那一列另外可以直接設定 API token（只有 admin，
   /item/sync-uex-token，後端只回末 4 碼）。
 
+  「上游 API」區塊列出各來源的次數限制、上次同步實際打了幾次（含 429 次數），
+  展開可看各項目打的端點（後端 src/scdata.py 的 UPSTREAM_PROVIDERS／job_upstreams）。
+
   不同項目可以同時同步（每一項各自一個 Celery 任務、各自一把鎖；同時跑幾個看
   worker 的 concurrency，超過的會排隊）。上方「進行中」區塊即時顯示正在跑與排隊中
   的項目、目前階段與進度，每 3 秒更新一次；「正在跑」以該項的鎖為準（後端 running
@@ -67,6 +70,71 @@
       </div>
     </div>
 
+    <!-- 上游 API：各來源的次數限制、上次用量與各項目打的端點（後端 src/scdata.py 的 UPSTREAM_PROVIDERS／job_upstreams） -->
+    <div v-if="providers.length" class="card border-0 shadow-sm mb-3">
+      <div class="card-body p-0">
+        <div class="px-3 pt-3 pb-2"><h6 class="fw-semibold mb-0">上游 API</h6></div>
+        <div style="overflow-x:auto">
+          <table class="table align-middle mb-0 small">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">來源</th>
+                <th>網址</th>
+                <th>驗證</th>
+                <th>次數限制</th>
+                <th class="text-end">上次用量</th>
+                <th class="pe-3 text-end">端點</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="p in providers" :key="p.key">
+                <tr>
+                  <td class="ps-3 fw-semibold text-nowrap">
+                    {{ p.name }}
+                    <a v-if="p.url" :href="p.url" target="_blank" rel="noopener" class="ms-1" :aria-label="`${p.name} 網站`">
+                      <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                  </td>
+                  <td class="font-monospace text-nowrap">{{ p.base }}</td>
+                  <td class="text-nowrap">{{ p.auth }}</td>
+                  <td>
+                    <span class="badge me-1" :class="LIMIT_LEVELS[p.limit_level]?.cls || 'bg-secondary'">
+                      {{ LIMIT_LEVELS[p.limit_level]?.label || p.limit_level }}
+                    </span>
+                    <span>{{ p.limit }}</span>
+                  </td>
+                  <td class="text-end text-nowrap">
+                    <template v-if="providerUsage[p.key]">
+                      {{ fmtInt(providerUsage[p.key].requests) }} 次
+                      <span v-if="providerUsage[p.key].rate_limited" class="badge bg-danger ms-1">
+                        429 ×{{ providerUsage[p.key].rate_limited }}
+                      </span>
+                    </template>
+                    <span v-else class="text-muted">—</span>
+                  </td>
+                  <td class="pe-3 text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-info text-nowrap" :aria-expanded="openProviders[p.key] ? 'true' : 'false'"
+                      @click="openProviders[p.key] = !openProviders[p.key]">
+                      <i class="bi me-1" :class="openProviders[p.key] ? 'bi-chevron-up' : 'bi-chevron-down'"></i>{{ endpointsOf(p.key).length }}
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="openProviders[p.key]">
+                  <td colspan="6" class="ps-3 pe-3 bg-body-tertiary">
+                    <div v-for="(e, i) in endpointsOf(p.key)" :key="i" class="d-flex flex-wrap gap-2 endpoint-row">
+                      <span class="fw-semibold endpoint-job">{{ e.label }}</span>
+                      <span class="font-monospace text-break">{{ shortUrl(e.url, p.base) }}</span>
+                      <span v-if="e.note" class="text-muted">{{ e.note }}</span>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
@@ -100,6 +168,10 @@
                   <span v-if="job.running" class="badge bg-primary ms-1">同步中</span>
                   <span v-else-if="job.queued" class="badge bg-warning text-dark ms-1">排隊中</span>
                   <div class="text-muted font-monospace fw-normal job-key">{{ job.key }}</div>
+                  <div v-if="jobProviders(job).length" class="fw-normal d-flex flex-wrap gap-1 mt-1">
+                    <span v-for="p in jobProviders(job)" :key="p.key" class="badge border"
+                      :class="LIMIT_LEVELS[p.limit_level]?.soft || 'text-bg-light'" :title="p.limit">{{ p.short || p.name }}</span>
+                  </div>
                   <!-- UEX 需要 token：admin 才看得到設定狀態（只顯示末 4 碼） -->
                   <div v-if="job.key === 'uex' && isAdmin && uexStatus" class="fw-normal mt-1">
                     <span v-if="uexStatus.configured" class="badge bg-success-subtle text-success-emphasis">
@@ -131,6 +203,8 @@
                     <span class="text-nowrap">{{ fmtTime(job.last_finished_at) }}</span>
                     <span class="text-muted"> · {{ fmtDuration(job.last_duration_s) }}</span>
                     <span v-if="statsLabel(job)" class="text-muted"> · {{ statsLabel(job) }}</span>
+                    <span v-if="requestsLabel(job)" class="text-muted"> · {{ requestsLabel(job) }}</span>
+                    <span v-if="rateLimited(job)" class="badge bg-danger ms-1">429 ×{{ rateLimited(job) }}</span>
                     <div v-if="job.last_error" class="text-danger last-error" :title="job.last_error">{{ job.last_error }}</div>
                   </template>
                   <span v-else class="text-muted">尚未執行</span>
@@ -244,6 +318,47 @@ const jobSort = useTableSort(jobs, { accessors: {
   last_finished_at: j => (j.last_finished_at ? new Date(j.last_finished_at).getTime() : null),
 } })
 const timezone = ref('Asia/Taipei')
+
+// ── 上游 API（次數限制、上次用量、各項目打的端點）──
+const providers = ref([])
+const openProviders = reactive({})
+const LIMIT_LEVELS = {
+  hard: { label: '有配額', cls: 'bg-danger', soft: 'bg-danger-subtle text-danger-emphasis' },
+  soft: { label: '會限流', cls: 'bg-warning text-dark', soft: 'bg-warning-subtle text-warning-emphasis' },
+  none: { label: '未限流', cls: 'bg-success', soft: 'bg-success-subtle text-success-emphasis' },
+}
+const providerByKey = computed(() => Object.fromEntries(providers.value.map(p => [p.key, p])))
+// 各上游「每一項上次同步」的請求數加總
+const providerUsage = computed(() => {
+  const out = {}
+  for (const job of jobs.value) {
+    for (const [key, r] of Object.entries(job.last_requests || {})) {
+      const u = out[key] || (out[key] = { requests: 0, rate_limited: 0 })
+      u.requests += r.requests || 0
+      u.rate_limited += r.rate_limited || 0
+    }
+  }
+  return out
+})
+function endpointsOf(providerKey) {
+  return jobs.value.flatMap(job => (job.upstreams || [])
+    .filter(u => u.provider === providerKey)
+    .map(u => ({ ...u, label: job.label })))
+}
+function jobProviders(job) {
+  const keys = [...new Set((job.upstreams || []).map(u => u.provider))]
+  return keys.map(k => providerByKey.value[k] || { key: k, name: k })
+}
+function shortUrl(url, base) {
+  return base && url.startsWith(base) ? url.slice(base.length) || '/' : url
+}
+function requestsLabel(job) {
+  const total = Object.values(job.last_requests || {}).reduce((n, r) => n + (r.requests || 0), 0)
+  return total ? `請求 ${fmtInt(total)} 次` : ''
+}
+function rateLimited(job) {
+  return Object.values(job.last_requests || {}).reduce((n, r) => n + (r.rate_limited || 0), 0)
+}
 const loading = ref(false)
 const loadFailed = ref(false)
 const drafts = reactive({})
@@ -332,6 +447,7 @@ async function fetchJobs() {
     if (!isNaN(serverTime)) clockOffset = serverTime - Date.now()
     timezone.value = body.data.timezone || timezone.value
     jobs.value = body.data.jobs || []
+    providers.value = body.data.providers || []
     // 沒改過的列跟著伺服器更新；正在編輯的不要蓋掉
     for (const job of jobs.value) {
       if (!drafts[job.key] || !isDirtyAgainst(job, drafts[job.key])) syncDraft(job, true)
@@ -554,6 +670,8 @@ onUnmounted(() => {
   margin-right: .35rem; vertical-align: middle; background: var(--bs-secondary-color);
 }
 .live-dot--on::before { background: var(--bs-success); }
+.endpoint-row { padding: .15rem 0; }
+.endpoint-job { min-width: 4.5rem; }
 .last-error { max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }

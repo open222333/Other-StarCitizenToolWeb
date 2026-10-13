@@ -695,6 +695,7 @@ def _serialize_job(job: dict, running: set, counts: dict) -> dict:
         'last_ok': job.get('last_ok'),
         'last_error': job.get('last_error'),
         'last_stats': job.get('last_stats') or {},
+        'last_requests': job.get('last_requests') or {},
         'consecutive_failures': job.get('consecutive_failures') or 0,
         'updated_at': job.get('updated_at'),
         'updated_by': job.get('updated_by'),
@@ -704,7 +705,8 @@ def _serialize_job(job: dict, running: set, counts: dict) -> dict:
 @app_item.route('/sync-jobs', methods=['GET'])
 @admin_api(*READ_ROLES)
 def list_sync_jobs():
-    """各同步項目（每個資料庫一筆）的排程、下次執行時間、上次結果與目前筆數。
+    """各同步項目（每個資料庫一筆）的排程、下次執行時間、上次結果與目前筆數，
+    以及各項目打的上游端點（upstreams）、上游次數限制（providers）、上次請求數（last_requests）。
     ---
     tags: [Item]
     security:
@@ -717,10 +719,17 @@ def list_sync_jobs():
 
     from tasks.scdata_sync import running_jobs
 
+    from src.scdata import UPSTREAM_PROVIDERS, job_upstreams
+
     running = set(running_jobs())
     counts = _job_counts()
     jobs = [_serialize_job(j, running, counts) for j in SyncJobs.all()]
+    # 各項目打哪些上游端點、各上游的次數限制（src/scdata.py）
+    upstreams = job_upstreams()
+    for job in jobs:
+        job['upstreams'] = upstreams.get(job['key'], [])
     return jsonify({'success': True, 'data': {
+        'providers': [{'key': k, **v} for k, v in UPSTREAM_PROVIDERS.items()],
         'is_running': bool(running),
         'running': [j['key'] for j in jobs if j['running']],
         'queued': [j['key'] for j in jobs if j['queued']],

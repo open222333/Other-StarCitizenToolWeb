@@ -59,11 +59,48 @@ class ScDataError(Exception):
 
 # ─────────────────────────────────────────────────────────── HTTP
 
-def build_client(token: str = '') -> httpx.Client:
+def build_client(token: str = '', transport: Optional[httpx.BaseTransport] = None) -> httpx.Client:
+    """同步用的 httpx client。
+
+    順便計算這個 client 實際送出的請求數（含重試、轉址）與收到幾次 429，
+    掛在 `client.sc_counter`：同步完寫進各項目的 last_requests，後台排程頁顯示
+    「上次打了上游幾次」，對照 UPSTREAM_PROVIDERS 的次數限制。
+    """
     headers = {'User-Agent': SCDATA_USER_AGENT, 'Accept': 'application/json'}
     if token:
         headers['Authorization'] = f'Bearer {token}'
-    return httpx.Client(timeout=SCDATA_HTTP_TIMEOUT, headers=headers, follow_redirects=True)
+    counter = {'requests': 0, 'rate_limited': 0}
+
+    def on_request(_request):
+        counter['requests'] += 1
+
+    def on_response(response):
+        if response.status_code == 429:
+            counter['rate_limited'] += 1
+
+    client = httpx.Client(timeout=SCDATA_HTTP_TIMEOUT, headers=headers, follow_redirects=True,
+                          transport=transport,   # 測試用 MockTransport；平常 None
+                          event_hooks={'request': [on_request], 'response': [on_response]})
+    client.sc_counter = counter
+    return client
+
+
+def request_counts(clients: dict) -> dict:
+    """{client 名稱: {'requests': n, 'rate_limited': m}} 的快照（build_client 建的才有計數）。"""
+    return {name: dict(getattr(c, 'sc_counter', None) or {'requests': 0, 'rate_limited': 0})
+            for name, c in clients.items()}
+
+
+def requests_used(before: dict, after: dict) -> dict:
+    """兩次 request_counts() 快照的差：這段期間各上游打了幾次。沒打的不列。"""
+    out = {}
+    for name, now in after.items():
+        prev = before.get(name) or {}
+        n = now.get('requests', 0) - prev.get('requests', 0)
+        limited = now.get('rate_limited', 0) - prev.get('rate_limited', 0)
+        if n or limited:
+            out[name] = {'requests': n, 'rate_limited': limited}
+    return out
 
 
 def _retry_after_seconds(raw: str, fallback: float) -> float:
@@ -1143,3 +1180,75 @@ def uex_doc_id(row: dict, key_fields: list) -> Optional[str]:
 def has_uex_token() -> bool:
     from src.models.app_setting import UexToken   # 後台設定優先，其次環境變數
     return bool(UexToken.get())
+
+
+# ─────────────────────────────────────────────────────────── 上游來源一覽
+
+#: 上游服務與已知的次數限制（2026-10 查證；README「排程打的上游 API」一節同步更新）。
+#: key 跟 tasks/scdata_sync.py 的 client 名稱一致（client('wiki') / client('uex') / client('github')）。
+#: limit_level：hard = 有公開配額、超過會被拒；soft = 會限流但沒公開數字；none = 用到的端點沒有限流。
+UPSTREAM_PROVIDERS: dict = {
+    'wiki': {
+        'short': 'Wiki',
+        'name': 'Star Citizen Wiki API',
+        'base': SCDATA_WIKI_API_BASE,
+        'auth': '不需要',
+        'limit_level': 'none',
+        # 依 StarCitizenWiki/API 原始碼（develop）：列表／明細 GET 沒掛 throttle，
+        # 只有 search 類端點 60 次/分/IP（本站不用）。社群自費維運，仍以 REQUEST_DELAY 節流。
+        'limit': '無公開配額；列表端點未限流（搜尋端點 60 次/分/IP，本站未使用）',
+        'url': 'https://api.star-citizen.wiki',
+    },
+    'uex': {
+        'short': 'UEX',
+        'name': 'UEX Corp API 2.0',
+        'base': SCDATA_UEX_API_BASE,
+        'auth': 'token',
+        'limit_level': 'hard',
+        'limit': '120 次/分、172,800 次/日，超過回 requests_limit_reached',
+        'url': 'https://uexcorp.space/api/documentation',
+    },
+    'github': {
+        'short': 'GitHub',
+        'name': 'GitHub raw（scunpacked-data、翻譯包）',
+        'base': 'https://raw.githubusercontent.com',
+        'auth': '不需要',
+        'limit_level': 'soft',
+        'limit': '未公開數字，流量過大回 429；CDN 快取 5 分鐘',
+        'url': 'https://github.com/StarCitizenWiki/scunpacked-data',
+    },
+}
+
+
+def job_upstreams() -> dict:
+    """同步項目 → 它打的上游端點清單 [{provider, url, note}]（後台排程頁、README 用）。"""
+    wiki, uex, raw = SCDATA_WIKI_API_BASE, SCDATA_UEX_API_BASE, SCDATA_SCUNPACKED_BASE
+
+    def w(resource, note=''):
+        size = SCDATA_PAGE_SIZES.get(resource)
+        extra = WIKI_QUERY_EXTRA.get(resource, {})
+        query = ''.join(f'&{k}={v}' for k, v in extra.items())
+        return {'provider': 'wiki', 'url': f'{wiki}/{resource}?page[size]={size}&page[number]=N{query}',
+                'note': note or '分頁'}
+
+    def g(path, note=''):
+        return {'provider': 'github', 'url': f'{raw}/{path}', 'note': note}
+
+    def u(path, note=''):
+        return {'provider': 'uex', 'url': f'{uex}/{path}', 'note': note}
+
+    out = {
+        'translations': [g(SCUNPACKED_LABELS_PATH, '英文原文'),
+                         {'provider': 'github', 'url': SCDATA_TRANSLATION_INI_URL, 'note': '繁中翻譯'}],
+    }
+    for key in WIKI_RESOURCES:
+        rows = [w(key)]
+        if key in WIKI_DETAIL_RESOURCES:
+            rows.append({'provider': 'wiki', 'url': f'{wiki}/{key}/<uuid>', 'note': '每筆明細一次'})
+        rows += [g(SCUNPACKED_RESOURCES[r][1]) for r in SCUNPACKED_EXTRA.get(key, [])]
+        out[key] = rows
+    for key, resources in SCUNPACKED_JOBS.items():
+        out[key] = [g(SCUNPACKED_RESOURCES[r][1]) for r in resources]
+    out['uex'] = [u('categories/'), u('items/?id_category=<id>', '每個物品分類一次，間隔 ≥ 0.5 秒')] + \
+        [u(f'{r}/') for r in UEX_RESOURCES if r != 'items']
+    return out

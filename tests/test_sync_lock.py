@@ -272,6 +272,24 @@ def test_do_sync_records_each_job(app, sync_mod, monkeypatch):
     assert run['jobs'] == ['items', 'missions', 'uex'] and run['skipped_jobs'] == ['uex']
 
 
+def test_do_sync_records_upstream_requests(app, sync_mod, monkeypatch):
+    """每一項記下這次打了各上游幾次（含 429），共用的 client 只算這一項的增量。"""
+    def fake_run(key, run_id, stamp, clients):
+        counter = clients.setdefault('wiki', type('C', (), {'sc_counter': {'requests': 0, 'rate_limited': 0},
+                                                            'close': lambda self: None})()).sc_counter
+        counter['requests'] += 3 if key == 'items' else 2
+        if key == 'missions':
+            counter['rate_limited'] += 1
+        return [], [], True
+    monkeypatch.setattr(sync_mod, '_run_job', fake_run)
+
+    result = sync_mod._do_sync(jobs=['items', 'missions'])
+    assert SyncJobs.get('items')['last_requests'] == {'wiki': {'requests': 3, 'rate_limited': 0}}
+    assert SyncJobs.get('missions')['last_requests'] == {'wiki': {'requests': 2, 'rate_limited': 1}}
+    run = get_db()['sync_runs'].find_one({'_id': result['run_id']})
+    assert run['requests'] == {'wiki': {'requests': 5, 'rate_limited': 1}}
+
+
 def test_do_sync_rejects_unknown_job(app, sync_mod):
     with pytest.raises(ValueError):
         sync_mod._do_sync(jobs=['spaceships'])

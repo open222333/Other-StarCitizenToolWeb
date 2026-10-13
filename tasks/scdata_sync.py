@@ -63,7 +63,8 @@ from src.scdata import (BULK_SIZE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED
                         UEX_PRUNE_MIN_RATIO, UEX_PRUNE_RESOURCES, UEX_RESOURCES,
                         WIKI_DETAIL_RESOURCES, WIKI_RESOURCES, ScDataError, build_client,
                         fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
-                        normalize_labels, uex_doc_id, uex_rows, wiki_detail, wiki_rows)
+                        normalize_labels, request_counts, requests_used, uex_doc_id, uex_rows,
+                        wiki_detail, wiki_rows)
 
 logger = logging.getLogger(__name__)
 
@@ -635,6 +636,7 @@ def _do_sync(jobs=None, translations_only: bool = False) -> dict:
                 job_started = datetime.utcnow()
                 SyncJobs.mark_started(key, run_id, job_started)
                 _progress_job = key
+                before = request_counts(clients)
                 try:
                     job_stats, job_errors, ok = _run_job(key, run_id, job_started, clients)
                 finally:
@@ -645,7 +647,10 @@ def _do_sync(jobs=None, translations_only: bool = False) -> dict:
                 else:
                     errors += job_errors
                 SyncJobs.record_result(key, run_id, job_started, datetime.utcnow(), ok,
-                                       error='；'.join(job_errors), stats=_sum_stats(job_stats))
+                                       error='；'.join(job_errors), stats=_sum_stats(job_stats),
+                                       requests=requests_used(before, request_counts(clients)))
+        # 整輪打了各上游幾次（clients 在 finally 裡關掉，先取快照）
+        upstream_requests = requests_used({}, request_counts(clients))
     finally:
         for c in clients.values():
             try:
@@ -672,6 +677,7 @@ def _do_sync(jobs=None, translations_only: bool = False) -> dict:
         'with_translations': 'translations' in ran,
         'translations_only': translations_only,
         'stats': stats,
+        'requests': upstream_requests,
         'errors': errors,
         'ok': not errors,
     }

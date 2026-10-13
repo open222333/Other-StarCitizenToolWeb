@@ -231,7 +231,7 @@ class SyncJobs:
       cron / enabled / updated_at / updated_by        排程設定（後台可改）
       last_started_at / last_finished_at / last_ok /
       last_error / last_run_id / last_stats /
-      consecutive_failures                            上次執行結果（同步時寫入）
+      last_requests / consecutive_failures            上次執行結果（同步時寫入）
       running / running_since / progress / progress_at  這項正在跑、跑到哪（搭配該項的鎖判斷）
       queued / queued_at / queued_task_id / queued_by    已派送、等 worker 接手
 
@@ -459,8 +459,12 @@ class SyncJobs:
 
     @classmethod
     def record_result(cls, key: str, run_id: str, started: datetime, finished: datetime,
-                      ok, error: str = '', stats: dict = None):
-        """寫入這一項這次的結果。ok=None 代表略過（例如沒設定 UEX token），不算失敗。"""
+                      ok, error: str = '', stats: dict = None, requests: dict = None):
+        """寫入這一項這次的結果。ok=None 代表略過（例如沒設定 UEX token），不算失敗。
+
+        requests：這次打了各上游幾次 {'wiki': {'requests': n, 'rate_limited': m}, ...}
+        （src/scdata.py 的 requests_used），後台排程頁對照次數限制用。
+        """
         current = cls._col().find_one({'_id': key}, {'consecutive_failures': 1}) or {}
         fails = current.get('consecutive_failures') or 0
         if ok is False:
@@ -477,6 +481,7 @@ class SyncJobs:
             'last_ok': ok,
             'last_error': error or None,
             'last_stats': stats or {},
+            'last_requests': requests or {},
             'consecutive_failures': fails,
         }}, upsert=True)
 
