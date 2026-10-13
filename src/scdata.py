@@ -1027,7 +1027,8 @@ UEX_RESOURCES: dict = {
 
 #: 同步完要把「這次沒出現的舊列」刪掉的 UEX 資源：價格表的一列＝某終端有在賣／收某商品（或載具），
 #: 上游不再回報就代表已經不賣了，留著會讓玩家以為還買得到。
-UEX_PRUNE_RESOURCES = {'commodities_prices_all', 'vehicles_purchases_prices_all', 'vehicles_rentals_prices_all'}
+UEX_PRUNE_RESOURCES = {'commodities_prices_all', 'items_prices_all',
+                       'vehicles_purchases_prices_all', 'vehicles_rentals_prices_all'}
 #: 這次抓到的筆數不到上次的這個比例就不刪（上游異常回傳變短時，不要把整張表清掉）
 UEX_PRUNE_MIN_RATIO = 0.5
 

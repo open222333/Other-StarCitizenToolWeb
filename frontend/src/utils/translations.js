@@ -57,20 +57,29 @@ export function loadKnownLocations() {
   return knownLocationsPromise
 }
 
-/** 地點資料庫裡「可存放」的地點名稱（英文，依星系、上下層排序），順便把中文放進
- *  location 快取。給庫存地點下拉用；地點資料還沒同步時回 []。 */
+/** 地點資料庫裡「可存放」的地點（[{name, name_zh, system, system_zh, planet, planet_zh, …}]，
+ *  依星系、上下層排序），順便把地點、星系、行星的中文放進 location 快取。
+ *  地點資料還沒同步時回 []。 */
 let storageLocationsPromise = null
-export function loadStorageLocations() {
+export function loadStorageLocationRows() {
   if (!storageLocationsPromise) {
     storageLocationsPromise = fetchJson('/starmap/storage-locations').then((data) => {
       if (!Array.isArray(data)) { storageLocationsPromise = null; return [] }
+      const put = (en, zh) => { if (en && zh && !cache.location[en]) cache.location[en] = zh }
       for (const row of data) {
-        if (row.name_zh && !cache.location[row.name]) cache.location[row.name] = row.name_zh
+        put(row.name, row.name_zh)
+        put(row.system, row.system_zh)
+        put(row.planet, row.planet_zh)
       }
-      return data.map(row => row.name)
+      return data
     })
   }
   return storageLocationsPromise
+}
+
+/** 同上，只要名稱（英文）。給庫存地點下拉用。 */
+export function loadStorageLocations() {
+  return loadStorageLocationRows().then(rows => rows.map(row => row.name))
 }
 
 /** 一次載入整個小型 domain（目前只有 blueprint_type）。 */

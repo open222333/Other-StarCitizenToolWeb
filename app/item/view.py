@@ -13,7 +13,8 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from src.limiter import limiter
 from src.models.item import CommodityMaster, ItemMaster, SyncRun, VehicleMaster
-from src.models import uex_vehicle_price
+from src.models import uex_item_price, uex_vehicle_price
+from src.models.item_stats import describe as describe_item
 from src.models.mission import Faction, Mission
 from src.models.inventory import uscu_to_scu
 from src.models.log import Log
@@ -45,28 +46,68 @@ def _paging() -> tuple:
 @app_item.route('/', methods=['GET'])
 @jwt_required()
 def list_items():
-    """物品主檔列表。
+    """物品主檔列表（後台「物品」、玩家頁「倉庫 › 物品資料」）。
+
+    多選篩選用 getlist（可重複帶同一個 key）；玩家 token 只看得到「玩家頁面顯示」的。
     ---
     tags: [Item]
     security:
       - Bearer: []
     parameters:
-      - {in: query, name: type,   type: string,  description: "依類型過濾（見 /item/types）"}
-      - {in: query, name: limit,  type: integer, default: 50, description: "最多 200"}
-      - {in: query, name: offset, type: integer, default: 0}
+      - {in: query, name: q,                 type: string,  description: "名稱（中英文）或 class name 的一部分"}
+      - {in: query, name: type,              type: array, items: {type: string}, description: "類型，可重複帶多個（見 /item/facets）"}
+      - {in: query, name: sub_type,          type: array, items: {type: string}, description: "子類型，可重複帶多個"}
+      - {in: query, name: manufacturer_code, type: array, items: {type: string}, description: "製造商代碼，可重複帶多個"}
+      - {in: query, name: size,              type: array, items: {type: integer}, description: "尺寸，可重複帶多個"}
+      - {in: query, name: grade,             type: array, items: {type: integer}, description: "等級，可重複帶多個"}
+      - {in: query, name: acquire,           type: array, items: {type: string}, description: "buy（UEX 有地方買得到）／sell（有地方收），可重複帶多個（取聯集）"}
+      - {in: query, name: player_visible,    type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的"}
+      - {in: query, name: with_prices,       type: integer, description: "1 = 每筆附 uex_price（最低購買價／最高收購價與地點數）"}
+      - {in: query, name: sort_by,           type: string,  description: "name（預設）／type／size／grade／volume_uscu／mass"}
+      - {in: query, name: sort_dir,          type: string,  description: "asc（預設）／desc"}
+      - {in: query, name: limit,             type: integer, default: 50, description: "最多 200"}
+      - {in: query, name: offset,            type: integer, default: 0}
     responses:
       200:
         description: 成功
     """
     limit, offset = _paging()
-    rows, total = ItemMaster.list_by_type(
-        item_type=(request.args.get('type') or '').strip(),
+    hide = not viewer_sees_hidden()
+    acquire = [a for a in request.args.getlist('acquire') if a in uex_item_price.ACQUIRE_FIELDS]
+    rows, total = ItemMaster.list_all(
+        query=(request.args.get('q') or '').strip(),
+        types=request.args.getlist('type'),
+        sub_types=request.args.getlist('sub_type'),
+        manufacturer_codes=request.args.getlist('manufacturer_code'),
+        sizes=request.args.getlist('size'),
+        grades=request.args.getlist('grade'),
+        ids=uex_item_price.item_ids_with(acquire) if acquire else None,
+        visible_only=hide, visibility=None if hide else visibility_arg(request.args),
+        sort_by=request.args.get('sort_by', 'name'),
+        sort_dir=-1 if request.args.get('sort_dir') == 'desc' else 1,
         limit=limit, offset=offset,
     )
     for row in rows:
         row['volume_scu'] = uscu_to_scu(row.get('volume_uscu'))
+    if request.args.get('with_prices') == '1':
+        uex_item_price.attach_summaries(rows)
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset})
+
+
+@app_item.route('/facets', methods=['GET'])
+@jwt_required()
+def item_facets():
+    """物品篩選選單的選項一次拿齊：類型、子類型、製造商、尺寸、等級。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功（data 含 types／sub_types／manufacturers（[{value, label}]）／sizes／grades）
+    """
+    return jsonify({'success': True, 'data': ItemMaster.facets(visible_only=not viewer_sees_hidden())})
 
 
 @app_item.route('/search', methods=['GET'])
@@ -123,6 +164,7 @@ def get_item(item_id):
     parameters:
       - {in: path,  name: item_id,  type: string,  required: true, description: "遊戲 uuid"}
       - {in: query, name: with_raw, type: integer, default: 0, description: "1 = 一併回傳 raw"}
+      - {in: query, name: with_stats, type: integer, default: 0, description: "1 = 附 description（英文說明）與 stats（遊戲內說明列出的數值 [{name, value}]）"}
     responses:
       200:
         description: 成功
@@ -136,7 +178,31 @@ def get_item(item_id):
     if request.args.get('with_raw') != '1':
         item.pop('raw', None)
     item['volume_scu'] = uscu_to_scu(item.get('volume_uscu'))
+    if request.args.get('with_stats') == '1':
+        item.update(describe_item(item_id) or {})
     return jsonify({'success': True, 'data': item})
+
+
+@app_item.route('/<item_id>/uex-prices', methods=['GET'])
+@jwt_required()
+def get_item_uex_prices(item_id):
+    """物品在哪買得到／哪裡收（UEX，aUEC），附交易終端（地點路徑、星系、行星）與回報時間。
+
+    UEX 沒有這個物品時退回 Wiki API 內嵌的購買價（source=wiki）。舊的 /<item_id>/prices
+    （平的清單，Discord bot 也用同一套）保留不動。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: item_id, type: string, required: true}
+    responses:
+      200:
+        description: "data: {buy: [{terminal, price, date_modified}]（由便宜到貴）, sell: [...]（由高到低）}, source"
+    """
+    data = uex_item_price.prices_for(item_id)
+    return jsonify({'success': True, 'data': {'buy': data['buy'], 'sell': data['sell']},
+                    'source': data['source']})
 
 
 @app_item.route('/<item_id>/prices', methods=['GET'])

@@ -29,6 +29,12 @@ export const VEHICLE_ACQUIRE_OPTIONS = [
   { value: 'rent', label: '可租船' },
 ]
 
+/** 物品「取得方式」篩選（UEX 價格）：GET /item/?acquire=buy|sell */
+export const ITEM_ACQUIRE_OPTIONS = [
+  { value: 'buy', label: '買得到' },
+  { value: 'sell', label: '能賣' },
+]
+
 /** 官網現金價（vehicle_master.msrp，美金） */
 export function fmtUsd(value) {
   if (value === null || value === undefined || value === '' || Number(value) === 0) return '—'

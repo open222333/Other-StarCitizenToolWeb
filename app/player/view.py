@@ -489,11 +489,12 @@ def list_buyable_commodities():
       - Bearer: []
     responses:
       200:
-        description: "data: [{id, code, name, kind, is_illegal, terminal_count}]、star_systems"
+        description: "data: [{id, code, name, kind, is_illegal, terminal_count}]、star_systems、areas（[{system, planet, place}]）"
     """
     from src.models.uex_commodity_price import UexCommodityPrice
     return jsonify({'success': True, 'data': UexCommodityPrice.buyable_commodities(),
-                    'star_systems': UexCommodityPrice.star_systems()})
+                    'star_systems': UexCommodityPrice.star_systems(),
+                    'areas': UexCommodityPrice.buy_areas()})
 
 
 @app_player.route('/commodities/buy-locations', methods=['GET'])

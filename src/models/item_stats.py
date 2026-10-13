@@ -88,3 +88,17 @@ def for_blueprint(blueprint_uuid: str) -> dict:
     item = db['item_master'].find_one({'_id': bp['output_item_uuid']}, {'raw': 1})
     raw = (item or {}).get('raw')
     return base_stats(raw) if isinstance(raw, dict) else {}
+
+
+def describe(item_id: str) -> Optional[dict]:
+    """物品說明與遊戲內說明列出來的數值（raw.description_data 原樣），給「物品資料」的詳細資料用。
+    找不到物品回 None。"""
+    doc = get_db()['item_master'].find_one(
+        {'_id': str(item_id or '')}, {'raw.description_data': 1, 'description_en': 1})
+    if not doc:
+        return None
+    stats = []
+    for d in ((doc.get('raw') or {}).get('description_data') or []):
+        if isinstance(d, dict) and d.get('name') and d.get('value') not in (None, ''):
+            stats.append({'name': str(d['name']).strip(), 'value': str(d['value']).strip()})
+    return {'description': doc.get('description_en') or '', 'stats': stats}

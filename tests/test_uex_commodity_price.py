@@ -49,6 +49,8 @@ def test_buy_locations_requires_all_selected(app):
     assert names == ['Ruin Station', 'TDD - Area18'], '依地點路徑排序（Pyro 在 Stanton 前）'
     area18 = data['locations'][1]
     assert area18['terminal']['location'] == ['Stanton', 'ArcCorp', 'Area18']
+    assert (area18['terminal']['planet'], area18['terminal']['place']) == ('ArcCorp', 'Area18')
+    assert data['locations'][0]['terminal']['place'] == 'Ruin Station'
     assert [i['code'] for i in area18['items']] == ['AGRI', 'MEDS']
     assert area18['items'][0]['price_buy'] == 25.5
     assert {c['code']: c['terminal_count'] for c in data['commodities']} == {'AGRI': 3, 'MEDS': 2}
@@ -131,3 +133,12 @@ def test_sync_keeps_rows_when_upstream_shrinks(app, monkeypatch):
         {'id_commodity': 0, 'id_terminal': 1, 'price_buy': 5}])
     stats = sync_mod._sync_uex_resource(None, 'commodities_prices_all', 'new', datetime.utcnow())
     assert stats['retired'] == 0 and db['uex_commodities_prices'].count_documents({}) == 10
+
+
+def test_buy_areas(app):
+    _seed(get_db())
+    assert UexCommodityPrice.buy_areas() == [
+        {'system': 'Pyro', 'planet': 'Pyro VI', 'place': 'Ruin Station'},
+        {'system': 'Stanton', 'planet': 'ArcCorp', 'place': 'Area18'},
+        {'system': 'Stanton', 'planet': 'microTech', 'place': 'Port Tressler'},
+    ]

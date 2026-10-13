@@ -2,16 +2,18 @@
   玩家個人頁（需要玩家登入，不是後台登入）。滿版版面，4 個主分頁：
 
   - 倉庫（我自己的物品，看現況也在這裡動；一頁，下面三個用按鈕展開，比照艦隊）
-      · 物品庫存：目前登記了哪些物品。上方有篩選區（物品／地點，預設全部）
-      · 新增物品：一次登記多筆「還沒有的物品」
-      · 庫存異動：對已登記的物品增減數量，每列各自可選「＋增加」或「－減少」
+      · 物品庫存：目前登記了哪些物品。上方有共用搜尋卡（物品名稱／物品類型／星系／行星／地點）
+      · 物品資料：瀏覽物品主檔（名稱、類型、數值、購買地點），唯讀
+      · 商品購買地點：勾選多種商品，列出全部都買得到的交易終端（原本在「查詢」）
+      · 新增／異動：一次增減多筆，每列各自可選「＋增加」或「－減少」
+        （原本的「新增物品」「庫存異動」合併；增加一個還沒登記的物品就是新增）
       · 庫存紀錄：增加／減少的歷史。上方同樣有篩選區
   - 藍圖：自己的藍圖名冊，可增刪（一頁；「登記藍圖資料」用按鈕展開，原本的藍圖資料＋批量登記合併）。**只能從主檔選**，不接受自由輸入
     （見 src/models/blueprint.py 與 app/player/view.py 的 add_my_blueprint）。
     玩家端不顯示也不選「狀態」—— 登記的意思就是「我有這張圖」，一律送
     obtained（已取得）。後端與後台管理頁仍保留完整的 UNLOCK_STATUSES，
     管理員設過的非 obtained 狀態在「查詢 › 持有藍圖」還是會標出來。
-  - 查詢（別人的東西，唯讀）
+  - 查詢持有資訊（原「查詢」；別人的東西，唯讀）
       · 持有物品（原「物品庫存」）：一個關鍵字同時搜物品名稱／地點／玩家暱稱／玩家遊戲ID
         （查詢的三區改成上方按鈕點開才顯示，比照倉庫／藍圖／艦隊）
         （公會庫＋所有玩家個人庫，見 app/inventory/view.py 的 search_stock）
@@ -24,15 +26,14 @@
   去問他能不能幫做」。遮蔽是在**後端**做的（見 Player.display_names_by_scid
   與 Blueprint._redact_contact），前端只判斷「有沒有拿到值」，不自己解讀旗標。
 
-  「新增」與「庫存異動」的分界是**有沒有這個物品**，不是方向：新增是「我多了
-  一個原本沒登記的東西」，庫存異動是「已經登記過的東西數量變了」。所以庫存異動
-  兩個方向都能選，新增只有增加。後端沒有帶正負號的 delta API，增減分別是
-  /player/inventory/add 與 /remove 兩支，逐列由 endpointFor 決定（見 submitRows）。
+  「新增／異動」的**地點是整批共用的一份，放在表單最上面**（stockLocation），送出後
+  刻意不清空 —— 實際上都是「站在某個據點前面一次處理完這裡的東西」，地點只需要選一次。
+  所以 row 身上沒有地點欄位，submitRows 收的是一個 location 字串而不是逐列的 getter。
+  後端沒有帶正負號的 delta API，增減分別是 /player/inventory/add 與 /remove 兩支，
+  逐列由 endpointFor 決定（見 submitRows）。
 
-  兩者的**地點都是整批共用的一份，放在表單最上面**（depositLocation /
-  withdrawLocation），送出後刻意不清空 —— 這兩件事實際上都是「站在某個據點前面
-  一次處理完這裡的東西」，地點只需要選一次。所以 row 身上沒有地點欄位，
-  submitRows 收的是一個 location 字串而不是逐列的 getter。
+  地點的搜尋一律是「星系／行星／地點」三段（utils/locationArea.js、
+  components/LocationAreaFilter.vue）。
 
   兩張查詢表格的「持有者」都顯示成「暱稱（遊戲ID）」（見 holderLabel）。
   物品那張的 nickname 是後端 /inventory/where 補的 ——
@@ -120,175 +121,117 @@
 
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
-      <button class="btn btn-sm" :class="stockMode === 'add' ? 'btn-secondary' : 'btn-success'"
-        :aria-expanded="stockMode === 'add' ? 'true' : 'false'" @click="toggleStockMode('add')">
-        <i class="bi me-1" :class="stockMode === 'add' ? 'bi-x-lg' : 'bi-plus-lg'"></i>{{ stockMode === 'add' ? '收起新增' : '新增物品' }}
+      <button class="btn btn-sm" :class="itemDataOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="itemDataOpen ? 'true' : 'false'" @click="itemDataOpen = !itemDataOpen">
+        <i class="bi me-1" :class="itemDataOpen ? 'bi-x-lg' : 'bi-database'"></i>{{ itemDataOpen ? '收起物品資料' : '物品資料' }}
       </button>
-      <button class="btn btn-sm" :class="stockMode === 'adjust' ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="stockMode === 'adjust' ? 'true' : 'false'" @click="toggleStockMode('adjust')">
-        <i class="bi me-1" :class="stockMode === 'adjust' ? 'bi-x-lg' : 'bi-arrow-left-right'"></i>{{ stockMode === 'adjust' ? '收起異動' : '庫存異動' }}
+      <button class="btn btn-sm" :class="stockOpen ? 'btn-secondary' : 'btn-success'"
+        :aria-expanded="stockOpen ? 'true' : 'false'" @click="stockOpen = !stockOpen">
+        <i class="bi me-1" :class="stockOpen ? 'bi-x-lg' : 'bi-plus-slash-minus'"></i>{{ stockOpen ? '收起新增／異動' : '新增／異動' }}
       </button>
       <button class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
         <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i>{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}
       </button>
+      <button class="btn btn-sm" :class="commodityOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="commodityOpen ? 'true' : 'false'" @click="commodityOpen = !commodityOpen">
+        <i class="bi me-1" :class="commodityOpen ? 'bi-x-lg' : 'bi-cart3'"></i>{{ commodityOpen ? '收起商品購買地點' : '商品購買地點' }}
+      </button>
       <button class="btn btn-sm btn-primary" @click="refreshWarehouse">重新整理</button>
     </div>
     <!-- 倉庫 › 共用篩選：只有這一張，同時篩「物品庫存」跟展開的「庫存紀錄」 -->
     <InventoryFilterBar v-show="activeTab === 'warehouse'"
-      :rows="warehouseFilterRows" :counts="warehouseFilterCounts" :loc-label="locLabel"
-      v-model:item="stockFilter.item" v-model:location="stockFilter.location" />
+      :rows="warehouseFilterRows" :known-locations="locations" :counts="warehouseFilterCounts" :loc-label="locLabel"
+      :type-options="itemTypes" v-model:q="stockFilter.q" v-model:types="stockFilter.types"
+      :show-buyable="itemDataOpen" v-model:buyable="stockFilter.buyable"
+      v-model:systems="stockFilter.systems"
+      v-model:planets="stockFilter.planets" v-model:locations="stockFilter.locations" />
 
-    <!-- ══════════ 倉庫 › 物品庫存 › 新增（登記還沒有的物品）══════════
-         原本是獨立的「新增」分頁，併進物品庫存：按上方「新增物品」才展開，顯示在列表上面 -->
-    <div v-show="activeTab === 'warehouse' && stockMode === 'add'"
-         id="panel-warehouse-add" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-plus-lg me-1"></i>新增物品</h3>
-      <Transition name="alert-slide">
-        <div v-if="depositSuccess" class="alert alert-success py-2">{{ depositSuccess }}</div>
-      </Transition>
-      <Transition name="alert-slide">
-        <div v-if="depositError" class="alert alert-danger py-2">{{ depositError }}</div>
-      </Transition>
-
-      <!-- 地點是整張表單共用的一份，放在最上面：一次新增通常是「剛回到某個
-           據點，把身上的東西全部登記進去」，地點只需要選一次。
-           送出後刻意**不清空**地點，方便繼續在同一個地點加下一批。 -->
-      <div class="card scifi-card sf-search mb-3">
-        <div class="card-body py-3">
-          <div class="row g-2">
-            <div class="col-12 col-md-6 position-relative">
-              <label class="form-label small fw-semibold mb-1">地點</label>
-              <FieldHint text="先選地點，下面的物品都會登記到這裡。送出後地點會保留，方便繼續在同一個地點新增。" />
-              <input v-model="depositLocation.location"
-                @input="filterRowLocations(depositLocation)" @focus="filterRowLocations(depositLocation)"
-                @blur="closeRowLocations(depositLocation)"
-                type="text" class="form-control form-control-sm" placeholder="輸入或選擇地點…" autocomplete="off">
-              <ul v-if="depositLocation.locationOpen" class="list-group position-absolute w-100 shadow-sm"
-                  style="z-index: 30; max-height: 220px; overflow-y: auto;">
-                <li v-for="loc in depositLocation.locationResults" :key="loc"
-                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
-                    @mousedown.prevent="pickRowLocation(depositLocation, loc)">
-                  {{ locLabel(loc) }}
-                </li>
-                <li v-if="!depositLocation.locationResults.length"
-                    class="list-group-item py-1 px-2 small text-muted">
-                  沒有符合的地點，直接輸入即可新增
-                </li>
-              </ul>
-              <div v-if="depositLocation.location.trim()" class="form-text text-success py-0">
-                <i class="bi bi-geo-alt"></i> 以下 {{ depositRows.length }} 筆都會登記到
-                {{ locLabel(depositLocation.location.trim()) }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-for="(row, idx) in depositRows" :key="row.key" class="card scifi-card sf-search mb-2">
-        <div class="card-body py-3">
-          <div class="d-flex justify-content-between align-items-start mb-2">
-            <span class="badge text-bg-secondary">第 {{ idx + 1 }} 筆</span>
-            <button v-if="depositRows.length > 1" class="btn btn-sm btn-danger"
-              :disabled="depositSubmitting" @click="depositRows.splice(idx, 1)">移除</button>
-          </div>
-
-          <div class="row g-2">
-            <div class="col-12 col-md-9 position-relative">
-              <label class="form-label small fw-semibold mb-1">物品</label>
-              <input v-model="row.itemQuery" @input="searchRowItems(row)" @focus="searchRowItems(row)"
-                type="text" class="form-control form-control-sm" placeholder="輸入物品名稱…" autocomplete="off">
-              <ul v-if="row.itemResults.length" class="list-group position-absolute w-100 shadow-sm"
-                  style="z-index: 20; max-height: 220px; overflow-y: auto;">
-                <li v-for="it in row.itemResults" :key="it._id"
-                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
-                    @click="pickRowItem(row, it)">
-                  {{ it.name }}<span v-if="it.name_zh">（{{ it.name_zh }}）</span>
-                  <span class="text-muted" v-if="it.type">（{{ it.type }}）</span>
-                </li>
-              </ul>
-              <div v-if="row.selectedItem" class="form-text text-success py-0">
-                <i class="bi bi-check-circle"></i> {{ row.selectedItem.name }}
-                <span v-if="row.selectedItem.name_zh">（{{ row.selectedItem.name_zh }}）</span>
-              </div>
-            </div>
-
-            <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold mb-1">數量</label>
-              <input v-model.number="row.quantity" type="number" min="1" class="form-control form-control-sm">
-            </div>
-          </div>
-
-          <div v-if="row.error" class="text-danger small mt-2">{{ row.error }}</div>
-        </div>
-      </div>
-
-      <div class="d-flex justify-content-between mb-4">
-        <button class="btn btn-scifi-outline btn-sm" :disabled="depositSubmitting"
-          @click="depositRows.push(makeRow(false))">
-          <i class="bi bi-plus-lg me-1"></i>再加一筆
-        </button>
-        <button class="btn btn-scifi" :disabled="depositSubmitting" @click="submitDepositRows">
-          <span v-if="depositSubmitting" class="spinner-border spinner-border-sm me-1"></span>
-          全部新增
-        </button>
-      </div>
+    <!-- ══════════ 倉庫 › 物品資料：瀏覽物品主檔（唯讀）══════════
+         名稱＋類型＋「只看買得到」用上面的共用搜尋卡（ItemDataBrowser 吃 filters） -->
+    <div v-show="activeTab === 'warehouse' && itemDataOpen" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-database me-1"></i>物品資料</h3>
+      <ItemDataBrowser ref="itemDataRef" :fetcher="playerAuth.playerFetch" :filters="itemDataFilters"
+        :active="activeTab === 'warehouse' && itemDataOpen" />
     </div>
 
-    <!-- ══════════ 倉庫 › 物品庫存 › 庫存異動（對已登記的物品增減數量）══════════
-         原本是獨立的「庫存異動」分頁，併進物品庫存：按上方「庫存異動」或列表每一列的「異動」展開 -->
-    <div v-show="activeTab === 'warehouse' && stockMode === 'adjust'"
-         id="panel-warehouse-adjust" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-arrow-left-right me-1"></i>庫存異動</h3>
+    <!-- ══════════ 倉庫 › 商品購買地點（原本在「查詢」）：勾選多種商品，列出全部都買得到的交易終端（UEX 價格表）══════════
+         商品不是倉庫物品，選商品就是這個工具本身，所以保留自己的條件卡（不吃共用搜尋卡） -->
+    <div v-show="activeTab === 'warehouse' && commodityOpen" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-cart3 me-1"></i>商品購買地點</h3>
+      <CommodityBuyFinder :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
+        :active="activeTab === 'warehouse' && commodityOpen" />
+    </div>
+
+    <!-- ══════════ 倉庫 › 新增／異動（原本的「新增物品」與「庫存異動」合併）══════════
+         每列各自選「＋增加」或「－減少」：增加一個還沒登記的物品就是新增；
+         按上方「新增／異動」或列表每一列的「異動」展開 -->
+    <div v-show="activeTab === 'warehouse' && stockOpen"
+         id="panel-warehouse-stock" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-plus-slash-minus me-1"></i>新增／異動</h3>
       <Transition name="alert-slide">
-        <div v-if="withdrawSuccess" class="alert alert-success py-2">{{ withdrawSuccess }}</div>
+        <div v-if="stockSuccess" class="alert alert-success py-2">{{ stockSuccess }}</div>
       </Transition>
       <Transition name="alert-slide">
-        <div v-if="withdrawError" class="alert alert-danger py-2">{{ withdrawError }}</div>
+        <div v-if="stockError" class="alert alert-danger py-2">{{ stockError }}</div>
       </Transition>
 
-      <!-- 地點跟「新增」一樣是整批共用的一份，放在最上面：盤點通常是
-           「站在某個據點前面，把這裡的庫存一次對完」，地點只需要選一次。
-           送出後刻意不清空，方便繼續在同一個地點調下一批。 -->
+      <!-- 地點是整批共用的一份，放在最上面：通常是「站在某個據點前面，把這裡的東西
+           一次處理完」，地點只需要選一次。送出後刻意**不清空**，方便繼續處理同一個地點。
+           星系／行星只是縮小地點候選，送出的是「地點」欄位的值（可以直接輸入新地點）。 -->
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2">
+            <div class="col-6 col-md-3">
+              <label class="form-label small fw-semibold mb-1" for="stock-system">星系</label>
+              <select id="stock-system" v-model="stockLocation.system" class="form-select form-select-sm"
+                @change="stockLocation.planet = ''">
+                <option value="">全部</option>
+                <option v-for="o in stockPickOptions.systems" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small fw-semibold mb-1" for="stock-planet">行星</label>
+              <select id="stock-planet" v-model="stockLocation.planet" class="form-select form-select-sm">
+                <option value="">全部</option>
+                <option v-for="o in stockPickOptions.planets" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+            </div>
             <div class="col-12 col-md-6 position-relative">
-              <label class="form-label small fw-semibold mb-1">地點</label>
-              <FieldHint text="先選地點，下面的增減都會套用到這裡。送出後地點會保留，方便繼續調同一個地點的庫存。" />
-              <input v-model="withdrawLocation.location"
-                @input="filterRowLocations(withdrawLocation)" @focus="filterRowLocations(withdrawLocation)"
-                @blur="closeRowLocations(withdrawLocation)"
+              <label class="form-label small fw-semibold mb-1" for="stock-location">地點</label>
+              <FieldHint text="先選地點，下面每一筆的增減都會套用到這裡。送出後地點會保留，方便繼續處理同一個地點。" />
+              <input id="stock-location" v-model="stockLocation.location"
+                @input="filterRowLocations(stockLocation)" @focus="filterRowLocations(stockLocation)"
+                @blur="closeRowLocations(stockLocation)"
                 type="text" class="form-control form-control-sm" placeholder="輸入或選擇地點…" autocomplete="off">
-              <ul v-if="withdrawLocation.locationOpen" class="list-group position-absolute w-100 shadow-sm"
+              <ul v-if="stockLocation.locationOpen" class="list-group position-absolute w-100 shadow-sm"
                   style="z-index: 30; max-height: 220px; overflow-y: auto;">
-                <li v-for="loc in withdrawLocation.locationResults" :key="loc"
+                <li v-for="loc in stockLocation.locationResults" :key="loc"
                     class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
-                    @mousedown.prevent="pickRowLocation(withdrawLocation, loc)">
+                    @mousedown.prevent="pickRowLocation(stockLocation, loc)">
                   {{ locLabel(loc) }}
                 </li>
-                <li v-if="!withdrawLocation.locationResults.length"
+                <li v-if="!stockLocation.locationResults.length"
                     class="list-group-item py-1 px-2 small text-muted">
                   沒有符合的地點，直接輸入即可新增
                 </li>
               </ul>
-              <div v-if="withdrawLocation.location.trim()" class="form-text text-success py-0">
-                <i class="bi bi-geo-alt"></i> 以下 {{ withdrawRows.length }} 筆都會異動
-                {{ locLabel(withdrawLocation.location.trim()) }} 的庫存
+              <div v-if="stockLocation.location.trim()" class="form-text text-success py-0">
+                <i class="bi bi-geo-alt"></i> 以下 {{ stockRows.length }} 筆都會套用到
+                {{ locLabel(stockLocation.location.trim()) }}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div v-for="(row, idx) in withdrawRows" :key="row.key" class="card scifi-card sf-search mb-2">
+      <div v-for="(row, idx) in stockRows" :key="row.key" class="card scifi-card sf-search mb-2">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="d-flex align-items-center gap-2">
               <span class="badge text-bg-secondary">第 {{ idx + 1 }} 筆</span>
-              <!-- 方向做成每列各自可選，而不是整張表單一個開關：
-                   同一次送出常常是「這個 +5、那個 -2」的盤點調整 -->
-              <div class="btn-group btn-group-sm" role="group" aria-label="異動方向">
+              <!-- 方向每列各自可選：同一次送出常常是「這個 +5、那個 -2」 -->
+              <div class="btn-group btn-group-sm" role="group" aria-label="增加或減少">
                 <button type="button" class="btn btn-subtab"
                   :class="{ active: row.direction === 'in' }"
                   @click="row.direction = 'in'">＋ 增加</button>
@@ -297,8 +240,8 @@
                   @click="row.direction = 'out'">－ 減少</button>
               </div>
             </div>
-            <button v-if="withdrawRows.length > 1" class="btn btn-sm btn-danger"
-              :disabled="withdrawSubmitting" @click="withdrawRows.splice(idx, 1)">移除</button>
+            <button v-if="stockRows.length > 1" class="btn btn-sm btn-danger"
+              :disabled="stockSubmitting" @click="stockRows.splice(idx, 1)">移除</button>
           </div>
 
           <div class="row g-2">
@@ -327,11 +270,9 @@
             </div>
 
             <div class="col-12">
-              <label class="form-label small fw-semibold mb-1">備註（選填，記錄異動原因）</label>
+              <label class="form-label small fw-semibold mb-1">備註（選填）</label>
               <input v-model="row.note" type="text" class="form-control form-control-sm"
-                :placeholder="row.direction === 'out'
-                  ? '例如：分給公會、任務用掉…'
-                  : '例如：打怪撿到、盤點補回…'">
+                :placeholder="row.direction === 'out' ? '例如：分給公會、任務用掉…' : '例如：打怪撿到、盤點補回…'">
             </div>
           </div>
 
@@ -340,12 +281,12 @@
       </div>
 
       <div class="d-flex justify-content-between mb-4">
-        <button class="btn btn-scifi-outline btn-sm" :disabled="withdrawSubmitting"
-          @click="withdrawRows.push(makeRow(true))">
+        <button class="btn btn-success btn-sm" :disabled="stockSubmitting"
+          @click="stockRows.push(makeRow())">
           <i class="bi bi-plus-lg me-1"></i>再加一筆
         </button>
-        <button class="btn btn-scifi" :disabled="withdrawSubmitting" @click="submitWithdrawRows">
-          <span v-if="withdrawSubmitting" class="spinner-border spinner-border-sm me-1"></span>
+        <button class="btn btn-scifi" :disabled="stockSubmitting" @click="submitStockRows">
+          <span v-if="stockSubmitting" class="spinner-border spinner-border-sm me-1"></span>
           全部送出
         </button>
       </div>
@@ -371,7 +312,7 @@
             <button type="button" class="btn btn-sm btn-warning py-0"
               @click="clearItemsFilters">清除全部</button>
           </div>
-          <FieldHint text="打字選一個候選代入（不是子字串比對），5 個欄位都填的話要同時符合才會出現在結果裡。物品名稱／物品類型只能擇一——選了名稱等於已經鎖定單一物品，類型會被忽略。" />
+          <FieldHint text="打字選一個候選代入（不是子字串比對），有填的欄位要同時符合才會出現在結果裡。物品名稱／物品類型只能擇一——選了名稱等於已經鎖定單一物品，類型會被忽略。" />
           <div class="row g-2">
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="items-name">物品名稱</label>
@@ -385,19 +326,17 @@
               <MultiSelectFilter id="items-type" v-model="itemsSelectedTypes" :options="itemTypes"
                 label="物品類型" placeholder="全部" block searchable />
             </div>
-            <div class="col-12 col-md-4">
-              <label class="form-label small mb-1" for="items-location">物品地點</label>
-              <MultiSelectFilter id="items-location" v-model="itemsSelectedLocations" :options="locationOptions"
-                label="物品地點" placeholder="全部" block searchable />
-            </div>
-            <div class="col-12 col-md-4">
+            <LocationAreaFilter :names="locations" :loc-label="locLabel"
+              v-model:systems="itemsSelectedSystems" v-model:planets="itemsSelectedPlanets"
+              v-model:locations="itemsSelectedLocations" />
+            <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="items-player-id">玩家id</label>
               <AutocompleteField id="items-player-id" v-model="itemsPlayerIdText"
                 :search="searchPlayersLocal" :get-label="c => c.star_citizen_id"
                 aria-label="玩家id" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onItemsPlayerIdSelect" />
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="items-player-nickname">玩家暱稱</label>
               <AutocompleteField id="items-player-nickname" v-model="itemsPlayerNicknameText"
                 :search="searchPlayersLocal" :get-label="playerCandidateLabel"
@@ -621,13 +560,6 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- ══════════ 查詢 › 商品購買地點：勾選多種商品，列出全部都買得到的交易終端（UEX 價格表）══════════ -->
-    <div v-show="activeTab === 'search' && searchOpen.commodities" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-cart3 me-1"></i>商品購買地點</h3>
-      <CommodityBuyFinder :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
-        :active="activeTab === 'search' && searchOpen.commodities" />
     </div>
 
     <!-- ══════════ 倉庫 › 庫存紀錄（原本的獨立分頁，改成物品庫存上方按「庫存紀錄」展開；
@@ -1263,10 +1195,13 @@ import { PLAYER_LOGIN_PATH } from '@/router'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
+import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
+import { areaOf, areaOptions, loadLocationAreas, matchArea } from '@/utils/locationArea'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import BlueprintQuality from '@/components/BlueprintQuality.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
 import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
+import ItemDataBrowser from '@/components/ItemDataBrowser.vue'
 import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { fmtAuec, fmtUsd, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
@@ -1341,8 +1276,9 @@ const tabs = [
   },
   { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
   {
-    // 原本的三個下層分頁合併成一頁，改成上方按鈕點開（SEARCH_SECTIONS）
-    key: 'search',    label: '查詢',   icon: 'bi bi-search',
+    // 原本的三個下層分頁合併成一頁，改成上方按鈕點開（SEARCH_SECTIONS）。
+    // 原名「查詢」；商品購買地點搬到倉庫後只剩查別人持有的東西，改名「查詢持有資訊」
+    key: 'search',    label: '查詢持有資訊',   icon: 'bi bi-search',
   },
   { key: 'gamelog',   label: 'LOG 解析', icon: 'bi bi-journal-code' },
   { key: 'chatcode',  label: '中文轉碼', icon: 'bi bi-translate' },
@@ -1359,8 +1295,10 @@ function subTabsOf(key) {
 // 而不是直接離開 /me。
 const route = useRoute()
 const validTabs = tabs.map(t => t.key)
+// 舊網址 ?tab=search&sub=commodities：商品購買地點已搬到倉庫
+const legacyCommodities = route.query.tab === 'search' && route.query.sub === 'commodities'
 const activeTab = ref(
-  validTabs.includes(route.query.tab) ? route.query.tab : 'warehouse'
+  validTabs.includes(route.query.tab) && !legacyCommodities ? route.query.tab : 'warehouse'
 )
 
 /** 某個主分頁的預設下層分頁（沒有下層就回 ''）。 */
@@ -1372,10 +1310,9 @@ function validSub(tabKey, sub) {
   return subTabsOf(tabKey).some(t => t.key === sub)
 }
 
-// 物品庫存上方展開哪一個表單：'' / 'add'（新增物品）/ 'adjust'（庫存異動）。
-// 舊網址 ?tab=warehouse&sub=add|adjust（原本的獨立分頁）直接打開對應的表單。
-const stockMode = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].includes(route.query.sub)
-  ? route.query.sub : '')
+// 物品庫存上方的「新增／異動」（原本的新增物品＋庫存異動合併）。
+// 舊網址 ?tab=warehouse&sub=add|adjust（原本的獨立分頁）直接展開。
+const stockOpen = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].includes(route.query.sub))
 // 艦隊的「登記船艦資料」（?tab=fleet&sub=data 直接展開；原本的批量登記已併進來，舊網址 sub=bulk 也展開它）
 const fleetDataOpen = ref(activeTab.value === 'fleet' && ['data', 'bulk'].includes(route.query.sub))
 // 查詢的三個區塊：點開才顯示、才載入資料（舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開）
@@ -1383,18 +1320,17 @@ const SEARCH_SECTIONS = [
   { key: 'items', label: '持有物品', icon: 'bi bi-box-seam' },
   { key: 'blueprints', label: '持有藍圖', icon: 'bi bi-diagram-3' },
   { key: 'fleet', label: '持有船艦', icon: 'bi bi-rocket-takeoff' },
-  { key: 'commodities', label: '商品購買地點', icon: 'bi bi-cart3' },
 ]
 const searchOpen = reactive(Object.fromEntries(SEARCH_SECTIONS.map(sec =>
   [sec.key, activeTab.value === 'search' && route.query.sub === sec.key])))
 // 倉庫的庫存紀錄同理（舊網址 ?sub=history 直接展開）
 const historyOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'history')
+// 倉庫的「物品資料」（?sub=items 直接展開）、「商品購買地點」（?sub=commodities，舊的查詢網址也導過來）
+const itemDataOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'items')
+const commodityOpen = ref(activeTab.value === 'warehouse' && (route.query.sub === 'commodities' || legacyCommodities))
 // 藍圖的「登記藍圖資料」（原本的藍圖資料＋批量登記合併；舊網址 sub=data|bulk 都展開它）
 const bpDataOpen = ref(activeTab.value === 'blueprints' && ['data', 'bulk'].includes(route.query.sub))
 const fleetImportOpen = ref(false)
-function toggleStockMode(mode) {
-  stockMode.value = stockMode.value === mode ? '' : mode
-}
 
 const activeSub = ref(
   validSub(activeTab.value, route.query.sub)
@@ -1438,6 +1374,8 @@ function loadForTab(tab) {
   if (tab === 'search') loadSearchSections()
   if (tab === 'fleet' && !fleetLoaded.value) loadFleet()
   if (tab === 'tools') loadToolLinks()
+  // 倉庫共用搜尋卡的「物品類型」選項（物品主檔的全部類型）
+  if (tab === 'warehouse' && !itemTypes.value.length) loadItemTypes()
   // 進「藍圖」才查主檔筆數（決定要不要顯示「尚未同步」提示）
   if (tab === 'blueprints' && masterCount.value === null) {
     loadMasterCount()
@@ -1637,6 +1575,7 @@ async function loadLocations() {
   const [res, storage] = await Promise.all([
     playerAuth.playerFetch('/inventory/locations'),
     loadStorageLocations(),
+    loadLocationAreas(),
   ])
   const known = storage.length ? storage : await loadKnownLocations()
   const data = res ? await res.json().catch(() => null) : null
@@ -1662,53 +1601,42 @@ async function loadBlueprintOutputTypes() {
   if (res.ok && data?.success) blueprintOutputTypes.value = data.data || []
 }
 
-// ── 新增／庫存異動（多筆，共用同一套 row 結構） ──────────────────
+// ── 新增／異動（多筆）──────────────────────────────────────────
 //
-// 「新增」= 登記還沒有的物品，一律是增加，所以沒有 direction。
-// 「庫存異動」= 對已登記的物品調整數量，每列各自可選增加或減少
-//   （direction 只有 withNote 的那組會用到，見 submitRows 的 endpointFor）。
+// 原本分成「新增物品」（只能增加）跟「庫存異動」（已登記的物品增減）兩張表單，
+// 合併成一張：每列各自選增加或減少。增加一個還沒登記的物品就是新增。
+// 後端沒有帶正負號的 delta API，增減是 /player/inventory/add 與 /remove 兩支，
+// 逐列由 endpointFor 決定（見 submitRows）。
 let rowKeySeq = 0
-function makeRow(withNote = false) {
+function makeRow(direction = 'in') {
   return {
     key: ++rowKeySeq,
     itemQuery: '', itemResults: [], selectedItem: null,
     quantity: 1,
-    // row 不帶地點欄位：新增與庫存異動的地點都是整批共用的一份
-    // （depositLocation / withdrawLocation），放在表單最上面。
-    note: withNote ? '' : undefined,
-    // 預設「減少」：庫存異動是從原本的「取出」演化來的，
-    // 多數情境還是扣庫存，增加的情境有專門的「新增」分頁。
-    direction: withNote ? 'out' : 'in',
+    // row 不帶地點欄位：地點是整批共用的一份（stockLocation），放在表單最上面
+    note: '',
+    direction,
     error: '',
   }
 }
-const depositRows       = reactive([makeRow(false)])
-const depositSubmitting = ref(false)
-const depositSuccess    = ref('')
-const depositError      = ref('')
+const stockRows       = reactive([makeRow()])
+const stockSubmitting = ref(false)
+const stockSuccess    = ref('')
+const stockError      = ref('')
 
-// 「新增」共用的地點。刻意做成跟 row 一樣的形狀（location /
-// locationResults / locationOpen），這樣 filterRowLocations、
-// closeRowLocations、pickRowLocation 三個 helper 可以原封不動重用。
-const depositLocation = reactive({ location: '', locationResults: [], locationOpen: false })
+// 共用的地點。刻意做成 location / locationResults / locationOpen 的形狀，
+// filterRowLocations、closeRowLocations、pickRowLocation 三個 helper 才能直接用。
+// system／planet 只是縮小地點候選（「星系／行星／地點」三段，見 utils/locationArea.js）。
+const stockLocation = reactive({ location: '', locationResults: [], locationOpen: false, system: '', planet: '' })
+const stockPickOptions = computed(() => areaOptions(locations.value,
+  { systems: stockLocation.system ? [stockLocation.system] : [],
+    planets: stockLocation.planet ? [stockLocation.planet] : [] },
+  { locLabel, sort: false }))
 
-// 一填了地點就把「請先選地點」的錯誤收掉。不收的話畫面上會同時出現
-// 紅色的「請先在最上面輸入或選擇地點」跟它下面綠色的「以下 3 筆都會登記到
-// Area18」，互相矛盾。
-watch(() => depositLocation.location, (v) => {
-  if (v.trim()) depositError.value = ''
-})
-
-const withdrawRows       = reactive([makeRow(true)])
-const withdrawSubmitting = ref(false)
-const withdrawSuccess    = ref('')
-const withdrawError      = ref('')
-
-// 「庫存異動」共用的地點，跟 depositLocation 同樣的形狀與理由
-const withdrawLocation = reactive({ location: '', locationResults: [], locationOpen: false })
-
-watch(() => withdrawLocation.location, (v) => {
-  if (v.trim()) withdrawError.value = ''
+// 一填了地點就把「請先選地點」的錯誤收掉，不然紅色錯誤跟下面綠色的
+// 「以下 3 筆都會套用到 Area18」會同時出現、互相矛盾。
+watch(() => stockLocation.location, (v) => {
+  if (v.trim()) stockError.value = ''
 })
 
 const searchTimers = new Map()
@@ -1732,27 +1660,29 @@ function pickRowItem(row, it) {
   row.itemResults = []
 }
 
-// 物品庫存列表某一列按「異動」：打開庫存異動，地點、物品帶好，預設減少。
+// 物品庫存列表某一列按「異動」：打開新增／異動，地點、物品帶好，預設減少。
 // 表單裡已經填了別的列就加在後面，不蓋掉。
 function adjustStockRow(stockRow) {
-  stockMode.value = 'adjust'
-  withdrawLocation.location = stockRow.location || ''
-  const row = makeRow(true)
+  stockOpen.value = true
+  pickRowLocation(stockLocation, stockRow.location || '')
+  const row = makeRow('out')
   pickRowItem(row, { _id: stockRow.item_id, name: stockRow.item_name, name_zh: stockRow.item_name_zh })
-  const blank = withdrawRows.length === 1 && !withdrawRows[0].selectedItem && !withdrawRows[0].itemQuery
-  if (blank) withdrawRows.splice(0, 1, row)
-  else withdrawRows.push(row)
+  const blank = stockRows.length === 1 && !stockRows[0].selectedItem && !stockRows[0].itemQuery
+  if (blank) stockRows.splice(0, 1, row)
+  else stockRows.push(row)
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function filterRowLocations(row) {
   const q = row.location.trim().toLowerCase()
+  // 有選星系／行星的話只在那底下找
+  const pool = row === stockLocation ? stockPickOptions.value.locations.map(o => o.value) : locations.value
   // 同時比對英文（loc 本身）跟中文對照（locZh），方便直接打中文搜尋地點
   row.locationResults = q
-    ? locations.value.filter(loc =>
+    ? pool.filter(loc =>
         loc.toLowerCase().includes(q) || locZh(loc).includes(row.location.trim())
       ).slice(0, 20)
-    : locations.value.slice(0, 20)
+    : pool.slice(0, 20)
   row.locationOpen = true
 }
 
@@ -1765,6 +1695,12 @@ function pickRowLocation(row, loc) {
   row.location = loc
   row.locationResults = []
   row.locationOpen = false
+  // 選了地點就把星系／行星對上（地點資料庫查不到的就清掉，免得跟地點對不起來）
+  if ('system' in row) {
+    const a = areaOf(loc)
+    row.system = a.system
+    row.planet = a.planet
+  }
 }
 
 // endpointFor 是 function 而不是固定字串：庫存異動同一次送出可能有幾列增加、
@@ -1845,54 +1781,42 @@ async function submitRows(rows, {
   }
 }
 
-// 倉庫 › 新增：一律是增加，沒有方向可選；地點是整批共用的一份
-function submitDepositRows() {
-  depositError.value = ''
-  const loc = depositLocation.location.trim()
+// 倉庫 › 新增／異動：地點整批共用，方向逐列各自選
+function submitStockRows() {
+  stockError.value = ''
+  const loc = stockLocation.location.trim()
   if (!loc) {
-    depositError.value = '請先在最上面輸入或選擇地點。'
+    stockError.value = '請先在最上面輸入或選擇地點。'
     return
   }
-  return submitRows(depositRows, {
-    endpointFor: () => '/player/inventory/add',
-    verbFor:     () => '新增',
-    location:    loc,
-    // 刻意不清掉 depositLocation，方便在同一個地點繼續加下一批
-    makeNextRow: () => makeRow(false),
-    resultRef: depositSuccess, submittingRef: depositSubmitting, withNote: false,
-  })
-}
-
-// 倉庫 › 庫存異動：地點整批共用，方向逐列各自選
-function submitWithdrawRows() {
-  withdrawError.value = ''
-  const loc = withdrawLocation.location.trim()
-  if (!loc) {
-    withdrawError.value = '請先在最上面輸入或選擇地點。'
-    return
-  }
-  return submitRows(withdrawRows, {
+  return submitRows(stockRows, {
     endpointFor: (row) => row.direction === 'in'
       ? '/player/inventory/add'
       : '/player/inventory/remove',
     verbFor:     (row) => row.direction === 'in' ? '增加' : '減少',
     location:    loc,
-    // 同樣不清掉 withdrawLocation，方便繼續調同一個地點的下一批
-    makeNextRow: () => makeRow(true),
-    resultRef: withdrawSuccess, submittingRef: withdrawSubmitting, withNote: true,
+    // 刻意不清掉 stockLocation，方便繼續處理同一個地點的下一批
+    makeNextRow: () => makeRow(),
+    resultRef: stockSuccess, submittingRef: stockSubmitting, withNote: true,
   })
 }
 
 // ── 篩選區（倉庫分頁頂端共用一張：同一組條件同時篩物品庫存與庫存紀錄）──────
 // 庫存紀錄已經併成同一頁的展開區塊，上下兩份清單看同一個物品／地點才直覺。
 // '' = 全部。用 item_id 比對而不是名稱，見 InventoryFilterBar 的說明。
-const stockFilter   = reactive({ item: '', location: '' })
+// 地點是「星系／行星／地點」三段多選（utils/locationArea.js 的 matchArea）。
+// 物品名稱比對英文＋中文（含即符合）、物品類型比對 item_type；名稱＋類型也帶給「物品資料」。
+// buyable（只看買得到）只給物品資料用
+const stockFilter   = reactive({ q: '', types: [], systems: [], planets: [], locations: [], buyable: false })
+const itemDataFilters = computed(() => ({
+  q: stockFilter.q.trim(), types: stockFilter.types, buyable: stockFilter.buyable }))
 
 function applyFilter(rows, f) {
+  const q = f.q.trim().toLowerCase()
   return rows.filter(r =>
-    (!f.item     || r.item_id  === f.item) &&
-    (!f.location || r.location === f.location)
-  )
+    (!q || [r.item_name, r.item_name_zh].some(t => (t || '').toLowerCase().includes(q)))
+    && (!f.types.length || f.types.includes(r.item_type))
+    && matchArea(r.location, f))
 }
 
 // ── 我的個人庫 ────────────────────────────────────────────────
@@ -1926,7 +1850,9 @@ const warehouseFilterCounts = computed(() => [
 function refreshWarehouse() {
   loadMyInventory()
   if (historyOpen.value) loadHistory()
+  if (itemDataOpen.value) itemDataRef.value?.refresh()
 }
+const itemDataRef = ref(null)
 
 async function loadHistory() {
   loadingHistory.value = true
@@ -2243,15 +2169,17 @@ const itemsNameText       = ref('')
 const itemsSelectedItemId = ref(null)
 // 「物品類型」「物品地點」可多選（同一欄位內取聯集，欄位之間 AND）
 const itemsSelectedTypes     = ref([])
+// 地點是「星系／行星／地點」三段（後端 /inventory/search 的 star_system／planet／location）
+const itemsSelectedSystems   = ref([])
+const itemsSelectedPlanets   = ref([])
 const itemsSelectedLocations = ref([])
-const locationOptions = computed(() =>
-  locations.value.map(loc => ({ value: loc, label: locLabel(loc) })))
 const itemsPlayerIdText       = ref('')
 const itemsPlayerNicknameText = ref('')
 const itemsPlayerScid         = ref('')
 
 const hasStockFilter = computed(() => !!(
   itemsSelectedItemId.value || itemsSelectedTypes.value.length ||
+  itemsSelectedSystems.value.length || itemsSelectedPlanets.value.length ||
   itemsSelectedLocations.value.length || itemsPlayerScid.value
 ))
 
@@ -2270,6 +2198,8 @@ async function runStockSearch() {
   const params = new URLSearchParams({ limit: '200' })
   if (itemsSelectedItemId.value) params.set('item_id', itemsSelectedItemId.value)
   else itemsSelectedTypes.value.forEach(t => params.append('item_type', t))
+  itemsSelectedSystems.value.forEach(sys => params.append('star_system', sys))
+  itemsSelectedPlanets.value.forEach(p => params.append('planet', p))
   itemsSelectedLocations.value.forEach(loc => params.append('location', loc))
   if (itemsPlayerScid.value) params.set('player_id', itemsPlayerScid.value)
   const res = await playerAuth.playerFetch(`/inventory/search?${params.toString()}`)
@@ -2280,7 +2210,8 @@ async function runStockSearch() {
   whoRows.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-watch([itemsSelectedItemId, itemsSelectedTypes, itemsSelectedLocations, itemsPlayerScid], runStockSearch)
+watch([itemsSelectedItemId, itemsSelectedTypes, itemsSelectedSystems, itemsSelectedPlanets,
+  itemsSelectedLocations, itemsPlayerScid], runStockSearch)
 
 // 物品名稱／物品類型互斥（見上面的說明）：勾了類型就清掉已選的物品名稱
 watch(itemsSelectedTypes, (types) => {
@@ -2364,6 +2295,8 @@ function clearItemsFilters() {
   itemsNameText.value = ''
   itemsSelectedItemId.value = null
   itemsSelectedTypes.value = []
+  itemsSelectedSystems.value = []
+  itemsSelectedPlanets.value = []
   itemsSelectedLocations.value = []
   itemsPlayerIdText.value = ''
   itemsPlayerNicknameText.value = ''
@@ -2821,6 +2754,7 @@ onMounted(() => {
   loadBlueprints()
   // 直接以 ?tab=blueprints / ?tab=search&sub=blueprints 開場時補載
   loadForTab(activeTab.value, activeSub.value)
+  if (legacyCommodities) syncUrl()   // 舊的 ?tab=search&sub=commodities 改寫成倉庫
 })
 
 onBeforeUnmount(() => {

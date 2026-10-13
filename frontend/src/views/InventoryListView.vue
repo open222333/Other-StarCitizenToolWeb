@@ -29,9 +29,12 @@
           <input v-if="filters.owner_type === 'player'" class="form-control form-control-sm" style="width:180px"
             v-model="filters.player" placeholder="玩家 SCID / RSI handle" @change="reload(0)">
 
-          <MultiSelectFilter :model-value="selectedLocations" label="位置" :options="locations"
-            @update:model-value="onLocationsChange">
-          </MultiSelectFilter>
+          <!-- 星系／行星／位置三段（星系、行星由後端透過地點資料庫換成位置名稱） -->
+          <LocationAreaFilter inline location-title="位置" :names="locationNames" :loc-label="locationLabel"
+            :systems="selectedSystems" :planets="selectedPlanets" :locations="selectedLocations"
+            @update:systems="v => { selectedSystems = v; reload(0) }"
+            @update:planets="v => { selectedPlanets = v; reload(0) }"
+            @update:locations="onLocationsChange" />
           <input v-model="containerQuery" type="text" class="form-control form-control-sm"
             style="max-width: 10rem" placeholder="搜尋容器..." @change="reload(0)">
 
@@ -215,7 +218,7 @@ import { useAuthStore } from '@/stores/auth'
 import { inventoryApi } from '@/api'
 import { loadStorageLocations, translate } from '@/utils/translations'
 import SearchBox          from '@/components/SearchBox.vue'
-import MultiSelectFilter  from '@/components/MultiSelectFilter.vue'
+import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
@@ -239,13 +242,24 @@ const filters = reactive({
 // 篩選結果會漏掉沒被載入的那些頁，是會讓使用者以為「搜尋結果就這些」的
 // 隱性錯誤，比 400/500 更難發現。
 const selectedLocations = ref([])
+const selectedSystems   = ref([])
+const selectedPlanets   = ref([])
+// 位置選項：庫存裡用過的＋地點資料庫的可存放地點（庫存還少時星系／行星也有選項）
+const locationNames = computed(() => [...new Set([
+  ...locations.value.map(o => (typeof o === 'string' ? o : o?.value)), ...storageLocations.value,
+].filter(Boolean))])
+const locationLabel = (loc) => {
+  const zh = translate('location', loc)
+  return zh && zh !== loc ? `${loc}（${zh}）` : loc
+}
 const containerQuery    = ref('')
 const nameQuery         = ref('')
 const sortBy  = ref('item_name')
 const sortDir = ref('asc')
 
 const hasActiveFilters = computed(() =>
-  selectedLocations.value.length || containerQuery.value.trim() || nameQuery.value.trim())
+  selectedLocations.value.length || selectedSystems.value.length || selectedPlanets.value.length
+  || containerQuery.value.trim() || nameQuery.value.trim())
 
 const msg = ref(''); const msgType = ref('success')
 function flash(text, type = 'danger') {
@@ -270,6 +284,8 @@ function onLocationsChange(values) {
 
 function resetFilters() {
   selectedLocations.value = []
+  selectedSystems.value = []
+  selectedPlanets.value = []
   containerQuery.value = ''
   nameQuery.value = ''
   reload(0)
@@ -302,6 +318,8 @@ async function reload(newOffset = 0) {
     owner_type: filters.owner_type,
     player: filters.owner_type === 'player' ? filters.player.trim() : undefined,
     location: selectedLocations.value,
+    star_system: selectedSystems.value,
+    planet: selectedPlanets.value,
     container: containerQuery.value.trim(),
     q: nameQuery.value.trim(),
     sort_by: sortBy.value,

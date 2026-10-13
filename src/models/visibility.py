@@ -1,4 +1,4 @@
-"""遊戲資料「是否在玩家頁面顯示」（藍圖、任務、礦床、礦物、採礦地點、艦船、地點）。
+"""遊戲資料「是否在玩家頁面顯示」（藍圖、任務、礦床、礦物、採礦地點、艦船、地點、物品）。
 
 每個資料庫的文件上有這幾個欄位（只有同步後的整理步驟 apply() 會寫，mapper 不輸出，
 所以重新同步不會蓋掉）：
@@ -37,6 +37,7 @@ DATASETS = {
     'mining_locations': ('採礦地點', 'mining_location_master', 'location_name'),
     'vehicles':         ('艦船', 'vehicle_master', 'name'),
     'locations':        ('地點', 'starmap_master', 'name'),
+    'items':            ('物品', 'item_master', 'name'),
 }
 
 #: 同步項目（src/models/sync_schedule.py 的 SYNC_JOBS）→ 同步完要重新整理的資料庫
@@ -46,6 +47,7 @@ SYNC_JOB_DATASETS = {
     'mining': ['mining_deposits', 'mining_locations'],
     'vehicles': ['vehicles'],
     'locations': ['locations'],
+    'items': ['items'],
 }
 
 # ── 自動判斷 ─────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ _KEY_UNFINISHED_RE = re.compile(
 #: 資料庫 → 要另外檢查的代碼欄位
 _KEY_FIELDS = {
     'blueprints': 'key', 'mining_deposits': 'key', 'missions': 'debug_name', 'vehicles': 'class_name',
+    'items': 'class_name',
 }
 
 

@@ -59,8 +59,8 @@ class _MasterBase:
         if not ids:
             return {}
         rows = cls._col().find({'_id': {'$in': ids}},
-                               {'_id': 1, 'name': 1, 'name_zh': 1})
-        return {r['_id']: {'name': r.get('name'), 'name_zh': r.get('name_zh')}
+                               {'_id': 1, 'name': 1, 'name_zh': 1, 'type': 1})
+        return {r['_id']: {'name': r.get('name'), 'name_zh': r.get('name_zh'), 'type': r.get('type')}
                 for r in rows}
 
     @classmethod
@@ -162,6 +162,75 @@ class ItemMaster(_MasterBase):
         'size': 1, 'grade': 1, 'volume_uscu': 1, 'manufacturer_code': 1,
         'is_current': 1,
     }
+    #: 「物品資料」列表（後台、玩家頁）多帶的欄位
+    LIST_PROJECTION = {
+        **PROJECTION, 'manufacturer_name': 1, 'classification': 1, 'mass': 1,
+        'is_craftable': 1, 'is_lootable': 1, **VISIBILITY_PROJECTION,
+    }
+    #: list_all 可以排序的欄位（白名單）
+    SORTABLE_FIELDS = ('name', 'type', 'size', 'grade', 'volume_uscu', 'mass')
+
+    @classmethod
+    def list_all(cls, *, query: str = '', types=None, sub_types=None, manufacturer_codes=None,
+                 sizes=None, grades=None, ids=None, visible_only: bool = False, visibility=None,
+                 sort_by: str = 'name', sort_dir: int = 1, limit: int = 50, offset: int = 0) -> tuple:
+        """「物品資料」列表：名稱（中英文、class name 任一段）＋多選篩選，回傳 (該頁資料, 總筆數)。
+        ids 傳 None 代表不限；傳清單（例如「買得到」的物品）就只看這些。"""
+        filt: dict = {'is_current': True}
+        q = (query or '').strip()
+        if q:
+            escaped = escape_regex(q)
+            filt['$or'] = [
+                {'name_lower': {'$regex': escaped.lower()}},
+                {'name_zh': {'$regex': escaped}},
+                {'class_name': {'$regex': escaped, '$options': 'i'}},
+            ]
+        for field, values in (('type', types), ('sub_type', sub_types),
+                              ('manufacturer_code', manufacturer_codes)):
+            values = _clean_list(values)
+            if values:
+                filt[field] = {'$in': values}
+        for field, values in (('size', sizes), ('grade', grades)):
+            nums = []
+            for v in _clean_list(values):
+                try:
+                    nums.append(int(v))
+                except (TypeError, ValueError):
+                    nums.append(v)
+            if nums:
+                filt[field] = {'$in': nums}
+        if ids is not None:
+            filt['_id'] = {'$in': list(ids)}
+        add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
+
+        field = sort_by if sort_by in cls.SORTABLE_FIELDS else 'name'
+        order = [(field, -1 if sort_dir == -1 else 1)]
+        if field != 'name':
+            order.append(('name', ASCENDING))
+        total = cls._col().count_documents(filt)
+        rows = list(cls._col().find(filt, cls.LIST_PROJECTION).sort(order).skip(offset).limit(limit))
+        return rows, total
+
+    @classmethod
+    def facets(cls, visible_only: bool = False) -> dict:
+        """篩選選單的選項：類型、子類型、製造商、尺寸、等級。"""
+        filt = add_visibility_filter({'is_current': True}, visible_only=visible_only)
+        col = cls._col()
+        manufacturers = {}
+        for row in col.aggregate([
+            {'$match': {**filt, 'manufacturer_code': {'$nin': [None, '']}}},
+            {'$group': {'_id': '$manufacturer_code', 'name': {'$first': '$manufacturer_name'}}},
+        ]):
+            manufacturers[row['_id']] = row.get('name') or row['_id']
+        nums = lambda field: sorted(v for v in col.distinct(field, filt) if isinstance(v, (int, float)))
+        return {
+            'types': sorted(t for t in col.distinct('type', filt) if t),
+            'sub_types': sorted(t for t in col.distinct('sub_type', filt) if t),
+            'manufacturers': sorted(({'value': code, 'label': f'{name}（{code}）' if name != code else code}
+                                     for code, name in manufacturers.items()), key=lambda o: o['label'].lower()),
+            'sizes': nums('size'),
+            'grades': nums('grade'),
+        }
 
     @classmethod
     def search(cls, query: str = '', limit: int = 25, include_retired: bool = False) -> list:

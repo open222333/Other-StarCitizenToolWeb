@@ -965,3 +965,30 @@ def test_paging_limit_is_capped(client, auth_headers, seed_master):
 def test_paging_handles_garbage(client, auth_headers, seed_master):
     body = client.get('/item/?limit=abc&offset=xyz', headers=auth_headers).get_json()
     assert body['limit'] == 50 and body['offset'] == 0
+
+
+def test_search_filtered_by_system_and_planet(client, auth_headers, seed_search):
+    """星系／行星靠星圖換成地點名稱：Lorville 在 Hurston，Area18 不在星圖裡就篩不到。"""
+    from src.mongo import get_db
+    from src.models.starmap import Starmap
+    db = get_db()['starmap_master']
+    db.insert_many([
+        {'_id': 'sys', 'name': 'Stanton', 'type': 'Star', 'is_current': True, 'is_named': True},
+        {'_id': 'p', 'name': 'Hurston', 'type': 'Planet', 'parent_uuid': 'sys', 'is_current': True, 'is_named': True},
+        {'_id': 'o', 'name': 'lorville', 'type': 'Outpost', 'parent_uuid': 'p', 'is_current': True, 'is_named': True},
+    ])
+    Starmap.rebuild_hierarchy()
+
+    def locs(qs):
+        resp = client.get(f'/inventory/search?{qs}', headers=auth_headers)
+        assert resp.status_code == 200
+        return {r['location'] for r in resp.get_json()['data']}
+
+    assert locs('star_system=Stanton') == {'Lorville'}, '不分大小寫比對'
+    assert locs('planet=Hurston') == {'Lorville'}
+    assert locs('planet=Hurston&location=Area18') == set()
+    assert locs('star_system=Pyro') == set()
+    body = client.get('/inventory/?star_system=Stanton', headers=auth_headers).get_json()
+    assert body['total'] == 0, '公會庫只有 Area18'
+    body = client.get('/inventory/?star_system=Pyro', headers=auth_headers).get_json()
+    assert body['total'] == 0 and body['data'] == []

@@ -218,3 +218,23 @@ def test_storage_locations(client, zh):
     assert lorville['name_zh'] == '羅威爾' and lorville['system'] == 'Stanton' and lorville['parent'] == 'Hurston'
     body = client.get('/starmap/storage-locations').get_json()
     assert body['success'] is True and [r['name'] for r in body['data']] == ['Hurston', 'Lorville']
+
+
+def test_storage_locations_planet_and_names_in(zh):
+    """「星系／行星／地點」三段篩選：每筆附所屬行星；names_in 把星系／行星換成地點名稱。"""
+    station = {'UUID': 's-everus', 'Name': 'Everus Harbor', 'ParentUUID': 'p-hurston',
+               'Type': {'Name': 'Station'}, 'Amenities': []}
+    lagrange = {'UUID': 's-hur-l1', 'Name': 'HUR-L1', 'ParentUUID': 'sys-stanton',
+                'Type': {'Name': 'Station'}, 'Amenities': []}
+    _sync([STAR, PLANET, OUTPOST, station, lagrange])
+    for uid in ('s-everus', 's-hur-l1', 'p-hurston'):
+        Starmap.set_storage_override(uid, True)
+    rows = {r['name']: r for r in Starmap.storage_locations()}
+    assert rows['Lorville']['planet'] == 'Hurston' and rows['Lorville']['planet_zh'] == '赫斯頓'
+    assert rows['Hurston']['planet'] == 'Hurston', '行星自己就是所屬行星'
+    assert rows['HUR-L1']['planet'] is None and rows['HUR-L1']['system'] == 'Stanton'
+    assert Starmap.names_in() is None
+    assert set(Starmap.names_in(['Stanton'])) == {'Stanton', 'Hurston', 'Lorville', 'Everus Harbor', 'HUR-L1'}
+    assert set(Starmap.names_in(planets=['Hurston'])) == {'Hurston', 'Lorville', 'Everus Harbor'}
+    assert Starmap.names_in(['Pyro'], ['Hurston']) == []
+

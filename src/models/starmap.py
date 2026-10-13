@@ -24,6 +24,9 @@ MAX_LIMIT = 200
 #: 走到這幾種類型就當成「所屬星系」
 _SYSTEM_TYPES = ('SolarSystem', 'Star')
 
+#: 「所屬行星」：由上往下第一個這種類型的地點（衛星的行星是它繞的那顆，所以取最上層的）
+_PLANET_TYPES = ('Planet',)
+
 #: 地點屬性：欄位名稱 → 對應的設施（starmap.json Amenities 的 DisplayName）。
 #: 每個屬性在 starmap_master 都是一個布林欄位（同步時由 mapper 從設施清單算出來），
 #: 後台可以直接用欄位篩選。顯示名稱用設施的英文去翻譯資料庫查（Maps_Amenities_*）。
@@ -224,9 +227,29 @@ class Starmap:
         return cls._col().find_one({'_id': location_id}, cls.PROJECTION)
 
     @classmethod
+    def _planets(cls) -> dict:
+        """每個地點（_id）所屬的行星文件（name／name_zh）；不在行星上的（太空站、拉格朗日點…）沒有。
+        依 parent_uuid 往上走，取由上而下第一個 _PLANET_TYPES（自己是行星就是自己）。"""
+        rows = {r['_id']: r for r in cls._col().find(
+            {'is_current': True}, {'name': 1, 'name_zh': 1, 'type': 1, 'parent_uuid': 1})}
+        out = {}
+        for uid in rows:
+            chain, seen, cur = [], set(), uid
+            while cur and cur in rows and cur not in seen:   # seen：防上游資料有循環
+                seen.add(cur)
+                chain.append(rows[cur])
+                cur = rows[cur].get('parent_uuid')
+            planet = next((r for r in reversed(chain) if r.get('type') in _PLANET_TYPES), None)
+            if planet:
+                out[uid] = planet
+        return out
+
+    @classmethod
     def storage_locations(cls) -> list:
-        """可存放的地點（庫存地點下拉／bot 自動完成用）：同名只留一個，依星系、上下層排序。"""
+        """可存放的地點（庫存地點下拉／bot 自動完成用）：同名只留一個，依星系、上下層排序。
+        每筆附所屬星系、行星（給「星系／行星／地點」三段篩選用）。"""
         out, seen = [], set()
+        planets = cls._planets()
         cursor = cls._col().find(
             {'is_current': True, 'is_named': True, 'can_store': True, **hidden_filter()},
             {'name': 1, 'name_zh': 1, 'type': 1, 'type_zh': 1, 'system_name': 1, 'system_name_zh': 1,
@@ -237,11 +260,35 @@ class Starmap:
             if not name or name.lower() in seen:
                 continue
             seen.add(name.lower())
+            planet = planets.get(row['_id']) or {}
             out.append({'name': name, 'name_zh': row.get('name_zh'),
                         'type': row.get('type'), 'type_zh': row.get('type_zh'),
                         'system': row.get('system_name'), 'system_zh': row.get('system_name_zh'),
+                        'planet': planet.get('name') or None, 'planet_zh': planet.get('name_zh'),
                         'parent': row.get('parent_name'), 'parent_zh': row.get('parent_name_zh')})
         return out
+
+    @classmethod
+    def names_in(cls, systems=None, planets=None) -> list:
+        """屬於這些星系、且在這些行星上的地點名稱（英文，去重）；兩個都沒給回 None（＝沒篩）。
+        庫存的「地點」存的是名稱字串，「星系／行星」篩選靠這裡換成名稱清單再比對。"""
+        systems = {s for s in (systems or []) if s}
+        planet_names = {p for p in (planets or []) if p}
+        if not systems and not planet_names:
+            return None
+        filt = {'is_current': True, 'is_named': True}
+        if systems:
+            filt['system_name'] = {'$in': sorted(systems)}
+        planet_of = cls._planets() if planet_names else {}
+        out = []
+        for row in cls._col().find(filt, {'name': 1}):
+            name = (row.get('name') or '').strip()
+            if not name:
+                continue
+            if planet_names and (planet_of.get(row['_id']) or {}).get('name') not in planet_names:
+                continue
+            out.append(name)
+        return list(dict.fromkeys(out))
 
     @classmethod
     def apply_storage(cls) -> int:

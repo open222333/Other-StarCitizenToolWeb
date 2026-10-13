@@ -11,6 +11,8 @@
   - `player` → 個人庫，必須帶 player（RSI handle）
 """
 
+from typing import Optional
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
@@ -20,6 +22,7 @@ from src.models.inventory import (OWNER_GUILD, OWNER_PLAYER, Inventory, Inventor
 from src.models.item import ItemMaster, VehicleMaster
 from src.models.log import Log
 from src.models.player import Player
+from src.models.starmap import Starmap
 from src.permissions import (PLAYER_CLAIM, READ_ROLES, WRITE_ROLES,
                              admin_api, require_role)
 from src.sc_zh import location_name_zh
@@ -59,6 +62,26 @@ def _self_player_scid():
     if not identity.startswith(PLAYER_IDENTITY_PREFIX):
         return None
     return identity[len(PLAYER_IDENTITY_PREFIX):] or None
+
+
+def _area_locations(explicit) -> Optional[list]:
+    """「星系／行星／地點」三段篩選 → 要比對的地點名稱清單；回傳 None = 沒有篩地點。
+
+    庫存的 location 只存地點名稱字串，星系／行星（?star_system=…&planet=…，可重複帶）
+    要先靠星圖（Starmap.names_in）換成名稱，再跟庫存裡實際用過的地點比對（不分大小寫）。
+    三段之間是 AND；結果是空陣列代表「篩了但沒有地點符合」，呼叫端要回空結果。
+    """
+    explicit = [loc.strip() for loc in (explicit or []) if loc and loc.strip()]
+    area = Starmap.names_in(
+        [s.strip() for s in request.args.getlist('star_system') if s.strip()],
+        [p.strip() for p in request.args.getlist('planet') if p.strip()],
+    )
+    if area is None:
+        return explicit or None
+    wanted = {a.lower() for a in area}
+    if explicit:
+        return [loc for loc in explicit if loc.lower() in wanted]
+    return [loc for loc in Inventory.distinct_locations(WMS_SCOPE_ID, limit=100000) if loc.lower() in wanted]
 
 
 def _owner_from_args() -> tuple:
@@ -128,6 +151,8 @@ def list_stock():
       - {in: query, name: owner_type, type: string, enum: [guild, player], default: guild}
       - {in: query, name: player,     type: string, description: "owner_type=player 時必填（RSI handle）"}
       - {in: query, name: location,   type: string, description: "只看某個位置，可重複帶多個做多選"}
+      - {in: query, name: star_system, type: string, description: "只看某星系的位置，可重複帶多個"}
+      - {in: query, name: planet,     type: string, description: "只看某行星上的位置，可重複帶多個"}
       - {in: query, name: item_id,    type: string, description: "只看某個物品（uuid）"}
       - {in: query, name: container,  type: string, description: "容器關鍵字（模糊比對）"}
       - {in: query, name: q,          type: string, description: "物品名稱關鍵字（中英文都比對）"}
@@ -146,7 +171,11 @@ def list_stock():
 
     # getlist：單一值跟多選（後台列表的「位置」篩選）共用同一個 location
     # query key，跟 app/blueprint/view.py 的 player_id 是同一個道理。
-    locations = request.args.getlist('location')
+    locations = _area_locations(request.args.getlist('location'))
+    if locations == []:
+        # 星系／行星底下沒有任何有庫存的地點：給一個不可能存在的地點，列表跟總量都是 0
+        locations = ['\x00']
+    locations = locations or []
     container = (request.args.get('container') or '').strip()
     name_query = (request.args.get('q') or '').strip()
     sort_by = request.args.get('sort_by', 'item_name')
@@ -290,6 +319,8 @@ def search_stock():
       - {in: query, name: item_id, type: string, description: "精確物品 uuid（新版分欄位模式，來自「物品名稱」欄位自動完成）"}
       - {in: query, name: item_type, type: string, description: "精確物品類型，可重複帶多個（新版分欄位模式，「物品類型」欄位多選）"}
       - {in: query, name: location, type: string, description: "精確地點，可重複帶多個（新版分欄位模式，「物品地點」欄位多選）"}
+      - {in: query, name: star_system, type: string, description: "地點所屬星系，可重複帶多個（新版分欄位模式）"}
+      - {in: query, name: planet, type: string, description: "地點所屬行星，可重複帶多個（新版分欄位模式）"}
       - {in: query, name: player_id, type: string, description: "精確玩家遊戲ID（新版分欄位模式，來自「玩家id」或「玩家暱稱」欄位自動完成）"}
       - {in: query, name: limit, type: integer, default: 100, description: "最多 300"}
     responses:
@@ -302,7 +333,10 @@ def search_stock():
     # 「物品類型」「物品地點」可多選：重複帶同一個 key（?item_type=A&item_type=B），
     # 同一個條件內取聯集，跟其他條件之間仍是 AND
     item_types = [t.strip() for t in request.args.getlist('item_type') if t.strip()]
-    locations_exact = [loc.strip() for loc in request.args.getlist('location') if loc.strip()]
+    locations_exact = _area_locations(request.args.getlist('location'))
+    if locations_exact == []:   # 星系／行星底下沒有任何有庫存的地點
+        return jsonify({'success': True, 'data': [], 'matched': None})
+    locations_exact = locations_exact or []
     player_id = (request.args.get('player_id') or '').strip()
 
     try:

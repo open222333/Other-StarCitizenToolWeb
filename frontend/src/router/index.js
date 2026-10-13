@@ -121,6 +121,12 @@ const router = createRouter({
           component: () => import('@/views/InventoryListView.vue'),
         },
         {
+          // 物品資料庫（唯讀，遊戲主檔 item_master，見 ItemListView.vue 檔頭）
+          path: 'items',
+          name: 'items',
+          component: () => import('@/views/ItemListView.vue'),
+        },
+        {
           // 礦物資料庫（唯讀：礦物／礦床／地點與中文對照，見 MiningView.vue 檔頭）
           path: 'mining',
           name: 'mining',

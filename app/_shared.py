@@ -28,4 +28,5 @@ def attach_item_names(rows, id_field: str = 'item_id') -> list:
         info = names.get(item_id) or {}
         row['item_name'] = info.get('name') or item_id
         row['item_name_zh'] = info.get('name_zh')
+        row['item_type'] = info.get('type')   # 倉庫共用搜尋的「物品類型」篩選用
     return rows

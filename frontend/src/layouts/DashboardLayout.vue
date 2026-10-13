@@ -50,6 +50,9 @@
         <RouterLink class="nav-link" to="/inventory" @click="sidebarOpen = false">
           <i class="bi bi-box-seam"></i>庫存
         </RouterLink>
+        <RouterLink class="nav-link" to="/items" @click="sidebarOpen = false">
+          <i class="bi bi-database"></i>物品
+        </RouterLink>
         <RouterLink class="nav-link" to="/mining" @click="sidebarOpen = false">
           <i class="bi bi-gem"></i>礦物
         </RouterLink>

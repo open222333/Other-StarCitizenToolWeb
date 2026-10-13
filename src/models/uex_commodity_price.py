@@ -99,13 +99,19 @@ def terminal_summary(terminal: Optional[dict], price_row: Optional[dict] = None)
     p = price_row or {}
     name = (t.get('displayname') or t.get('nickname') or t.get('name')
             or p.get('terminal_name') or p.get('terminal_code') or '')
+    path = location_path(t, p)
+    system = t.get('star_system_name') or p.get('star_system_name') or None
+    planet = t.get('planet_name') or p.get('planet_name') or None
     return {
         'id': str(t.get('id', p.get('id_terminal', t.get('_id')))),
         'name': name,
         'code': t.get('code') or p.get('terminal_code') or None,
         'type': t.get('type') or None,
-        'star_system': t.get('star_system_name') or p.get('star_system_name') or None,
-        'location': location_path(t, p),
+        'star_system': system,
+        'location': path,
+        # 「星系／行星／地點」三段篩選用：行星、行星底下最細的那一層（太空站／城市／前哨站…）
+        'planet': planet,
+        'place': next((x for x in reversed(path) if x not in (system, planet)), None),
         'faction': t.get('faction_name') or p.get('faction_name') or None,
         'max_container_size': t.get('max_container_size'),
         'is_player_owned': bool(t.get('is_player_owned') or p.get('terminal_is_player_owned')),
@@ -219,6 +225,21 @@ class UexCommodityPrice:
         locations.sort(key=lambda r: ([(x or '').lower() for x in r['terminal']['location']],
                                       (r['terminal']['name'] or '').lower()))
         return {'locations': locations, 'commodities': summary}
+
+    @staticmethod
+    def buy_areas() -> list:
+        """有商品買得到的交易終端分布在哪些「星系／行星／地點」（給三段篩選的選項，去重）。"""
+        ids = [t for t in get_db()[PRICES].distinct('id_terminal', {'price_buy': {'$gt': 0}}) if t not in (None, '')]
+        terminals = _terminal_map(ids)
+        seen, out = set(), []
+        for tid in ids:
+            term = terminal_summary(terminals.get(str(tid)), {'id_terminal': tid})
+            key = (term['star_system'], term['planet'], term['place'])
+            if key in seen or not any(key):
+                continue
+            seen.add(key)
+            out.append({'system': term['star_system'], 'planet': term['planet'], 'place': term['place']})
+        return sorted(out, key=lambda a: tuple((x or '').lower() for x in (a['system'], a['planet'], a['place'])))
 
     @staticmethod
     def star_systems() -> list:

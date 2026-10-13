@@ -241,6 +241,9 @@ export const toolLinkApi = {
 // 對應 app/item/view.py 的 /item/sync-status、/item/sync、/item/sync-jobs
 // （每個資料庫一個同步項目，各自排程；syncNow 帶 { jobs: [...] } 只同步那幾項）
 export const itemApi = {
+  // 物品資料（item_master）：列表（q／type／manufacturer_code／size／grade／acquire／player_visible…，見 app/item/view.py）
+  list:          (params)    => apiFetch(`/item/${qs(params)}`),
+  facets:        ()          => apiFetch('/item/facets'),
   syncStatus:    ()          => apiFetch('/item/sync-status'),
   syncRuns:      (limit)     => apiFetch(`/item/sync-runs?limit=${limit || 20}`),
   syncNow:       (data)      => apiFetch('/item/sync', { method: 'POST', body: JSON.stringify(data || {}) }),

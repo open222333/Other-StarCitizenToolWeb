@@ -3,9 +3,11 @@
 
   資料：UEX 商品價格表（uex_commodities_prices，見 src/models/uex_commodity_price.py），
   由後台「資料同步排程」的 UEX 項目同步。API：
-    - GET /player/commodities/buyable：買得到的商品（附可購買的終端數）、有終端的星系
+    - GET /player/commodities/buyable：買得到的商品（附可購買的終端數）、有終端的星系、
+      終端的「星系／行星／地點」分布（areas，給三段篩選的選項）
     - GET /player/commodities/buy-locations?id=…&id=…&star_system=…：同時買得到的終端
-  商品清單一次載入（兩三百筆），名稱／類別篩選在前端；勾選或星系改了才打後端查地點。
+  商品清單一次載入（兩三百筆），名稱／類別篩選在前端；勾選或星系改了才打後端查地點，
+  行星／地點在前端篩查回來的終端（terminal.planet／terminal.place）。
 
   結果用蜂巢式下拉（交易終端 → 每種商品的買價／庫存／回報時間），樣式見 scifi-theme.css 的 .sf-tree-*。
   中文：utils/uexCommodity.js（資料庫 sc_translations）。
@@ -22,20 +24,30 @@
         </div>
         <FieldHint :text="`勾選的商品要在同一個交易終端全部都買得到才會列出，一次最多 ${maxSelected} 種。價格與庫存是玩家回報到 UEX 的資料，請參考更新時間。`" />
         <div class="row g-2">
-          <div class="col-12 col-md-6">
+          <div class="col-12 col-md-8">
             <label class="form-label small mb-1" :for="`${uid}-q`">商品名稱</label>
             <input :id="`${uid}-q`" v-model="nameQuery" type="search" class="form-control form-control-sm"
               placeholder="輸入商品名稱或縮寫…" autocomplete="off">
           </div>
-          <div class="col-6 col-md-3">
+          <div class="col-12 col-md-4">
             <label class="form-label small mb-1" :for="`${uid}-kind`">類別</label>
             <MultiSelectFilter :id="`${uid}-kind`" v-model="kinds" :options="kindOptions"
               label="類別" placeholder="全部" block searchable />
           </div>
-          <div class="col-6 col-md-3">
+          <div class="col-12 col-md-4">
             <label class="form-label small mb-1" :for="`${uid}-system`">星系</label>
-            <MultiSelectFilter :id="`${uid}-system`" v-model="systems" :options="systemOptions"
-              label="星系" placeholder="全部" block />
+            <MultiSelectFilter :id="`${uid}-system`" :model-value="systems" :options="systemOptions"
+              label="星系" placeholder="全部" block @update:model-value="setSystems" />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small mb-1" :for="`${uid}-planet`">行星</label>
+            <MultiSelectFilter :id="`${uid}-planet`" :model-value="planets" :options="planetOptions"
+              label="行星" placeholder="全部" block searchable @update:model-value="setPlanets" />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small mb-1" :for="`${uid}-place`">地點</label>
+            <MultiSelectFilter :id="`${uid}-place`" v-model="places" :options="placeOptions"
+              label="地點" placeholder="全部" block searchable />
           </div>
         </div>
 
@@ -76,7 +88,7 @@
         <i class="bi bi-exclamation-triangle me-1"></i>{{ resultsFailed }}
       </div>
       <div v-else-if="!locations.length" class="cbf-empty">
-        <div class="mb-1">沒有交易終端同時買得到這 {{ selected.length }} 種商品<template v-if="systems.length">（限 {{ systems.map(locationZh).join('、') }}）</template>。</div>
+        <div class="mb-1">沒有交易終端同時買得到這 {{ selected.length }} 種商品<template v-if="areaPicked.length">（限 {{ areaPicked.map(x => locationZh(x) || x).join('、') }}）</template>。</div>
         <div class="small text-muted">
           各自買得到的地點數：
           <template v-for="(c, i) in coverage" :key="c.id">
@@ -146,19 +158,45 @@ const loadFailed = ref(false)
 
 const nameQuery = ref('')
 const kinds = ref([])
+// 「星系／行星／地點」三段：星系送後端篩，行星／地點在前端篩查回來的終端
 const systems = ref([])
+const planets = ref([])
+const places = ref([])
+/** 交易終端分布（[{system, planet, place}]，/player/commodities/buyable 的 areas），給行星／地點的選項 */
+const areas = ref([])
 /** 勾選的商品 id（依勾選順序，結果裡每個終端的商品也照這個順序） */
 const selected = ref([])
 const selectedSet = computed(() => new Set(selected.value))
-const hasAnyFilter = computed(() => !!(nameQuery.value.trim() || kinds.value.length || systems.value.length
+const hasAnyFilter = computed(() => !!(nameQuery.value.trim() || kinds.value.length || areaPicked.value.length
   || selected.value.length))
+const areaPicked = computed(() => [...systems.value, ...planets.value, ...places.value])
 
 const byId = computed(() => new Map(commodities.value.map(c => [c.id, c])))
 const selectedCommodities = computed(() => selected.value.map(id => byId.value.get(id)).filter(Boolean))
 
 const kindOptions = computed(() =>
   [...new Set(commodities.value.map(c => c.kind).filter(Boolean))].sort().map(k => ({ value: k, label: k })))
-const systemOptions = computed(() => starSystems.value.map(s => ({ value: s, label: locationZh(s) })))
+const areaLabel = v => (locationZh(v) && locationZh(v) !== v ? `${v}（${locationZh(v)}）` : v)
+const uniqOpts = vals => [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  .map(v => ({ value: v, label: areaLabel(v) }))
+const systemOptions = computed(() => starSystems.value.map(s => ({ value: s, label: areaLabel(s) })))
+const areasIn = (sys, pl) => areas.value.filter(a =>
+  (!sys.length || sys.includes(a.system)) && (!pl.length || pl.includes(a.planet)))
+const planetOptions = computed(() => uniqOpts(areasIn(systems.value, []).map(a => a.planet)))
+const placeOptions = computed(() => uniqOpts(areasIn(systems.value, planets.value).map(a => a.place)))
+
+// 改了上一段，下一段已選但不在新選項裡的拿掉
+function setSystems(v) {
+  systems.value = v
+  const ok = new Set(areasIn(v, []).map(a => a.planet))
+  planets.value = planets.value.filter(p => ok.has(p))
+  setPlanets(planets.value)
+}
+function setPlanets(v) {
+  planets.value = v
+  const ok = new Set(areasIn(systems.value, v).map(a => a.place))
+  places.value = places.value.filter(p => ok.has(p))
+}
 
 const filteredCommodities = computed(() => {
   const q = nameQuery.value.trim().toLowerCase()
@@ -179,6 +217,8 @@ function clearAll() {
   nameQuery.value = ''
   kinds.value = []
   systems.value = []
+  planets.value = []
+  places.value = []
   selected.value = []
 }
 
@@ -199,12 +239,17 @@ async function loadCommodities() {
   }
   commodities.value = data.data || []
   starSystems.value = data.star_systems || []
+  areas.value = data.areas || []
   loadCommodityZh(commodities.value.map(c => c.name))
-  loadLocationZh(starSystems.value)
+  loadLocationZh([...starSystems.value, ...areas.value.flatMap(a => [a.planet, a.place])].filter(Boolean))
 }
 
 // ── 查同時買得到的地點 ───────────────────────────────────────
-const locations = ref([])
+/** 後端回來的（已依星系篩過）；locations 再依行星／地點篩 */
+const allLocations = ref([])
+const locations = computed(() => allLocations.value.filter(l =>
+  (!planets.value.length || planets.value.includes(l.terminal.planet))
+  && (!places.value.length || places.value.includes(l.terminal.place))))
 const coverage = ref([])
 const resultsLoading = ref(false)
 const resultsFailed = ref('')
@@ -216,7 +261,7 @@ let timer = null
 async function loadLocations() {
   const mine = ++seq
   if (!selected.value.length) {
-    locations.value = []
+    allLocations.value = []
     coverage.value = []
     resultsLoading.value = false
     return
@@ -233,7 +278,7 @@ async function loadLocations() {
     resultsFailed.value = data?.message || '查詢失敗，請稍後再試'
     return
   }
-  locations.value = data.data?.locations || []
+  allLocations.value = data.data?.locations || []
   coverage.value = data.data?.commodities || []
   // 結果少的時候直接展開，不用一個一個點
   openIds.value = new Set(locations.value.length <= 3 ? locations.value.map(l => l.terminal.id) : [])
