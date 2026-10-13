@@ -288,3 +288,40 @@ def test_set_amenities_on_old_data_without_auto(client, auth_headers, zh):
     doc = client.put('/starmap/o-lorville/amenities', headers=auth_headers,
                      json={'amenities': ['Hangar (L)']}).get_json()['data']
     assert doc['amenities_override'] == {'add': [], 'remove': ['Vehicle Services']}
+
+
+def test_home_locations(client, auth_headers, zh):
+    """可選居住地：預設清單（名稱比對）＋後台手動修正；同步後由 apply_home() 重算，手動的保留。"""
+    _sync([STAR, PLANET, OUTPOST])
+    assert Starmap.apply_home() >= 1
+    lorville = get_db()['starmap_master'].find_one({'_id': 'o-lorville'})
+    assert lorville['home_auto'] is True and lorville['is_home'] is True
+    assert get_db()['starmap_master'].find_one({'_id': 'p-hurston'})['is_home'] is False
+
+    assert client.get('/starmap/?home=1', headers=auth_headers).get_json()['total'] == 1
+    body = client.get('/starmap/home-locations').get_json()
+    assert [r['name'] for r in body['data']] == ['Lorville']
+    assert body['data'][0]['planet'] == 'Hurston' and body['data'][0]['name_zh'] == '羅威爾'
+
+    doc = client.put('/starmap/p-hurston/home', json={'is_home': True}, headers=auth_headers).get_json()['data']
+    assert doc['is_home'] is True and doc['home_auto'] is False and doc['home_override'] is True
+    doc = client.put('/starmap/o-lorville/home', json={'is_home': False}, headers=auth_headers).get_json()['data']
+    assert doc['is_home'] is False
+
+    _sync([STAR, PLANET, OUTPOST])
+    Starmap.apply_home()
+    assert [r['name'] for r in Starmap.home_locations()] == ['Hurston'], '重新同步後手動修正還在'
+    facets = client.get('/starmap/facets', headers=auth_headers).get_json()['data']
+    assert facets['home'] == {'yes': 1, 'no': 2, 'override': 2}
+
+    doc = client.put('/starmap/o-lorville/home', json={'is_home': None}, headers=auth_headers).get_json()['data']
+    assert doc['is_home'] is True and doc['home_override'] is None
+    assert client.put('/starmap/o-lorville/home', json={'is_home': 'y'}, headers=auth_headers).status_code == 400
+    assert client.put('/starmap/o-lorville/home', json={}, headers=auth_headers).status_code == 400
+    assert client.put('/starmap/nope/home', json={'is_home': True}, headers=auth_headers).status_code == 404
+
+
+def test_home_names_file():
+    from src.models.starmap import home_names
+    assert {'lorville', 'area18', 'new babbage', 'orison', 'ruin station', 'checkmate', 'orbituary',
+            'levski'} == home_names()

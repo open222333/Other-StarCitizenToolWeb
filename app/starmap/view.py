@@ -10,6 +10,7 @@ from flask_jwt_extended import get_jwt_identity
 
 from src.limiter import limiter
 from src.models.log import Log
+from src.models.sorting import sort_args
 from src.models.starmap import FEATURE_KEYS, MAX_LIMIT, Starmap
 from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, visibility_arg
 
@@ -48,11 +49,14 @@ def list_locations():
       - {in: query, name: amenity,      type: string,  description: "設施，可重複帶多個（有其中任一個）"}
       - {in: query, name: feature,      type: string,  description: "屬性欄位（has_hangar、shop_weapons…），可重複帶多個（全部都要有）"}
       - {in: query, name: can_store,    type: integer, description: "1 = 只看可存放、0 = 只看不可存放"}
+      - {in: query, name: home,         type: integer, description: "1 = 只看可選居住地、0 = 只看不是的"}
       - {in: query, name: player_visible, type: integer, description: "1 = 只看玩家頁面顯示的、0 = 只看不顯示的"}
       - {in: query, name: include_unnamed, type: integer, description: "1 = 也列出沒有名稱的（遊戲內部用的點）"}
       - {in: query, name: missing_zh,   type: integer, description: "1 = 只看沒有中文名稱的"}
       - {in: query, name: id,           type: string,  description: "指定單一地點"}
       - {in: query, name: parent,       type: string,  description: "只看某個地點底下的"}
+      - {in: query, name: sort_by,      type: string,  description: "name／name_zh／type／system／parent／jurisdiction／can_store／is_home／amenity_count／player_visible"}
+      - {in: query, name: sort_dir,     type: string,  description: "asc（預設）／desc"}
       - {in: query, name: limit,        type: integer, default: 50, description: "最多 200"}
       - {in: query, name: offset,       type: integer, default: 0}
     responses:
@@ -60,13 +64,15 @@ def list_locations():
         description: 成功
     """
     limit, offset = _paging()
+    sort_by, sort_dir = sort_args(request.args)
     rows, total = Starmap.list_all(
-        limit=limit, offset=offset,
+        limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir,
         query=(request.args.get('q') or '').strip(),
         types=_multi('type'), systems=_multi('system'),
         jurisdictions=_multi('jurisdiction'), amenities=_multi('amenity'),
         features=[f for f in _multi('feature') if f in FEATURE_KEYS],
         can_store={'1': True, '0': False}.get(request.args.get('can_store')),
+        is_home={'1': True, '0': False}.get(request.args.get('home')),
         visibility=visibility_arg(request.args),
         named_only=request.args.get('include_unnamed') != '1',
         missing_zh=request.args.get('missing_zh') == '1',
@@ -89,6 +95,20 @@ def storage_locations():
         description: 成功，data 是 [{name, name_zh, type, type_zh, system, system_zh, parent, parent_zh}]
     """
     return jsonify({'success': True, 'data': Starmap.storage_locations()})
+
+
+@app_starmap.route('/home-locations', methods=['GET'])
+@limiter.limit('60 per minute')
+def home_locations():
+    """可選居住地（公開、不需要 token，跟 /storage-locations 一樣是公開的遊戲星圖資料）。
+    預設清單 src/data/home_locations.json，後台可以個別修正（PUT /starmap/<id>/home）。
+    ---
+    tags: [Starmap]
+    responses:
+      200:
+        description: 成功，data 是 [{id, name, name_zh, type, type_zh, system, system_zh, planet, planet_zh, parent, parent_zh}]
+    """
+    return jsonify({'success': True, 'data': Starmap.home_locations()})
 
 
 @app_starmap.route('/facets', methods=['GET'])
@@ -206,4 +226,44 @@ def set_location_amenities(location_id):
     detail = '回到同步的資料' if not override else \
         f"新增 {'、'.join(override.get('add') or []) or '—'}；移除 {'、'.join(override.get('remove') or []) or '—'}"
     Log.create(username, 'set_location_amenities', f'地點 {location_id} 設施：{detail}', success=True)
+    return jsonify({'success': True, 'data': doc})
+
+
+@app_starmap.route('/<location_id>/home', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_location_home(location_id):
+    """手動設定地點「可選居住地」（null = 回到預設清單判斷）。
+    存在 home_override，重新同步不會蓋掉。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: location_id, type: string, required: true}
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            is_home: {type: boolean, description: "true／false；null = 依預設清單（src/data/home_locations.json）"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 格式錯誤
+      404:
+        description: 找不到地點
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or 'is_home' not in body:
+        return jsonify({'success': False, 'message': '缺少 is_home'}), 400
+    username = get_jwt_identity()
+    try:
+        doc = Starmap.set_home_override(location_id, body['is_home'], username)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    if not doc:
+        return jsonify({'success': False, 'message': '找不到地點'}), 404
+    label = {True: '是可選居住地', False: '不是可選居住地', None: '自動'}[body['is_home']]
+    Log.create(username, 'set_location_home', f'地點 {location_id} 設為{label}', success=True)
     return jsonify({'success': True, 'data': doc})

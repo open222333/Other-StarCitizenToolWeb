@@ -59,8 +59,9 @@ class _MasterBase:
         if not ids:
             return {}
         rows = cls._col().find({'_id': {'$in': ids}},
-                               {'_id': 1, 'name': 1, 'name_zh': 1, 'type': 1})
-        return {r['_id']: {'name': r.get('name'), 'name_zh': r.get('name_zh'), 'type': r.get('type')}
+                               {'_id': 1, 'name': 1, 'name_zh': 1, 'type': 1, 'output_type': 1})
+        return {r['_id']: {'name': r.get('name'), 'name_zh': r.get('name_zh'), 'type': r.get('type'),
+                           'output_type': r.get('output_type')}
                 for r in rows}
 
     @classmethod
@@ -268,9 +269,14 @@ class ItemMaster(_MasterBase):
         if item_type:
             filt['type'] = item_type
 
+        from src.models.sorting import sort_spec
         total = cls._col().count_documents(filt)
-        rows = list(cls._col().find(filt, cls.PROJECTION)
-                    .sort('name', ASCENDING).skip(offset).limit(limit))
+        spec = sort_spec(sort_by, sort_dir, {
+            'name': 'name', 'name_zh': 'name_zh', 'type': 'output_type', 'grade': 'output_grade',
+            'craft_time': 'craft_time_seconds', 'ingredients': 'ingredient_count',
+            'available': 'is_available_by_default', 'player_visible': 'player_visible',
+        }, [('name', ASCENDING)])
+        rows = list(cls._col().find(filt, cls.PROJECTION).sort(spec).skip(offset).limit(limit))
         return rows, total
 
     @classmethod
@@ -726,9 +732,10 @@ class BlueprintMaster(_MasterBase):
 
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0,
-                 output_type='', available_only: bool = False,
+                 output_type='', available_only: bool = False, exclude_available: bool = False,
                  query: str = '', missing_zh: bool = False, only_ids=None,
-                 visible_only: bool = False, visibility=None) -> tuple:
+                 visible_only: bool = False, visibility=None,
+                 sort_by: str = '', sort_dir: str = 'asc') -> tuple:
         """分頁列出藍圖主檔。
 
         `query` 是名稱關鍵字（中英文都比對）。有這個參數，前端「瀏覽整份清單
@@ -738,6 +745,7 @@ class BlueprintMaster(_MasterBase):
         `output_type` 可以是單一類型或多個類型（多選取聯集）。
         `missing_zh` 只列沒有中文名稱的（後台檢查翻譯缺漏用）。
         `only_ids` 不是 None 時只列這些 uuid（「只看需任務解鎖」用）。
+        `exclude_available` 不列預設可用的（玩家頁「登記藍圖資料」）。
         `visible_only`（玩家端）／`visibility`（後台篩選）：玩家頁面顯示，見 src/models/visibility.py。
         """
         filt: dict = {'is_current': True}
@@ -749,6 +757,9 @@ class BlueprintMaster(_MasterBase):
             filt['output_type'] = types[0] if len(types) == 1 else {'$in': types}
         if available_only:
             filt['is_available_by_default'] = True
+        elif exclude_available:
+            # 玩家頁：預設可用的藍圖每個人本來就有（視同已登記），不列出來
+            filt['is_available_by_default'] = {'$ne': True}
         if missing_zh:
             filt['name_zh'] = {'$in': [None, '']}
         if (query or '').strip():

@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "可選居住地（遊戲裡建立角色時能選的居住地）的預設清單，用地點的英文名稱比對 starmap_master.name（不分大小寫）。",
+    "同步地點後由 src/models/starmap.py 的 Starmap.apply_home() 算 home_auto／is_home；後台「地點」頁可以個別手動蓋過（home_override），同步不會蓋掉。",
+    "遊戲改版新增或移除居住地時改這份清單；名稱以資料庫裡的英文名稱為準。"
+  ],
+  "names": [
+    "Lorville",
+    "Area18",
+    "New Babbage",
+    "Orison",
+    "Ruin Station",
+    "Checkmate",
+    "Orbituary",
+    "Levski"
+  ]
+}

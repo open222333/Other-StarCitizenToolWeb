@@ -757,3 +757,19 @@ def test_holders_endpoint_multiple_output_types(client, player_headers, three_pl
     assert {g['name'] for g in resp.get_json()['data']} == {'Omnisky III Cannon', 'Medical Pen'}
     resp = client.get('/blueprint/holders?output_type=Consumable', headers=player_headers)
     assert [g['name'] for g in resp.get_json()['data']] == ['Medical Pen']
+
+
+def test_master_available_filter(client, player_headers, seeded_master):
+    """available=1 只看預設可用；available=0 不列預設可用（玩家頁「登記藍圖資料」）；
+    我的藍圖附 is_available_by_default 讓前端把預設可用的藏起來。"""
+    get_db()['blueprint_master'].update_one({'_id': 'bp-2'}, {'$set': {'is_available_by_default': True}})
+
+    def ids(qs):
+        body = client.get(f'/blueprint/master?{qs}', headers=player_headers).get_json()
+        return {r['_id'] for r in body['data']}
+
+    assert ids('available=1') == {'bp-2'}
+    assert 'bp-2' not in ids('available=0') and ids('available=0')
+    client.post('/player/blueprints', headers=player_headers, json={'blueprint_uuid': 'bp-2'})
+    rows = client.get('/player/blueprints', headers=player_headers).get_json()['data']
+    assert rows[0]['master']['is_available_by_default'] is True

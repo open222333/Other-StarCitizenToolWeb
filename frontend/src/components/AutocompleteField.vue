@@ -34,7 +34,7 @@
         role="option" :aria-selected="i === highlighted"
         class="autocomplete-field__item" :class="{ 'is-active': i === highlighted }"
         @mousedown.prevent="pick(c)" @mousemove="highlighted = i">
-        {{ getLabel(c) }}
+        {{ getLabel(c) }}<span v-if="getMeta && getMeta(c)" class="autocomplete-field__meta">{{ getMeta(c) }}</span>
       </li>
     </ul>
   </div>
@@ -49,6 +49,8 @@ const props = defineProps({
   search:     { type: Function, required: true },
   // candidate => 顯示文字（下拉選項文字，選定後也是這個文字寫進 modelValue）
   getLabel:   { type: Function, required: true },
+  // 候選右邊的補充說明（例如藍圖類型），選填
+  getMeta:    { type: Function, default: null },
   placeholder: { type: String, default: '' },
   ariaLabel:  { type: String, default: '' },
   id:         { type: String, default: () => `ac-${Math.random().toString(36).slice(2, 9)}` },
@@ -189,4 +191,5 @@ onBeforeUnmount(() => { document.removeEventListener('click', onDocClick); clear
   opacity: .65;
   font-size: .85em;
 }
+.autocomplete-field__meta { margin-left: .5rem; opacity: .7; font-size: .9em; }
 </style>

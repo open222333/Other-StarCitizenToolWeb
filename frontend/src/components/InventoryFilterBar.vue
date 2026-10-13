@@ -61,7 +61,7 @@ const props = defineProps({
   knownLocations: { type: Array, default: () => [] },
   q:         { type: String, default: '' },
   types:     { type: Array,  default: () => [] },
-  // 物品類型的選項（字串陣列）
+  // 物品類型的選項（字串或 {value, label} 陣列）
   typeOptions: { type: Array, default: () => [] },
   // 星系／行星／地點：多選，空陣列 = 全部（比對規則見 utils/locationArea.js 的 matchArea）
   systems:   { type: Array, default: () => [] },

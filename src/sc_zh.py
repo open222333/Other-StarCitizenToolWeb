@@ -178,6 +178,19 @@ def blueprint_type_zh(output_type: str, lang: str = DEFAULT_LANG) -> Optional[st
     return T.by_key(manual_key('blueprint_type', code), lang) if code else None
 
 
+def item_type_zh(item_type: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """物品類型代碼（item_master.type，例如 'WeaponPersonal'、'Char_Armor_Torso'）→ 翻譯
+    （遊戲 key item_Type<代碼>；沒有的話退回藍圖類型的人工條目，代碼是同一套）。"""
+    code = (item_type or '').strip()
+    return T.by_keys([f'item_Type{code}', manual_key('blueprint_type', code)], lang) if code else None
+
+
+def item_sub_type_zh(sub_type: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """物品子類型代碼（item_master.sub_type，例如 'Sniper'）→ 翻譯（遊戲 key item_SubType<代碼>）。"""
+    code = (sub_type or '').strip()
+    return T.by_key(f'item_SubType{code}', lang) if code and code != 'UNDEFINED' else None
+
+
 def blueprint_type_names(lang: str = DEFAULT_LANG) -> dict:
     """全部藍圖類型 {代碼: 翻譯}，給前端一次載入。"""
     return T.manual_domain('blueprint_type', lang)
@@ -431,6 +444,8 @@ LOOKUPS = {
     'mining_resource': lambda text, lang=DEFAULT_LANG: mining_resource_name_zh(name=text, lang=lang),
     'mining_deposit':  mining_deposit_name_zh,
     'blueprint_type':  blueprint_type_zh,
+    'item_type':       item_type_zh,
+    'item_sub_type':   item_sub_type_zh,
     'faction':         faction_name_zh,
     'mission_giver':   mission_giver_zh,
     'starmap_type':    starmap_type_zh,

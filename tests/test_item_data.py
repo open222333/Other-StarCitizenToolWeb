@@ -108,3 +108,17 @@ def test_uex_prices_falls_back_to_wiki(client, auth_headers):
 def test_visibility_toggle_items(client, auth_headers, items):
     res = client.put('/item/visibility/items/c', json={'player_visible': True}, headers=auth_headers)
     assert res.status_code == 200 and res.get_json()['data']['player_visible'] is True
+
+
+def test_item_type_translations(client, seed_translations):
+    """物品類型／子類型中文：遊戲 key item_Type<代碼>／item_SubType<代碼>；沒有就退回藍圖類型的人工條目。"""
+    seed_translations({
+        'item_TypeWeaponPersonal': ('Personal Weapon', '個人武器'),
+        'item_SubTypeSniper': ('Sniper', '狙擊'),
+    })
+    from src.sc_zh import item_sub_type_zh, item_type_zh
+    assert item_type_zh('WeaponPersonal') == '個人武器'
+    assert item_type_zh('Cooler') == '散熱器', '退回藍圖類型的人工條目'
+    assert item_sub_type_zh('Sniper') == '狙擊' and item_sub_type_zh('UNDEFINED') is None
+    body = client.get('/item/translations?domain=item_type&text=WeaponPersonal&text=Nope').get_json()
+    assert body['data'] == {'WeaponPersonal': '個人武器', 'Nope': ''} or body['data'].get('WeaponPersonal') == '個人武器'

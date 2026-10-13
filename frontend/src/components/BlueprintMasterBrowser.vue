@@ -19,8 +19,9 @@
   後端也會再擋重複（Blueprint.bulk_create_for_player）。登記完 emit('registered') 讓父層重抓我的藍圖。
   原本獨立的「批量登記」元件已併進這裡（已刪除）。
 
-  玩家頁傳 sharedFilters（{ q, types }）時，名稱／類型改用「藍圖」分頁頂端的共用搜尋卡，
-  這裡自己的名稱框與類型選單就不顯示（只留「預設可用」「需任務解鎖」這些本區專用的勾選）。
+  玩家頁傳 sharedFilters（{ q, types, hasMissions, hideAvailable }）時，名稱／類型／只看需任務解鎖
+  全部改用「藍圖」分頁頂端的共用搜尋卡，這裡自己的條件卡整個不顯示；hideAvailable＝不列預設可用的
+  （視同已登記，後端 available=0）。
 
   玩家頁面顯示（後台才有的欄位與篩選）：PlayerVisibleToggle，規則見 src/models/visibility.py；
   玩家 token 呼叫 /blueprint/master 時後端本來就只回顯示的。
@@ -31,7 +32,7 @@
 -->
 <template>
   <div>
-    <div :class="[cardClass, 'sf-search', 'mb-3']">
+    <div v-if="!shared" :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-2">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <template v-if="!shared">
@@ -82,16 +83,16 @@
                     :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
                     :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
                 </th>
-                <th :class="{ 'ps-3': !registerable }">{{ player ? '名稱' : '藍圖（英文）' }}</th>
-                <th v-if="!player">中文</th>
-                <th>類型</th>
-                <th>等級</th>
-                <th>製作時間</th>
-                <th class="text-end">材料數</th>
-                <th>預設可用</th>
+                <SortTh :sort="sort" :field="player ? 'name_zh' : 'name'" :class="{ 'ps-3': !registerable }">{{ player ? '名稱' : '藍圖（英文）' }}</SortTh>
+                <SortTh v-if="!player" :sort="sort" field="name_zh">中文</SortTh>
+                <SortTh :sort="sort" field="type">類型</SortTh>
+                <SortTh :sort="sort" field="grade">等級</SortTh>
+                <SortTh :sort="sort" field="craft_time">製作時間</SortTh>
+                <SortTh :sort="sort" field="ingredients" class="text-end">材料數</SortTh>
+                <SortTh :sort="sort" field="available">預設可用</SortTh>
                 <th class="text-end" :class="{ 'pe-3': player && !registerable }">解鎖任務</th>
                 <th v-if="registerable" class="pe-3"></th>
-                <th v-if="!player" class="pe-3">玩家頁面</th>
+                <SortTh v-if="!player" :sort="sort" field="player_visible" class="pe-3">玩家頁面</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -266,6 +267,8 @@ import { apiFetch } from '@/api'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintQuality from '@/components/BlueprintQuality.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import { factionLabel, fmtChance, zhPair } from '@/utils/mission'
@@ -279,7 +282,7 @@ const props = defineProps({
   cardClass: { type: String, default: 'card shadow-sm border-0' },
   /** 玩家頁分頁用 v-show 一直掛著，第一次變成可見才載入（跟 MiningLookup 一樣） */
   active: { type: Boolean, default: true },
-  /** 玩家頁「藍圖」分頁的共用搜尋卡 { q, types }；null＝用這裡自己的名稱框與類型選單（後台） */
+  /** 玩家頁「藍圖」分頁的共用搜尋卡 { q, types, available, hasMissions }；null＝用這裡自己的條件卡（後台） */
   sharedFilters: { type: Object, default: null },
   /** 玩家頁「登記藍圖資料」：我的藍圖已登記的 blueprint_uuid；null＝不能登記（後台／純瀏覽） */
   registeredUuids: { type: Array, default: null },
@@ -308,6 +311,13 @@ const playerVisible = ref('')
 const shared = computed(() => props.sharedFilters !== null)
 const effectiveQuery = computed(() => (shared.value ? (props.sharedFilters.q || '') : nameQuery.value).trim())
 const effectiveTypes = computed(() => (shared.value ? (props.sharedFilters.types || []) : selectedTypes.value))
+// '1' 只看預設可用、'0' 不列預設可用、'' 不篩
+const effectiveAvailable = computed(() => {
+  if (!shared.value) return availableOnly.value ? '1' : ''
+  if (props.sharedFilters.hideAvailable) return '0'
+  return props.sharedFilters.available ? '1' : ''
+})
+const effectiveHasMissions = computed(() => (shared.value ? !!props.sharedFilters.hasMissions : hasMissionsOnly.value))
 
 const registerable = computed(() => props.player && props.registeredUuids !== null)
 /** 正在品質試算的藍圖（登記藍圖資料） */
@@ -380,10 +390,11 @@ async function register(uuids, method = '') {
 }
 const typeOptions = computed(() => types.value.map(t => ({ value: t, label: blueprintTypeLabel(t) })))
 
-// 共用搜尋卡的條件由分頁頂端自己清，這裡的「清除全部篩選」只管本區的勾選
-const hasActiveFilters = computed(() =>
-  (!shared.value && (!!nameQuery.value.trim() || selectedTypes.value.length > 0)) || availableOnly.value || missingZhOnly.value
-  || hasMissionsOnly.value || !!playerVisible.value)
+// 共用搜尋卡（玩家頁）時條件卡不顯示；空結果訊息用共用條件判斷
+const hasActiveFilters = computed(() => (shared.value
+  ? !!(effectiveQuery.value || effectiveTypes.value.length || effectiveHasMissions.value)
+  : (!!nameQuery.value.trim() || selectedTypes.value.length > 0 || availableOnly.value || missingZhOnly.value
+    || hasMissionsOnly.value || !!playerVisible.value)))
 
 const expandedId = ref('')
 const detail = ref(null)
@@ -406,6 +417,9 @@ function query(params) {
   return s ? `?${s}` : ''
 }
 
+// 點表頭排序（後端，見 src/models/item.py 的 BlueprintMaster.list_all）
+const sort = useTableSort(null, { onChange: () => reload(0) })
+
 async function reload(newOffset = 0) {
   offset.value = newOffset
   loading.value = true
@@ -414,10 +428,11 @@ async function reload(newOffset = 0) {
   const body = await getJson(`/blueprint/master${query({
     q: effectiveQuery.value,
     output_type: effectiveTypes.value,
-    available: availableOnly.value ? 1 : '',
+    available: effectiveAvailable.value,
     missing_zh: missingZhOnly.value ? 1 : '',
-    has_missions: hasMissionsOnly.value ? 1 : '',
+    has_missions: effectiveHasMissions.value ? 1 : '',
     player_visible: props.player ? '' : playerVisible.value,
+    ...sort.params.value,
     limit, offset: newOffset,
   })}`)
   if (body?.success) {

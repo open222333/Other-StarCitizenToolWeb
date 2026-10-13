@@ -237,6 +237,17 @@ class Player:
         return result.matched_count > 0
 
     @classmethod
+    def set_home(cls, player_id: str, home_location) -> bool:
+        """設定定居點（可選居住地的英文名稱；None 清掉）。呼叫端先驗證是可選居住地。"""
+        try:
+            oid = ObjectId(str(player_id))
+        except Exception:
+            return False
+        result = cls._col().update_one({'_id': oid}, {'$set': {
+            'home_location': home_location or None, 'updated_at': datetime.utcnow()}})
+        return result.matched_count > 0
+
+    @classmethod
     def update(cls, player_id: str, **fields) -> bool:
         """只更新有傳入的欄位（None 表示「不動這個欄位」，呼叫端請先過濾）。
 

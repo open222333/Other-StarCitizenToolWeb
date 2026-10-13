@@ -553,6 +553,7 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
             logger.info('scdata_sync: 地點上下層更新 %d 筆', Starmap.rebuild_hierarchy())
             logger.info('scdata_sync: 地點設施人工修正 %d 筆', Starmap.apply_amenities())
             logger.info('scdata_sync: 地點「可存放」更新 %d 筆', Starmap.apply_storage())
+            logger.info('scdata_sync: 地點「可選居住地」更新 %d 筆', Starmap.apply_home())
 
     elif key == 'uex':
         # 後台「資料同步排程」頁設定的 token 優先，沒有就用環境變數 UEX_API_TOKEN

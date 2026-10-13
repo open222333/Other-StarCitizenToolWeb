@@ -110,6 +110,8 @@ class Blueprint:
             master = masters.get(r.get('blueprint_uuid'))
             if master and master.get('name_zh'):
                 r['name_zh'] = master['name_zh']
+            if master and master.get('output_type'):
+                r.setdefault('output_type', master['output_type'])
             if r.get('blueprint_uuid'):
                 r['mission_count'] = mission_counts.get(r['blueprint_uuid'], 0)
         return rows

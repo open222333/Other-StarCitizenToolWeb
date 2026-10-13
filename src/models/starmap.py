@@ -10,6 +10,8 @@
 查詢一律加 is_current=True。約 2,000 筆，後端分頁、篩選。
 """
 
+import json
+from pathlib import Path
 from typing import Optional
 
 from pymongo import ASCENDING, UpdateOne
@@ -23,6 +25,19 @@ MAX_LIMIT = 200
 
 #: 走到這幾種類型就當成「所屬星系」
 _SYSTEM_TYPES = ('SolarSystem', 'Star')
+
+#: 可選居住地的預設清單（英文名稱），見 src/data/home_locations.json
+HOME_FILE = Path(__file__).resolve().parent.parent / 'data' / 'home_locations.json'
+
+
+def home_names() -> set:
+    """預設的可選居住地名稱（小寫）。檔案讀不到回空集合（不讓同步失敗）。"""
+    try:
+        data = json.loads(HOME_FILE.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return set()
+    return {n.strip().lower() for n in data.get('names') or [] if isinstance(n, str) and n.strip()}
+
 
 #: 「所屬行星」：由上往下第一個這種類型的地點（衛星的行星是它繞的那顆，所以取最上層的）
 _PLANET_TYPES = ('Planet',)
@@ -108,8 +123,9 @@ class Starmap:
 
     @classmethod
     def _filter(cls, *, query: str = '', types=None, systems=None, jurisdictions=None,
-                amenities=None, features=None, can_store=None, visibility=None, named_only: bool = True,
-                missing_zh: bool = False, location_id: str = '', parent_id: str = '') -> dict:
+                amenities=None, features=None, can_store=None, is_home=None, visibility=None,
+                named_only: bool = True, missing_zh: bool = False, location_id: str = '',
+                parent_id: str = '') -> dict:
         filt: dict = {'is_current': True}
         # 屬性：勾幾個就要全部都有（例如「有機庫」＋「武器商店」）
         for key in _clean_list(features):
@@ -118,6 +134,8 @@ class Starmap:
         add_visibility_filter(filt, visibility=visibility)
         if can_store is not None:
             filt['can_store'] = True if can_store else {'$ne': True}   # 還沒算過的當成不可存放
+        if is_home is not None:
+            filt['is_home'] = True if is_home else {'$ne': True}
         if (location_id or '').strip():
             filt['_id'] = location_id.strip()
         if (parent_id or '').strip():
@@ -140,15 +158,24 @@ class Starmap:
             ]
         return filt
 
+    #: 列表可以排序的欄位（sort_by → 文件欄位）
+    SORT_FIELDS = {
+        'name': 'name_lower', 'name_zh': 'name_zh', 'type': 'type', 'system': 'system_name',
+        'parent': 'parent_name', 'jurisdiction': 'jurisdiction', 'can_store': 'can_store',
+        'is_home': 'is_home', 'amenity_count': 'amenity_count', 'player_visible': 'player_visible',
+    }
+
     @classmethod
-    def list_all(cls, limit: int = 50, offset: int = 0, **filters) -> tuple:
+    def list_all(cls, limit: int = 50, offset: int = 0, sort_by: str = '', sort_dir: str = 'asc',
+                 **filters) -> tuple:
+        from src.models.sorting import sort_spec
         filt = cls._filter(**filters)
         limit = max(1, min(int(limit or 50), MAX_LIMIT))
         offset = max(0, int(offset or 0))
         total = cls._col().count_documents(filt)
-        rows = list(cls._col().find(filt, cls.PROJECTION)
-                    .sort([('system_name', ASCENDING), ('path_sort', ASCENDING), ('_id', ASCENDING)])
-                    .skip(offset).limit(limit))
+        spec = sort_spec(sort_by, sort_dir, cls.SORT_FIELDS,
+                         [('system_name', ASCENDING), ('path_sort', ASCENDING), ('_id', ASCENDING)])
+        rows = list(cls._col().find(filt, cls.PROJECTION).sort(spec).skip(offset).limit(limit))
         return rows, total
 
     @classmethod
@@ -196,6 +223,9 @@ class Starmap:
             'can_store': {'yes': col.count_documents({**base, 'can_store': True}),
                           'no': col.count_documents({**base, 'can_store': {'$ne': True}}),
                           'override': col.count_documents({**base, 'can_store_override': {'$in': [True, False]}})},
+            'home': {'yes': col.count_documents({**base, 'is_home': True}),
+                     'no': col.count_documents({**base, 'is_home': {'$ne': True}}),
+                     'override': col.count_documents({**base, 'home_override': {'$in': [True, False]}})},
             'types': count_by('type', 'type_zh'),
             'systems': count_by('system_name', 'system_name_zh'),
             'jurisdictions': count_by('jurisdiction', 'jurisdiction_zh'),
@@ -307,6 +337,57 @@ class Starmap:
         for i in range(0, len(ops), 1000):
             cls._col().bulk_write(ops[i:i + 1000], ordered=False)
         return len(ops)
+
+    # ── 可選居住地（預設清單＋人工修正）──────────────────────────────
+
+    @classmethod
+    def apply_home(cls) -> int:
+        """依預設清單（home_names）算 home_auto，套上 home_override 得到 is_home（同步完會跑），回傳變動筆數。"""
+        names = home_names()
+        ops = []
+        for row in cls._col().find({}, {'name': 1, 'is_named': 1, 'home_auto': 1, 'home_override': 1, 'is_home': 1}):
+            auto = bool(row.get('is_named', True)) and (row.get('name') or '').strip().lower() in names
+            override = row.get('home_override')
+            effective = auto if override is None else bool(override)
+            if row.get('home_auto') != auto or row.get('is_home') != effective:
+                ops.append(UpdateOne({'_id': row['_id']}, {'$set': {'home_auto': auto, 'is_home': effective}}))
+        for i in range(0, len(ops), 1000):
+            cls._col().bulk_write(ops[i:i + 1000], ordered=False)
+        return len(ops)
+
+    @classmethod
+    def set_home_override(cls, location_id: str, value, username: str = '') -> Optional[dict]:
+        """人工設定「可選居住地」：True／False 蓋過預設清單，None 回到自動。找不到地點回 None。"""
+        from datetime import datetime
+        if value not in (True, False, None):
+            raise ValueError('is_home 只能是 true、false 或 null')
+        doc = cls._col().find_one({'_id': location_id}, {'name': 1, 'is_named': 1})
+        if not doc:
+            return None
+        auto = bool(doc.get('is_named', True)) and (doc.get('name') or '').strip().lower() in home_names()
+        cls._col().update_one({'_id': location_id}, {'$set': {
+            'home_auto': auto, 'home_override': value, 'is_home': auto if value is None else value,
+            'home_updated_by': username or None, 'home_updated_at': datetime.utcnow()}})
+        return cls._col().find_one({'_id': location_id}, cls.PROJECTION)
+
+    @classmethod
+    def home_locations(cls) -> list:
+        """可選居住地清單（公開；玩家頁之後要用）：依星系、名稱排序，附中文、所屬星系／行星、上層。"""
+        planets = cls._planets()
+        out = []
+        cursor = cls._col().find(
+            {'is_current': True, 'is_home': True, **hidden_filter()},
+            {'name': 1, 'name_zh': 1, 'type': 1, 'type_zh': 1, 'system_name': 1, 'system_name_zh': 1,
+             'parent_name': 1, 'parent_name_zh': 1},
+        ).sort([('system_name', ASCENDING), ('name_lower', ASCENDING)])
+        for row in cursor:
+            planet = planets.get(row['_id']) or {}
+            out.append({'id': row['_id'], 'name': row.get('name'), 'name_zh': row.get('name_zh'),
+                        'type': row.get('type'), 'type_zh': row.get('type_zh'),
+                        'system': row.get('system_name'), 'system_zh': row.get('system_name_zh'),
+                        'planet': planet.get('name') or None, 'planet_zh': planet.get('name_zh'),
+                        'parent': row.get('parent_name'), 'parent_zh': row.get('parent_name_zh')})
+        return out
 
     @classmethod
     def _planets(cls) -> dict:

@@ -913,7 +913,9 @@ def list_my_blueprints():
             'output_type': master.get('output_type'),
             'output_type_label': master.get('output_type_label'),
             'craft_time_label': master.get('craft_time_label'),
+            'craft_time_seconds': master.get('craft_time_seconds'),
             'ingredient_count': master.get('ingredient_count'),
+            'is_available_by_default': master.get('is_available_by_default'),
             'is_current': master.get('is_current'),
             'mission_count': mission_counts.get(row.get('blueprint_uuid'), 0),
         } if master else None
@@ -1384,3 +1386,68 @@ def fleet_holders():
                                 player_scid=(request.args.get('player_id') or '').strip(),
                                 limit=limit)
     return jsonify({'success': True, 'data': groups})
+
+
+# ═══════════════════════════════════════════
+#  定居點（玩家自己設定的可選居住地，倉庫「全部物品轉移到定居點」用）
+# ═══════════════════════════════════════════
+
+@app_player.route('/me/home', methods=['PUT'])
+@player_required
+def set_my_home():
+    """設定自己的定居點：只能選可選居住地（/starmap/home-locations）；null／空字串＝清掉。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          properties:
+            home_location: {type: string, description: "可選居住地的英文名稱，例如 Lorville；null = 清掉"}
+    responses:
+      200:
+        description: 成功，data.home_location
+      400:
+        description: 不是可選居住地
+    """
+    from src.models.starmap import Starmap
+    data = request.get_json(silent=True) or {}
+    name = (data.get('home_location') or '').strip()
+    if name:
+        homes = {h['name'] for h in Starmap.home_locations() if h.get('name')}
+        if name not in homes:
+            return jsonify({'success': False, 'message': '只能選擇可選居住地'}), 400
+    player = _self_player_doc()
+    Player.set_home(player['_id'], name or None)
+    Log.create(f'player:{player.get("star_citizen_id")}', 'player_set_home',
+               f'定居點設為 {name or "（未設定）"}', success=True)
+    return jsonify({'success': True, 'data': {'home_location': name or None}})
+
+
+@app_player.route('/inventory/move-all-home', methods=['POST'])
+@player_required
+@limiter.limit('10 per minute')
+def move_all_inventory_home():
+    """把自己個人庫的全部物品移到定居點（不放容器；已經在定居點的不動）。沒設定定居點回 400。
+    ---
+    tags: [Player]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: {moved: 筆數, units: 件數, failed: [...], home_location}"
+      400:
+        description: 還沒設定定居點
+    """
+    player = Player.find_by_star_citizen_id(_self_star_citizen_id()) or {}
+    home = (player.get('home_location') or '').strip()
+    if not home:
+        return jsonify({'success': False, 'message': '請先設定定居點'}), 400
+    scid = _self_star_citizen_id()
+    result = Inventory.move_all(WMS_SCOPE_ID, OWNER_PLAYER, scid, home,
+                                actor=_player_identity(scid), actor_id=f'player:{scid}')
+    Log.create(f'player:{scid}', 'player_move_all_home',
+               f'全部物品轉移到定居點 {home}：{result["moved"]} 筆、{result["units"]} 件'
+               + (f'，失敗 {len(result["failed"])} 筆' if result['failed'] else ''), success=not result['failed'])
+    return jsonify({'success': True, 'data': {**result, 'home_location': home}})

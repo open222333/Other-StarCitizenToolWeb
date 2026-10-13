@@ -19,9 +19,9 @@
         <div class="d-flex flex-wrap align-items-center gap-2">
           <input v-model="nameQuery" type="search" class="form-control form-control-sm" style="max-width: 14rem"
             placeholder="搜尋物品名稱..." aria-label="搜尋物品名稱">
-          <MultiSelectFilter :model-value="selectedTypes" label="類型" :options="facets.types" searchable
+          <MultiSelectFilter :model-value="selectedTypes" label="類型" :options="typeOptions" searchable
             @update:model-value="v => { selectedTypes = v; reload(0) }" />
-          <MultiSelectFilter :model-value="selectedSubTypes" label="子類型" :options="facets.sub_types" searchable
+          <MultiSelectFilter :model-value="selectedSubTypes" label="子類型" :options="subTypeOptions" searchable
             @update:model-value="v => { selectedSubTypes = v; reload(0) }" />
           <MultiSelectFilter :model-value="selectedManufacturers" label="製造商" :options="facets.manufacturers" searchable
             @update:model-value="v => { selectedManufacturers = v; reload(0) }" />
@@ -87,7 +87,13 @@
                     <span v-if="it.name_zh" class="ms-1">（{{ it.name_zh }}）</span>
                     <div class="small text-muted">{{ it.class_name }}</div>
                   </td>
-                  <td class="small">{{ it.type || '—' }}<div v-if="it.sub_type" class="text-muted">{{ it.sub_type }}</div></td>
+                  <td class="small">
+                    {{ it.type ? (itemTypeZh(it.type) || it.type) : '—' }}
+                    <div v-if="itemTypeZh(it.type)" class="text-muted">{{ it.type }}</div>
+                    <div v-if="it.sub_type && it.sub_type !== 'UNDEFINED'" class="text-muted">
+                      {{ itemSubTypeZh(it.sub_type) || it.sub_type }}
+                    </div>
+                  </td>
                   <td class="text-end small">{{ it.size ?? '—' }}</td>
                   <td class="text-end small">{{ it.grade ?? '—' }}</td>
                   <td class="small">{{ it.manufacturer_name || it.manufacturer_code || '—' }}</td>
@@ -137,6 +143,7 @@ import { itemApi } from '@/api'
 import ItemDetail from '@/components/ItemDetail.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
+import { itemSubTypeOption, itemSubTypeZh, itemTypeOption, itemTypeZh, loadItemTypeZh } from '@/utils/itemType'
 import { fmtAuec, ITEM_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 
 const COLUMNS = [
@@ -160,6 +167,9 @@ const loadFailed = ref(false)
 const openId = ref('')
 
 const facets = ref({ types: [], sub_types: [], manufacturers: [], sizes: [], grades: [] })
+const byLabel = (a, b) => a.label.localeCompare(b.label, 'zh-Hant')
+const typeOptions = computed(() => facets.value.types.map(itemTypeOption).sort(byLabel))
+const subTypeOptions = computed(() => facets.value.sub_types.filter(s => s !== 'UNDEFINED').map(itemSubTypeOption).sort(byLabel))
 const sizeOptions = computed(() => facets.value.sizes.map(n => ({ value: String(n), label: `Size ${n}` })))
 const gradeOptions = computed(() => facets.value.grades.map(n => ({ value: String(n), label: `等級 ${n}` })))
 
@@ -231,6 +241,7 @@ async function reload(newOffset = 0) {
   }
   items.value = body.data || []
   total.value = body.total || 0
+  loadItemTypeZh(items.value.map(r => r.type), items.value.map(r => r.sub_type))
   openId.value = ''
 }
 
@@ -245,7 +256,10 @@ onMounted(async () => {
   reload(0)
   const res = await itemApi.facets()
   const body = res?.ok ? await res.json().catch(() => null) : null
-  if (body?.success) facets.value = { ...facets.value, ...body.data }
+  if (body?.success) {
+    facets.value = { ...facets.value, ...body.data }
+    loadItemTypeZh(facets.value.types, facets.value.sub_types)
+  }
 })
 </script>
 

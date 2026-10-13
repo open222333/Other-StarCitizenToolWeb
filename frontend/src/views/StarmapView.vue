@@ -17,6 +17,8 @@
   設施也可以在展開列編輯（勾選＋自訂名稱，PUT /starmap/<id>/amenities）：存成跟同步資料比較的增減
   （amenities_override），屬性、自動可存放跟著重算，重新同步後由 Starmap.apply_amenities() 套回去；
   「回到同步資料」清掉人工修正。
+  「可選居住地」：預設清單 src/data/home_locations.json（英文名稱比對），admin／operator 可以在展開列
+  個別改成是／不是或回到自動（PUT /starmap/<id>/home，存在 home_override，同步不會蓋掉）。
 
   網址參數：?id=<uuid> 只列那一筆並展開（點「上層」「下層」會跳過去）。
 -->
@@ -43,6 +45,11 @@
             <option value="">可存放：全部</option>
             <option value="1">可存放（{{ facets.can_store?.yes ?? 0 }}）</option>
             <option value="0">不可存放（{{ facets.can_store?.no ?? 0 }}）</option>
+          </select>
+          <select v-model="home" class="form-select form-select-sm w-auto" aria-label="可選居住地" @change="reload(0)">
+            <option value="">居住地：全部</option>
+            <option value="1">可選居住地（{{ facets.home?.yes ?? 0 }}）</option>
+            <option value="0">不是居住地（{{ facets.home?.no ?? 0 }}）</option>
           </select>
           <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示"
             @change="reload(0)">
@@ -71,31 +78,32 @@
           <table class="table table-hover align-middle mb-0 small">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">地點（英文）</th>
-                <th>中文</th>
-                <th>類型</th>
-                <th>星系</th>
-                <th>上層</th>
-                <th>管轄</th>
-                <th class="text-center">可存放</th>
-                <th class="text-end">設施</th>
-                <th class="pe-3 text-nowrap">玩家頁面</th>
+                <SortTh :sort="sort" field="name" class="ps-3">地點（英文）</SortTh>
+                <SortTh :sort="sort" field="name_zh">中文</SortTh>
+                <SortTh :sort="sort" field="type">類型</SortTh>
+                <SortTh :sort="sort" field="system">星系</SortTh>
+                <SortTh :sort="sort" field="parent">上層</SortTh>
+                <SortTh :sort="sort" field="jurisdiction">管轄</SortTh>
+                <SortTh :sort="sort" field="can_store" class="text-center">可存放</SortTh>
+                <SortTh :sort="sort" field="is_home" class="text-center">居住地</SortTh>
+                <SortTh :sort="sort" field="amenity_count" class="text-end">設施</SortTh>
+                <SortTh :sort="sort" field="player_visible" class="pe-3">玩家頁面</SortTh>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="9" class="text-center py-4 text-muted">
+                <td colspan="10" class="text-center py-4 text-muted">
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
-                <td colspan="9" class="text-center py-4">
+                <td colspan="10" class="text-center py-4">
                   <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取地點資料失敗。</span>
                   <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
                 </td>
               </tr>
               <tr v-else-if="!rows.length">
-                <td colspan="9" class="text-center py-4 text-muted">
+                <td colspan="10" class="text-center py-4 text-muted">
                   {{ hasActiveFilters ? '沒有符合篩選條件的地點。' : '尚無地點資料' }}
                 </td>
               </tr>
@@ -125,6 +133,11 @@
                       <span v-else class="text-muted">—</span>
                       <span v-if="isOverridden(loc)" class="badge text-bg-secondary ms-1">手動</span>
                     </td>
+                    <td class="text-center text-nowrap">
+                      <i v-if="loc.is_home" class="bi bi-house-fill text-primary" aria-label="可選居住地"></i>
+                      <span v-else class="text-muted">—</span>
+                      <span v-if="isHomeOverridden(loc)" class="badge text-bg-secondary ms-1">手動</span>
+                    </td>
                     <td class="text-end">
                       <span v-if="loc.amenity_count" class="badge text-bg-primary">{{ loc.amenity_count }}</span>
                       <span v-else class="text-muted">—</span>
@@ -132,7 +145,7 @@
                     <td class="pe-3"><PlayerVisibleToggle dataset="locations" :doc-id="loc._id" :row="loc" /></td>
                   </tr>
                   <tr v-if="expandedId === loc._id">
-                    <td colspan="9" class="detail-cell ps-5 pe-3 py-3">
+                    <td colspan="10" class="detail-cell ps-5 pe-3 py-3">
                       <div class="row g-3">
                         <div class="col-lg-4">
                           <div class="fw-semibold mb-1">說明</div>
@@ -163,6 +176,22 @@
                           <div v-if="storageError" class="text-danger">{{ storageError }}</div>
                           <div v-if="isOverridden(loc) && loc.can_store_updated_by" class="text-muted meta-line">
                             {{ loc.can_store_updated_by }} · {{ formatTime(loc.can_store_updated_at) }}
+                          </div>
+                          <div class="fw-semibold mt-2 mb-1">可選居住地</div>
+                          <div class="mb-1">
+                            {{ loc.is_home ? '是' : '否' }}
+                            <span class="text-muted">
+                              （{{ isHomeOverridden(loc) ? `手動；預設清單為${loc.home_auto ? '是' : '否'}` : '依預設清單' }}）
+                            </span>
+                          </div>
+                          <div v-if="canWrite" class="btn-group btn-group-sm mb-1" role="group" aria-label="設定可選居住地">
+                            <button v-for="opt in HOME_OPTIONS" :key="String(opt.value)" type="button" class="btn"
+                              :class="homeMode(loc) === opt.value ? 'btn-primary' : 'btn-outline-secondary'"
+                              :disabled="savingHome" @click="setHome(loc, opt.value)">{{ opt.label }}</button>
+                          </div>
+                          <div v-if="homeError" class="text-danger">{{ homeError }}</div>
+                          <div v-if="isHomeOverridden(loc) && loc.home_updated_by" class="text-muted meta-line">
+                            {{ loc.home_updated_by }} · {{ formatTime(loc.home_updated_at) }}
                           </div>
                           <div class="fw-semibold mt-2 mb-1">屬性</div>
                           <div v-if="!featureList(loc).length" class="text-muted">—</div>
@@ -269,6 +298,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { starmapApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
 import { zhPair } from '@/utils/mission'
 
@@ -297,6 +328,7 @@ const jurisdictions = ref([])
 const amenities = ref([])
 const features = ref([])
 const canStore = ref('')
+const home = ref('')
 const playerVisible = ref('')
 const missingZh = ref(false)
 const includeUnnamed = ref(false)
@@ -317,7 +349,10 @@ const featureOptions = computed(() => (facets.value.features || []).filter(f => 
 
 const hasActiveFilters = computed(() => !!query.value.trim() || types.value.length > 0
   || systems.value.length > 0 || jurisdictions.value.length > 0 || amenities.value.length > 0
-  || features.value.length > 0 || !!canStore.value || !!playerVisible.value || missingZh.value || includeUnnamed.value || !!onlyId.value)
+  || features.value.length > 0 || !!canStore.value || !!home.value || !!playerVisible.value || missingZh.value || includeUnnamed.value || !!onlyId.value)
+
+// 點表頭排序（後端，見 src/models/starmap.py 的 SORT_FIELDS）
+const sort = useTableSort(null, { onChange: () => reload(0) })
 
 async function reload(newOffset = 0) {
   offset.value = newOffset
@@ -331,10 +366,12 @@ async function reload(newOffset = 0) {
     amenity: amenities.value,
     feature: features.value,
     can_store: canStore.value,
+    home: home.value,
     player_visible: playerVisible.value,
     missing_zh: missingZh.value ? 1 : '',
     include_unnamed: includeUnnamed.value || onlyId.value ? 1 : '',
     id: onlyId.value,
+    ...sort.params.value,
     limit, offset: newOffset,
   })
   const body = res?.ok ? await res.json().catch(() => null) : null
@@ -359,6 +396,7 @@ function resetFilters() {
   amenities.value = []
   features.value = []
   canStore.value = ''
+  home.value = ''
   playerVisible.value = ''
   missingZh.value = false
   includeUnnamed.value = false
@@ -372,6 +410,7 @@ function resetFilters() {
 async function open(loc) {
   expandedId.value = loc._id
   storageError.value = ''
+  homeError.value = ''
   amenityEditId.value = ''
   amenityError.value = ''
   children.value = []
@@ -462,6 +501,31 @@ async function saveAmenities(loc, names) {
     amenityError.value = body?.message || '儲存失敗'
   }
   savingAmenities.value = false
+}
+
+// ── 可選居住地 ──
+const HOME_OPTIONS = [
+  { value: null, label: '自動' }, { value: true, label: '是居住地' }, { value: false, label: '不是居住地' },
+]
+const savingHome = ref(false)
+const homeError = ref('')
+const isHomeOverridden = loc => loc.home_override === true || loc.home_override === false
+const homeMode = loc => (isHomeOverridden(loc) ? loc.home_override : null)
+
+async function setHome(loc, value) {
+  if (homeMode(loc) === value) return
+  savingHome.value = true
+  homeError.value = ''
+  const res = await starmapApi.setHome(loc._id, value)
+  const body = res ? await res.json().catch(() => null) : null
+  if (res?.ok && body?.success) {
+    const i = rows.value.findIndex(r => r._id === loc._id)
+    if (i >= 0) rows.value[i] = { ...rows.value[i], ...body.data }
+    loadFacets()
+  } else {
+    homeError.value = body?.message || '儲存失敗'
+  }
+  savingHome.value = false
 }
 
 const SIZE_FIELDS = { has_hangar: 'hangar_sizes', has_landing_pad: 'landing_pad_sizes' }

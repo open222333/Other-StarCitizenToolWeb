@@ -34,6 +34,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { apiFetch } from '@/api'
 import ItemPriceDetail from '@/components/ItemPriceDetail.vue'
+import { itemTypeLabel } from '@/utils/itemType'
 
 const props = defineProps({
   /** 列表的那一筆（GET /item/ 回來的） */
@@ -56,7 +57,7 @@ const yesNo = v => (v === true ? '是' : v === false ? '否' : '—')
 const fields = computed(() => {
   const it = props.item
   return [
-    { label: '類型', value: [it.type, it.sub_type].filter(Boolean).join(' › ') || '—' },
+    { label: '類型', value: itemTypeLabel(it.type, it.sub_type) || '—' },
     { label: '分類', value: it.classification || '—' },
     { label: '尺寸', value: it.size ?? '—' },
     { label: '等級', value: it.grade ?? '—' },

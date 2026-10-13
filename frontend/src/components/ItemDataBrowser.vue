@@ -27,7 +27,7 @@
               <span v-if="it.name_zh" class="text-muted ms-1">{{ it.name }}</span>
             </span>
             <span class="idb-attrs">
-              <span>{{ [it.type, it.sub_type].filter(Boolean).join(' › ') || '—' }}</span>
+              <span>{{ itemTypeLabel(it.type, it.sub_type) || '—' }}</span>
               <span v-if="it.size !== null && it.size !== undefined">S{{ it.size }}</span>
               <span v-if="it.grade !== null && it.grade !== undefined">等級 {{ it.grade }}</span>
               <span v-if="it.manufacturer_name || it.manufacturer_code">{{ it.manufacturer_name || it.manufacturer_code }}</span>
@@ -57,6 +57,7 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
 import ItemDetail from '@/components/ItemDetail.vue'
+import { itemTypeLabel, loadItemTypeZh } from '@/utils/itemType'
 import { fmtAuec } from '@/utils/uexCommodity'
 
 const props = defineProps({
@@ -99,6 +100,7 @@ async function reload(nextOffset = 0) {
   }
   rows.value = data.data || []
   total.value = data.total || 0
+  loadItemTypeZh(rows.value.map(r => r.type), rows.value.map(r => r.sub_type))
   openId.value = ''
 }
 

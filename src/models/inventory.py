@@ -560,6 +560,32 @@ class Inventory:
         )
         return {'src': src_doc, 'dst': dst_doc}
 
+    @classmethod
+    def move_all(cls, scope_id: str, owner_type: str, player: Optional[str], dst_location: str,
+                 actor: str, actor_id: str = '') -> dict:
+        """把某個歸屬的全部庫存移到 dst_location（不放容器）：逐筆呼叫 move()，已經在那裡的跳過。
+        回傳 {moved: 筆數, units: 件數, failed: [{item_id, location, container, message}]}。"""
+        dst_location = (dst_location or '').strip()
+        if not dst_location:
+            raise StockError('目的地點必須指定。')
+        owner = _owner_filter(scope_id, owner_type, player)
+        rows = list(cls._col().find({**owner, 'quantity': {'$gt': 0}},
+                                    {'item_id': 1, 'location': 1, 'container': 1, 'quantity': 1}))
+        moved, units, failed = 0, 0, []
+        for row in rows:
+            if row.get('location') == dst_location and not row.get('container'):
+                continue
+            try:
+                cls.move(scope_id, owner_type, player, row['item_id'], row['quantity'],
+                         row.get('location'), row.get('container'), dst_location, None,
+                         actor=actor, actor_id=actor_id)
+                moved += 1
+                units += int(row['quantity'])
+            except StockError as err:
+                failed.append({'item_id': row['item_id'], 'location': row.get('location'),
+                               'container': row.get('container'), 'message': str(err)})
+        return {'moved': moved, 'units': units, 'failed': failed}
+
 
 class DiscordBinding:
     """Discord 使用者 ↔ RSI handle 的自助綁定。"""

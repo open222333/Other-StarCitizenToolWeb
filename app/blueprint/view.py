@@ -18,6 +18,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.models.blueprint import Blueprint as BlueprintModel
+from src.models.sorting import sort_args
 from src.models.item import BlueprintMaster
 from src.models.mission import Mission
 from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg
@@ -154,7 +155,7 @@ def list_master():
     parameters:
       - {in: query, name: q,           type: string, description: "名稱關鍵字（中英文都比對）"}
       - {in: query, name: output_type, type: string, description: "依產出物類型過濾（見 /blueprint/master/types），可重複帶多個"}
-      - {in: query, name: available,   type: integer, description: "1 = 只看預設就能用的（不需解鎖任務）"}
+      - {in: query, name: available,   type: integer, description: "1 = 只看預設就能用的（不需解鎖任務）；0 = 不列預設就能用的"}
       - {in: query, name: missing_zh,  type: integer, description: "1 = 只看沒有中文名稱的"}
       - {in: query, name: has_missions, type: integer, description: "1 = 只看有任務會給的（需任務解鎖）"}
       - {in: query, name: player_visible, type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的（玩家 token 一律只看得到顯示的）"}
@@ -166,10 +167,12 @@ def list_master():
     """
     limit, offset = _paging()
     hide = not viewer_sees_hidden()
+    sort_by, sort_dir = sort_args(request.args)
     rows, total = BlueprintMaster.list_all(
-        limit=limit, offset=offset,
+        limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir,
         output_type=[t.strip() for t in request.args.getlist('output_type') if t.strip()],
         available_only=request.args.get('available') == '1',
+        exclude_available=request.args.get('available') == '0',
         query=(request.args.get('q') or '').strip(),
         missing_zh=request.args.get('missing_zh') == '1',
         only_ids=(Mission.blueprint_uuids_with_missions(visible_only=hide)
