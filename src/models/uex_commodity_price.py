@@ -253,7 +253,7 @@ class UexCommodityPrice:
 
     @classmethod
     def admin_list(cls, *, q: str = '', commodity: str = '', star_system: str = '', side: str = '',
-                   limit: int = 50, offset: int = 0) -> tuple:
+                   limit: int = 50, offset: int = 0, sort_by: str = '', sort_dir: str = 'asc') -> tuple:
         """價格列（分頁）。side：'buy' 只看買得到的、'sell' 只看能賣的。回傳 (rows, total)。"""
         db = get_db()
         limit = max(1, min(int(limit or 50), MAX_ADMIN_LIMIT))
@@ -282,8 +282,14 @@ class UexCommodityPrice:
         filt = {'$and': conds} if conds else {}
 
         total = db[PRICES].count_documents(filt)
-        docs = list(db[PRICES].find(filt).sort([('commodity_name', 1), ('terminal_name', 1), ('_id', 1)])
-                    .skip(offset).limit(limit))
+        from src.models.sorting import sort_spec
+        spec = sort_spec(sort_by, sort_dir, {
+            'commodity': 'commodity_name', 'terminal': 'terminal_name',
+            'location': ['star_system_name', 'planet_name', 'terminal_name'],
+            'price_buy': 'price_buy', 'scu_buy': 'scu_buy', 'price_sell': 'price_sell', 'scu_sell': 'scu_sell_stock',
+            'container_sizes': 'container_sizes', 'date_modified': 'date_modified',
+        }, [('commodity_name', 1), ('terminal_name', 1), ('_id', 1)])
+        docs = list(db[PRICES].find(filt).sort(spec).skip(offset).limit(limit))
         commodities = _commodity_map({str(d.get('id_commodity')) for d in docs})
         terminals = _terminal_map({str(d.get('id_terminal')) for d in docs})
         rows = []

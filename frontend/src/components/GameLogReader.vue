@@ -112,7 +112,10 @@
             <div style="overflow-x: auto">
               <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
-                  <tr><th class="ps-3" style="width: 9rem">時間</th><th class="pe-3">事件</th></tr>
+                  <tr>
+                    <SortTh :sort="logSort" field="when" class="ps-3" style="width: 9rem">時間</SortTh>
+                    <SortTh :sort="logSort" field="text" class="pe-3">事件</SortTh>
+                  </tr>
                 </thead>
                 <tbody>
                   <tr v-if="!rows.length"><td colspan="2" class="ps-3 text-muted">沒有符合條件的事件。</td></tr>
@@ -158,6 +161,8 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import FieldHint from '@/components/FieldHint.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { CATEGORY_LABELS, GameLogParser, casualDate, casualTime, summaryLines, timeline } from '@/utils/gameLog'
 
 const props = defineProps({
@@ -368,7 +373,10 @@ const rows = computed(() => {
     && (!q || e.text.toLowerCase().includes(q)))
   return timeline(list).reverse()
 })
-const shownRows = computed(() => rows.value.slice(0, shownCount.value))
+const logSort = useTableSort(rows, { accessors: {
+  when: r => (r.ev.when ? new Date(r.ev.when).getTime() : null), text: r => r.ev.text,
+} })
+const shownRows = computed(() => logSort.sorted.value.slice(0, shownCount.value))
 
 function fmtSize(n) {
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`

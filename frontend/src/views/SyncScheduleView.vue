@@ -73,12 +73,12 @@
           <table class="table table-hover align-middle mb-0 small">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">項目</th>
-                <th class="text-end">筆數</th>
+                <SortTh :sort="jobSort" field="label" class="ps-3">項目</SortTh>
+                <SortTh :sort="jobSort" field="count" class="text-end">筆數</SortTh>
                 <th>排程（{{ timezone }}）</th>
-                <th>啟用</th>
-                <th>下次執行</th>
-                <th>上次執行</th>
+                <SortTh :sort="jobSort" field="enabled">啟用</SortTh>
+                <SortTh :sort="jobSort" field="next_run">下次執行</SortTh>
+                <SortTh :sort="jobSort" field="last_finished_at">上次執行</SortTh>
                 <th class="pe-3 text-end">操作</th>
               </tr>
             </thead>
@@ -94,7 +94,7 @@
                   <button class="btn btn-sm btn-link p-0 ms-1" @click="fetchJobs">重試</button>
                 </td>
               </tr>
-              <tr v-for="job in jobs" v-else :key="job.key" :class="{ 'table-primary': job.running }">
+              <tr v-for="job in jobSort.sorted.value" v-else :key="job.key" :class="{ 'table-primary': job.running }">
                 <td class="ps-3 fw-semibold text-nowrap">
                   {{ job.label }}
                   <span v-if="job.running" class="badge bg-primary ms-1">同步中</span>
@@ -189,11 +189,11 @@
           <table class="table table-sm table-hover align-middle mb-0 small">
             <thead class="table-light">
               <tr>
-                <th>開始時間</th>
-                <th>耗時</th>
-                <th>項目</th>
-                <th>結果</th>
-                <th>備註</th>
+                <SortTh :sort="runSort" field="started_at">開始時間</SortTh>
+                <SortTh :sort="runSort" field="duration_s">耗時</SortTh>
+                <SortTh :sort="runSort" field="jobs">項目</SortTh>
+                <SortTh :sort="runSort" field="ok">結果</SortTh>
+                <SortTh :sort="runSort" field="note">備註</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -203,7 +203,7 @@
               <tr v-else-if="!syncRuns.length">
                 <td colspan="5" class="text-center py-4 text-muted">還沒有任何同步紀錄</td>
               </tr>
-              <tr v-for="run in syncRuns" v-else :key="run._id">
+              <tr v-for="run in runSort.sorted.value" v-else :key="run._id">
                 <td class="text-nowrap">{{ fmtTime(run.started_at) }}</td>
                 <td class="text-nowrap">{{ fmtDuration(run.duration_s) }}</td>
                 <td>{{ runJobsLabel(run) }}</td>
@@ -224,6 +224,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { itemApi } from '@/api'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const auth = useAuthStore()
 // 改排程、立即同步只給 admin / operator，其餘角色唯讀
@@ -236,6 +238,10 @@ const LEGACY_LABELS = {
 }
 
 const jobs = ref([])
+const jobSort = useTableSort(jobs, { accessors: {
+  enabled: j => !!j.enabled, next_run: j => (j.enabled && j.next_run ? new Date(j.next_run).getTime() : null),
+  last_finished_at: j => (j.last_finished_at ? new Date(j.last_finished_at).getTime() : null),
+} })
 const timezone = ref('Asia/Taipei')
 const loading = ref(false)
 const loadFailed = ref(false)
@@ -476,6 +482,10 @@ function fmtInt(v) {
 
 // ── 同步紀錄 ──────────────────────────────────────────────────
 const syncRuns = ref([])
+const runSort = useTableSort(syncRuns, { accessors: {
+  started_at: r => (r.started_at ? new Date(r.started_at).getTime() : null),
+  jobs: r => runJobsLabel(r), ok: r => !!r.ok, note: r => errorSummary(r),
+} })
 const runsLoading = ref(false)
 
 async function fetchSyncRuns() {

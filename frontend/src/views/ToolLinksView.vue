@@ -157,11 +157,11 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3" style="width:5rem">排序</th>
-                <th>標題</th>
-                <th>網址</th>
-                <th>標籤</th>
-                <th>說明</th>
+                <SortTh :sort="linkSort" field="sort_order" class="ps-3" style="width:5rem">排序</SortTh>
+                <SortTh :sort="linkSort" field="title">標題</SortTh>
+                <SortTh :sort="linkSort" field="url">網址</SortTh>
+                <SortTh :sort="linkSort" field="tags">標籤</SortTh>
+                <SortTh :sort="linkSort" field="description">說明</SortTh>
                 <th v-if="canWrite" style="width:120px" class="pe-3">操作</th>
               </tr>
             </thead>
@@ -177,7 +177,7 @@
               <tr v-else-if="!filteredLinks.length">
                 <td :colspan="canWrite ? 6 : 5" class="text-center py-4 text-muted">沒有符合篩選條件的工具網站</td>
               </tr>
-              <tr v-for="l in filteredLinks" :key="l._id" :class="{ 'table-active': l._id === editingId }">
+              <tr v-for="l in linkSort.sorted.value" :key="l._id" :class="{ 'table-active': l._id === editingId }">
                 <td class="ps-3 small text-muted">{{ l.sort_order ?? 0 }}</td>
                 <td class="fw-semibold">{{ l.title }}</td>
                 <td class="small text-break">
@@ -205,6 +205,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { toolLinkApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -240,6 +242,9 @@ const filteredLinks = computed(() => {
     return [l.title, l.url, l.description, ...(l.tags || [])].some(v => (v || '').toLowerCase().includes(q))
   })
 })
+const linkSort = useTableSort(filteredLinks, { accessors: {
+  sort_order: l => l.sort_order ?? 0, tags: l => (l.tags || []).join('、'),
+} })
 
 // ── JSON 匯入／匯出 ──────────────────────────────────────────
 const EXAMPLE = {

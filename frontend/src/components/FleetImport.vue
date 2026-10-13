@@ -37,13 +37,15 @@
               <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                   <tr>
-                    <th class="ps-3">載具</th>
-                    <th class="text-end">船單</th><th class="text-end">現有</th><th class="text-end">匯入後</th>
-                    <th class="pe-3">自訂名稱</th>
+                    <SortTh :sort="previewSort" field="name" class="ps-3">載具</SortTh>
+                    <SortTh :sort="previewSort" field="count" class="text-end">船單</SortTh>
+                    <SortTh :sort="previewSort" field="existing_quantity" class="text-end">現有</SortTh>
+                    <SortTh :sort="previewSort" field="new_quantity" class="text-end">匯入後</SortTh>
+                    <SortTh :sort="previewSort" field="nicknames" class="pe-3">自訂名稱</SortTh>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="r in preview.rows" :key="r.vehicle_uuid">
+                  <tr v-for="r in previewSort.sorted.value" :key="r.vehicle_uuid">
                     <td class="ps-3">
                       <span class="fw-semibold">{{ r.name_zh || r.name }}</span>
                       <span v-if="r.name_zh" class="small text-muted ms-1">{{ r.name }}</span>
@@ -83,6 +85,8 @@
 <script setup>
 import { computed, ref, shallowRef } from 'vue'
 import FieldHint from '@/components/FieldHint.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 // Star Citizen Hangar XPLORer（Chrome 擴充功能），在 RSI 機庫頁「Download JSON」匯出 shiplist.json
 const HANGAR_XPLOR_URL = 'https://chromewebstore.google.com/detail/star-citizen-hangar-xplor/bhkgemjdepodofcnmekdobmmbifemhkc?hl=zh-TW'
@@ -97,6 +101,9 @@ const fileInput = ref(null)
 const fileName = ref('')
 const ships = shallowRef(null)
 const preview = ref(null)
+const previewSort = useTableSort(computed(() => preview.value?.rows || []), { accessors: {
+  name: r => r.name_zh || r.name, nicknames: r => (r.nicknames || []).join('、'),
+} })
 const busy = ref(false)
 const error = ref('')
 const doneText = ref('')

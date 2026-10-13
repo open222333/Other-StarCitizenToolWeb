@@ -42,15 +42,15 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">商品</th>
-                <th>交易終端</th>
-                <th>地點</th>
-                <th class="text-end">買價</th>
-                <th class="text-end">可買庫存</th>
-                <th class="text-end">賣價</th>
-                <th class="text-end">可收數量</th>
-                <th>貨櫃（SCU）</th>
-                <th class="pe-3">更新時間</th>
+                <SortTh :sort="sort" field="commodity" class="ps-3">商品</SortTh>
+                <SortTh :sort="sort" field="terminal">交易終端</SortTh>
+                <SortTh :sort="sort" field="location">地點</SortTh>
+                <SortTh :sort="sort" field="price_buy" class="text-end">買價</SortTh>
+                <SortTh :sort="sort" field="scu_buy" class="text-end">可買庫存</SortTh>
+                <SortTh :sort="sort" field="price_sell" class="text-end">賣價</SortTh>
+                <SortTh :sort="sort" field="scu_sell" class="text-end">可收數量</SortTh>
+                <SortTh :sort="sort" field="container_sizes">貨櫃（SCU）</SortTh>
+                <SortTh :sort="sort" field="date_modified" class="pe-3">更新時間</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -122,6 +122,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { miningApi } from '@/api'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import {
   commodityZh, fmtAuec, fmtScu, fmtUexTime, loadCommodityZh, uexStatusLabel,
 } from '@/utils/uexCommodity'
@@ -141,6 +143,9 @@ const starSystem = ref('')
 const side = ref('')
 const hasActiveFilters = computed(() => !!(query.value.trim() || commodity.value || starSystem.value || side.value))
 
+// 點表頭排序（後端，見 UexCommodityPrice.admin_list）
+const sort = useTableSort(null, { onChange: () => reload(0) })
+
 let seq = 0
 async function reload(nextOffset = 0) {
   offset.value = nextOffset
@@ -149,7 +154,7 @@ async function reload(nextOffset = 0) {
   const mine = ++seq
   const res = await miningApi.uexCommodityPrices({
     q: query.value.trim(), commodity: commodity.value, star_system: starSystem.value, side: side.value,
-    limit, offset: nextOffset,
+    ...sort.params.value, limit, offset: nextOffset,
   })
   const body = res?.ok ? await res.json().catch(() => null) : null
   if (mine !== seq) return

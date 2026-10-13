@@ -29,12 +29,12 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">UEX 載具</th>
+                <SortTh :sort="sort" field="vehicle" class="ps-3">UEX 載具</SortTh>
                 <th>對應主檔</th>
-                <th class="text-end">{{ kind === 'rental' ? '租船價' : '購買價' }}</th>
-                <th>交易終端</th>
-                <th>地點</th>
-                <th class="pe-3">更新時間</th>
+                <SortTh :sort="sort" field="price" class="text-end">{{ kind === 'rental' ? '租船價' : '購買價' }}</SortTh>
+                <SortTh :sort="sort" field="terminal">交易終端</SortTh>
+                <SortTh :sort="sort" field="location">地點</SortTh>
+                <SortTh :sort="sort" field="date_modified" class="pe-3">更新時間</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -87,6 +87,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUexTime } from '@/utils/uexCommodity'
 
 const props = defineProps({
@@ -105,6 +107,9 @@ const starSystems = ref([])
 const query = ref('')
 const starSystem = ref('')
 
+// 點表頭排序（後端，見 src/models/uex_vehicle_price.py 的 admin_list）
+const sort = useTableSort(null, { onChange: () => reload(0) })
+
 let seq = 0
 async function reload(nextOffset = 0) {
   offset.value = nextOffset
@@ -112,7 +117,8 @@ async function reload(nextOffset = 0) {
   loadFailed.value = false
   const mine = ++seq
   const res = await vehicleApi.uexPrices({
-    kind: props.kind, q: query.value.trim(), star_system: starSystem.value, limit, offset: nextOffset,
+    kind: props.kind, q: query.value.trim(), star_system: starSystem.value, ...sort.params.value,
+    limit, offset: nextOffset,
   })
   const body = res?.ok ? await res.json().catch(() => null) : null
   if (mine !== seq) return

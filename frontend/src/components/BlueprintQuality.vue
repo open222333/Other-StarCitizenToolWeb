@@ -114,10 +114,16 @@
             <div v-if="slot.modifiers.length" style="overflow-x: auto">
               <table class="table table-sm align-middle mb-0 mt-1 bq-table">
                 <thead>
-                  <tr><th>屬性</th><th class="text-end">Q0</th><th class="text-end">Q500</th><th class="text-end">Q1000</th><th class="text-end">目前</th></tr>
+                  <tr>
+                    <SortTh :sort="modSort" field="name">屬性</SortTh>
+                    <SortTh :sort="modSort" field="q0" class="text-end">Q0</SortTh>
+                    <SortTh :sort="modSort" field="q500" class="text-end">Q500</SortTh>
+                    <SortTh :sort="modSort" field="q1000" class="text-end">Q1000</SortTh>
+                    <th class="text-end">目前</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="m in slot.modifiers" :key="m.key || m.name">
+                  <tr v-for="m in modSort.sortList(slot.modifiers)" :key="m.key || m.name">
                     <td>{{ m.name_zh || m.name }}</td>
                     <td class="text-end bq-muted">{{ fmtModifier(modifierAt(m, 0), isAdditive(m)) }}</td>
                     <td class="text-end bq-muted">{{ fmtModifier(modifierAt(m, 500), isAdditive(m)) }}</td>
@@ -142,6 +148,8 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import {
   QUALITY_MAX, QUALITY_MIN, applyToBase, combine, fmtModifier, fmtPercent, fmtStat, improves, isAdditive,
   modifierAt, requiredQuality, statKey,
@@ -293,6 +301,12 @@ function betterClass(m, value) {
   const b = improves(m, value)
   return b === true ? 'bq-good' : b === false ? 'bq-bad' : ''
 }
+
+// 每個部位一張表，共用同一個排序狀態（屬性名稱、Q0／Q500／Q1000 的倍率）
+const modSort = useTableSort(null, { accessors: {
+  name: m => m.name_zh || m.name,
+  q0: m => modifierAt(m, 0), q500: m => modifierAt(m, 500), q1000: m => modifierAt(m, 1000),
+} })
 </script>
 
 <style scoped>

@@ -149,7 +149,8 @@ def prices_for(vehicle_uuid: str) -> dict:
     return out
 
 
-def admin_list(kind: str, *, q: str = '', star_system: str = '', limit: int = 50, offset: int = 0) -> tuple:
+def admin_list(kind: str, *, q: str = '', star_system: str = '', limit: int = 50, offset: int = 0,
+               sort_by: str = '', sort_dir: str = 'asc') -> tuple:
     """後台「艦船 › 購買價格／租船價格」：價格表原始內容（分頁），附對應到的載具主檔。"""
     if kind not in KINDS:
         raise ValueError('kind 只能是 purchase 或 rental')
@@ -174,8 +175,12 @@ def admin_list(kind: str, *, q: str = '', star_system: str = '', limit: int = 50
                               {'id_vehicle': {'$in': vids}}, {'id_terminal': {'$in': tids}}]})
     filt = {'$and': conds} if conds else {}
     total = db[collection].count_documents(filt)
-    docs = list(db[collection].find(filt).sort([('vehicle_name', 1), (field, 1), ('_id', 1)])
-                .skip(offset).limit(limit))
+    from src.models.sorting import sort_spec
+    spec = sort_spec(sort_by, sort_dir, {
+        'vehicle': 'vehicle_name', 'price': field, 'terminal': 'terminal_name',
+        'location': ['star_system_name', 'planet_name', 'terminal_name'], 'date_modified': 'date_modified',
+    }, [('vehicle_name', 1), (field, 1), ('_id', 1)])
+    docs = list(db[collection].find(filt).sort(spec).skip(offset).limit(limit))
 
     links = vehicle_links()
     uex = {str(u.get('id', u['_id'])): u for u in db[VEHICLES].find(

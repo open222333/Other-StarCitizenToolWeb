@@ -390,11 +390,22 @@ class Fleet:
     ADMIN_SORTS = {'name': [('name_lower', 1), ('player_key', 1)],
                    'player': [('player_key', 1), ('name_lower', 1)],
                    'quantity': [('quantity', -1), ('name_lower', 1)],
-                   'updated': [('updated_at', -1)]}
+                   'updated': [('updated_at', -1)],
+                   'manufacturer': [('manufacturer_code', 1), ('name_lower', 1)],
+                   'role': [('role', 1), ('name_lower', 1)],
+                   'size': [('size_class', 1), ('name_lower', 1)]}
+
+    @classmethod
+    def _admin_sort(cls, sort: str, sort_dir: str = '') -> list:
+        """ADMIN_SORTS 的排序；sort_dir 給了（點表頭）就用它決定第一個欄位的方向，後面的欄位照舊。"""
+        spec = list(cls.ADMIN_SORTS.get(sort) or cls.ADMIN_SORTS['name'])
+        if sort_dir in ('asc', 'desc'):
+            spec[0] = (spec[0][0], -1 if sort_dir == 'desc' else 1)
+        return spec + [('_id', 1)]
 
     @classmethod
     def admin_list(cls, *, query: str = '', player: str = '', vehicle_uuids=None,
-                   sort: str = 'name', limit: int = 50, offset: int = 0) -> tuple:
+                   sort: str = 'name', sort_dir: str = '', limit: int = 50, offset: int = 0) -> tuple:
         """後台「艦船 › 玩家擁有艦船」：每一筆登記一列（玩家、船、數量），分頁。
 
         query：船名（英文，部分比對）；vehicle_uuids 不是 None 時改用這些 uuid（中文船名
@@ -423,7 +434,7 @@ class Fleet:
         pipeline += [
             {'$addFields': {'name_lower': {'$toLower': '$name'},
                             'player_key': {'$toLower': {'$ifNull': ['$player.star_citizen_id', '']}}}},
-            {'$sort': dict(cls.ADMIN_SORTS.get(sort) or cls.ADMIN_SORTS['name'])},
+            {'$sort': dict(cls._admin_sort(sort, sort_dir))},
             {'$facet': {
                 'rows': [{'$skip': max(0, int(offset))}, {'$limit': max(1, min(int(limit), 200))},
                          {'$project': {'notes': 0, 'unit_names': 0, 'name_lower': 0, 'player_key': 0,

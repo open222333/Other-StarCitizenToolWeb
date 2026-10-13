@@ -124,7 +124,7 @@ def list_uex_commodity_prices():
     rows, total = UexCommodityPrice.admin_list(
         q=args.get('q') or '', commodity=args.get('commodity') or '',
         star_system=args.get('star_system') or '', side=args.get('side') or '',
-        limit=limit, offset=offset)
+        limit=limit, offset=offset, sort_by=args.get('sort_by') or '', sort_dir=args.get('sort_dir') or 'asc')
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'star_systems': UexCommodityPrice.star_systems()})
 

@@ -24,35 +24,38 @@
     </div>
     <div v-else-if="!rows.length" class="text-muted small">沒有符合條件的船艦。</div>
     <template v-else>
-      <div class="vdb-head">
-        <input class="form-check-input" type="checkbox" aria-label="全選本頁"
+      <!-- 欄位名稱列：全選本頁＋欄位名稱（船名、尺寸、價格可以排序，後端排序）＋跟「登記」一樣寬的空位 -->
+      <div class="vdb-row vdb-headrow" style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 9rem">
+        <input class="form-check-input vdb-check" type="checkbox" aria-label="全選本頁"
           :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
           :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
-        <span class="small text-muted">全選本頁</span>
+        <SfTreeHead class="vdb-main" :sort="sort" :columns="COLUMNS" />
+        <button type="button" class="btn btn-sm btn-success vdb-action invisible" tabindex="-1" aria-hidden="true">
+          <i class="bi bi-plus-lg me-1"></i>登記
+        </button>
       </div>
       <div v-for="v in rows" :key="v._id" class="vdb-ship" :class="{ 'is-registered': isRegistered(v) }">
         <div class="vdb-row">
           <input class="form-check-input vdb-check" type="checkbox" :checked="selected.has(v._id)"
             :disabled="isRegistered(v)" :aria-label="`勾選 ${v.name_zh || v.name}`"
             @change="toggleOne(v._id, $event.target.checked)">
-          <button type="button" class="sf-tree-row sf-tree-row--ship vdb-main"
+          <button type="button" class="sf-tree-row sf-tree-row--ship sf-tree-row--cols vdb-main"
+            style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 9rem"
             :aria-expanded="openId === v._id ? 'true' : 'false'" @click="openId = openId === v._id ? '' : v._id">
-            <i class="bi" :class="openId === v._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-            <span class="vdb-name">
+            <span class="sf-tree-cell sf-tree-cell--main">
+              <i class="bi" :class="openId === v._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
               <span class="sf-tree-title">{{ v.name_zh || v.name }}</span>
-              <span v-if="v.name_zh" class="text-muted ms-1">{{ v.name }}</span>
-              <span v-if="v.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
+              <span v-if="v.name_zh" class="text-muted">{{ v.name }}</span>
+              <span v-if="v.system_note" class="sf-tree-chip" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
             </span>
-            <span class="vdb-attrs">
-              <span>{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</span>
-              <span>{{ vehicleSizeLabel(v.size_class) || '—' }}</span>
-              <span>{{ manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' }}</span>
-              <span>{{ vehicleRoleLabel(v.role, v.role_zh) || '—' }}</span>
-            </span>
-            <span class="sf-tree-meta">
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleSizeLabel(v.size_class) || '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleRoleLabel(v.role, v.role_zh) || '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--end">
               <template v-if="v.msrp">{{ fmtUsd(v.msrp) }}</template>
-              <template v-if="v.msrp && v.uex_price?.buy_min"> · </template>
-              <template v-if="v.uex_price?.buy_min">{{ fmtAuec(v.uex_price.buy_min) }} 起</template>
+              <div v-if="v.uex_price?.buy_min" class="text-muted">{{ fmtAuec(v.uex_price.buy_min) }} 起</div>
+              <template v-if="!v.msrp && !v.uex_price?.buy_min">—</template>
             </span>
           </button>
           <span v-if="isRegistered(v)" class="sf-tree-chip vdb-action">已登記</span>
@@ -113,7 +116,9 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import SfTreeHead from '@/components/SfTreeHead.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUsd } from '@/utils/uexCommodity'
 import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
@@ -234,6 +239,17 @@ function infoFields(v) {
   ]
 }
 
+// 欄位名稱＋排序（後端：/item/vehicles 的 sort_by 只支援船名、尺寸、官網售價）
+const COLUMNS = [
+  { label: '船艦', field: 'name' },
+  { label: '類型', opt: true },
+  { label: '尺寸', field: 'size_class', opt: true },
+  { label: '廠商', opt: true },
+  { label: '角色', opt: true },
+  { label: '價格', field: 'msrp', end: true },
+]
+const sort = useTableSort(null, { onChange: () => reload(0) })
+
 let seq = 0
 async function reload(nextOffset = 0) {
   offset.value = Math.max(0, nextOffset)
@@ -248,6 +264,7 @@ async function reload(nextOffset = 0) {
   ;(f.manufacturers || []).forEach(v => params.append('manufacturer_code', v))
   ;(f.roles || []).forEach(v => params.append('role', v))
   ;(f.acquire || []).forEach(v => params.append('acquire', v))
+  for (const [k, v] of Object.entries(sort.params.value)) params.set(k, v)
   const res = await props.fetcher(`/item/vehicles?${params.toString()}`)
   const data = res ? await res.json().catch(() => null) : null
   if (mine !== seq) return
@@ -282,13 +299,12 @@ defineExpose({ refresh: () => { if (loaded) reload(offset.value) } })
 </script>
 
 <style scoped>
-.vdb-head { display: flex; align-items: center; gap: .5rem; padding: 0 0 .4rem .2rem; }
+.vdb-headrow { margin-bottom: .2rem; }
+.vdb-headrow .sf-tree-head { margin-bottom: 0; }
 .vdb-ship { margin-bottom: .4rem; }
 .vdb-row { display: flex; align-items: center; gap: .5rem; }
 .vdb-check { flex: 0 0 auto; margin: 0 0 0 .2rem; }
 .vdb-main { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
-.vdb-name { min-width: 12rem; }
-.vdb-attrs { display: flex; flex-wrap: wrap; gap: .25rem .9rem; color: var(--sf-text); font-size: .95rem; }
 .vdb-action { flex: 0 0 auto; white-space: nowrap; }
 .is-registered .vdb-main { opacity: .7; }
 .vdb-grid {

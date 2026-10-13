@@ -58,10 +58,10 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">物品</th>
-                <th>位置</th>
-                <th class="text-end">數量</th>
-                <th class="text-end pe-3">體積 (SCU)</th>
+                <SortTh :sort="stockSort" field="item" class="ps-3">物品</SortTh>
+                <SortTh :sort="stockSort" field="location">位置</SortTh>
+                <SortTh :sort="stockSort" field="quantity" class="text-end">數量</SortTh>
+                <SortTh :sort="stockSort" field="total_scu" class="text-end pe-3">體積 (SCU)</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -73,7 +73,7 @@
               <tr v-else-if="!stock.length && !stockError">
                 <td colspan="4" class="text-center py-4 text-muted">這位玩家目前沒有登記任何庫存</td>
               </tr>
-              <tr v-else v-for="row in stock" :key="`${row.item_id}-${row.location}-${row.container}`">
+              <tr v-else v-for="row in stockSort.sorted.value" :key="`${row.item_id}-${row.location}-${row.container}`">
                 <td class="ps-3 fw-semibold">
                   {{ row.item_name_zh || row.item_name }}
                   <span v-if="row.item_name_zh" class="small text-muted">{{ row.item_name }}</span>
@@ -109,11 +109,16 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { inventoryApi, blueprintApi } from '@/api'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const route = useRoute()
 const store = usePlayerStore()
 
 const stock          = ref([])
+const stockSort = useTableSort(stock, { accessors: {
+  item: r => r.item_name_zh || r.item_name, location: r => `${r.location || ''} ${r.container || ''}`,
+} })
 const stockTotal     = ref(0)
 const stockScu       = ref(0)
 const loadingStock   = ref(false)

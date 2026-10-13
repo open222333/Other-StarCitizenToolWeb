@@ -588,6 +588,41 @@
   border-color: rgba(var(--sf-accent-2-rgb), .55);
 }
 .sf-tree-row:disabled { opacity: .65; cursor: default; }
+
+/*
+ * 蜂巢式下拉的欄位名稱＋排序：最上層那一列加 .sf-tree-row--cols 改成格線，欄寬用外層設的
+ * --sf-tree-cols（例如 style="--sf-tree-cols: minmax(0,3fr) 6rem 6rem"）；表頭 .sf-tree-head
+ * （components/SfTreeHead.vue）用同一組欄寬，所以欄位會對齊。每一格是 .sf-tree-cell。
+ */
+.sf-tree-row--cols,
+.sf-tree-head {
+  display: grid;
+  grid-template-columns: var(--sf-tree-cols, minmax(0, 1fr));
+  align-items: center;
+  column-gap: .75rem;
+}
+.sf-tree-head {
+  padding: .25rem .8rem .3rem calc(.8rem + 3px);
+  margin-bottom: .3rem;
+  border-bottom: 1px solid var(--sf-border);
+  font-size: .95rem; font-weight: 700; color: var(--sf-text-muted);
+}
+.sf-tree-cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sf-tree-cell--main { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; overflow: visible; }
+.sf-tree-cell--end { text-align: right; white-space: nowrap; }
+.sf-tree-head__btn {
+  padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: inherit;
+  cursor: pointer; white-space: nowrap;
+}
+.sf-tree-head__btn:hover, .sf-tree-head__btn.is-active { color: var(--sf-accent); }
+.sf-tree-head__btn:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
+.sf-tree-head__icon { font-size: .85em; margin-left: .2rem; }
+.sf-tree-head__icon--idle { opacity: .4; }
+@media (max-width: 575.98px) {
+  /* 手機上只留第一欄（名稱）跟最後一欄，其他欄位藏起來，列內容照樣顯示在展開區 */
+  .sf-tree-row--cols, .sf-tree-head { grid-template-columns: var(--sf-tree-cols-sm, minmax(0, 1fr) auto); }
+  .sf-tree-row--cols > .sf-tree-cell--opt, .sf-tree-head > .sf-tree-cell--opt { display: none; }
+}
 .sf-tree-level {
   margin: .35rem 0 .15rem 1rem;
   padding-left: .7rem;

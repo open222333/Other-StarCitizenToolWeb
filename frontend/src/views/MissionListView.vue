@@ -57,15 +57,15 @@
           <table class="table table-hover align-middle mb-0 small">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">任務（英文）</th>
-                <th>中文</th>
-                <th>類型</th>
-                <th>勢力／NPC</th>
-                <th>星系</th>
-                <th>合法</th>
-                <th class="text-end text-nowrap">報酬</th>
+                <SortTh :sort="sort" field="title" class="ps-3">任務（英文）</SortTh>
+                <SortTh :sort="sort" field="title_zh">中文</SortTh>
+                <SortTh :sort="sort" field="reward_scope">類型</SortTh>
+                <SortTh :sort="sort" field="giver">勢力／NPC</SortTh>
+                <SortTh :sort="sort" field="star_systems">星系</SortTh>
+                <SortTh :sort="sort" field="illegal">合法</SortTh>
+                <SortTh :sort="sort" field="reward" class="text-end">報酬</SortTh>
                 <th class="text-end text-nowrap">藍圖</th>
-                <th class="pe-3 text-nowrap">玩家頁面</th>
+                <SortTh :sort="sort" field="player_visible" class="pe-3">玩家頁面</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -189,6 +189,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { missionApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { fmtChance, fmtInt, reputationLabel, rewardLabel, zhPair } from '@/utils/mission'
 
 const LEGALITY_OPTIONS = [
@@ -227,6 +229,9 @@ const hasActiveFilters = computed(() => !!query.value.trim() || scopes.value.len
   || systems.value.length > 0 || factions.value.length > 0 || legality.value.length > 0
   || hasBlueprints.value || missingZh.value || !!playerVisible.value || !!onlyId.value)
 
+// 點表頭排序（後端，見 src/models/mission.py 的 SORT_FIELDS）
+const sort = useTableSort(null, { onChange: () => reload(0) })
+
 async function reload(newOffset = 0) {
   offset.value = newOffset
   loading.value = true
@@ -241,6 +246,7 @@ async function reload(newOffset = 0) {
     missing_zh: missingZh.value ? 1 : '',
     player_visible: playerVisible.value,
     id: onlyId.value,
+    ...sort.params.value,
     limit, offset: newOffset,
   })
   const body = res?.ok ? await res.json().catch(() => null) : null

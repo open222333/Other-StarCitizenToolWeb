@@ -107,15 +107,23 @@ class Mission:
                     it['name_zh'] = master.get('name_zh')
         return rows
 
+    #: 列表可以排序的欄位（sort_by → 文件欄位）
+    SORT_FIELDS = {
+        'title': 'title_lower', 'title_zh': 'title_zh', 'reward_scope': 'reward_scope',
+        'giver': ['faction_name', 'mission_giver'], 'star_systems': 'star_systems', 'illegal': 'illegal',
+        'reward': 'reward_max', 'player_visible': 'player_visible',
+    }
+
     @classmethod
-    def list_all(cls, limit: int = 50, offset: int = 0, **filters) -> tuple:
+    def list_all(cls, limit: int = 50, offset: int = 0, sort_by: str = '', sort_dir: str = 'asc',
+                 **filters) -> tuple:
+        from src.models.sorting import sort_spec
         filt = cls._filter(**filters)
         limit = max(1, min(int(limit or 50), MAX_LIMIT))
         offset = max(0, int(offset or 0))
         total = cls._col().count_documents(filt)
-        rows = list(cls._col().find(filt, cls.PROJECTION)
-                    .sort([('title_lower', ASCENDING), ('_id', ASCENDING)])
-                    .skip(offset).limit(limit))
+        spec = sort_spec(sort_by, sort_dir, cls.SORT_FIELDS, [('title_lower', ASCENDING), ('_id', ASCENDING)])
+        rows = list(cls._col().find(filt, cls.PROJECTION).sort(spec).skip(offset).limit(limit))
         return cls._attach_blueprint_names(rows), total
 
     @classmethod

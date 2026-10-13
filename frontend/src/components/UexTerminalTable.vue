@@ -41,15 +41,15 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">終端</th>
-                <th>代碼</th>
-                <th>類型</th>
-                <th>地點</th>
-                <th class="text-end">可買商品</th>
-                <th class="text-end">可賣商品</th>
-                <th class="text-end">最大貨櫃</th>
-                <th>屬性</th>
-                <th class="pe-3">更新時間</th>
+                <SortTh :sort="tSort" field="name" class="ps-3">終端</SortTh>
+                <SortTh :sort="tSort" field="code">代碼</SortTh>
+                <SortTh :sort="tSort" field="type">類型</SortTh>
+                <SortTh :sort="tSort" field="location">地點</SortTh>
+                <SortTh :sort="tSort" field="commodity_buy_count" class="text-end">可買商品</SortTh>
+                <SortTh :sort="tSort" field="commodity_sell_count" class="text-end">可賣商品</SortTh>
+                <SortTh :sort="tSort" field="max_container_size" class="text-end">最大貨櫃</SortTh>
+                <SortTh :sort="tSort" field="flags">屬性</SortTh>
+                <SortTh :sort="tSort" field="date_modified" class="pe-3">更新時間</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -58,7 +58,7 @@
                   {{ rows.length ? '沒有符合條件的交易終端' : '還沒有交易終端資料（到「資料同步排程」同步 UEX 價格）' }}
                 </td>
               </tr>
-              <tr v-for="t in filtered" :key="t.id">
+              <tr v-for="t in tSort.sorted.value" :key="t.id">
                 <td class="ps-3">
                   <span class="fw-semibold">{{ t.displayname || t.name || '—' }}</span>
                   <div v-if="t.name && t.displayname && t.name !== t.displayname" class="small text-muted">{{ t.name }}</div>
@@ -87,6 +87,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { miningApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { fmtUexTime } from '@/utils/uexCommodity'
 
 // UEX 終端的 is_*／has_* 欄位（1／0）；is_available 為 0 的另外標「停用」
@@ -155,6 +157,11 @@ const filtered = computed(() => {
     && (!types.value.length || types.value.includes(t.type))
     && (!commodityOnly.value || t.commodity_buy_count || t.commodity_sell_count))
 })
+const tSort = useTableSort(filtered, { accessors: {
+  name: t => t.displayname || t.name, location: t => (t.location || []).join(' › '),
+  max_container_size: t => Number(t.max_container_size) || null, flags: t => flagsOf(t).map(f => f.label).join('、'),
+  date_modified: t => Number(t.date_modified) || null,
+} })
 
 onMounted(load)
 </script>

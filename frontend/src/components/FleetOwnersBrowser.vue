@@ -13,12 +13,6 @@
             placeholder="搜尋船名（中英文）..." aria-label="搜尋船名" @change="reload(0)">
           <input v-model="player" type="search" class="form-control form-control-sm" style="max-width: 14rem"
             placeholder="搜尋玩家（遊戲ID／暱稱）..." aria-label="搜尋玩家" @change="reload(0)">
-          <select v-model="sort" class="form-select form-select-sm w-auto" aria-label="排序" @change="reload(0)">
-            <option value="name">依船名</option>
-            <option value="player">依玩家</option>
-            <option value="quantity">依數量</option>
-            <option value="updated">最近更新</option>
-          </select>
           <button v-if="query || player" type="button" class="btn btn-sm btn-link" @click="resetFilters">
             清除全部篩選
           </button>
@@ -32,14 +26,14 @@
           <table class="table table-hover align-middle mb-0 small">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">船艦</th>
-                <th>玩家</th>
-                <th class="text-end">數量</th>
-                <th>製造商</th>
-                <th>角色</th>
-                <th class="text-end">尺寸</th>
+                <SortTh :sort="sort" field="name" class="ps-3">船艦</SortTh>
+                <SortTh :sort="sort" field="player">玩家</SortTh>
+                <SortTh :sort="sort" field="quantity" class="text-end">數量</SortTh>
+                <SortTh :sort="sort" field="manufacturer">製造商</SortTh>
+                <SortTh :sort="sort" field="role">角色</SortTh>
+                <SortTh :sort="sort" field="size" class="text-end">尺寸</SortTh>
                 <th>配件網址</th>
-                <th class="pe-3 text-nowrap">更新時間</th>
+                <SortTh :sort="sort" field="updated" class="pe-3">更新時間</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -106,6 +100,8 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
 
 const props = defineProps({ active: { type: Boolean, default: false } })
@@ -120,14 +116,15 @@ const loaded = ref(false)
 
 const query = ref('')
 const player = ref('')
-const sort = ref('name')
+// 點表頭排序（後端 Fleet.admin_list 的 sort／sort_dir）
+const sort = useTableSort(null, { onChange: () => reload(0) })
 
 async function reload(newOffset = 0) {
   offset.value = newOffset
   loading.value = true
   loadFailed.value = false
   const res = await vehicleApi.playerFleet({
-    q: query.value.trim(), player: player.value.trim(), sort: sort.value, limit, offset: newOffset,
+    q: query.value.trim(), player: player.value.trim(), ...sort.params.value, limit, offset: newOffset,
   })
   const body = res?.ok ? await res.json().catch(() => null) : null
   if (body?.success) {

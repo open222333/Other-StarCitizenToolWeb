@@ -99,16 +99,16 @@
               <table class="table table-hover align-middle mb-0 mining-echo__table">
                 <thead>
                   <tr>
-                    <th class="ps-3">礦床</th>
-                    <th>Tier</th>
-                    <th>顆數</th>
-                    <th>對應訊號值</th>
-                    <th>誤差</th>
-                    <th class="pe-3">可能礦物</th>
+                    <SortTh :sort="matchSort" field="deposit" class="ps-3">礦床</SortTh>
+                    <SortTh :sort="matchSort" field="tier">Tier</SortTh>
+                    <SortTh :sort="matchSort" field="rock_count">顆數</SortTh>
+                    <SortTh :sort="matchSort" field="expected">對應訊號值</SortTh>
+                    <SortTh :sort="matchSort" field="diff">誤差</SortTh>
+                    <SortTh :sort="matchSort" field="parts" class="pe-3">可能礦物</SortTh>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(m, idx) in signatureMatches.slice(1)" :key="idx">
+                  <tr v-for="(m, idx) in matchSort.sorted.value" :key="idx">
                     <td class="ps-3 fw-semibold">{{ depositLabel(m) }}</td>
                     <td>
                       <span v-if="m.tier" class="mining-echo__tag">{{ m.tier }}</span>
@@ -209,6 +209,8 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { ownSignatures as mineralOwnSignatures } from '@/utils/miningSignature'
 
 const props = defineProps({
@@ -273,6 +275,12 @@ function mineralLabel(p) {
   if (p.resource_name_zh) return `${p.resource_name_zh}（${p.resource_name || p.resource_key}）`
   return p.resource_name || p.resource_key
 }
+
+// 「其他可能」表格（第一筆是最佳結果，另外顯示）
+const otherMatches = computed(() => signatureMatches.value.slice(1))
+const matchSort = useTableSort(otherMatches, { accessors: {
+  deposit: m => depositLabel(m), parts: m => partsSummary(m.parts),
+} })
 
 function depositLabel(d) {
   if (d.deposit_name_zh) return `${d.deposit_name_zh}（${d.deposit_name}）`

@@ -29,10 +29,10 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">玩家名稱</th>
-                <th>Star Citizen ID</th>
-                <th>Discord</th>
-                <th>加入日期</th>
+                <SortTh :sort="pSort" field="player_name" class="ps-3">玩家名稱</SortTh>
+                <SortTh :sort="pSort" field="star_citizen_id">Star Citizen ID</SortTh>
+                <SortTh :sort="pSort" field="discord_name">Discord</SortTh>
+                <SortTh :sort="pSort" field="created_at">加入日期</SortTh>
                 <th style="width:160px" class="pe-3">操作</th>
               </tr>
             </thead>
@@ -46,7 +46,7 @@
                 <td colspan="5" class="text-center py-4 text-muted">尚無玩家資料</td>
               </tr>
               <template v-else>
-                <tr v-for="p in filtered" :key="p._id"
+                <tr v-for="p in pSort.sorted.value" :key="p._id"
                   :class="['cursor-pointer', { 'row-deleted': p.deleted_at }]"
                   @click="goDetail(p._id)">
                   <td class="ps-3 fw-semibold">
@@ -89,6 +89,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { playerApi } from '@/api'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import SearchBox        from '@/components/SearchBox.vue'
 import PlayerFormModal   from '@/components/PlayerFormModal.vue'
 import ConfirmModal      from '@/components/ConfirmModal.vue'
@@ -108,6 +110,9 @@ const filtered = computed(() => {
     `${p.player_name} ${p.star_citizen_id} ${p.discord_name || ''}`.toLowerCase().includes(kw)
   )
 })
+const pSort = useTableSort(filtered, { accessors: {
+  created_at: p => (p.created_at ? new Date(p.created_at).getTime() : null),
+} })
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-TW') : '—' }
 function goDetail(id) { router.push(`/players/${id}`) }

@@ -12,6 +12,7 @@ from flask_jwt_extended import jwt_required
 
 from src.permissions import viewer_sees_hidden, visibility_arg
 
+from src.models.sorting import sort_args
 from src.models.mission import MAX_LIMIT, Faction, Mission
 
 app_mission = Blueprint('app_mission', __name__)
@@ -60,8 +61,9 @@ def list_missions():
     """
     limit, offset = _paging()
     sees_hidden = viewer_sees_hidden()
+    sort_by, sort_dir = sort_args(request.args)
     rows, total = Mission.list_all(
-        limit=limit, offset=offset,
+        limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir,
         query=(request.args.get('q') or '').strip(),
         reward_scopes=_multi('reward_scope'),
         star_systems=_multi('star_system'),

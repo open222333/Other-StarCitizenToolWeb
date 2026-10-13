@@ -281,7 +281,7 @@ def list_vehicles():
     hide = not viewer_sees_hidden()
     visibility = None if hide else visibility_arg(request.args)
     has_filters = bool(careers or roles or manufacturer_codes or size_classes or types
-                       or visibility is not None or acquire)
+                       or visibility is not None or acquire or request.args.get('sort_by'))
 
     if query and not has_filters:
         # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
@@ -349,7 +349,8 @@ def list_uex_vehicle_prices():
     try:
         rows, total = uex_vehicle_price.admin_list(
             args.get('kind') or '', q=args.get('q') or '', star_system=args.get('star_system') or '',
-            limit=int(args.get('limit') or 50), offset=int(args.get('offset') or 0))
+            limit=int(args.get('limit') or 50), offset=int(args.get('offset') or 0),
+            sort_by=args.get('sort_by') or '', sort_dir=args.get('sort_dir') or 'asc')
     except ValueError as err:
         return jsonify({'success': False, 'message': str(err)}), 400
     return jsonify({'success': True, 'data': rows, 'total': total,
@@ -422,8 +423,8 @@ def list_player_fleet():
         vehicle_uuids = VehicleMaster.ids_matching_zh(query)
     rows, total = Fleet.admin_list(
         query=query, player=(request.args.get('player') or '').strip(),
-        vehicle_uuids=vehicle_uuids, sort=(request.args.get('sort') or 'name').strip(),
-        limit=limit, offset=offset)
+        vehicle_uuids=vehicle_uuids, sort=(request.args.get('sort_by') or request.args.get('sort') or 'name').strip(),
+        sort_dir=(request.args.get('sort_dir') or '').strip(), limit=limit, offset=offset)
     return jsonify({'success': True, 'data': rows, 'total': total, 'limit': limit, 'offset': offset})
 
 

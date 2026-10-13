@@ -88,11 +88,16 @@
         <div style="overflow-x: auto">
           <table class="table table-hover align-middle mb-0 game-text-table">
             <thead class="table-light">
-              <tr><th class="ps-3">代碼</th><th>中文</th><th>英文</th><th class="pe-3"></th></tr>
+              <tr>
+                <SortTh :sort="textSort" field="key" class="ps-3">代碼</SortTh>
+                <SortTh :sort="textSort" field="zh">中文</SortTh>
+                <SortTh :sort="textSort" field="en">英文</SortTh>
+                <th class="pe-3"></th>
+              </tr>
             </thead>
             <tbody>
               <tr v-if="!textRows.length"><td colspan="4" class="ps-3 text-muted">找不到符合的遊戲文字。</td></tr>
-              <tr v-for="r in textRows" :key="r.key">
+              <tr v-for="r in textSort.sorted.value" :key="r.key">
                 <td class="ps-3 font-monospace game-text-key">{{ r.key }}</td>
                 <td class="fw-semibold">{{ r.zh || '—' }}</td>
                 <td>{{ r.en || '—' }}</td>
@@ -118,6 +123,8 @@
 <script setup>
 import { computed, ref, shallowRef, watch } from 'vue'
 import { autoTranslate, parseDictionary } from '@/utils/chatCode'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -182,6 +189,7 @@ const TEXT_MODE_LABELS = { key: '代碼 → 中文', zh: '中文 → 代碼', en
 const textQuery = ref('')
 const textMode = ref('auto')
 const textRows = ref(null)
+const textSort = useTableSort(textRows)
 const textUsedMode = ref('')
 const textSearching = ref(false)
 const textError = ref('')

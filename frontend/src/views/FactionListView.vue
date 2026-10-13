@@ -46,14 +46,14 @@
           <table class="table table-hover align-middle mb-0 small">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">勢力（英文）</th>
-                <th>中文</th>
-                <th>類型</th>
-                <th>合法</th>
-                <th>NPC</th>
-                <th>聲望</th>
-                <th class="text-end">任務數</th>
-                <th class="text-end pe-3">給藍圖的任務</th>
+                <SortTh :sort="fSort" field="name" class="ps-3">勢力（英文）</SortTh>
+                <SortTh :sort="fSort" field="name_zh">中文</SortTh>
+                <SortTh :sort="fSort" field="faction_type">類型</SortTh>
+                <SortTh :sort="fSort" field="lawful">合法</SortTh>
+                <SortTh :sort="fSort" field="is_npc">NPC</SortTh>
+                <SortTh :sort="fSort" field="has_reputation">聲望</SortTh>
+                <SortTh :sort="fSort" field="mission_count" class="text-end">任務數</SortTh>
+                <SortTh :sort="fSort" field="blueprint_mission_count" class="text-end pe-3">給藍圖的任務</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -74,7 +74,7 @@
                 </td>
               </tr>
               <template v-else>
-                <template v-for="f in filtered" :key="f._id">
+                <template v-for="f in fSort.sorted.value" :key="f._id">
                   <tr :ref="el => { if (el) rowEls[f._id] = el }" class="row-click" role="button" tabindex="0"
                     :aria-expanded="expandedId === f._id ? 'true' : 'false'"
                     @click="toggle(f)" @keydown.enter="toggle(f)">
@@ -165,6 +165,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { missionApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { fmtInt, zhPair } from '@/utils/mission'
 
 const route = useRoute()
@@ -199,6 +201,7 @@ const filtered = computed(() => {
     && (!hasMissions.value || f.mission_count > 0)
     && (!missingZh.value || !f.name_zh))
 })
+const fSort = useTableSort(filtered)
 
 function resetFilters() {
   query.value = ''

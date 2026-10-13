@@ -101,14 +101,14 @@
               <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                   <tr>
-                    <th class="ps-3">材料</th>
-                    <th class="text-end">每個需要</th>
-                    <th class="text-end">做 {{ count }} 個需要</th>
+                    <SortTh :sort="matSort" field="material" class="ps-3">材料</SortTh>
+                    <SortTh :sort="matSort" field="need" class="text-end">每個需要</SortTh>
+                    <SortTh :sort="matSort" field="need" class="text-end">做 {{ count }} 個需要</SortTh>
                     <th class="pe-3"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in rows" :key="row.key">
+                  <tr v-for="row in matSort.sorted.value" :key="row.key">
                     <td class="ps-3">
                       <span class="fw-semibold">{{ materialLabel(row) }}</span>
                     </td>
@@ -148,6 +148,8 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { craftTimeLabel, normalizeIngredients, unitLabel, UNIT_SCU } from '@/utils/craftCalc'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import {
@@ -192,6 +194,7 @@ const activeOptionId = computed(() =>
   highlighted.value >= 0 ? `${listId}-opt-${highlighted.value}` : undefined)
 
 const rows = computed(() => normalizeIngredients(recipe.value))
+const matSort = useTableSort(rows, { accessors: { material: r => materialLabel(r) } })
 /** 要做幾個（空白或不合法當 1） */
 const count = computed(() => {
   const n = Math.floor(Number(target.value))

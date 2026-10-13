@@ -73,12 +73,12 @@
           <table v-if="tab === 'minerals'" class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">礦物（英文）</th>
-                <th>中文</th>
-                <th>Key</th>
-                <th>UEX 縮寫</th>
-                <th class="text-end">RS</th>
-                <th>所在礦床</th>
+                <SortTh :sort="mineralSort" field="name" class="ps-3">礦物（英文）</SortTh>
+                <SortTh :sort="mineralSort" field="zh">中文</SortTh>
+                <SortTh :sort="mineralSort" field="key">Key</SortTh>
+                <SortTh :sort="mineralSort" field="uex">UEX 縮寫</SortTh>
+                <SortTh :sort="mineralSort" field="signature" class="text-end">RS</SortTh>
+                <SortTh :sort="mineralSort" field="deposits">所在礦床</SortTh>
                 <th class="pe-3 text-nowrap">玩家頁面</th>
               </tr>
             </thead>
@@ -86,7 +86,7 @@
               <tr v-if="!filteredMinerals.length">
                 <td colspan="7" class="text-center py-4 text-muted">{{ emptyText }}</td>
               </tr>
-              <tr v-for="m in filteredMinerals" :key="m.key">
+              <tr v-for="m in mineralSort.sorted.value" :key="m.key">
                 <td class="ps-3 fw-semibold">{{ m.name }}</td>
                 <td><ZhCell :zh="m.zh" /></td>
                 <td class="small text-muted font-monospace">{{ m.key }}</td>
@@ -133,12 +133,12 @@
           <table v-else-if="tab === 'deposits'" class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">礦床（英文）</th>
-                <th>中文</th>
-                <th>Tier</th>
-                <th class="text-end">RS</th>
-                <th>成分</th>
-                <th>出現地點</th>
+                <SortTh :sort="depositSort" field="deposit_name" class="ps-3">礦床（英文）</SortTh>
+                <SortTh :sort="depositSort" field="zh">中文</SortTh>
+                <SortTh :sort="depositSort" field="tier">Tier</SortTh>
+                <SortTh :sort="depositSort" field="signature" class="text-end">RS</SortTh>
+                <SortTh :sort="depositSort" field="parts">成分</SortTh>
+                <SortTh :sort="depositSort" field="locations">出現地點</SortTh>
                 <th class="pe-3 text-nowrap">玩家頁面</th>
               </tr>
             </thead>
@@ -146,7 +146,7 @@
               <tr v-if="!filteredDeposits.length">
                 <td colspan="7" class="text-center py-4 text-muted">{{ emptyText }}</td>
               </tr>
-              <tr v-for="d in filteredDeposits" :key="d._id">
+              <tr v-for="d in depositSort.sorted.value" :key="d._id">
                 <td class="ps-3">
                   <div class="fw-semibold">{{ d.deposit_name }}</div>
                   <div class="small text-muted font-monospace">{{ d.key }}</div>
@@ -183,10 +183,10 @@
           <table v-else class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3">地點（英文）</th>
-                <th>中文</th>
-                <th>星系</th>
-                <th>礦床群組</th>
+                <SortTh :sort="locSort" field="location_name" class="ps-3">地點（英文）</SortTh>
+                <SortTh :sort="locSort" field="zh">中文</SortTh>
+                <SortTh :sort="locSort" field="system">星系</SortTh>
+                <SortTh :sort="locSort" field="groups">礦床群組</SortTh>
                 <th class="pe-3 text-nowrap">玩家頁面</th>
               </tr>
             </thead>
@@ -194,7 +194,7 @@
               <tr v-if="!filteredLocations.length">
                 <td colspan="5" class="text-center py-4 text-muted">{{ emptyText }}</td>
               </tr>
-              <tr v-for="loc in filteredLocations" :key="loc._id">
+              <tr v-for="loc in locSort.sorted.value" :key="loc._id">
                 <td class="ps-3">
                   <div class="fw-semibold">{{ loc.location_name }}</div>
                   <div class="small text-muted font-monospace">{{ loc.provider_name }}</div>
@@ -238,6 +238,8 @@ import { miningApi, visibilityApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { loadTranslations, translate } from '@/utils/translations'
 import { ownSignatures } from '@/utils/miningSignature'
 
@@ -461,6 +463,15 @@ const filteredLocations = computed(() => locations.value.filter(l =>
   && (!missingZhOnly.value || !l.zh)
   && (!systems.value.length || systems.value.includes(l.system))
   && matchesVisible(l)))
+
+// 表頭排序（前端排序，三個分頁各一份）
+const mineralSort = useTableSort(filteredMinerals, { accessors: {
+  uex: m => m.uex?.code, signature: m => m.signatures?.[0], deposits: m => m.deposits?.length,
+} })
+const depositSort = useTableSort(filteredDeposits, { accessors: {
+  parts: d => d.parts?.length, locations: d => d.locations?.length,
+} })
+const locSort = useTableSort(filteredLocations, { accessors: { groups: l => l.groups?.length } })
 
 const counts = computed(() => ({
   minerals: minerals.value.length,
