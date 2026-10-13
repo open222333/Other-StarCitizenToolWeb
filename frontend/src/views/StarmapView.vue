@@ -1,5 +1,5 @@
 <!--
-  後台「地點資料庫」（唯讀）。
+  後台「地點資料庫」（遊戲資料唯讀；可存放、設施可以人工修正）。
 
   資料是 starmap_master（tasks/scdata_sync.py 的「地點」同步項目，從 scunpacked-data
   starmap.json 同步：星系、行星、衛星、太空站、前哨站、小行星…約 2,000 筆），
@@ -14,6 +14,9 @@
   的 FEATURES）；「可存放」預設依機庫／停機坪／對接口／商品交易／裝卸區自動判斷，
   admin／operator 可以在展開列個別改成可存放／不可存放或回到自動
   （PUT /starmap/<id>/storage，存在 can_store_override，同步不會蓋掉）。
+  設施也可以在展開列編輯（勾選＋自訂名稱，PUT /starmap/<id>/amenities）：存成跟同步資料比較的增減
+  （amenities_override），屬性、自動可存放跟著重算，重新同步後由 Starmap.apply_amenities() 套回去；
+  「回到同步資料」清掉人工修正。
 
   網址參數：?id=<uuid> 只列那一筆並展開（點「上層」「下層」會跳過去）。
 -->
@@ -167,12 +170,58 @@
                             {{ f.label }}<span v-if="f.sizes" class="text-muted"> {{ f.sizes }}</span>
                           </div>
                         </div>
-                        <div class="col-lg-2">
-                          <div class="fw-semibold mb-1">設施</div>
-                          <div v-if="!loc.amenities?.length" class="text-muted">—</div>
-                          <div v-for="a in loc.amenities || []" :key="a.name">{{ zhPair(a.name, a.name_zh) }}</div>
-                        </div>
                         <div class="col-lg-3">
+                          <div class="fw-semibold mb-1">
+                            設施
+                            <span v-if="loc.amenities_override" class="badge text-bg-secondary ms-1">手動</span>
+                          </div>
+                          <template v-if="amenityEditId !== loc._id">
+                            <div v-if="!loc.amenities?.length" class="text-muted">—</div>
+                            <div v-for="a in loc.amenities || []" :key="a.name">
+                              {{ zhPair(a.name, a.name_zh) }}
+                              <span v-if="loc.amenities_override?.add?.includes(a.name)" class="badge text-bg-success ms-1">手動加</span>
+                            </div>
+                            <div v-for="n in loc.amenities_override?.remove || []" :key="`rm-${n}`" class="text-muted">
+                              <s>{{ n }}</s><span class="badge text-bg-warning ms-1">手動移除</span>
+                            </div>
+                            <div v-if="loc.amenities_override && loc.amenities_updated_by" class="text-muted meta-line">
+                              {{ loc.amenities_updated_by }} · {{ formatTime(loc.amenities_updated_at) }}
+                            </div>
+                            <div v-if="canWrite" class="d-flex flex-wrap gap-1 mt-1">
+                              <button type="button" class="btn btn-sm btn-outline-primary" @click="startAmenityEdit(loc)">
+                                <i class="bi bi-pencil me-1"></i>編輯設施
+                              </button>
+                              <button v-if="loc.amenities_override" type="button" class="btn btn-sm btn-outline-secondary"
+                                :disabled="savingAmenities" @click="saveAmenities(loc, null)">回到同步資料</button>
+                            </div>
+                          </template>
+                          <template v-else>
+                            <input v-model="amenityFilter" type="search" class="form-control form-control-sm mb-1"
+                              placeholder="篩選設施..." aria-label="篩選設施">
+                            <div class="amenity-box">
+                              <label v-for="c in visibleAmenityChoices" :key="c.value" class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" :checked="amenityDraft.includes(c.value)"
+                                  @change="toggleAmenity(c.value, $event.target.checked)">
+                                <span class="form-check-label">{{ zhPair(c.value, c.label_zh) }}</span>
+                              </label>
+                            </div>
+                            <div class="input-group input-group-sm mt-1">
+                              <input v-model="customAmenity" type="text" class="form-control" maxlength="80"
+                                placeholder="其他設施（英文）" aria-label="其他設施" @keydown.enter.prevent="addCustomAmenity">
+                              <button type="button" class="btn btn-outline-secondary" :disabled="!customAmenity.trim()"
+                                @click="addCustomAmenity">加入</button>
+                            </div>
+                            <div class="small text-muted mt-1">已選 {{ amenityDraft.length }} 個</div>
+                            <div class="d-flex gap-1 mt-1">
+                              <button type="button" class="btn btn-sm btn-primary" :disabled="savingAmenities"
+                                @click="saveAmenities(loc, amenityDraft)">儲存</button>
+                              <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="savingAmenities"
+                                @click="amenityEditId = ''">取消</button>
+                            </div>
+                          </template>
+                          <div v-if="amenityError" class="text-danger">{{ amenityError }}</div>
+                        </div>
+                        <div class="col-lg-2">
                           <div class="fw-semibold mb-1">下層地點</div>
                           <div v-if="detailLoading" class="text-muted">
                             <span class="spinner-border spinner-border-sm me-1"></span>載入中...
@@ -238,7 +287,8 @@ const expandedId = ref('')
 const children = ref([])
 const detailLoading = ref(false)
 
-const EMPTY_FACETS = { types: [], systems: [], jurisdictions: [], amenities: [], features: [], can_store: null }
+const EMPTY_FACETS = { types: [], systems: [], jurisdictions: [], amenities: [], amenity_choices: [], features: [],
+  can_store: null }
 const facets = ref({ ...EMPTY_FACETS })
 const query = ref('')
 const types = ref([])
@@ -322,6 +372,8 @@ function resetFilters() {
 async function open(loc) {
   expandedId.value = loc._id
   storageError.value = ''
+  amenityEditId.value = ''
+  amenityError.value = ''
   children.value = []
   detailLoading.value = true
   const res = await starmapApi.get(loc._id)
@@ -360,6 +412,56 @@ async function setStorage(loc, value) {
     storageError.value = body?.message || '儲存失敗'
   }
   savingStorage.value = false
+}
+
+// ── 設施（人工修正）──
+const amenityEditId = ref('')
+const amenityDraft = ref([])
+const amenityFilter = ref('')
+const customAmenity = ref('')
+const savingAmenities = ref(false)
+const amenityError = ref('')
+/** 可勾的設施：資料裡出現過的＋屬性對應的（facets.amenity_choices）＋這筆目前有的（含自訂） */
+const amenityChoices = computed(() => {
+  const out = new Map((facets.value.amenity_choices || []).map(c => [c.value, c]))
+  for (const n of amenityDraft.value) if (!out.has(n)) out.set(n, { value: n, label_zh: null })
+  return [...out.values()].sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()))
+})
+const visibleAmenityChoices = computed(() => {
+  const q = amenityFilter.value.trim().toLowerCase()
+  return q ? amenityChoices.value.filter(c => `${c.value} ${c.label_zh || ''}`.toLowerCase().includes(q))
+    : amenityChoices.value
+})
+
+function startAmenityEdit(loc) {
+  amenityEditId.value = loc._id
+  amenityDraft.value = (loc.amenities || []).map(a => a.name)
+  amenityFilter.value = ''
+  customAmenity.value = ''
+  amenityError.value = ''
+}
+function toggleAmenity(name, checked) {
+  amenityDraft.value = checked ? [...new Set([...amenityDraft.value, name])] : amenityDraft.value.filter(n => n !== name)
+}
+function addCustomAmenity() {
+  const name = customAmenity.value.trim()
+  if (name) toggleAmenity(name, true)
+  customAmenity.value = ''
+}
+async function saveAmenities(loc, names) {
+  savingAmenities.value = true
+  amenityError.value = ''
+  const res = await starmapApi.setAmenities(loc._id, names)
+  const body = res ? await res.json().catch(() => null) : null
+  if (res?.ok && body?.success) {
+    const i = rows.value.findIndex(r => r._id === loc._id)
+    if (i >= 0) rows.value[i] = { ...rows.value[i], ...body.data }
+    amenityEditId.value = ''
+    loadFacets()
+  } else {
+    amenityError.value = body?.message || '儲存失敗'
+  }
+  savingAmenities.value = false
 }
 
 const SIZE_FIELDS = { has_hangar: 'hangar_sizes', has_landing_pad: 'landing_pad_sizes' }
@@ -415,5 +517,7 @@ onMounted(() => {
 .meta-line { font-size: .75rem; }
 .pre-line { white-space: pre-line; }
 .child-list { max-height: 16rem; overflow-y: auto; }
+.amenity-box { max-height: 14rem; overflow-y: auto; padding: .25rem .4rem; border: 1px solid var(--bs-border-color);
+  border-radius: .25rem; background: var(--bs-body-bg); }
 details > summary { cursor: pointer; }
 </style>

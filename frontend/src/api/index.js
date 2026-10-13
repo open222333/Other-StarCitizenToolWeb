@@ -202,6 +202,9 @@ export const starmapApi = {
   // value：true／false／null（回到自動判斷）
   setStorage: (id, value) => apiFetch(`/starmap/${encodeURIComponent(id)}/storage`,
     { method: 'PUT', body: JSON.stringify({ can_store: value }) }),
+  // names：完整的設施英文名稱清單；null = 回到同步的資料
+  setAmenities: (id, names) => apiFetch(`/starmap/${encodeURIComponent(id)}/amenities`,
+    { method: 'PUT', body: JSON.stringify({ amenities: names }) }),
 }
 
 // ── 艦船主檔 API（遊戲資料，唯讀）───────────────────────────────

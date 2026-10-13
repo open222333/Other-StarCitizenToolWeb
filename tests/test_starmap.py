@@ -238,3 +238,53 @@ def test_storage_locations_planet_and_names_in(zh):
     assert set(Starmap.names_in(planets=['Hurston'])) == {'Hurston', 'Lorville', 'Everus Harbor'}
     assert Starmap.names_in(['Pyro'], ['Hurston']) == []
 
+
+def test_set_amenities_survives_sync(client, auth_headers, zh):
+    """後台改設施：屬性、自動可存放跟著重算；重新同步後人工修正還在；null 回到同步的資料。"""
+    _sync([STAR, PLANET, OUTPOST])
+    res = client.put('/starmap/o-lorville/amenities', headers=auth_headers,
+                     json={'amenities': ['Vehicle Services', 'Docking', ' Docking ', '']})
+    assert res.status_code == 200, res.get_json()
+    doc = res.get_json()['data']
+    assert [a['name'] for a in doc['amenities']] == ['Vehicle Services', 'Docking']
+    assert doc['amenities_override'] == {'add': ['Docking'], 'remove': ['Hangar (L)']}
+    assert doc['has_hangar'] is False and doc['has_docking'] is True and doc['hangar_sizes'] == []
+    assert doc['can_store_auto'] is True and doc['can_store'] is True and doc['amenity_count'] == 2
+
+    # 星球本來沒有設施：加機庫 → 可存放
+    doc = client.put('/starmap/p-hurston/amenities', headers=auth_headers,
+                     json={'amenities': ['Hangar (S)']}).get_json()['data']
+    assert doc['has_hangar'] is True and doc['can_store'] is True and doc['hangar_sizes'] == ['S']
+
+    _sync([STAR, PLANET, OUTPOST])   # 重新同步：mapper 會先蓋回原始設施，apply_amenities 再套回去
+    Starmap.apply_amenities()
+    Starmap.apply_storage()
+    lorville = get_db()['starmap_master'].find_one({'_id': 'o-lorville'})
+    assert [a['name'] for a in lorville['amenities']] == ['Vehicle Services', 'Docking']
+    assert lorville['amenities_auto'] == ['Hangar (L)', 'Vehicle Services']
+    assert lorville['can_store'] is True
+
+    doc = client.put('/starmap/o-lorville/amenities', headers=auth_headers, json={'amenities': None}).get_json()['data']
+    assert [a['name'] for a in doc['amenities']] == ['Hangar (L)', 'Vehicle Services']
+    assert doc['amenities_override'] is None and doc['has_hangar'] is True
+
+    # 跟同步的一樣就不算人工修正
+    doc = client.put('/starmap/o-lorville/amenities', headers=auth_headers,
+                     json={'amenities': ['Hangar (L)', 'Vehicle Services']}).get_json()['data']
+    assert doc['amenities_override'] is None
+
+    assert client.put('/starmap/o-lorville/amenities', headers=auth_headers, json={}).status_code == 400
+    assert client.put('/starmap/o-lorville/amenities', headers=auth_headers,
+                      json={'amenities': 'Docking'}).status_code == 400
+    assert client.put('/starmap/nope/amenities', headers=auth_headers, json={'amenities': []}).status_code == 404
+    facets = client.get('/starmap/facets', headers=auth_headers).get_json()['data']
+    assert 'Rent Vehicles' in [c['value'] for c in facets['amenity_choices']], '屬性對應的設施也能選'
+
+
+def test_set_amenities_on_old_data_without_auto(client, auth_headers, zh):
+    """amenities_auto 欄位加上去之前同步的資料：拿現有的 amenities 當同步來的。"""
+    _sync([STAR, PLANET, OUTPOST])
+    get_db()['starmap_master'].update_one({'_id': 'o-lorville'}, {'$unset': {'amenities_auto': ''}})
+    doc = client.put('/starmap/o-lorville/amenities', headers=auth_headers,
+                     json={'amenities': ['Hangar (L)']}).get_json()['data']
+    assert doc['amenities_override'] == {'add': [], 'remove': ['Vehicle Services']}

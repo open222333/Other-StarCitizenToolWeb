@@ -165,3 +165,45 @@ def set_location_storage(location_id):
     label = {True: '可存放', False: '不可存放', None: '自動'}[body['can_store']]
     Log.create(username, 'set_location_storage', f'地點 {location_id} 可存放設為{label}', success=True)
     return jsonify({'success': True, 'data': doc})
+
+
+@app_starmap.route('/<location_id>/amenities', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_location_amenities(location_id):
+    """手動設定地點的設施（完整清單；null = 回到同步的資料）。屬性、自動「可存放」跟著重算。
+    存成 amenities_override（跟同步來的比較的增減），重新同步不會蓋掉。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: location_id, type: string, required: true}
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            amenities: {type: array, items: {type: string}, description: "設施英文名稱（例如 Hangar (L)）；null = 回到同步的資料"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 格式錯誤
+      404:
+        description: 找不到地點
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or 'amenities' not in body:
+        return jsonify({'success': False, 'message': '缺少 amenities'}), 400
+    username = get_jwt_identity()
+    try:
+        doc = Starmap.set_amenities(location_id, body['amenities'], username)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    if not doc:
+        return jsonify({'success': False, 'message': '找不到地點'}), 404
+    override = doc.get('amenities_override') or {}
+    detail = '回到同步的資料' if not override else \
+        f"新增 {'、'.join(override.get('add') or []) or '—'}；移除 {'、'.join(override.get('remove') or []) or '—'}"
+    Log.create(username, 'set_location_amenities', f'地點 {location_id} 設施：{detail}', success=True)
+    return jsonify({'success': True, 'data': doc})

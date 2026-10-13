@@ -551,6 +551,7 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
             # 上層、所屬星系要整份寫完才算得出來（見 src/models/starmap.py）
             _report(force=True, phase='整理上下層與所屬星系')
             logger.info('scdata_sync: 地點上下層更新 %d 筆', Starmap.rebuild_hierarchy())
+            logger.info('scdata_sync: 地點設施人工修正 %d 筆', Starmap.apply_amenities())
             logger.info('scdata_sync: 地點「可存放」更新 %d 筆', Starmap.apply_storage())
 
     elif key == 'uex':

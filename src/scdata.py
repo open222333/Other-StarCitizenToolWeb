@@ -1091,6 +1091,9 @@ def map_starmap(doc: dict) -> Optional[dict]:
         'is_prison': bool(jurisdiction.get('IsPrison')),
         'affiliation': _real_text(affiliation.get('DisplayName') or affiliation.get('Name')),
         'amenities': amenities,
+        # 同步來的原始設施；後台手動改過的（amenities_override，mapper 不輸出）由
+        # Starmap.apply_amenities() 在同步完重新套到 amenities／屬性欄位上
+        'amenities_auto': [x['name'] for x in amenities],
         'amenity_count': len(amenities),
         # 各屬性一個布林欄位（has_hangar、shop_weapons…）、機庫／停機坪尺寸、自動「可存放」。
         # 實際的 can_store 要套上人工修正，同步完由 Starmap.apply_storage() 算

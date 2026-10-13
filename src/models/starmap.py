@@ -200,7 +200,16 @@ class Starmap:
             'systems': count_by('system_name', 'system_name_zh'),
             'jurisdictions': count_by('jurisdiction', 'jurisdiction_zh'),
             'amenities': sorted(amen.values(), key=lambda x: x['value'].lower()),
+            # 後台「編輯設施」可以勾的：資料裡出現過的＋屬性對應的設施（就算目前沒有地點有）
+            'amenity_choices': cls._amenity_choices(amen),
         }
+
+    @staticmethod
+    def _amenity_choices(seen: dict) -> list:
+        from src.sc_zh import amenity_zh
+        names = set(seen) | {n for _, ns in FEATURES for n in ns}
+        return sorted(({'value': n, 'label_zh': (seen.get(n) or {}).get('label_zh') or amenity_zh(n)} for n in names),
+                      key=lambda x: x['value'].lower())
 
     @classmethod
     def count_current(cls) -> int:
@@ -225,6 +234,79 @@ class Starmap:
             'can_store_override': value, 'can_store': bool(effective),
             'can_store_updated_by': username or None, 'can_store_updated_at': datetime.utcnow()}})
         return cls._col().find_one({'_id': location_id}, cls.PROJECTION)
+
+    # ── 設施（同步＋人工修正）────────────────────────────────────
+
+    #: 一個地點最多幾個設施、設施名稱最長幾個字
+    MAX_AMENITIES = 60
+    MAX_AMENITY_LEN = 80
+
+    @staticmethod
+    def _amenity_fields(auto: list, override: Optional[dict]) -> dict:
+        """同步來的設施（名稱清單）套上人工修正（{add, remove}）→ amenities／amenity_count／屬性欄位／
+        can_store_auto。順序：同步來的（扣掉移除的）在前，手動加的接在後面。"""
+        from src.sc_zh import amenity_zh
+        override = override or {}
+        removed = set(override.get('remove') or [])
+        names = [n for n in auto if n not in removed]
+        names += [n for n in override.get('add') or [] if n not in names]
+        return {
+            'amenities': [{'name': n, 'name_zh': amenity_zh(n)} for n in names],
+            'amenity_count': len(names),
+            **features_from_amenities(names),
+        }
+
+    @classmethod
+    def set_amenities(cls, location_id: str, names, username: str = '') -> Optional[dict]:
+        """人工設定設施：names 是完整的設施名稱清單（跟同步來的比較，存成 amenities_override 的
+        add／remove，同步不會蓋掉）；None = 清掉人工修正、回到同步的資料。屬性欄位、自動可存放跟著重算，
+        實際的可存放仍套 can_store_override。找不到地點回 None；格式錯誤丟 ValueError。"""
+        from datetime import datetime
+        doc = cls._col().find_one({'_id': location_id},
+                                  {'amenities': 1, 'amenities_auto': 1, 'amenities_override': 1,
+                                   'can_store_override': 1})
+        if not doc:
+            return None
+        auto = doc.get('amenities_auto')
+        if auto is None:   # 這個欄位加上去之前同步的資料：還沒改過的話 amenities 就是同步來的
+            auto = [] if doc.get('amenities_override') else [a.get('name') for a in doc.get('amenities') or []
+                                                              if a.get('name')]
+        if names is None:
+            override = None
+        else:
+            if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+                raise ValueError('amenities 必須是字串陣列或 null')
+            clean = list(dict.fromkeys(n.strip() for n in names if n.strip()))
+            if len(clean) > cls.MAX_AMENITIES:
+                raise ValueError(f'設施最多 {cls.MAX_AMENITIES} 個')
+            if any(len(n) > cls.MAX_AMENITY_LEN for n in clean):
+                raise ValueError(f'設施名稱最多 {cls.MAX_AMENITY_LEN} 個字')
+            add = [n for n in clean if n not in auto]
+            remove = [n for n in auto if n not in clean]
+            override = {'add': add, 'remove': remove} if (add or remove) else None
+        fields = cls._amenity_fields(auto, override)
+        override_value = doc.get('can_store_override')
+        fields['can_store'] = bool(fields['can_store_auto'] if override_value is None else override_value)
+        cls._col().update_one({'_id': location_id}, {'$set': {
+            **fields, 'amenities_auto': auto, 'amenities_override': override,
+            'amenities_updated_by': (username or None) if override else None,
+            'amenities_updated_at': datetime.utcnow() if override else None}})
+        return cls._col().find_one({'_id': location_id}, cls.PROJECTION)
+
+    @classmethod
+    def apply_amenities(cls) -> int:
+        """同步完把人工修正的設施重新套上去（mapper 每次都會用同步的資料蓋掉 amenities），回傳筆數。
+        要在 apply_storage() 之前跑（自動可存放跟著設施變）。"""
+        ops = []
+        for row in cls._col().find({'amenities_override': {'$ne': None}},
+                                   {'amenities_auto': 1, 'amenities_override': 1}):
+            if not row.get('amenities_override'):
+                continue
+            fields = cls._amenity_fields(row.get('amenities_auto') or [], row['amenities_override'])
+            ops.append(UpdateOne({'_id': row['_id']}, {'$set': fields}))
+        for i in range(0, len(ops), 1000):
+            cls._col().bulk_write(ops[i:i + 1000], ordered=False)
+        return len(ops)
 
     @classmethod
     def _planets(cls) -> dict:
