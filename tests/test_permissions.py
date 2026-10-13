@@ -250,6 +250,7 @@ UNGUARDED_ALLOWLIST = {
     'app_item.list_items',
     # 可存放的地點（公開星圖資料，玩家站庫存地點下拉在用）
     'app_starmap.storage_locations',
+    'app_starmap.home_locations',     # 可選居住地清單，刻意公開（同 storage_locations）
     'app_item.search_items',
     'app_item.list_types',
     'app_item.get_item',
@@ -264,6 +265,8 @@ UNGUARDED_ALLOWLIST = {
     # 遊戲文字翻譯查詢：公開的遊戲在地化＋社群翻譯包，不需要 token（未登入頁面也要用）
     'app_item.lookup_translations',
     'app_item.vehicle_facets',        # 上面幾支合成一次回應＋類型，玩家頁艦隊／持有船艦要用
+    'app_item.item_facets',           # 物品篩選選單選項，公開遊戲資料
+    'app_item.get_item_uex_prices',   # 物品 UEX 買賣價格與終端，公開遊戲資料
     'app_item.list_commodities',
     # 製造藍圖主檔（同樣是公開遊戲資料，玩家端的藍圖自動完成要用）
     'app_blueprint.list_master',

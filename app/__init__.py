@@ -1,5 +1,7 @@
+import ipaddress
 import json
 import logging
+import time
 from os import environ
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -40,6 +42,49 @@ app = Flask(__name__)
 # 或剛好幾個成員同時登入，就會讓其他人平白被 429 擋下來，看起來像是
 # 「密碼突然不對」；同時也讓 rate limit 完全失去「擋單一來源暴力破解」的意義。
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+# ── 偵測「真實 IP 沒有傳到後端」的設定問題 ────────────────────────────
+# ProxyFix 只信任最後一層。如果前面的 nginx 沒有用 real_ip 還原訪客 IP（例如主機 nginx →
+# 容器 nginx 這種兩層代理，見 conf/nginx-web/default.conf），remote_addr 會變成 Docker 閘道
+# 這種私有 IP，而真正的公網 IP 停在 X-Forwarded-For 前面幾段——登入失敗鎖定、操作紀錄 IP、
+# 限流就會全站共用一個 IP。這種狀況每 10 分鐘最多記一次警告，不影響請求。
+_REAL_IP_WARN_INTERVAL = 600
+_real_ip_warned_at = [0.0]
+
+
+def _is_public_ip(value: str) -> bool:
+    try:
+        ip = ipaddress.ip_address((value or '').strip())
+    except ValueError:
+        return False
+    return ip.is_global
+
+
+def warn_if_real_ip_lost(remote_addr: str, forwarded_for: str) -> bool:
+    """remote_addr 是私有網段、X-Forwarded-For 裡卻有公網 IP → 記警告並回 True。"""
+    try:
+        ip = ipaddress.ip_address(remote_addr or '')
+    except ValueError:
+        return False
+    if not ip.is_private or ip.is_loopback:
+        return False
+    if not any(_is_public_ip(p) for p in (forwarded_for or '').split(',')):
+        return False
+    now = time.monotonic()
+    if now - _real_ip_warned_at[0] >= _REAL_IP_WARN_INTERVAL:
+        _real_ip_warned_at[0] = now
+        logging.getLogger(__name__).warning(
+            '來源 IP 是私有網段 %s，但 X-Forwarded-For 帶有公網 IP（%s）：前面的反向代理沒有還原真實 IP，'
+            '登入失敗鎖定、操作紀錄 IP、限流會全站共用同一個 IP。請在每一層 nginx 設定 real_ip'
+            '（見 conf/nginx-web/default.conf、README「反向代理與真實 IP」）。',
+            remote_addr, forwarded_for)
+    return True
+
+
+@app.before_request
+def _check_real_ip():
+    warn_if_real_ip_lost(request.remote_addr or '', request.headers.get('X-Forwarded-For', ''))
 
 template = {
     "swagger": "2.0",

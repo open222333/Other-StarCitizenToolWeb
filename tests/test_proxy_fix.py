@@ -96,3 +96,18 @@ def test_proxy_fix_trusts_exactly_one_hop():
     _call(flask_app, env)
 
     assert env['REMOTE_ADDR'] == '198.51.100.9'
+
+
+
+def test_warn_if_real_ip_lost(caplog):
+    """remote_addr 是 Docker 閘道這種私有 IP、X-Forwarded-For 卻帶公網 IP → 前面的代理沒還原真實 IP，要記警告。"""
+    import app as app_module
+    from app import warn_if_real_ip_lost
+    app_module._real_ip_warned_at[0] = 0.0
+    with caplog.at_level('WARNING'):
+        assert warn_if_real_ip_lost('172.19.0.1', '8.8.8.8, 172.19.0.1') is True
+    assert '沒有還原真實 IP' in caplog.text
+    assert warn_if_real_ip_lost('8.8.8.8', '8.8.8.8') is False, '已經是公網 IP'
+    assert warn_if_real_ip_lost('172.19.0.1', '10.0.0.5') is False, 'XFF 只有私有 IP（內網測試）'
+    assert warn_if_real_ip_lost('127.0.0.1', '8.8.8.8') is False, '本機（直接連主機偽造標頭）不算'
+    assert warn_if_real_ip_lost('', '') is False

@@ -707,6 +707,24 @@ curl -fs http://<伺服器IP>/ && echo      # 確認服務恢復
 
 ---
 
+## 反向代理與真實 IP
+
+登入失敗鎖定（同一 IP 15 分鐘失敗 20 次）、操作紀錄的 IP、Flask-Limiter 限流，都靠 `request.remote_addr`
+分辨訪客。api 的 `ProxyFix(x_for=1)` **只信任最後一層代理**，所以前面每一層 nginx 都要把真實 IP 還原好，
+否則所有訪客會變成同一個 Docker 閘道 IP（例如 `172.19.0.1`）——IP 鎖定變成全站鎖定、操作紀錄 IP 失去意義。
+
+典型路徑：`訪客 → Cloudflare → 主機 nginx → 容器 nginx（web 或 nginx）→ api`
+
+| 哪一層 | 要做什麼 | 本專案 |
+|---|---|---|
+| 主機 nginx（走 Cloudflare） | 只信任 Cloudflare IP 段送來的 `CF-Connecting-IP`：`set_real_ip_from <Cloudflare IP 段>` ＋ `real_ip_header CF-Connecting-IP` | 範本 `conf/nginx/host/cloudflare.conf`（IP 段清單：<https://www.cloudflare.com/ips/>） |
+| 主機 nginx（不走 Cloudflare） | 至少用 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` 把訪客 IP 傳下去 | `conf/nginx/host/http.conf`、`https-letsencrypt.conf` |
+| 容器 nginx（web／nginx http 模式） | 信任 Docker 私有網段送來的 `X-Forwarded-For`：`set_real_ip_from 172.16.0.0/12` ＋ `real_ip_header X-Forwarded-For` ＋ `real_ip_recursive on` | 已內建於 `conf/nginx-web/default.conf`、`conf/nginx/conf.d/default.conf.http.template` |
+
+驗證：從外部登入失敗一次，到後台「操作紀錄」看 IP 是不是自己的公網 IP；直接連主機並偽造
+`X-Forwarded-For`／`CF-Connecting-IP` 時不應該被採信。設定錯的話，api 的 log 會每 10 分鐘出現一次
+「來源 IP 是私有網段 …，但 X-Forwarded-For 帶有公網 IP」的警告（`app/__init__.py` 的 `warn_if_real_ip_lost`）。
+
 ## 主機 nginx 部署
 
 **適用情境**：主機上已安裝 nginx（或已有其他服務佔用 80/443），不想在 Docker 中再跑一個 nginx。
