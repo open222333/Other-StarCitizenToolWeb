@@ -144,6 +144,23 @@ def _paging() -> tuple:
     return max(1, min(limit, MAX_LIMIT)), max(0, offset)
 
 
+def _my_registered_uuids() -> set:
+    """玩家 token：這個玩家已登記的主檔 uuid；不是玩家 token（後台）回空集合。"""
+    from flask_jwt_extended import get_jwt, get_jwt_identity
+
+    from src.models.player import Player
+    from src.permissions import PLAYER_CLAIM
+
+    if not get_jwt().get(PLAYER_CLAIM):
+        return set()
+    identity = get_jwt_identity() or ''
+    scid = identity.split(':', 1)[1] if identity.startswith('player:') else ''
+    player = Player.find_by_star_citizen_id(scid) if scid else None
+    if not player:
+        return set()
+    return BlueprintModel.registered_uuids_for_player(str(player['_id']))
+
+
 @app_blueprint.route('/master', methods=['GET'])
 @jwt_required()
 def list_master():
@@ -159,6 +176,7 @@ def list_master():
       - {in: query, name: missing_zh,  type: integer, description: "1 = 只看沒有中文名稱的"}
       - {in: query, name: has_missions, type: integer, description: "1 = 只看有任務會給的（需任務解鎖）"}
       - {in: query, name: player_visible, type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的（玩家 token 一律只看得到顯示的）"}
+      - {in: query, name: unregistered, type: integer, description: "玩家 token 用：1 = 不列自己已登記的藍圖（後台 token 忽略）"}
       - {in: query, name: limit,       type: integer, default: 50, description: "最多 200"}
       - {in: query, name: offset,      type: integer, default: 0}
     responses:
@@ -177,6 +195,7 @@ def list_master():
         missing_zh=request.args.get('missing_zh') == '1',
         only_ids=(Mission.blueprint_uuids_with_missions(visible_only=hide)
                   if request.args.get('has_missions') == '1' else None),
+        exclude_ids=(_my_registered_uuids() if request.args.get('unregistered') == '1' else None),
         visible_only=hide,
         visibility=None if hide else visibility_arg(request.args),
     )

@@ -733,7 +733,7 @@ class BlueprintMaster(_MasterBase):
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0,
                  output_type='', available_only: bool = False, exclude_available: bool = False,
-                 query: str = '', missing_zh: bool = False, only_ids=None,
+                 query: str = '', missing_zh: bool = False, only_ids=None, exclude_ids=None,
                  visible_only: bool = False, visibility=None,
                  sort_by: str = '', sort_dir: str = 'asc') -> tuple:
         """分頁列出藍圖主檔。
@@ -746,12 +746,15 @@ class BlueprintMaster(_MasterBase):
         `missing_zh` 只列沒有中文名稱的（後台檢查翻譯缺漏用）。
         `only_ids` 不是 None 時只列這些 uuid（「只看需任務解鎖」用）。
         `exclude_available` 不列預設可用的（玩家頁「登記藍圖資料」）。
+        `exclude_ids` 不列這些 uuid（玩家頁「只顯示未登記」：自己已登記的）。
         `visible_only`（玩家端）／`visibility`（後台篩選）：玩家頁面顯示，見 src/models/visibility.py。
         """
         filt: dict = {'is_current': True}
         add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
         if only_ids is not None:
             filt['_id'] = {'$in': list(only_ids)}
+        if exclude_ids:
+            filt.setdefault('_id', {})['$nin'] = list(exclude_ids)
         types = _clean_list(output_type)
         if types:
             filt['output_type'] = types[0] if len(types) == 1 else {'$in': types}

@@ -336,6 +336,18 @@ def test_player_blueprint_list_is_enriched_with_master(client, player_headers, s
     assert row['master']['ingredient_count'] == 3
 
 
+def test_master_list_unregistered_hides_my_registered(client, player_headers, auth_headers, seeded_master):
+    """「只顯示未登記」：玩家 token 帶 unregistered=1 時不列自己已登記的；後台 token 忽略這個參數。"""
+    def ids(headers, qs=''):
+        return [r['_id'] for r in client.get(f'/blueprint/master{qs}', headers=headers).get_json()['data']]
+
+    assert API_ROW['uuid'] in ids(player_headers, '?unregistered=1'), '還沒登記時照常列出'
+    client.post('/player/blueprints', headers=player_headers, json={'blueprint_uuid': API_ROW['uuid']})
+    assert API_ROW['uuid'] not in ids(player_headers, '?unregistered=1')
+    assert API_ROW['uuid'] in ids(player_headers), '沒勾就照常列出（標已登記）'
+    assert API_ROW['uuid'] in ids(auth_headers, '?unregistered=1'), '後台不是玩家，不排除'
+
+
 def test_player_cannot_use_free_text(client, player_headers, seeded_master):
     """玩家端**不接受**自由輸入的名稱，只能選主檔裡有的。
 

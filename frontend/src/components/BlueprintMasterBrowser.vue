@@ -19,9 +19,10 @@
   後端也會再擋重複（Blueprint.bulk_create_for_player）。登記完 emit('registered') 讓父層重抓我的藍圖。
   原本獨立的「批量登記」元件已併進這裡（已刪除）。
 
-  玩家頁傳 sharedFilters（{ q, types, hasMissions, hideAvailable }）時，名稱／類型／只看需任務解鎖
+  玩家頁傳 sharedFilters（{ q, types, hasMissions, hideAvailable, unregistered }）時，名稱／類型／只看需任務解鎖
   全部改用「藍圖」分頁頂端的共用搜尋卡，這裡自己的條件卡整個不顯示；hideAvailable＝不列預設可用的
-  （視同已登記，後端 available=0）。
+  （視同已登記，後端 available=0）；unregistered＝只顯示未登記（後端 unregistered=1 依玩家 token 排除自己已登記的，
+  登記完名冊一變就重抓這一頁）。
 
   玩家頁面顯示（後台才有的欄位與篩選）：PlayerVisibleToggle，規則見 src/models/visibility.py；
   玩家 token 呼叫 /blueprint/master 時後端本來就只回顯示的。
@@ -353,7 +354,14 @@ function togglePage(checked) {
 }
 
 // 別處（單張登記、我的藍圖刪除）改了名冊，已登記的就不該還勾著
-watch(registeredSet, (set) => { for (const id of [...selected]) if (set.has(id)) selected.delete(id) })
+watch(registeredSet, (set) => {
+  for (const id of [...selected]) if (set.has(id)) selected.delete(id)
+  // 「只顯示未登記」時剛登記的要從清單消失；這一頁被登記光了就退回上一頁
+  if (loaded && shared.value && props.sharedFilters.unregistered) {
+    const left = rows.value.filter(bp => !set.has(bp._id)).length
+    reload(!left && offset.value > 0 ? Math.max(0, offset.value - limit) : offset.value)
+  }
+})
 
 let flashTimer = null
 function flash(text, type = 'alert-success') {
@@ -432,6 +440,7 @@ async function reload(newOffset = 0) {
     missing_zh: missingZhOnly.value ? 1 : '',
     has_missions: effectiveHasMissions.value ? 1 : '',
     player_visible: props.player ? '' : playerVisible.value,
+    unregistered: shared.value && props.sharedFilters.unregistered ? 1 : '',
     ...sort.params.value,
     limit, offset: newOffset,
   })}`)
