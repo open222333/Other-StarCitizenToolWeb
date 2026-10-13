@@ -2,7 +2,7 @@
   後台「資料同步排程」頁。
 
   每個資料庫（翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、UEX 價格）是一個
-  同步項目，各自有 cron、啟用狀態與上次結果（後端 src/models/sync_schedule.py 的
+  同步項目，各自有 cron（畫面上用 CronEditor 以頻率／時間／星期設定）、啟用狀態與上次結果（後端 src/models/sync_schedule.py 的
   SyncJobs，API 在 app/item/view.py 的 /item/sync-jobs）。這頁可以個別改時間、
   個別手動同步，也可以全部一起同步。UEX 那一列另外可以直接設定 API token（只有 admin，
   /item/sync-uex-token，後端只回末 4 碼）。
@@ -110,9 +110,9 @@
                 </td>
                 <td class="text-end">{{ fmtInt(job.count) }}</td>
                 <td>
-                  <input v-model="drafts[job.key].cron" type="text" class="form-control form-control-sm cron-input"
-                    :class="{ 'is-invalid': errors[job.key] }" :disabled="!canSync" placeholder="30 4 * * 1"
-                    :aria-label="`${job.label} 排程`" @keydown.enter="save(job)">
+                  <!-- 易讀的排程設定（頻率＋時間＋星期／日期），存的仍是 cron（components/CronEditor.vue） -->
+                  <CronEditor v-model="drafts[job.key].cron" :disabled="!canSync" :invalid="!!errors[job.key]"
+                    :label="job.label" />
                   <div v-if="errors[job.key]" class="invalid-feedback d-block">{{ errors[job.key] }}</div>
                 </td>
                 <td>
@@ -224,6 +224,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { itemApi } from '@/api'
+import CronEditor from '@/components/CronEditor.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
