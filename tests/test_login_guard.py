@@ -52,3 +52,13 @@ def test_admin_login_log_has_ip(client, seed_admin, auth_headers):
     _login(client, 'wrong', ip='10.2.2.2')
     rows = client.get('/log/', headers=auth_headers).get_json()['data']
     assert any(r.get('ip') == '10.2.2.2' for r in rows)
+
+
+def test_player_remember_me(client):
+    client.post('/player/register', json={'nickname': 'efgh5678', 'star_citizen_id': 'efgh5678',
+                                           'password': 'player-pw-123'})
+    body = lambda **kw: client.post('/player/login', json={'star_citizen_id': 'efgh5678',
+                                                          'password': 'player-pw-123', **kw}).get_json()
+    assert 'refresh_token' in body(remember_me=True)
+    assert 'refresh_token' not in body(remember_me=False)
+    assert 'refresh_token' in body(), '舊版前端沒帶 remember_me 照舊給'

@@ -61,7 +61,7 @@ const router  = useRouter()
 const auth    = useAuthStore()
 const loading = ref(false)
 const error   = ref('')
-const form    = reactive({ username: '', password: '', remember_me: false })
+const form    = reactive({ username: '', password: '', remember_me: true })   // 預設記住 30 天
 
 // 兩套 build 的站名不同，見 DashboardLayout.vue 同樣的判斷
 const appTitle = import.meta.env.VITE_APP_TITLE || '管理後台'

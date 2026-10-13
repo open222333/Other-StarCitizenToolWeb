@@ -31,10 +31,10 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem(KEYS.token, token.value)
     localStorage.setItem(KEYS.user,  username.value)
     localStorage.setItem(KEYS.role,  role.value)
-    if (data.refresh_token) {
-      refreshToken.value = data.refresh_token
-      localStorage.setItem(KEYS.refresh, data.refresh_token)
-    }
+    // 沒勾「記住我」就沒有 refresh_token：清掉舊的，8 小時後要重新登入
+    refreshToken.value = data.refresh_token || ''
+    if (data.refresh_token) localStorage.setItem(KEYS.refresh, data.refresh_token)
+    else localStorage.removeItem(KEYS.refresh)
   }
 
   function clearAuth() {

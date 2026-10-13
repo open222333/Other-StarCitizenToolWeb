@@ -23,10 +23,15 @@
               placeholder="你的 Star Citizen 帳號 ID" :disabled="submitting">
           </div>
 
-          <div class="mb-4">
+          <div class="mb-3">
             <label class="form-label small fw-semibold">密碼</label>
             <input v-model="form.password" type="password" class="form-control" required
               placeholder="密碼" :disabled="submitting">
+          </div>
+
+          <div class="mb-4 form-check">
+            <input id="player-remember" v-model="form.remember_me" class="form-check-input" type="checkbox">
+            <label class="form-check-label" for="player-remember">記住我（30 天）</label>
           </div>
 
           <button type="submit" class="btn btn-scifi w-100" :disabled="submitting">
@@ -55,7 +60,7 @@ import { usePlayerAuthStore } from '@/stores/playerAuth'
 const router     = useRouter()
 const playerAuth = usePlayerAuthStore()
 
-const form = reactive({ star_citizen_id: '', password: '' })
+const form = reactive({ star_citizen_id: '', password: '', remember_me: true })   // 預設記住 30 天
 const submitting = ref(false)
 const error       = ref('')
 
@@ -66,6 +71,7 @@ async function submit() {
     const res = await loginPlayer({
       star_citizen_id: form.star_citizen_id.trim(),
       password: form.password,
+      remember_me: form.remember_me,
     })
     if (!res) { error.value = '網路錯誤，請稍後再試'; return }
     const data = await res.json().catch(() => null)

@@ -370,10 +370,13 @@ def login_player():
     resp = {
         'success':         True,
         'token':           create_access_token(identity=identity, additional_claims=claims),
-        'refresh_token':   create_refresh_token(identity=identity, additional_claims=claims),
         'nickname':        player.get('nickname'),
         'star_citizen_id': player.get('star_citizen_id'),
     }
+    # 「記住我（30 天）」：有 refresh_token 才會在 access token（8 小時）過期後自動換新；
+    # 沒帶 remember_me 的舊版前端照舊給（相容）
+    if data.get('remember_me', True):
+        resp['refresh_token'] = create_refresh_token(identity=identity, additional_claims=claims)
     return jsonify(resp)
 
 
