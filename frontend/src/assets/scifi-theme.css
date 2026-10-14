@@ -940,3 +940,7 @@
   color: var(--sf-text);
 }
 :root:not([data-sf-mode='light']) .scifi-page select { color-scheme: dark; }
+
+/* 換頁後捲回列表頂端時（utils/scrollAnchor.js），留出固定頂端列＋分頁列的高度 */
+.sf-scroll-anchor { scroll-margin-top: calc(var(--sf-topbar-h, 53px) + var(--sf-tabs-h, 53px) + .75rem); }
+.sf-list-loading { opacity: .6; transition: opacity .15s; }

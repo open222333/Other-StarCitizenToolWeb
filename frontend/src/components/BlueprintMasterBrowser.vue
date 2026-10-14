@@ -32,7 +32,8 @@
   utils/translations.js 即時查。
 -->
 <template>
-  <div>
+  <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
+  <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
     <div v-if="!shared" :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-2">
         <div class="d-flex flex-wrap align-items-center gap-2">
@@ -99,7 +100,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-if="loading">
+              <tr v-if="loading && !rows.length">
                 <td :colspan="colspan" class="text-center py-4 text-muted">
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
@@ -243,9 +244,9 @@
       </div>
       <div class="btn-group btn-group-sm">
         <button class="btn" :class="player ? 'btn-scifi-outline' : 'btn-outline-secondary'"
-          :disabled="offset === 0 || loading" @click="reload(Math.max(0, offset - limit))">上一頁</button>
+          :disabled="offset === 0 || loading" @click="goPage(Math.max(0, offset - limit))">上一頁</button>
         <button class="btn" :class="player ? 'btn-scifi-outline' : 'btn-outline-secondary'"
-          :disabled="offset + limit >= total || loading" @click="reload(offset + limit)">下一頁</button>
+          :disabled="offset + limit >= total || loading" @click="goPage(offset + limit)">下一頁</button>
       </div>
     </div>
 
@@ -277,6 +278,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { scrollToListTop } from '@/utils/scrollAnchor'
 import { apiFetch } from '@/api'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintQuality from '@/components/BlueprintQuality.vue'
@@ -536,6 +538,13 @@ watch(() => props.sharedFilters, () => {
   sharedTimer = setTimeout(() => reload(0), 300)
 }, { deep: true })
 onBeforeUnmount(() => { clearTimeout(sharedTimer); clearTimeout(flashTimer) })
+
+// 上一頁／下一頁：載入後把列表頂端捲回畫面（不然會停在最下方的分頁按鈕，見 utils/scrollAnchor.js）
+const rootEl = ref(null)
+async function goPage(newOffset) {
+  await reload(newOffset)
+  scrollToListTop(rootEl.value)
+}
 </script>
 
 <style scoped>

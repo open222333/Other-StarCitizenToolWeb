@@ -14,10 +14,11 @@
   樣式用蜂巢式下拉（scifi-theme.css 的 .sf-tree-*）。
 -->
 <template>
-  <div>
+  <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
+  <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
     <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
 
-    <div v-if="loading" class="text-muted small">載入中…</div>
+    <div v-if="loading && !rows.length" class="text-muted small">載入中…</div>
     <div v-else-if="loadFailed" class="small">
       <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取船艦資料失敗。</span>
       <button type="button" class="btn btn-sm btn-primary ms-1" @click="reload(offset)">重新整理</button>
@@ -82,9 +83,9 @@
         </span>
         <div class="btn-group">
           <button class="btn btn-sm btn-primary" :disabled="offset === 0 || loading"
-            @click="reload(Math.max(0, offset - limit))">上一頁</button>
+            @click="goPage(Math.max(0, offset - limit))">上一頁</button>
           <button class="btn btn-sm btn-primary" :disabled="!hasNext || loading"
-            @click="reload(offset + limit)">下一頁</button>
+            @click="goPage(offset + limit)">下一頁</button>
         </div>
       </div>
     </template>
@@ -117,6 +118,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { scrollToListTop } from '@/utils/scrollAnchor'
 import SfTreeHead from '@/components/SfTreeHead.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -297,6 +299,13 @@ watch(() => props.filters, () => {
 onBeforeUnmount(() => { clearTimeout(timer); clearTimeout(flashTimer) })
 
 defineExpose({ refresh: () => { if (loaded) reload(offset.value) } })
+
+// 上一頁／下一頁：載入後把列表頂端捲回畫面（不然會停在最下方的分頁按鈕，見 utils/scrollAnchor.js）
+const rootEl = ref(null)
+async function goPage(newOffset) {
+  await reload(newOffset)
+  scrollToListTop(rootEl.value)
+}
 </script>
 
 <style scoped>
