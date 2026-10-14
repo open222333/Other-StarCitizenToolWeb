@@ -14,26 +14,36 @@
   <div class="card scifi-card sf-search mb-2">
     <div class="card-body py-2">
       <div class="row g-2 align-items-end">
-        <div class="col-12 col-md-6 col-lg-3">
+        <div class="col col-md-6 col-lg-3">
           <label class="form-label small fw-semibold mb-1" for="wh-q">物品名稱</label>
           <input id="wh-q" type="search" class="form-control form-control-sm" placeholder="輸入物品名稱…"
             autocomplete="off" :value="q" @input="$emit('update:q', $event.target.value)">
         </div>
-        <div class="col-12 col-md-6 col-lg-3">
-          <label class="form-label small fw-semibold mb-1" for="wh-type">物品類型</label>
-          <MultiSelectFilter id="wh-type" :model-value="types" :options="typeOptions" label="物品類型"
-            placeholder="全部" block searchable @update:model-value="$emit('update:types', $event)" />
-        </div>
+        <!-- 手機：名稱以外的條件收進「篩選」底部面板（SfFilterSheet） -->
+        <SfFilterSheet :count="sheetCount" @clear="clear">
+          <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label small fw-semibold mb-1" for="wh-type">物品類型</label>
+            <MultiSelectFilter id="wh-type" :model-value="types" :options="typeOptions" label="物品類型"
+              placeholder="全部" block searchable @update:model-value="$emit('update:types', $event)" />
+          </div>
 
-        <LocationAreaFilter :names="locationNames" :loc-label="locLabel" col-class="col-12 col-sm-4 col-lg-2"
-          :systems="systems" :planets="planets" :locations="locations"
-          @update:systems="$emit('update:systems', $event)"
-          @update:planets="$emit('update:planets', $event)"
-          @update:locations="$emit('update:locations', $event)" />
+          <LocationAreaFilter :names="locationNames" :loc-label="locLabel" col-class="col-12 col-sm-4 col-lg-2"
+            :systems="systems" :planets="planets" :locations="locations"
+            @update:systems="$emit('update:systems', $event)"
+            @update:planets="$emit('update:planets', $event)"
+            @update:locations="$emit('update:locations', $event)" />
+          <template #more>
+            <div v-if="showBuyable" class="form-check mt-3">
+              <input id="wh-buyable-m" class="form-check-input" type="checkbox" :checked="buyable"
+                @change="$emit('update:buyable', $event.target.checked)">
+              <label class="form-check-label" for="wh-buyable-m">只看買得到</label>
+            </div>
+          </template>
+        </SfFilterSheet>
       </div>
 
       <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-        <div v-if="showBuyable" class="form-check mb-0 me-2">
+        <div v-if="showBuyable && !isPhone" class="form-check mb-0 me-2">
           <input id="wh-buyable" class="form-check-input" type="checkbox" :checked="buyable"
             @change="$emit('update:buyable', $event.target.checked)">
           <label class="form-check-label" for="wh-buyable">只看買得到</label>
@@ -43,7 +53,7 @@
             <template v-if="i"> · </template>{{ c.label }} {{ c.matched }} / {{ c.total }} 筆
           </template>
         </span>
-        <button class="btn btn-sm btn-warning ms-auto" :disabled="!active" @click="clear">清除</button>
+        <button v-if="!isPhone" class="btn btn-sm btn-warning ms-auto" :disabled="!active" @click="clear">清除</button>
       </div>
     </div>
   </div>
@@ -53,6 +63,8 @@
 import { computed } from 'vue'
 import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import SfFilterSheet from '@/components/SfFilterSheet.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 
 const props = defineProps({
   // 用來產生地點選項的資料列（物品庫存＋庫存紀錄合起來）
@@ -81,6 +93,11 @@ const emit = defineEmits(['update:q', 'update:types', 'update:systems', 'update:
 
 const active = computed(() => !!(props.q.trim() || props.types.length || props.systems.length
   || props.planets.length || props.locations.length || (props.showBuyable && props.buyable)))
+
+const { isPhone } = useBreakpoint()
+// 手機「篩選」按鈕上的數字：收進面板的條件有幾個在作用
+const sheetCount = computed(() => props.types.length + props.systems.length + props.planets.length
+  + props.locations.length + (props.showBuyable && props.buyable ? 1 : 0))
 
 const locationNames = computed(() =>
   [...new Set([...props.rows.map(r => r.location), ...props.knownLocations].filter(Boolean))])

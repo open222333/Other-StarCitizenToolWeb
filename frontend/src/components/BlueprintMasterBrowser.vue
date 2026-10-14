@@ -76,7 +76,8 @@
     <div :class="cardClass">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
-          <table class="table table-hover align-middle mb-0">
+          <!-- 玩家頁：手機上每列變卡片（sf-stack，見 scifi-theme.css）；後台不受影響 -->
+          <table class="table table-hover align-middle mb-0" :class="{ 'sf-stack': player }">
             <thead class="table-light">
               <tr>
                 <th v-if="registerable" class="ps-3" style="width: 2.5rem">
@@ -87,11 +88,12 @@
                 <SortTh :sort="sort" :field="player ? 'name_zh' : 'name'" :class="{ 'ps-3': !registerable }">{{ player ? '名稱' : '藍圖（英文）' }}</SortTh>
                 <SortTh v-if="!player" :sort="sort" field="name_zh">中文</SortTh>
                 <SortTh :sort="sort" field="type">類型</SortTh>
-                <SortTh :sort="sort" field="grade">等級</SortTh>
-                <SortTh :sort="sort" field="craft_time">製作時間</SortTh>
-                <SortTh :sort="sort" field="ingredients" class="text-end">材料數</SortTh>
-                <SortTh :sort="sort" field="available">預設可用</SortTh>
-                <th class="text-end" :class="{ 'pe-3': player && !registerable }">解鎖任務</th>
+                <!-- 玩家頁在手機／平板藏次要欄位（點一列展開的配方明細看得到） -->
+                <SortTh :sort="sort" field="grade" :class="{ 'd-none d-md-table-cell': player }">等級</SortTh>
+                <SortTh :sort="sort" field="craft_time" :class="{ 'd-none d-lg-table-cell': player }">製作時間</SortTh>
+                <SortTh :sort="sort" field="ingredients" class="text-end" :class="{ 'd-none d-md-table-cell': player }">材料數</SortTh>
+                <SortTh :sort="sort" field="available" :class="{ 'd-none d-lg-table-cell': player }">預設可用</SortTh>
+                <th class="text-end" :class="{ 'pe-3': player && !registerable, 'd-none d-md-table-cell': player }">解鎖任務</th>
                 <th v-if="registerable" class="pe-3"></th>
                 <SortTh v-if="!player" :sort="sort" field="player_visible" class="pe-3">玩家頁面</SortTh>
               </tr>
@@ -118,12 +120,12 @@
                   <tr class="bp-row" :class="{ 'bp-registered': registerable && isRegistered(bp) }"
                     role="button" tabindex="0" :aria-expanded="expandedId === bp._id ? 'true' : 'false'"
                     @click="toggle(bp)" @keydown.enter.self="toggle(bp)">
-                    <td v-if="registerable" class="ps-3" @click.stop>
+                    <td v-if="registerable" class="ps-3 sf-stack__check" @click.stop>
                       <input class="form-check-input" type="checkbox" :checked="selected.has(bp._id)"
                         :disabled="isRegistered(bp)" :aria-label="`勾選 ${bp.name_zh || bp.name}`"
                         @change="toggleOne(bp._id, $event.target.checked)">
                     </td>
-                    <td :class="{ 'ps-3': !registerable }">
+                    <td class="sf-stack__title" :class="{ 'ps-3': !registerable }">
                       <i class="bi me-1 small text-muted" :class="expandedId === bp._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                       <template v-if="player">
                         <button v-if="bp.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start fw-semibold"
@@ -140,24 +142,25 @@
                       <span v-if="bp.name_zh">{{ bp.name_zh }}</span>
                       <span v-else class="text-muted">—</span>
                     </td>
-                    <td :class="{ small: !player }">{{ bp.output_type ? blueprintTypeLabel(bp.output_type) : (bp.output_type_label || '—') }}</td>
-                    <td :class="{ small: !player }">{{ bp.output_grade || '—' }}</td>
-                    <td :class="{ small: !player }">{{ bp.craft_time_label || fmtSeconds(bp.craft_time_seconds) }}</td>
-                    <td class="text-end" :class="{ small: !player }">{{ bp.ingredient_count ?? '—' }}</td>
-                    <td :class="{ small: !player }">{{ bp.is_available_by_default ? '是' : '否' }}</td>
-                    <td class="text-end" :class="{ small: !player, 'pe-3': player && !registerable }">
+                    <td :class="{ small: !player }" data-label="類型">{{ bp.output_type ? blueprintTypeLabel(bp.output_type) : (bp.output_type_label || '—') }}</td>
+                    <td :class="player ? 'd-none d-md-table-cell' : 'small'" data-label="等級">{{ bp.output_grade || '—' }}</td>
+                    <td :class="player ? 'd-none d-lg-table-cell' : 'small'" data-label="製作時間">{{ bp.craft_time_label || fmtSeconds(bp.craft_time_seconds) }}</td>
+                    <td class="text-end" :class="player ? 'd-none d-md-table-cell' : 'small'" data-label="材料數">{{ bp.ingredient_count ?? '—' }}</td>
+                    <td :class="player ? 'd-none d-lg-table-cell' : 'small'">{{ bp.is_available_by_default ? '是' : '否' }}</td>
+                    <td class="text-end" :class="{ small: !player, 'pe-3': player && !registerable, 'd-none d-md-table-cell': player }" data-label="解鎖任務">
                       <span v-if="bp.mission_count">{{ bp.mission_count }} 個</span>
                       <span v-else class="text-muted">—</span>
                     </td>
-                    <td v-if="registerable" class="pe-3 text-end text-nowrap" @click.stop>
-                      <button type="button" class="btn btn-sm btn-info me-1"
+                    <td v-if="registerable" class="pe-3 text-end text-nowrap sf-stack__actions" @click.stop>
+                      <!-- 手機上這兩顆只留圖示（文字 d-none d-sm-inline），不然會擠出表格 -->
+                      <button type="button" class="btn btn-sm btn-info me-1" aria-label="品質試算"
                         :aria-expanded="qualityId === bp._id ? 'true' : 'false'" @click="qualityId = qualityId === bp._id ? '' : bp._id">
-                        <i class="bi me-1" :class="qualityId === bp._id ? 'bi-chevron-up' : 'bi-sliders'"></i>品質試算
+                        <i class="bi" :class="qualityId === bp._id ? 'bi-chevron-up' : 'bi-sliders'"></i><span class="d-none d-sm-inline ms-1">品質試算</span>
                       </button>
                       <span v-if="isRegistered(bp)" class="sf-tree-chip">已登記</span>
                       <button v-else type="button" class="btn btn-sm btn-success" :disabled="submitting"
                         :aria-label="`登記 ${bp.name_zh || bp.name}`" @click="register([bp._id])">
-                        <i class="bi bi-plus-lg me-1"></i>登記
+                        <i class="bi bi-plus-lg"></i><span class="d-none d-sm-inline ms-1">登記</span>
                       </button>
                     </td>
                     <td v-if="!player" class="pe-3">
@@ -165,13 +168,22 @@
                     </td>
                   </tr>
                   <!-- 品質試算（跟我的藍圖同一個元件），登記前就能先試算 -->
-                  <tr v-if="registerable && qualityId === bp._id" class="bp-detail">
+                  <tr v-if="registerable && qualityId === bp._id" class="bp-detail sf-stack__detail">
                     <td :colspan="colspan" class="px-3 py-2">
+                      <!-- 手機上這一列變成底部面板（sf-stack__detail），標題列附關閉按鈕 -->
+                      <div v-if="player" class="sf-sheet__head sf-stack__sheet-head">
+                        <h3 class="sf-sheet__title">品質試算 · {{ bp.name_zh || bp.name }}</h3>
+                        <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="qualityId = ''"><i class="bi bi-x-lg"></i></button>
+                      </div>
                       <BlueprintQuality :fetcher="fetcher" :blueprint-uuid="bp._id" />
                     </td>
                   </tr>
-                  <tr v-if="expandedId === bp._id" class="bp-detail">
+                  <tr v-if="expandedId === bp._id" class="bp-detail sf-stack__detail">
                     <td :colspan="colspan" class="ps-5 pe-3 py-2 small">
+                      <div v-if="player" class="sf-sheet__head sf-stack__sheet-head">
+                        <h3 class="sf-sheet__title">{{ bp.name_zh || bp.name }}</h3>
+                        <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="expandedId = ''"><i class="bi bi-x-lg"></i></button>
+                      </div>
                       <div v-if="detailLoading" class="text-muted">
                         <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                       </div>
@@ -238,7 +250,8 @@
     </div>
 
     <!-- ── 批量登記列（有勾選才出現；勾選跨頁保留）──────────────── -->
-    <div v-if="registerable && selected.size" :class="[cardClass, 'sf-search', 'mt-3', 'bp-submit']">
+    <!-- sf-sticky-bar：手機上固定在畫面底部 -->
+    <div v-if="registerable && selected.size" :class="[cardClass, 'sf-search', 'mt-3', 'bp-submit', 'sf-sticky-bar']">
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="fw-semibold">已選 {{ selected.size }} 張</span>

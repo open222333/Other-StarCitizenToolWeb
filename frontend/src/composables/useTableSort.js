@@ -46,6 +46,13 @@ export function useTableSort(rows, { accessors = {}, key = '', dir = 'asc', onCh
     if (onChange) onChange(sortKey.value, sortDir.value)
   }
 
+  /** 直接指定排序（手機的排序下拉 SortSelect 用）；field 空字串＝取消排序 */
+  function set(field, direction = 'asc') {
+    sortKey.value = field || ''
+    sortDir.value = direction === 'desc' ? 'desc' : 'asc'
+    if (onChange) onChange(sortKey.value, sortDir.value)
+  }
+
   /** 依目前的排序狀態排一份清單（同一個排序狀態套用到好幾張表時用，例如每個部位一張表） */
   function sortList(list) {
     list = list || []
@@ -68,5 +75,5 @@ export function useTableSort(rows, { accessors = {}, key = '', dir = 'asc', onCh
   /** 後端排序用：查詢參數 { sort_by, sort_dir }（沒排序回空物件） */
   const params = computed(() => (sortKey.value ? { sort_by: sortKey.value, sort_dir: sortDir.value } : {}))
 
-  return { sortKey, sortDir, toggle, sorted, sortList, params }
+  return { sortKey, sortDir, toggle, set, sorted, sortList, params }
 }

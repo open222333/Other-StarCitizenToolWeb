@@ -52,9 +52,15 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
   登記藍圖資料；艦隊：名稱＋取得方式＋類型／尺寸／廠商／角色 → 我的艦隊＋登記船艦資料）。展開的區塊不要再放自己的名稱／類型篩選，
   元件改吃父層傳進來的條件（`filters`／`sharedFilters` prop），只留該區專用的選項（例如「只看預設可用」）。
   例外：倉庫的「商品購買地點」（CommodityBuyFinder）選的是 UEX 商品不是倉庫物品，勾選商品就是工具本身，保留自己的條件卡。
+- **玩家頁手機／平板**（方案見專案文件「星際公民工具-玩家頁手機平板UI方案」）：判斷一律用 `composables/useBreakpoint.js`
+  （寬度＋`pointer: coarse`，不看 User-Agent；手機 < 768、平板 768–1199）。列表表格加 `.sf-stack`，每個 td 帶 `data-label`，
+  名稱欄 `.sf-stack__title`、按鈕欄 `.sf-stack__actions`、勾選欄 `.sf-stack__check`，列內展開的 tr 加 `.sf-stack__detail`
+  （手機變底部面板，裡面放 `.sf-stack__sheet-head` 關閉列）；手機另放 `SortSelect` 排序下拉。次要欄位用
+  `d-none d-md-table-cell`／`d-lg-table-cell` 在平板藏起來（手機卡片照樣顯示）。搜尋卡名稱以外的條件包 `SfFilterSheet`
+  （手機收進「篩選」底部面板）。工具列按鈕文字包 `.sf-btn-text`、按鈕加 `aria-label`。批量操作列加 `.sf-sticky-bar`。
 - **地點搜尋一律是「星系／行星／地點」三段**（`utils/locationArea.js`、`components/LocationAreaFilter.vue`；
   星系／行星查地點資料庫，後端 `Starmap.names_in`；UEX 終端用 `terminal.planet／place`）。
-- **玩家頁「艦隊」只有一頁**：我的艦隊用蜂巢式下拉（船艦 → 依數量每一艘一列），每艘可填只有本人看得到的
+- **玩家頁「艦隊」只有一頁**：我的艦隊是表格（跟倉庫、藍圖一致，「詳細」展開船艦資訊與每一艘），每艘可填只有本人看得到的
   區別名稱（`fleet.unit_names`，不要放進持有者查詢或後台列表）；配件網址也設在每一艘上（「設置配件網址」，`fleet.unit_loadouts`；整筆的 `loadout_links` 是所有艘的合併，給互查／後台用，舊資料只有 loadout_links 的算第 1 艘）；登記船艦資料（瀏覽載具主檔＋每列「登記」按鈕＋勾選批量登記，原本的批量登記已併進來）、JSON 匯入都用按鈕展開在同一頁，不要再拆下層分頁。
   藍圖同理：「登記藍圖資料」＝遊戲藍圖資料庫瀏覽＋每列「登記」按鈕＋勾選批量登記（BlueprintMasterBrowser 傳 registeredUuids），不要再拆成兩個區塊。
   船艦價格分兩種，不要混在一起：官網現金價是 `vehicle_master.msrp`（美金），遊戲內購買價／租船價是 UEX（aUEC，`src/models/uex_vehicle_price.py`）。

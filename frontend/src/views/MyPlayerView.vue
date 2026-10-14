@@ -53,7 +53,7 @@
   分頁狀態同步在 URL 的 ?tab= 與 ?sub=。
 -->
 <template>
-  <div class="scifi-page scifi-app">
+  <div class="scifi-page scifi-app has-bottom-nav">
     <!-- ══════════ 頂端工具列（捲動時固定） ══════════ -->
     <header class="scifi-topbar">
       <!-- 三欄：左邊空白、中間玩家名稱（置中）、右邊配色與登出 -->
@@ -121,35 +121,37 @@
 
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
-      <button class="btn btn-sm" :class="itemDataOpen ? 'btn-secondary' : 'btn-info'"
+      <button :aria-label="itemDataOpen ? '收起物品資料' : '物品資料'" class="btn btn-sm" :class="itemDataOpen ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="itemDataOpen ? 'true' : 'false'" @click="itemDataOpen = !itemDataOpen">
-        <i class="bi me-1" :class="itemDataOpen ? 'bi-x-lg' : 'bi-database'"></i>{{ itemDataOpen ? '收起物品資料' : '物品資料' }}
+        <i class="bi me-1" :class="itemDataOpen ? 'bi-x-lg' : 'bi-database'"></i><span class="sf-btn-text">{{ itemDataOpen ? '收起物品資料' : '物品資料' }}</span>
       </button>
-      <button class="btn btn-sm" :class="stockOpen ? 'btn-secondary' : 'btn-success'"
+      <button :aria-label="stockOpen ? '收起新增／異動' : '新增／異動'" class="btn btn-sm" :class="stockOpen ? 'btn-secondary' : 'btn-success'"
         :aria-expanded="stockOpen ? 'true' : 'false'" @click="stockOpen = !stockOpen">
-        <i class="bi me-1" :class="stockOpen ? 'bi-x-lg' : 'bi-plus-slash-minus'"></i>{{ stockOpen ? '收起新增／異動' : '新增／異動' }}
+        <i class="bi me-1" :class="stockOpen ? 'bi-x-lg' : 'bi-plus-slash-minus'"></i><span class="sf-btn-text">{{ stockOpen ? '收起新增／異動' : '新增／異動' }}</span>
       </button>
-      <button class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
+      <button :aria-label="historyOpen ? '收起紀錄' : '庫存紀錄'" class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
-        <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i>{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}
+        <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i><span class="sf-btn-text">{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}</span>
       </button>
-      <button class="btn btn-sm" :class="commodityOpen ? 'btn-secondary' : 'btn-info'"
+      <button :aria-label="commodityOpen ? '收起商品購買地點' : '商品購買地點'" class="btn btn-sm" :class="commodityOpen ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="commodityOpen ? 'true' : 'false'" @click="commodityOpen = !commodityOpen">
-        <i class="bi me-1" :class="commodityOpen ? 'bi-x-lg' : 'bi-cart3'"></i>{{ commodityOpen ? '收起商品購買地點' : '商品購買地點' }}
+        <i class="bi me-1" :class="commodityOpen ? 'bi-x-lg' : 'bi-cart3'"></i><span class="sf-btn-text">{{ commodityOpen ? '收起商品購買地點' : '商品購買地點' }}</span>
       </button>
-      <button class="btn btn-sm" :class="homeOpen ? 'btn-secondary' : 'btn-info'"
+      <button :aria-label="homeOpen ? '收起定居點' : (homeLocation ? `定居點：${locLabel(homeLocation)}` : '設置定居點')" class="btn btn-sm" :class="homeOpen ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="homeOpen ? 'true' : 'false'" @click="toggleHome">
-        <i class="bi me-1" :class="homeOpen ? 'bi-x-lg' : 'bi-house'"></i>{{ homeOpen ? '收起定居點' : (homeLocation ? `定居點：${locLabel(homeLocation)}` : '設置定居點') }}
+        <i class="bi me-1" :class="homeOpen ? 'bi-x-lg' : 'bi-house'"></i><span class="sf-btn-text">{{ homeOpen ? '收起定居點' : (homeLocation ? `定居點：${locLabel(homeLocation)}` : '設置定居點') }}</span>
       </button>
-      <!-- 停用的按鈕收不到滑鼠事件，提示掛在外層 span 上 -->
-      <span :title="homeLocation ? '' : '無法使用，須先設置定居點'" class="d-inline-block">
-        <button class="btn btn-sm" :class="moveAllOpen ? 'btn-secondary' : 'btn-primary'" :disabled="!homeLocation"
+      <!-- 停用的按鈕收不到滑鼠事件，提示掛在外層 span 上；觸控裝置看不到 hover 提示，
+           所以還沒設定居點時點這裡直接展開「設置定居點」 -->
+      <span :title="homeLocation ? '' : '無法使用，須先設置定居點'" class="d-inline-block"
+        @click="!homeLocation && !homeOpen && toggleHome()">
+        <button :aria-label="moveAllOpen ? '收起轉移' : '全部物品轉移到定居點'" class="btn btn-sm" :class="moveAllOpen ? 'btn-secondary' : 'btn-primary'" :disabled="!homeLocation"
           :style="homeLocation ? '' : 'pointer-events: none'" :aria-expanded="moveAllOpen ? 'true' : 'false'"
           @click="moveAllOpen = !moveAllOpen">
-          <i class="bi me-1" :class="moveAllOpen ? 'bi-x-lg' : 'bi-box-arrow-in-down'"></i>{{ moveAllOpen ? '收起轉移' : '全部物品轉移到定居點' }}
+          <i class="bi me-1" :class="moveAllOpen ? 'bi-x-lg' : 'bi-box-arrow-in-down'"></i><span class="sf-btn-text">{{ moveAllOpen ? '收起轉移' : '全部物品轉移到定居點' }}</span>
         </button>
       </span>
-      <button class="btn btn-sm btn-primary" @click="refreshWarehouse">重新整理</button>
+      <button class="btn btn-sm btn-primary" @click="refreshWarehouse" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
     <!-- 倉庫 › 共用篩選：只有這一張，同時篩「物品庫存」跟展開的「庫存紀錄」 -->
     <InventoryFilterBar v-show="activeTab === 'warehouse'"
@@ -353,10 +355,10 @@
     <!-- ══════════ 查詢 › 工具列：持有物品／持有藍圖／持有船艦／商品購買地點，點開才顯示（比照倉庫／藍圖／艦隊）══════════
          舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開對應的區塊 -->
     <div v-show="activeTab === 'search'" class="sf-toolbar">
-      <button v-for="sec in SEARCH_SECTIONS" :key="sec.key" class="btn btn-sm"
+      <button :aria-label="searchOpen[sec.key] ? `收起${sec.label}` : sec.label" v-for="sec in SEARCH_SECTIONS" :key="sec.key" class="btn btn-sm"
         :class="searchOpen[sec.key] ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="searchOpen[sec.key] ? 'true' : 'false'" @click="searchOpen[sec.key] = !searchOpen[sec.key]">
-        <i class="bi me-1" :class="searchOpen[sec.key] ? 'bi-x-lg' : sec.icon"></i>{{ searchOpen[sec.key] ? `收起${sec.label}` : sec.label }}
+        <i class="bi me-1" :class="searchOpen[sec.key] ? 'bi-x-lg' : sec.icon"></i><span class="sf-btn-text">{{ searchOpen[sec.key] ? `收起${sec.label}` : sec.label }}</span>
       </button>
     </div>
 
@@ -689,10 +691,13 @@
       <div v-else-if="!filteredInventory.length" class="text-muted small">
         沒有符合篩選條件的物品。
       </div>
-      <div v-else class="card scifi-card">
+      <template v-else>
+      <SortSelect v-if="isPhone" class="mb-2" :sort="inventorySort" :options="INVENTORY_SORT_OPTIONS" />
+      <div class="card scifi-card">
       <div class="card-body p-0">
       <div style="overflow-x: auto">
-      <table class="table table-hover align-middle mb-0">
+      <!-- sf-stack：手機上每一列變成一張卡片（td 的 data-label 是卡片裡的欄位名稱） -->
+      <table class="table table-hover align-middle mb-0 sf-stack">
         <thead class="table-light">
           <tr>
             <SortTh :sort="inventorySort" field="item" class="ps-3">物品</SortTh>
@@ -703,13 +708,13 @@
         </thead>
         <tbody>
           <tr v-for="row in inventorySort.sorted.value" :key="row.item_id + row.location + (row.container || '')">
-            <td class="ps-3">
+            <td class="ps-3 sf-stack__title">
               <span class="fw-semibold">{{ row.item_name_zh || row.item_name }}</span>
               <span v-if="row.item_name_zh" class="small text-muted ms-1">{{ row.item_name }}</span>
             </td>
-            <td>{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
-            <td class="text-end">{{ row.quantity }}</td>
-            <td class="text-end pe-3">
+            <td data-label="地點">{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
+            <td class="text-end" data-label="數量">{{ row.quantity }}</td>
+            <td class="text-end pe-3 sf-stack__actions">
               <button type="button" class="btn btn-sm btn-info" @click="adjustStockRow(row)">異動</button>
             </td>
           </tr>
@@ -718,15 +723,16 @@
       </div>
       </div>
       </div>
+      </template>
     </div>
 
     <!-- ══════════ 藍圖 › 工具列（同倉庫：開關＋重新整理放最上面）══════════ -->
     <div v-show="activeTab === 'blueprints'" class="sf-toolbar">
-      <button class="btn btn-sm" :class="bpDataOpen ? 'btn-secondary' : 'btn-info'"
+      <button :aria-label="bpDataOpen ? '收起登記' : '登記藍圖資料'" class="btn btn-sm" :class="bpDataOpen ? 'btn-secondary' : 'btn-info'"
         :aria-expanded="bpDataOpen ? 'true' : 'false'" @click="bpDataOpen = !bpDataOpen">
-        <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i>{{ bpDataOpen ? '收起登記' : '登記藍圖資料' }}
+        <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i><span class="sf-btn-text">{{ bpDataOpen ? '收起登記' : '登記藍圖資料' }}</span>
       </button>
-      <button class="btn btn-sm btn-primary" @click="loadBlueprints">重新整理</button>
+      <button class="btn btn-sm btn-primary" @click="loadBlueprints" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
     <!-- 藍圖 › 共用搜尋：同一組名稱／類型／需任務解鎖同時篩「我的藍圖」「登記藍圖資料」；
          展開登記藍圖資料時多一個「只顯示未登記」（預設勾選）。
@@ -735,29 +741,42 @@
     <div v-show="activeTab === 'blueprints'" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-7">
+          <div class="col col-md-7">
             <label class="form-label small fw-semibold mb-1" for="bp-filter-q">藍圖名稱</label>
             <AutocompleteField id="bp-filter-q" v-model="bpFilterQuery" :search="searchBlueprintNames"
               :get-label="blueprintNameLabel" :get-meta="blueprintNameMeta"
               aria-label="藍圖名稱" placeholder="輸入藍圖名稱（中英文皆可）" :min-chars="1" />
           </div>
-          <div class="col-12 col-md-5">
-            <label class="form-label small fw-semibold mb-1" for="bp-filter-type">類型</label>
-            <MultiSelectFilter id="bp-filter-type" v-model="myBpTypes" :options="blueprintTypeOptions"
-              label="類型" placeholder="全部" block searchable />
-          </div>
+          <!-- 手機：類型與勾選收進「篩選」底部面板 -->
+          <SfFilterSheet :count="bpSheetCount" @clear="clearBpFilter">
+            <div class="col-12 col-md-5">
+              <label class="form-label small fw-semibold mb-1" for="bp-filter-type">類型</label>
+              <MultiSelectFilter id="bp-filter-type" v-model="myBpTypes" :options="blueprintTypeOptions"
+                label="類型" placeholder="全部" block searchable />
+            </div>
+            <template #more>
+              <div class="form-check mt-3">
+                <input id="bp-filter-missions-m" v-model="bpHasMissionsOnly" class="form-check-input" type="checkbox">
+                <label class="form-check-label" for="bp-filter-missions-m">只看需任務解鎖</label>
+              </div>
+              <div v-if="bpDataOpen" class="form-check mt-2">
+                <input id="bp-filter-unregistered-m" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
+                <label class="form-check-label" for="bp-filter-unregistered-m">只顯示未登記</label>
+              </div>
+            </template>
+          </SfFilterSheet>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-          <div class="form-check form-check-inline mb-0">
+          <div v-if="!isPhone" class="form-check form-check-inline mb-0">
             <input id="bp-filter-missions" v-model="bpHasMissionsOnly" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="bp-filter-missions">只看需任務解鎖</label>
           </div>
-          <div v-if="bpDataOpen" class="form-check form-check-inline mb-0">
+          <div v-if="bpDataOpen && !isPhone" class="form-check form-check-inline mb-0">
             <input id="bp-filter-unregistered" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="bp-filter-unregistered">只顯示未登記</label>
           </div>
           <span v-if="bpFilterActive" class="small text-muted">我的藍圖 符合 {{ filteredBlueprints.length }} / {{ visibleBlueprints.length }} 張</span>
-          <button v-if="bpFilterActive" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearBpFilter">清除篩選</button>
+          <button v-if="bpFilterActive && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearBpFilter">清除篩選</button>
         </div>
       </div>
     </div>
@@ -785,25 +804,27 @@
       <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
       <div v-else-if="!visibleBlueprints.length" class="text-muted small">目前沒有登記任何藍圖。</div>
       <div v-else-if="!filteredBlueprints.length" class="text-muted small">沒有符合篩選條件的藍圖。</div>
-      <!-- 列表外觀：卡片＋一般字級的 hover 表格 -->
-      <div v-else class="card scifi-card">
+      <!-- 列表外觀：卡片＋一般字級的 hover 表格；手機上每列變卡片（sf-stack） -->
+      <template v-else>
+      <SortSelect v-if="isPhone" class="mb-2" :sort="myBpSort" :options="MY_BP_SORT_OPTIONS" />
+      <div class="card scifi-card">
       <div class="card-body p-0">
       <div style="overflow-x: auto">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 sf-stack">
         <thead class="table-light">
           <tr>
             <SortTh :sort="myBpSort" field="name" class="ps-3">名稱</SortTh>
             <SortTh :sort="myBpSort" field="type">類型</SortTh>
-            <SortTh :sort="myBpSort" field="craft_time">製作時間</SortTh>
+            <SortTh :sort="myBpSort" field="craft_time" class="d-none d-lg-table-cell">製作時間</SortTh>
             <SortTh :sort="myBpSort" field="ingredients">材料</SortTh>
-            <SortTh :sort="myBpSort" field="notes" class="sf-wrap">備註</SortTh>
+            <SortTh :sort="myBpSort" field="notes" class="sf-wrap d-none d-md-table-cell">備註</SortTh>
             <th class="pe-3"></th>
           </tr>
         </thead>
         <tbody>
           <template v-for="bp in myBpSort.sorted.value" :key="bp._id">
           <tr>
-            <td class="ps-3">
+            <td class="ps-3 sf-stack__title">
               <button v-if="bp.blueprint_uuid && bp.master?.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start fw-semibold"
                 @click="openBpMissions({ uuid: bp.blueprint_uuid, name: bp.name, name_zh: bp.master.name_zh, output_type: bp.master.output_type })">
                 {{ bp.master?.name_zh || bp.name }}
@@ -812,16 +833,18 @@
               <span v-if="bp.master?.name_zh" class="small text-muted ms-1">{{ bp.name }}</span>
               <i v-if="!bp.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
                  title="自由輸入，沒有對應到遊戲配方"></i>
+              <!-- 手機藏了備註欄，改顯示在名稱下面 -->
+              <div v-if="bp.notes" class="small text-muted d-md-none">{{ bp.notes }}</div>
             </td>
-            <td>{{ bp.master?.output_type ? blueprintTypeLabel(bp.master.output_type) : (bp.master?.output_type_label || '—') }}</td>
-            <td>{{ bp.master?.craft_time_label || '—' }}</td>
-            <td>
+            <td data-label="類型">{{ bp.master?.output_type ? blueprintTypeLabel(bp.master.output_type) : (bp.master?.output_type_label || '—') }}</td>
+            <td class="d-none d-lg-table-cell" data-label="製作時間">{{ bp.master?.craft_time_label || '—' }}</td>
+            <td data-label="材料">
               <button v-if="bp.blueprint_uuid" class="btn btn-sm btn-info"
                 @click="showRecipe(bp)">{{ bp.master?.ingredient_count ?? '?' }} 種</button>
               <span v-else class="text-muted">—</span>
             </td>
-            <td class="text-muted sf-wrap">{{ bp.notes || '—' }}</td>
-            <td class="text-end text-nowrap pe-3">
+            <td class="text-muted sf-wrap d-none d-md-table-cell">{{ bp.notes || '—' }}</td>
+            <td class="text-end text-nowrap pe-3 sf-stack__actions">
               <button v-if="bp.blueprint_uuid" class="btn btn-sm btn-info me-2"
                 :aria-expanded="qualityFor === bp._id ? 'true' : 'false'"
                 @click="qualityFor = qualityFor === bp._id ? null : bp._id">
@@ -830,15 +853,24 @@
               <button class="btn btn-sm btn-danger" @click="removeBlueprint(bp)">刪除</button>
             </td>
           </tr>
-          <tr v-if="qualityFor === bp._id">
+          <tr v-if="qualityFor === bp._id" class="sf-stack__detail">
             <td colspan="6">
+              <!-- 手機上這一列變成底部面板，標題列附關閉按鈕 -->
+              <div class="sf-sheet__head sf-stack__sheet-head">
+                <h3 class="sf-sheet__title">品質試算 · {{ bp.master?.name_zh || bp.name }}</h3>
+                <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="qualityFor = null"><i class="bi bi-x-lg"></i></button>
+              </div>
               <!-- 品質試算：拖拉每個部位的材料品質，看各屬性加成（見 components/BlueprintQuality.vue） -->
               <BlueprintQuality :fetcher="playerAuth.playerFetch" :blueprint-uuid="bp.blueprint_uuid" />
             </td>
           </tr>
-          <tr v-if="recipeFor === bp._id">
+          <tr v-if="recipeFor === bp._id" class="sf-stack__detail">
             <!-- colspan 要跟 thead 的欄數一致（移除「狀態」欄後是 6） -->
             <td colspan="6">
+              <div class="sf-sheet__head sf-stack__sheet-head">
+                <h3 class="sf-sheet__title">材料 · {{ bp.master?.name_zh || bp.name }}</h3>
+                <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="recipeFor = null"><i class="bi bi-x-lg"></i></button>
+              </div>
               <!-- 材料試算：輸入要做幾個，列出每種材料需要多少（附 sc-datahub 對應頁面） -->
               <BlueprintCalculator :fetcher="playerAuth.playerFetch"
                 :blueprint="{ _id: bp.blueprint_uuid, name: bp.name, name_zh: bp.master?.name_zh }"
@@ -851,6 +883,7 @@
       </div>
       </div>
       </div>
+      </template>
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->
@@ -862,58 +895,61 @@
 
       <!-- 工具列（同倉庫：開關＋重新整理放最上面） -->
       <div class="sf-toolbar">
-        <button class="btn btn-sm" :class="fleetDataOpen ? 'btn-secondary' : 'btn-info'"
+        <button :aria-label="fleetDataOpen ? '收起登記' : '登記船艦資料'" class="btn btn-sm" :class="fleetDataOpen ? 'btn-secondary' : 'btn-info'"
           :aria-expanded="fleetDataOpen ? 'true' : 'false'" @click="fleetDataOpen = !fleetDataOpen">
-          <i class="bi me-1" :class="fleetDataOpen ? 'bi-x-lg' : 'bi-info-circle'"></i>{{ fleetDataOpen ? '收起登記' : '登記船艦資料' }}
+          <i class="bi me-1" :class="fleetDataOpen ? 'bi-x-lg' : 'bi-info-circle'"></i><span class="sf-btn-text">{{ fleetDataOpen ? '收起登記' : '登記船艦資料' }}</span>
         </button>
-        <button class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
+        <button :aria-label="fleetImportOpen ? '收起匯入' : 'JSON 匯入'" class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
           :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
-          <i class="bi me-1" :class="fleetImportOpen ? 'bi-x-lg' : 'bi-filetype-json'"></i>{{ fleetImportOpen ? '收起匯入' : 'JSON 匯入' }}
+          <i class="bi me-1" :class="fleetImportOpen ? 'bi-x-lg' : 'bi-filetype-json'"></i><span class="sf-btn-text">{{ fleetImportOpen ? '收起匯入' : 'JSON 匯入' }}</span>
         </button>
-        <button class="btn btn-sm btn-primary" @click="loadFleet">重新整理</button>
+        <button class="btn btn-sm btn-primary" @click="loadFleet" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
       </div>
 
       <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「登記船艦資料」 -->
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
-            <div class="col-12 col-md-6">
+            <div class="col col-md-6">
               <label class="form-label small mb-1" for="myfleet-q">名稱關鍵字</label>
               <input id="myfleet-q" v-model="myFleetQuery" type="search" class="form-control form-control-sm"
                 placeholder="搜尋船艦名稱（中英文皆可）" autocomplete="off">
             </div>
-            <div class="col-12 col-md-6">
-              <label class="form-label small mb-1" for="myfleet-acquire">取得方式</label>
-              <MultiSelectFilter id="myfleet-acquire" v-model="myFleetAcquire" :options="VEHICLE_ACQUIRE_OPTIONS"
-                label="取得方式" placeholder="全部" block />
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1" for="myfleet-type">類型</label>
-              <MultiSelectFilter id="myfleet-type" v-model="myFleetTypes" :options="myFleetTypeOptions"
-                label="類型" placeholder="全部" block />
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1" for="myfleet-size">尺寸</label>
-              <MultiSelectFilter id="myfleet-size" v-model="myFleetSizes" :options="myFleetSizeOptions"
-                label="尺寸" placeholder="全部" block />
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1" for="myfleet-mfr">廠商</label>
-              <MultiSelectFilter id="myfleet-mfr" v-model="myFleetMfrs" :options="myFleetMfrOptions"
-                label="廠商" placeholder="全部" block searchable />
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small mb-1" for="myfleet-role">角色</label>
-              <MultiSelectFilter id="myfleet-role" v-model="myFleetRoles" :options="myFleetRoleOptions"
-                label="角色" placeholder="全部" block searchable />
-            </div>
+            <!-- 手機：名稱以外的條件收進「篩選」底部面板 -->
+            <SfFilterSheet :count="fleetSheetCount" @clear="clearMyFleetFilters">
+              <div class="col-12 col-md-6">
+                <label class="form-label small mb-1" for="myfleet-acquire">取得方式</label>
+                <MultiSelectFilter id="myfleet-acquire" v-model="myFleetAcquire" :options="VEHICLE_ACQUIRE_OPTIONS"
+                  label="取得方式" placeholder="全部" block />
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" for="myfleet-type">類型</label>
+                <MultiSelectFilter id="myfleet-type" v-model="myFleetTypes" :options="myFleetTypeOptions"
+                  label="類型" placeholder="全部" block />
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" for="myfleet-size">尺寸</label>
+                <MultiSelectFilter id="myfleet-size" v-model="myFleetSizes" :options="myFleetSizeOptions"
+                  label="尺寸" placeholder="全部" block />
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" for="myfleet-mfr">廠商</label>
+                <MultiSelectFilter id="myfleet-mfr" v-model="myFleetMfrs" :options="myFleetMfrOptions"
+                  label="廠商" placeholder="全部" block searchable />
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" for="myfleet-role">角色</label>
+                <MultiSelectFilter id="myfleet-role" v-model="myFleetRoles" :options="myFleetRoleOptions"
+                  label="角色" placeholder="全部" block searchable />
+              </div>
+            </SfFilterSheet>
           </div>
           <div v-if="fleet.length || myFleetHasFilter" class="d-flex flex-wrap align-items-center gap-2 mt-2">
             <span v-if="fleet.length" class="small text-muted">
               <template v-if="myFleetHasFilter">符合 {{ filteredFleet.length }} 款、{{ filteredFleetShipCount }} 艘 · </template>
               共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘
             </span>
-            <button v-if="myFleetHasFilter" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearMyFleetFilters">清除篩選</button>
+            <button v-if="myFleetHasFilter && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearMyFleetFilters">清除篩選</button>
           </div>
         </div>
       </div>
@@ -936,18 +972,20 @@
       <div v-else-if="fleetLoaded && !fleet.length" class="text-muted small">還沒有登記任何船／載具。</div>
       <div v-else-if="fleet.length && !filteredFleet.length" class="text-muted small">沒有符合篩選條件的船／載具。</div>
       <!-- 列表外觀跟倉庫、藍圖一致：卡片＋hover 表格＋表頭排序；「詳細」展開船艦資訊、數量與每一艘的識別名稱／配件網址 -->
-      <div v-else-if="fleet.length" class="card scifi-card">
+      <template v-else-if="fleet.length">
+      <SortSelect v-if="isPhone" class="mb-2" :sort="myFleetSort" :options="MY_FLEET_SORT_OPTIONS" />
+      <div class="card scifi-card">
       <div class="card-body p-0">
       <div style="overflow-x: auto">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 sf-stack">
         <thead class="table-light">
           <tr>
             <SortTh :sort="myFleetSort" field="name" class="ps-3">船艦</SortTh>
-            <SortTh :sort="myFleetSort" field="type">類型</SortTh>
-            <SortTh :sort="myFleetSort" field="size">尺寸</SortTh>
-            <SortTh :sort="myFleetSort" field="manufacturer">廠商</SortTh>
-            <SortTh :sort="myFleetSort" field="role">角色</SortTh>
-            <SortTh :sort="myFleetSort" field="loadouts" class="text-end">配件網址</SortTh>
+            <SortTh :sort="myFleetSort" field="type" class="d-none d-md-table-cell">類型</SortTh>
+            <SortTh :sort="myFleetSort" field="size" class="d-none d-md-table-cell">尺寸</SortTh>
+            <SortTh :sort="myFleetSort" field="manufacturer" class="d-none d-lg-table-cell">廠商</SortTh>
+            <SortTh :sort="myFleetSort" field="role" class="d-none d-lg-table-cell">角色</SortTh>
+            <SortTh :sort="myFleetSort" field="loadouts" class="text-end d-none d-lg-table-cell">配件網址</SortTh>
             <SortTh :sort="myFleetSort" field="quantity" class="text-end">數量</SortTh>
             <th class="pe-3"></th>
           </tr>
@@ -955,20 +993,21 @@
         <tbody>
           <template v-for="row in myFleetSort.sorted.value" :key="row._id">
           <tr>
-            <td class="ps-3">
+            <td class="ps-3 sf-stack__title">
               <span class="fw-semibold">{{ row.vehicle?.name_zh || row.name }}</span>
               <span v-if="row.vehicle?.name_zh" class="small text-muted ms-1">{{ row.name }}</span>
               <span v-if="row.vehicle?.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ row.vehicle.system_note }}</span>
               <span v-if="row.vehicle && row.vehicle.is_current === false"
                 class="sf-tree-chip ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
             </td>
-            <td>{{ vehicleTypeLabel(row.vehicle?.vehicle_type) || '—' }}</td>
-            <td>{{ vehicleSizeLabel(row.vehicle?.size_class) || '—' }}</td>
-            <td>{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) || '—' }}</td>
-            <td>{{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) || '—' }}</td>
-            <td class="text-end">{{ row.loadout_links?.length || '—' }}</td>
-            <td class="text-end">{{ row.quantity }}</td>
-            <td class="text-end text-nowrap pe-3">
+            <!-- 手機／平板藏次要欄位（「詳細」裡都看得到） -->
+            <td class="d-none d-md-table-cell" data-label="類型">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) || '—' }}</td>
+            <td class="d-none d-md-table-cell" data-label="尺寸">{{ vehicleSizeLabel(row.vehicle?.size_class) || '—' }}</td>
+            <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) || '—' }}</td>
+            <td class="d-none d-lg-table-cell" data-label="角色">{{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) || '—' }}</td>
+            <td class="text-end d-none d-lg-table-cell" data-label="配件網址">{{ row.loadout_links?.length || '—' }}</td>
+            <td class="text-end" data-label="數量">{{ row.quantity }}</td>
+            <td class="text-end text-nowrap pe-3 sf-stack__actions">
               <button type="button" class="btn btn-sm btn-info me-2"
                 :aria-expanded="openMyFleet.has(row._id) ? 'true' : 'false'" @click="toggleMyFleet(row._id)">
                 <i class="bi me-1" :class="openMyFleet.has(row._id) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
@@ -977,9 +1016,13 @@
                 :aria-label="`刪除 ${row.vehicle?.name_zh || row.name}（全部 ${row.quantity} 艘）`" @click="removeFleet(row)">刪除</button>
             </td>
           </tr>
-          <tr v-if="openMyFleet.has(row._id)">
-            <!-- colspan 要跟 thead 的欄數一致（8） -->
+          <tr v-if="openMyFleet.has(row._id)" class="sf-stack__detail">
+            <!-- colspan 要跟 thead 的欄數一致（8）；手機上這一列變成底部面板 -->
             <td colspan="8" class="myfleet-detail">
+                <div class="sf-sheet__head sf-stack__sheet-head">
+                  <h3 class="sf-sheet__title">{{ row.vehicle?.name_zh || row.name }}</h3>
+                  <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleMyFleet(row._id)"><i class="bi bi-x-lg"></i></button>
+                </div>
                 <!-- 船艦資訊：欄位名稱＋值的格子，比一長串「·」好讀 -->
                 <div class="myfleet-info">
                   <div v-for="f in fleetInfoFields(row.vehicle)" :key="f.label" class="myfleet-info__item">
@@ -1057,6 +1100,7 @@
       </div>
       </div>
       </div>
+      </template>
     </div>
 
     <!-- ══════════ 礦物參考查詢 ══════════ -->
@@ -1260,6 +1304,30 @@
     </div>
   </div>
   <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" />
+
+  <!-- ══════════ 手機底部導覽列（上方分頁列在手機上藏起來）：常用的四個＋「更多」 ══════════ -->
+  <nav v-if="isPhone" class="sf-bottom-nav" aria-label="主分頁">
+    <button v-for="tab in bottomTabs" :key="tab.key" type="button" class="sf-bottom-nav__item"
+      :class="{ active: activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : null"
+      @click="setTab(tab.key); moreOpen = false">
+      <i :class="tab.icon"></i>{{ tab.short || tab.label }}
+    </button>
+    <button type="button" class="sf-bottom-nav__item" :class="{ active: moreOpen || moreTabActive }"
+      :aria-expanded="moreOpen ? 'true' : 'false'" @click="moreOpen = !moreOpen">
+      <i class="bi bi-three-dots"></i>更多
+    </button>
+  </nav>
+  <template v-if="isPhone && moreOpen">
+    <div class="sf-sheet-backdrop" @click="moreOpen = false"></div>
+    <div class="sf-sheet sf-more-list" role="dialog" aria-modal="true" aria-label="更多分頁"
+      style="bottom: calc(64px + env(safe-area-inset-bottom))">
+      <div class="sf-sheet__grip"></div>
+      <button v-for="tab in moreTabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }"
+        @click="setTab(tab.key); moreOpen = false">
+        <i :class="tab.icon"></i>{{ tab.label }}<i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </template>
   </div>
 </template>
 
@@ -1272,6 +1340,9 @@ import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import SortTh from '@/components/SortTh.vue'
+import SortSelect from '@/components/SortSelect.vue'
+import SfFilterSheet from '@/components/SfFilterSheet.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import SfTreeHead from '@/components/SfTreeHead.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
@@ -1358,13 +1429,28 @@ const tabs = [
   {
     // 原本的三個下層分頁合併成一頁，改成上方按鈕點開（SEARCH_SECTIONS）。
     // 原名「查詢」；商品購買地點搬到倉庫後只剩查別人持有的東西，改名「查詢持有資訊」
-    key: 'search',    label: '查詢持有資訊',   icon: 'bi bi-search',
+    key: 'search',    label: '查詢持有資訊',   icon: 'bi bi-search', short: '查詢',
   },
   { key: 'gamelog',   label: 'LOG 解析', icon: 'bi bi-journal-code' },
   { key: 'chatcode',  label: '中文轉碼', icon: 'bi bi-translate' },
   { key: 'tools',     label: '工具網站', icon: 'bi bi-link-45deg' },
   { key: 'profile',   label: '個人資料', icon: 'bi bi-person-gear' },
 ]
+
+// 手機／平板（方案見專案文件「星際公民工具-玩家頁手機平板UI方案」）：
+// 手機上方分頁列換成底部導覽列，常用四個直接放，其餘收進「更多」
+const { isPhone } = useBreakpoint()
+const BOTTOM_TAB_KEYS = ['warehouse', 'blueprints', 'fleet', 'search']
+const bottomTabs = tabs.filter(t => BOTTOM_TAB_KEYS.includes(t.key))
+const moreTabs = tabs.filter(t => !BOTTOM_TAB_KEYS.includes(t.key))
+const moreOpen = ref(false)
+const moreTabActive = computed(() => !BOTTOM_TAB_KEYS.includes(activeTab.value))
+// 手機的排序下拉選項（表頭在手機上看不到）
+const INVENTORY_SORT_OPTIONS = [{ field: 'item', label: '物品' }, { field: 'location', label: '地點' }, { field: 'quantity', label: '數量' }]
+const MY_BP_SORT_OPTIONS = [{ field: 'name', label: '名稱' }, { field: 'type', label: '類型' },
+  { field: 'craft_time', label: '製作時間' }, { field: 'ingredients', label: '材料' }]
+const MY_FLEET_SORT_OPTIONS = [{ field: 'name', label: '船艦' }, { field: 'type', label: '類型' }, { field: 'size', label: '尺寸' },
+  { field: 'manufacturer', label: '廠商' }, { field: 'role', label: '角色' }, { field: 'quantity', label: '數量' }]
 
 /** 某個主分頁的下層分頁清單（沒有就回空陣列）。 */
 function subTabsOf(key) {
@@ -2065,6 +2151,9 @@ const bpFilters = computed(() => ({
   q: bpFilterQuery.value.trim(), types: myBpTypes.value,
   hasMissions: bpHasMissionsOnly.value, hideAvailable: true, unregistered: bpUnregisteredOnly.value,
 }))
+// 手機「篩選」按鈕上的數字：收進面板的條件有幾個在作用
+const bpSheetCount = computed(() => myBpTypes.value.length + (bpHasMissionsOnly.value ? 1 : 0)
+  + (bpDataOpen.value && bpUnregisteredOnly.value ? 1 : 0))
 const bpFilterActive = computed(() => !!(bpFilters.value.q || myBpTypes.value.length || bpHasMissionsOnly.value))
 function clearBpFilter() {
   bpFilterQuery.value = ''
@@ -2516,6 +2605,8 @@ const myFleetTypes = ref([])
 const myFleetSizes = ref([])
 const myFleetMfrs  = ref([])
 const myFleetRoles = ref([])
+const fleetSheetCount = computed(() => myFleetAcquire.value.length + myFleetTypes.value.length
+  + myFleetSizes.value.length + myFleetMfrs.value.length + myFleetRoles.value.length)
 const myFleetHasFilter = computed(() => !!(myFleetQuery.value.trim() || myFleetAcquire.value.length
   || myFleetTypes.value.length
   || myFleetSizes.value.length || myFleetMfrs.value.length || myFleetRoles.value.length))

@@ -800,6 +800,123 @@
   margin-bottom: .9rem;
 }
 
+/* ── 手機／平板（最小改動版；完整方案記在專案文件「星際公民工具-玩家頁手機平板UI方案」）──
+ * 1. 觸控裝置（pointer: coarse，手機與平板）：按鈕加高到好點的大小；輸入框字級 16px ——
+ *    iOS 輸入框字級小於 16px 時，點進去會自動放大整個畫面。
+ * 2. 手機（< 576px）：工具列按鈕只留圖示（文字包在 .sf-btn-text，按鈕本身有 aria-label）。
+ * 表格的次要欄位用 Bootstrap 的 d-none d-md-table-cell／d-lg-table-cell 在各頁面上藏。 */
+@media (pointer: coarse) {
+  .scifi-page .btn-sm { padding-top: .45rem; padding-bottom: .45rem; }
+  .scifi-page .btn:not(.btn-sm) { padding-top: .6rem; padding-bottom: .6rem; }
+  .scifi-page .form-control, .scifi-page .form-select { font-size: 16px; }
+  .scifi-page .form-check-input { width: 1.25em; height: 1.25em; }
+}
+@media (max-width: 575.98px) {
+  .scifi-page .sf-toolbar .sf-btn-text { display: none; }
+  .scifi-page .sf-toolbar .btn > .bi { margin-right: 0 !important; }
+}
+
+/* ── 手機版元件（完整方案；判斷工具見 composables/useBreakpoint.js）──────────────────
+ * .sf-sheet           底部滑出面板（手機的篩選 SfFilterSheet、列表的詳細）
+ * .sf-bottom-nav      手機底部導覽列（頁面根元素加 .has-bottom-nav 時，手機上藏掉上方分頁列）
+ * table.sf-stack      表格在手機變卡片：每個 td 帶 data-label（欄位名稱），
+ *                     .sf-stack__title＝卡片標題（整列寬）、.sf-stack__actions＝按鈕列；
+ *                     平板以上照常是表格。tr.sf-stack__detail（列內展開）在手機變成底部面板。
+ * .sf-sticky-bar      手機上固定在畫面底部的操作列（例如批量登記「已選 N 張 · 登記」） */
+.scifi-page .sf-sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); z-index: 1060; }
+.scifi-page .sf-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1070;
+  max-height: 85vh; max-height: 85dvh; overflow: auto; text-align: left;
+  background: var(--sf-panel); border-top: 1px solid var(--sf-border-hi); border-radius: 16px 16px 0 0;
+  padding: 6px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.scifi-page .sf-sheet__grip { width: 44px; height: 5px; border-radius: 3px; background: var(--sf-border-hi); margin: 4px auto 12px; }
+.scifi-page .sf-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .75rem; }
+.scifi-page .sf-sheet__title { font-size: 1.15rem; font-weight: 700; color: var(--sf-text-strong); margin: 0; }
+.scifi-page .sf-count-badge {
+  display: inline-block; min-width: 1.4rem; margin-left: .3rem; padding: 0 .35rem; border-radius: 999px;
+  background: var(--sf-text-strong); color: var(--sf-bg-1); font-size: .78rem; font-weight: 700; line-height: 1.4rem;
+}
+
+.scifi-page .sf-bottom-nav { display: none; }
+@media (max-width: 767.98px) {
+  .scifi-page.has-bottom-nav { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .scifi-page.has-bottom-nav .scifi-tabs { display: none; }
+  .scifi-page .sf-bottom-nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1040; display: flex;
+    height: calc(64px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(var(--sf-topbar-rgb, 10, 14, 23), .96); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--sf-border);
+  }
+  .scifi-page .sf-bottom-nav__item {
+    flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; padding: 0; border: 0; background: none; color: var(--sf-text-muted); font-size: .8rem;
+  }
+  .scifi-page .sf-bottom-nav__item .bi { font-size: 1.35rem; }
+  .scifi-page .sf-bottom-nav__item.active { color: var(--sf-accent); }
+  .scifi-page .sf-bottom-nav__item.active::before {
+    content: ''; position: absolute; top: 0; left: 25%; right: 25%; height: 3px;
+    background: var(--sf-accent); border-radius: 0 0 3px 3px;
+  }
+  .scifi-page .sf-more-list button {
+    display: flex; align-items: center; gap: .75rem; width: 100%; padding: .9rem .25rem; text-align: left;
+    font-size: 1.05rem; color: var(--sf-text); background: none; border: 0; border-bottom: 1px solid var(--sf-border);
+  }
+  .scifi-page .sf-more-list button:last-child { border-bottom: 0; }
+  .scifi-page .sf-more-list button > .bi:first-child { font-size: 1.3rem; width: 1.6rem; color: var(--sf-accent); }
+  .scifi-page .sf-more-list button > .bi-chevron-right { margin-left: auto; color: var(--sf-text-dim); }
+  .scifi-page .sf-more-list button.active { color: var(--sf-accent); font-weight: 700; }
+
+  /* 表格 → 卡片 */
+  .scifi-page table.sf-stack thead { display: none; }
+  .scifi-page table.sf-stack, .scifi-page table.sf-stack tbody { display: block; }
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem 0;
+    padding: .8rem .9rem; border-bottom: 1px solid var(--sf-border);
+  }
+  .scifi-page table.sf-stack tbody > tr:last-child { border-bottom: 0; }
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td {
+    display: block; flex: 0 0 50%; min-width: 0; padding: 0 .5rem 0 0 !important;
+    border: 0; background: none; box-shadow: none; text-align: left !important; white-space: normal;
+  }
+  /* 平板才藏的次要欄位，手機卡片裡照樣顯示（卡片有空間放「標籤：值」） */
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.d-none[data-label] { display: block !important; }
+  .scifi-page table.sf-stack td[data-label]::before {
+    content: attr(data-label); margin-right: .5rem; font-size: .88rem; color: var(--sf-text-dim);
+  }
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.sf-stack__title { flex-basis: 100%; font-size: 1.05rem; margin-bottom: .25rem; }
+  .scifi-page table.sf-stack td.sf-stack__title::before { content: none; }
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.sf-stack__actions {
+    flex-basis: 100%; display: flex !important; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: .5rem;
+  }
+  .scifi-page table.sf-stack td.sf-stack__actions > .btn { margin: 0 !important; }
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.sf-stack__check { flex: 0 0 auto; padding-right: .75rem !important; }
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.sf-stack__check + td.sf-stack__title { flex: 1 1 calc(100% - 3rem); }
+  /* 列內展開 → 底部面板（外圈陰影當遮罩） */
+  .scifi-page table.sf-stack tr.sf-stack__detail {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1070;
+    max-height: 85vh; max-height: 85dvh; overflow: auto;
+    background: var(--sf-panel); border-top: 1px solid var(--sf-border-hi); border-radius: 16px 16px 0 0;
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .scifi-page table.sf-stack tr.sf-stack__detail > td { display: block; border: 0; padding: .75rem 1rem 1rem !important; background: none; }
+
+  /* 手機固定在底部的操作列；有底部導覽列時疊在它上面 */
+  .scifi-page .sf-sticky-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1050; margin: 0 !important;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+    padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom));
+    background: rgba(var(--sf-topbar-rgb, 10, 14, 23), .98); border-top: 1px solid var(--sf-border-hi);
+  }
+  .scifi-page .sf-sticky-bar > .card-body { padding: 0; width: 100%; }
+  .scifi-page:has(.sf-sticky-bar) { padding-bottom: calc(160px + env(safe-area-inset-bottom)); }
+  .scifi-page.has-bottom-nav .sf-sticky-bar { bottom: calc(64px + env(safe-area-inset-bottom)); padding-bottom: .75rem; }
+}
+@media (min-width: 768px) {
+  .scifi-page .sf-stack__sheet-head { display: none !important; }
+}
+
 /* ── 按按鈕在列表上方展開的區塊（倉庫的新增／異動／紀錄、藍圖的登記藍圖資料、艦隊的登記船艦資料／匯入）──
  * 加淡淡的強調色底＋邊框（左邊加粗），跟下面的主列表分得出來。 */
 .scifi-page .sf-drawer {

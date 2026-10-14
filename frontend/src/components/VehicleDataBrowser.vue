@@ -90,7 +90,8 @@
     </template>
 
     <!-- ── 批量登記列（有勾選才出現；勾選跨頁保留）──────────────── -->
-    <div v-if="selected.size" class="card scifi-card sf-search mt-3 vdb-submit">
+    <!-- sf-sticky-bar：手機上固定在畫面底部 -->
+    <div v-if="selected.size" class="card scifi-card sf-search mt-3 vdb-submit sf-sticky-bar">
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="fw-semibold">已選 {{ selected.size }} 款</span>
