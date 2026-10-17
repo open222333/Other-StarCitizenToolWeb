@@ -26,6 +26,10 @@
             <span class="idb-name">
               <span class="sf-tree-title">{{ it.name_zh || it.name }}</span>
               <span v-if="it.name_zh" class="text-muted ms-1">{{ it.name }}</span>
+              <!-- 倉庫「拆解材料」篩選時：這個物品拆解會回收的那幾種材料（後端 dismantle_hits） -->
+              <span v-if="it.dismantle_hits?.length" class="d-block small text-muted">
+                拆解回收：{{ dismantleHits(it.dismantle_hits, filters?.dismantle).join('、') }}
+              </span>
             </span>
             <span class="idb-attrs">
               <span>{{ itemTypeLabel(it.type, it.sub_type) || '—' }}</span>
@@ -61,6 +65,7 @@ import { scrollToListTop } from '@/utils/scrollAnchor'
 import ItemDetail from '@/components/ItemDetail.vue'
 import { itemTypeLabel, loadItemTypeZh } from '@/utils/itemType'
 import { fmtAuec } from '@/utils/uexCommodity'
+import { dismantleHits } from '@/utils/blueprintMaterial'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
@@ -90,6 +95,7 @@ async function reload(nextOffset = 0) {
   if (f.q) params.set('q', f.q)
   ;(f.types || []).forEach(v => params.append('type', v))
   if (f.buyable) params.append('acquire', 'buy')
+  ;(f.dismantle || []).forEach(v => params.append('dismantle', v))
   const res = await props.fetcher(`/item/?${params.toString()}`)
   const data = res ? await res.json().catch(() => null) : null
   if (mine !== seq) return

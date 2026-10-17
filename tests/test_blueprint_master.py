@@ -336,6 +336,33 @@ def test_player_blueprint_list_is_enriched_with_master(client, player_headers, s
     assert row['master']['ingredient_count'] == 3
 
 
+def test_dismantle_materials_and_items(client, auth_headers, seeded_master):
+    """倉庫「拆解材料」：選項來自藍圖的拆解回收，查得到「拆解會回收這個材料的物品」（靠 output_item_uuid）。"""
+    name = API_ROW['dismantle_returns'][0]['name']
+    assert name in client.get('/blueprint/master/dismantle-materials', headers=auth_headers).get_json()['data']
+    data = client.get(f'/blueprint/master/dismantle-items?material={name}', headers=auth_headers).get_json()['data']
+    assert data[API_ROW['output_item_uuid']] == [
+        {'name': name, 'resource_type_uuid': API_ROW['dismantle_returns'][0]['resource_type_uuid'],
+         'quantity_scu': API_ROW['dismantle_returns'][0]['quantity_scu']}]
+    assert 'item-old' not in data, '已下架的藍圖不算'
+    assert client.get('/blueprint/master/dismantle-items?material=NoSuchOre', headers=auth_headers).get_json()['data'] == {}
+
+
+def test_item_list_filters_by_dismantle(client, auth_headers, seeded_master):
+    """物品資料（/item/）帶 dismantle：只列拆解會回收這些材料的物品，每筆附 dismantle_hits。"""
+    get_db()['item_master'].insert_many([
+        {'_id': API_ROW['output_item_uuid'], 'name': 'Omnisky III Cannon', 'name_lower': 'omnisky iii cannon',
+         'is_current': True},
+        {'_id': 'item-other', 'name': 'Other Thing', 'name_lower': 'other thing', 'is_current': True},
+    ])
+    name = API_ROW['dismantle_returns'][0]['name']
+    body = client.get(f'/item/?dismantle={name}', headers=auth_headers).get_json()
+    assert [r['_id'] for r in body['data']] == [API_ROW['output_item_uuid']]
+    assert body['data'][0]['dismantle_hits'][0]['name'] == name
+    assert client.get('/item/', headers=auth_headers).get_json()['total'] == 2
+    assert 'dismantle_hits' not in client.get('/item/', headers=auth_headers).get_json()['data'][0]
+
+
 def test_master_list_unregistered_hides_my_registered(client, player_headers, auth_headers, seeded_master):
     """「只顯示未登記」：玩家 token 帶 unregistered=1 時不列自己已登記的；後台 token 忽略這個參數。"""
     def ids(headers, qs=''):

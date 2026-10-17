@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from src.limiter import limiter
-from src.models.item import CommodityMaster, ItemMaster, SyncRun, VehicleMaster
+from src.models.item import BlueprintMaster, CommodityMaster, ItemMaster, SyncRun, VehicleMaster
 from src.models import uex_item_price, uex_vehicle_price
 from src.models.item_stats import describe as describe_item
 from src.models.mission import Faction, Mission
@@ -61,6 +61,7 @@ def list_items():
       - {in: query, name: size,              type: array, items: {type: integer}, description: "尺寸，可重複帶多個"}
       - {in: query, name: grade,             type: array, items: {type: integer}, description: "等級，可重複帶多個"}
       - {in: query, name: acquire,           type: array, items: {type: string}, description: "buy（UEX 有地方買得到）／sell（有地方收），可重複帶多個（取聯集）"}
+      - {in: query, name: dismantle,         type: array, items: {type: string}, description: "拆解後會回收這些材料的物品（取聯集；見 /blueprint/master/dismantle-materials），每筆附 dismantle_hits"}
       - {in: query, name: player_visible,    type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的"}
       - {in: query, name: with_prices,       type: integer, description: "1 = 每筆附 uex_price（最低購買價／最高收購價與地點數）"}
       - {in: query, name: sort_by,           type: string,  description: "name（預設）／type／size／grade／volume_uscu／mass"}
@@ -74,6 +75,12 @@ def list_items():
     limit, offset = _paging()
     hide = not viewer_sees_hidden()
     acquire = [a for a in request.args.getlist('acquire') if a in uex_item_price.ACQUIRE_FIELDS]
+    ids = set(uex_item_price.item_ids_with(acquire)) if acquire else None
+    # 依拆解材料找物品：拆解回收記在藍圖上（blueprint_master.dismantle_returns → output_item_uuid）
+    dismantle = [m.strip() for m in request.args.getlist('dismantle') if m.strip()][:50]
+    hits = BlueprintMaster.dismantle_by_item(dismantle) if dismantle else {}
+    if dismantle:
+        ids = set(hits) if ids is None else ids & set(hits)
     rows, total = ItemMaster.list_all(
         query=(request.args.get('q') or '').strip(),
         types=request.args.getlist('type'),
@@ -81,7 +88,7 @@ def list_items():
         manufacturer_codes=request.args.getlist('manufacturer_code'),
         sizes=request.args.getlist('size'),
         grades=request.args.getlist('grade'),
-        ids=uex_item_price.item_ids_with(acquire) if acquire else None,
+        ids=ids,
         visible_only=hide, visibility=None if hide else visibility_arg(request.args),
         sort_by=request.args.get('sort_by', 'name'),
         sort_dir=-1 if request.args.get('sort_dir') == 'desc' else 1,
@@ -89,6 +96,8 @@ def list_items():
     )
     for row in rows:
         row['volume_scu'] = uscu_to_scu(row.get('volume_uscu'))
+        if dismantle:
+            row['dismantle_hits'] = hits.get(row['_id'], [])
     if request.args.get('with_prices') == '1':
         uex_item_price.attach_summaries(rows)
     return jsonify({'success': True, 'data': rows, 'total': total,

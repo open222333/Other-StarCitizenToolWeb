@@ -789,6 +789,38 @@ class BlueprintMaster(_MasterBase):
             cls.DETAIL_PROJECTION).sort('name', ASCENDING))
 
     @classmethod
+    def dismantle_materials(cls) -> list:
+        """拆解回收會拿到的所有材料名稱（給倉庫「拆解材料」篩選的下拉）。"""
+        values = cls._col().distinct('dismantle_returns.name', {'is_current': True})
+        return sorted((v for v in values if v), key=str.lower)
+
+    @classmethod
+    def dismantle_by_item(cls, materials) -> dict:
+        """拆解後會回收所選材料（多選取聯集）的物品：`{物品 uuid: [符合的拆解回收…]}`。
+
+        物品主檔（item_master）本身沒有拆解資訊——拆解回收記在「做出這個物品的藍圖」上
+        （blueprint_master.dismantle_returns，靠 output_item_uuid 對到物品），
+        所以只有可製造的物品查得到。同一個物品有好幾張藍圖時合併、同名材料只留一筆。
+        """
+        names = _clean_list(materials)
+        if not names:
+            return {}
+        wanted = set(names)
+        out: dict = {}
+        for row in cls._col().find(
+                {'is_current': True, 'output_item_uuid': {'$nin': [None, '']},
+                 'dismantle_returns.name': {'$in': names}},
+                {'output_item_uuid': 1, 'dismantle_returns': 1}):
+            hits = out.setdefault(row['output_item_uuid'], [])
+            seen = {h.get('name') for h in hits}
+            for ret in row.get('dismantle_returns') or []:
+                if ret.get('name') in wanted and ret.get('name') not in seen:
+                    hits.append({'name': ret.get('name'), 'resource_type_uuid': ret.get('resource_type_uuid'),
+                                 'quantity_scu': ret.get('quantity_scu')})
+                    seen.add(ret.get('name'))
+        return out
+
+    @classmethod
     def output_types(cls) -> list:
         """所有產出物類型（給前端做篩選下拉）。"""
         values = cls._col().distinct('output_type', {'is_current': True})

@@ -207,6 +207,39 @@ def list_master():
                     'limit': limit, 'offset': offset})
 
 
+@app_blueprint.route('/master/dismantle-materials', methods=['GET'])
+@jwt_required()
+def master_dismantle_materials():
+    """拆解回收會拿到的所有材料名稱（倉庫「拆解材料」篩選的選項）。
+    ---
+    tags: [Blueprint]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': BlueprintMaster.dismantle_materials()})
+
+
+@app_blueprint.route('/master/dismantle-items', methods=['GET'])
+@jwt_required()
+def master_dismantle_items():
+    """拆解後會回收所選材料的物品：`{物品 uuid: [符合的拆解回收]}`（倉庫「拆解材料」篩選物品庫存／庫存紀錄用）。
+    ---
+    tags: [Blueprint]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: material, type: string, required: true, description: "材料名稱，可重複帶多個（取聯集）"}
+    responses:
+      200:
+        description: 成功
+    """
+    materials = [m.strip() for m in request.args.getlist('material') if m.strip()][:50]
+    return jsonify({'success': True, 'data': BlueprintMaster.dismantle_by_item(materials)})
+
+
 @app_blueprint.route('/master/search', methods=['GET'])
 @jwt_required()
 def search_master():

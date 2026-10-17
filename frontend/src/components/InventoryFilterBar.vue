@@ -27,6 +27,13 @@
               placeholder="全部" block searchable @update:model-value="$emit('update:types', $event)" />
           </div>
 
+          <!-- 拆解材料：拆解後會回收所選材料的物品（拆解資訊記在做出這個物品的藍圖上） -->
+          <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label small fw-semibold mb-1" for="wh-dismantle">拆解材料</label>
+            <MultiSelectFilter id="wh-dismantle" :model-value="dismantle" :options="dismantleOptions" label="拆解材料"
+              placeholder="全部" block searchable @update:model-value="$emit('update:dismantle', $event)" />
+          </div>
+
           <LocationAreaFilter :names="locationNames" :loc-label="locLabel" col-class="col-12 col-sm-4 col-lg-2"
             :systems="systems" :planets="planets" :locations="locations"
             @update:systems="$emit('update:systems', $event)"
@@ -85,19 +92,22 @@ const props = defineProps({
   locLabel:  { type: Function, default: (v) => v },
   // 「只看買得到」：只有物品資料用得到（UEX 有購買地點），物品資料展開時才顯示
   buyable:     { type: Boolean, default: false },
+  // 拆解材料（多選，空陣列＝不限）與選項（{ value, label }），父層查「哪些物品拆解會回收這些材料」
+  dismantle:        { type: Array, default: () => [] },
+  dismantleOptions: { type: Array, default: () => [] },
   showBuyable: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:q', 'update:types', 'update:systems', 'update:planets', 'update:locations',
-  'update:buyable'])
+  'update:buyable', 'update:dismantle'])
 
 const active = computed(() => !!(props.q.trim() || props.types.length || props.systems.length
-  || props.planets.length || props.locations.length || (props.showBuyable && props.buyable)))
+  || props.planets.length || props.locations.length || props.dismantle.length || (props.showBuyable && props.buyable)))
 
 const { isPhone } = useBreakpoint()
 // 手機「篩選」按鈕上的數字：收進面板的條件有幾個在作用
 const sheetCount = computed(() => props.types.length + props.systems.length + props.planets.length
-  + props.locations.length + (props.showBuyable && props.buyable ? 1 : 0))
+  + props.locations.length + props.dismantle.length + (props.showBuyable && props.buyable ? 1 : 0))
 
 const locationNames = computed(() =>
   [...new Set([...props.rows.map(r => r.location), ...props.knownLocations].filter(Boolean))])
@@ -109,5 +119,6 @@ function clear() {
   emit('update:planets', [])
   emit('update:locations', [])
   emit('update:buyable', false)
+  emit('update:dismantle', [])
 }
 </script>

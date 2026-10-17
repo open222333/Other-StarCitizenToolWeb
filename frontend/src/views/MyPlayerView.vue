@@ -158,6 +158,7 @@
       :rows="warehouseFilterRows" :known-locations="locations" :counts="warehouseFilterCounts" :loc-label="locLabel"
       :type-options="itemTypeOptions" v-model:q="stockFilter.q" v-model:types="stockFilter.types"
       :show-buyable="itemDataOpen" v-model:buyable="stockFilter.buyable"
+      v-model:dismantle="stockFilter.dismantle" :dismantle-options="dismantleOptions"
       v-model:systems="stockFilter.systems"
       v-model:planets="stockFilter.planets" v-model:locations="stockFilter.locations" />
 
@@ -711,6 +712,9 @@
             <td class="ps-3 sf-stack__title">
               <span class="fw-semibold">{{ row.item_name_zh || row.item_name }}</span>
               <span v-if="row.item_name_zh" class="small text-muted ms-1">{{ row.item_name }}</span>
+              <div v-if="stockFilter.dismantle.length" class="small text-muted">
+                拆解回收：{{ dismantleHits(dismantleMap[row.item_id], stockFilter.dismantle).join('、') || '—' }}
+              </div>
             </td>
             <td data-label="地點">{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
             <td class="text-end" data-label="數量">{{ row.quantity }}</td>
@@ -754,6 +758,7 @@
               <MultiSelectFilter id="bp-filter-type" v-model="myBpTypes" :options="blueprintTypeOptions"
                 label="類型" placeholder="全部" block searchable />
             </div>
+
             <template #more>
               <div class="form-check mt-3">
                 <input id="bp-filter-missions-m" v-model="bpHasMissionsOnly" class="form-check-input" type="checkbox">
@@ -1365,6 +1370,7 @@ import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
+import { dismantleHits, materialLabel } from '@/utils/blueprintMaterial'
 import { manufacturerLabel, vehicleNameLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 // 地點中文：跟全站一樣查資料庫的翻譯（utils/translations.js），不在前端放對照表
 import { loadKnownLocations, loadStorageLocations, loadTranslations, translate } from '@/utils/translations'
@@ -1544,6 +1550,8 @@ function loadForTab(tab) {
   if (tab === 'warehouse' && !itemTypes.value.length) loadItemTypes()
   // 共用搜尋卡的類型選項（主檔全部類型）、艦隊共用搜尋卡的類型／尺寸／廠商／角色選項
   if (tab === 'blueprints' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
+  // 倉庫共用搜尋卡的「拆解材料」選項
+  if (tab === 'warehouse' && !dismantleMaterials.value.length) loadDismantleMaterials()
   if (tab === 'fleet' && !vehicleFacetsLoaded) loadVehicleFacets()
 }
 
@@ -1975,15 +1983,29 @@ function submitStockRows() {
 // 地點是「星系／行星／地點」三段多選（utils/locationArea.js 的 matchArea）。
 // 物品名稱比對英文＋中文（含即符合）、物品類型比對 item_type；名稱＋類型也帶給「物品資料」。
 // buyable（只看買得到）只給物品資料用
-const stockFilter   = reactive({ q: '', types: [], systems: [], planets: [], locations: [], buyable: false })
+const stockFilter   = reactive({ q: '', types: [], systems: [], planets: [], locations: [], buyable: false, dismantle: [] })
 const itemDataFilters = computed(() => ({
-  q: stockFilter.q.trim(), types: stockFilter.types, buyable: stockFilter.buyable }))
+  q: stockFilter.q.trim(), types: stockFilter.types, buyable: stockFilter.buyable, dismantle: stockFilter.dismantle }))
+
+// 拆解材料：拆解後會回收所選材料的物品 {物品 uuid: [符合的拆解回收]}（後端從藍圖的拆解回收反查）。
+// 物品庫存、庫存紀錄在前端篩，物品資料把條件帶去後端
+const dismantleMap = ref({})
+let dismantleSeq = 0
+watch(() => [...stockFilter.dismantle], async (names) => {
+  const mine = ++dismantleSeq
+  if (!names.length) { dismantleMap.value = {}; return }
+  const qs = names.map(n => `material=${encodeURIComponent(n)}`).join('&')
+  const res = await playerAuth.playerFetch(`/blueprint/master/dismantle-items?${qs}`)
+  const data = res?.ok ? await res.json().catch(() => null) : null
+  if (mine === dismantleSeq) dismantleMap.value = data?.success ? (data.data || {}) : {}
+})
 
 function applyFilter(rows, f) {
   const q = f.q.trim().toLowerCase()
   return rows.filter(r =>
     (!q || [r.item_name, r.item_name_zh].some(t => (t || '').toLowerCase().includes(q)))
     && (!f.types.length || f.types.includes(r.item_type))
+    && (!f.dismantle?.length || !!dismantleMap.value[r.item_id])
     && matchArea(r.location, f))
 }
 
@@ -2142,6 +2164,18 @@ const loadingBlueprints    = ref(false)
 // 類型選項用主檔的全部類型（/blueprint/master/types），三區才會一致。
 const bpFilterQuery = ref('')
 const myBpTypes = ref([])
+const dismantleMaterials = ref([])
+const dismantleOptions = computed(() => dismantleMaterials.value.map(name => ({
+  value: name, label: materialLabel({ name, resource_type_uuid: 'x' }),
+})))
+async function loadDismantleMaterials() {
+  const res = await playerAuth.playerFetch('/blueprint/master/dismantle-materials')
+  const data = res?.ok ? await res.json().catch(() => null) : null
+  if (!data?.success) return
+  dismantleMaterials.value = data.data || []
+  loadTranslations('mining_resource', dismantleMaterials.value)
+  loadTranslations('item', dismantleMaterials.value)
+}
 // 「只看需任務解鎖」預設勾選。預設可用的藍圖每個人本來就有，視同已登記：
 // 我的藍圖、登記藍圖資料都不列（登記藍圖資料傳 hideAvailable，後端 available=0）
 const bpHasMissionsOnly = ref(true)

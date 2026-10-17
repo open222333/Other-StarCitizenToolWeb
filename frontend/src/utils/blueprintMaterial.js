@@ -34,6 +34,16 @@ export function loadMaterialZh(recipe) {
   loadTranslations('item', names)
 }
 
+/** 拆解回收裡符合所選材料的那幾項：「中文（English）0.18 SCU」（依拆解材料找物品時列在名稱下）。 */
+export function dismantleHits(returns, names) {
+  if (!names?.length) return []
+  const wanted = new Set(names)
+  return (returns || []).filter(r => wanted.has(r.name)).map(r => {
+    const label = materialLabel({ ...r, resource_type_uuid: r.resource_type_uuid || 'x' })
+    return r.quantity_scu !== null && r.quantity_scu !== undefined ? `${label} ${r.quantity_scu} SCU` : label
+  })
+}
+
 // ── sc-datahub.com 對應頁面 ──────────────────────────────────────────
 // 藍圖：https://sc-datahub.com/tools/crafting/<名稱 slug>（例如 10-series-greatsword-cannon）
 // 礦物：https://sc-datahub.com/tools/mining/ores/<名稱 slug>（例如 iron）
