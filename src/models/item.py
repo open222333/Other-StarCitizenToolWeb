@@ -59,9 +59,11 @@ class _MasterBase:
         if not ids:
             return {}
         rows = cls._col().find({'_id': {'$in': ids}},
-                               {'_id': 1, 'name': 1, 'name_zh': 1, 'type': 1, 'output_type': 1})
+                               {'_id': 1, 'name': 1, 'name_zh': 1, 'type': 1, 'output_type': 1,
+                                'is_available_by_default': 1})
         return {r['_id']: {'name': r.get('name'), 'name_zh': r.get('name_zh'), 'type': r.get('type'),
-                           'output_type': r.get('output_type')}
+                           'output_type': r.get('output_type'),
+                           'is_available_by_default': r.get('is_available_by_default')}
                 for r in rows}
 
     @classmethod

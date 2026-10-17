@@ -272,7 +272,7 @@
       </div>
     </div>
 
-    <BlueprintMissionsModal v-if="player" ref="missionsRef" :fetcher="fetcher" />
+    <BlueprintMissionsModal v-if="player" ref="missionsRef" :fetcher="fetcher" :registered-uuids="registeredUuids" />
   </div>
 </template>
 

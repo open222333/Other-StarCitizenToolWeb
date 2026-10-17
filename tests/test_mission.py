@@ -179,6 +179,25 @@ def test_for_blueprint_sorted_by_chance(missions):
     assert Mission.for_blueprint('nope') == []
 
 
+def test_for_blueprint_lists_pool_blueprints(missions):
+    """每個任務附上它會給的所有藍圖（跨所有獎勵池去重），玩家頁標出已登記／未登記。"""
+    from src.mongo import get_db
+    get_db()['blueprint_master'].insert_many([
+        {'_id': 'bp-a', 'name': 'Gun A', 'name_zh': '槍 A', 'is_current': True},
+        {'_id': 'bp-b', 'name': 'Gun B', 'is_current': True, 'is_available_by_default': True},
+    ])
+    rows = {r['_id']: r for r in Mission.for_blueprint('bp-a')}
+    assert rows['m1']['pool_blueprints'] == [
+        {'uuid': 'bp-a', 'name': 'Gun A', 'name_zh': '槍 A', 'is_available_by_default': False}]
+    assert [b['uuid'] for b in rows['m2']['pool_blueprints']] == ['bp-a', 'bp-b']
+    assert rows['m2']['pool_blueprints'][1]['is_available_by_default'] is True
+    # 好幾個池：其他池的藍圖也要列（重複的只列一次）
+    _insert_mission('m4', 'Delta Job', pools=[_pool(0.5, 'bp-a', 'bp-b'), _pool(0.2, 'bp-c', 'bp-a')])
+    rows = {r['_id']: r for r in Mission.for_blueprint('bp-a')}
+    assert [b['uuid'] for b in rows['m4']['pool_blueprints']] == ['bp-a', 'bp-b', 'bp-c']
+    assert rows['m4']['pool_size'] == 2
+
+
 def test_counts_for_blueprints(missions):
     assert Mission.counts_for_blueprints(['bp-a', 'bp-b', 'bp-c']) == {'bp-a': 2, 'bp-b': 1}
     assert sorted(Mission.blueprint_uuids_with_missions()) == ['bp-a', 'bp-b']

@@ -1303,7 +1303,7 @@
       </div>
     </div>
   </div>
-  <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" />
+  <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" :registered-uuids="myBlueprintUuids" />
 
   <!-- ══════════ 手機底部導覽列（上方分頁列在手機上藏起來）：常用的四個＋「更多」 ══════════ -->
   <nav v-if="isPhone" class="sf-bottom-nav" aria-label="主分頁">

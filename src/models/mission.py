@@ -154,7 +154,9 @@ class Mission:
     @classmethod
     def for_blueprint(cls, blueprint_uuid: str, visible_only: bool = False) -> list:
         """會給這張藍圖的任務，每筆附上 `chance`（含這張藍圖的獎勵池掉落機率，
-        有好幾個池就取最高）與 `pool_size`（那個池共有幾張藍圖，抽中其中一張）。"""
+        有好幾個池就取最高）與 `pool_size`（那個池共有幾張藍圖，抽中其中一張），
+        以及 `pool_blueprints`（這個任務會給的**所有**藍圖，跨所有獎勵池去重：uuid／名稱／是否預設可用），
+        玩家頁用來標出哪些自己已登記、哪些還沒（例如 10 張裡登記了 1 張）。"""
         uuid = (blueprint_uuid or '').strip()
         if not uuid:
             return []
@@ -164,7 +166,11 @@ class Mission:
         out = []
         for row in rows:
             best = None
-            for pool in row.pop('blueprint_pools', None) or []:
+            pools = row.pop('blueprint_pools', None) or []
+            # 任務會給的全部藍圖（所有池合起來、保留順序去重）
+            row['_pool_uuids'] = list(dict.fromkeys(
+                it.get('blueprint_uuid') for p in pools for it in (p.get('items') or []) if it.get('blueprint_uuid')))
+            for pool in pools:
                 items = pool.get('items') or []
                 if any(it.get('blueprint_uuid') == uuid for it in items):
                     chance = pool.get('drop_chance')
@@ -172,6 +178,14 @@ class Mission:
                         best = (chance, len(items))
             row['chance'], row['pool_size'] = best if best else (None, None)
             out.append(row)
+        names = BlueprintMaster.names_by_ids({u for r in out for u in r['_pool_uuids']})
+        for row in out:
+            row['pool_blueprints'] = [{
+                'uuid': u,
+                'name': (names.get(u) or {}).get('name') or u,
+                'name_zh': (names.get(u) or {}).get('name_zh'),
+                'is_available_by_default': bool((names.get(u) or {}).get('is_available_by_default')),
+            } for u in row.pop('_pool_uuids')]
         out.sort(key=lambda r: (-(r['chance'] or 0), (r.get('title') or '').lower()))
         return out
 

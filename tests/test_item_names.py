@@ -28,7 +28,8 @@ def seed_items():
 
 def test_names_by_ids_batches_and_projects(seed_items):
     out = ItemMaster.names_by_ids(['uuid-medpen', 'uuid-ammo'])
-    assert out == {
+    # 另外附的欄位（type／output_type／is_available_by_default）沒資料時是 None，這裡只比名稱
+    assert {k: {f: v[f] for f in ('name', 'name_zh')} for k, v in out.items()} == {
         'uuid-medpen': {'name': 'MedPen', 'name_zh': '醫療筆'},
         'uuid-ammo':   {'name': 'Ammo Box', 'name_zh': None},
     }

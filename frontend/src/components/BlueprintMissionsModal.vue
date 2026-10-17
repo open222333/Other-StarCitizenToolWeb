@@ -48,6 +48,18 @@
             <span v-if="m.illegal" class="bpm-chip bpm-chip--warn">違法</span>
           </div>
           <div v-if="infoLine(m)" class="small mt-2">{{ infoLine(m) }}</div>
+          <!-- 這個任務會給的所有藍圖（所有獎勵池合起來）：玩家頁標出哪些已登記（含預設可用）、哪些還沒，例如 1 / 10 -->
+          <div v-if="m.pool_blueprints?.length > 1 || (registered && m.pool_blueprints?.length)" class="mt-2">
+            <div class="small text-muted mb-1">
+              任務藍圖 {{ m.pool_blueprints.length }} 種<template v-if="registered"> · 已登記
+                <span class="fw-semibold" :class="poolRegisteredCount(m) === m.pool_blueprints.length ? 'text-success' : 'bpm-count'">{{ poolRegisteredCount(m) }} / {{ m.pool_blueprints.length }}</span></template>
+            </div>
+            <span v-for="b in m.pool_blueprints" :key="b.uuid" class="bpm-chip"
+              :class="[registered ? (isRegistered(b) ? 'bpm-chip--ok' : 'bpm-chip--todo') : '', { 'bpm-chip--current': b.uuid === blueprint?.uuid }]">
+              <i v-if="registered" class="bi me-1" :class="isRegistered(b) ? 'bi-check-circle-fill' : 'bi-circle'"></i>{{ b.name_zh || b.name }}
+              <span v-if="registered" class="bpm-chip__state">{{ isRegistered(b) ? (b.is_available_by_default && !registered.has(b.uuid) ? '預設可用' : '已登記') : '未登記' }}</span>
+            </span>
+          </div>
           <details v-if="m.description_zh || m.description" class="mt-2">
             <summary class="small text-muted">任務說明</summary>
             <div class="small mt-1 text-muted bpm-desc">{{ m.description_zh || m.description }}</div>
@@ -67,7 +79,17 @@ import { factionLabel, fmtChance, reputationLabel, rewardLabel } from '@/utils/m
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁用 playerFetch），回傳 Response 或 null */
   fetcher: { type: Function, required: true },
+  /** 玩家自己已登記的藍圖 uuid；有給才標出獎勵池裡的已登記／未登記（預設可用的視同已登記） */
+  registeredUuids: { type: Array, default: null },
 })
+
+const registered = computed(() => (props.registeredUuids ? new Set(props.registeredUuids) : null))
+function isRegistered(b) {
+  return !!b.is_available_by_default || !!registered.value?.has(b.uuid)
+}
+function poolRegisteredCount(m) {
+  return (m.pool_blueprints || []).filter(isRegistered).length
+}
 
 const visible = ref(false)
 const blueprint = ref(null)
@@ -149,4 +171,9 @@ defineExpose({ open, close })
 .bpm-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }
 .bpm-desc { white-space: pre-line; }
 details > summary { cursor: pointer; }
+.bpm-chip--ok { border-color: rgba(var(--bs-success-rgb), .7); color: rgb(var(--bs-success-rgb)); }
+.bpm-chip--todo { border-style: dashed; color: var(--sf-text-muted); }
+.bpm-chip--current { box-shadow: 0 0 0 1px var(--sf-accent) inset; font-weight: 700; }
+.bpm-chip__state { margin-left: .35rem; font-size: .78em; opacity: .85; }
+.bpm-count { color: var(--sf-text-strong); }
 </style>
