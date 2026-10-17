@@ -80,17 +80,22 @@
                 <div class="mining-echo__stat-value">{{ fmtInt(bestMatch.expected) }} <small>SIG</small></div>
               </div>
               <div class="mining-echo__stat">
-                <div class="mining-echo__stat-label">CONFIDENCE</div>
-                <div class="mining-echo__stat-value mining-echo__stat-value--ok">{{ fmtConfidence(bestMatch) }}</div>
+                <div class="mining-echo__stat-label">BASE RS</div>
+                <div class="mining-echo__stat-value mining-echo__stat-value--ok">{{ fmtInt(bestMatch.signature) }} <small>× {{ bestMatch.rock_count }}</small></div>
               </div>
             </div>
 
-            <p class="mining-echo__hint mb-0">可能礦物：{{ partsSummary(bestMatch.parts) }}</p>
+            <!-- 可能礦物：每種一行 -->
+            <div class="mining-echo__hint mb-0">
+              <div>可能礦物：</div>
+              <div v-for="(p, i) in bestMatch.parts || []" :key="i" class="mining-echo__part">{{ partLine(p) }}</div>
+              <div v-if="!bestMatch.parts?.length">—</div>
+            </div>
           </div>
 
           <button v-if="signatureMatches.length > 1" type="button"
             class="mining-echo__diagnostics-toggle" @click="showDiagnostics = !showDiagnostics">
-            RUN FULL DIAGNOSTICS（還有 {{ signatureMatches.length - 1 }} 筆可能吻合）
+            RUN FULL DIAGNOSTICS（還有 {{ signatureMatches.length - 1 }} 筆吻合）
             <i class="bi" :class="showDiagnostics ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
           </button>
 
@@ -103,7 +108,7 @@
                     <SortTh :sort="matchSort" field="tier">Tier</SortTh>
                     <SortTh :sort="matchSort" field="rock_count">顆數</SortTh>
                     <SortTh :sort="matchSort" field="expected">對應訊號值</SortTh>
-                    <SortTh :sort="matchSort" field="diff">誤差</SortTh>
+                    <SortTh :sort="matchSort" field="signature">單顆訊號值</SortTh>
                     <SortTh :sort="matchSort" field="parts" class="pe-3">可能礦物</SortTh>
                   </tr>
                 </thead>
@@ -116,8 +121,11 @@
                     </td>
                     <td>{{ m.rock_count }} 顆</td>
                     <td>{{ fmtInt(m.expected) }}</td>
-                    <td>{{ fmtDiff(m) }}</td>
-                    <td class="pe-3">{{ partsSummary(m.parts) }}</td>
+                    <td>{{ fmtInt(m.signature) }}</td>
+                    <td class="pe-3">
+                      <div v-for="(p, i) in m.parts || []" :key="i" class="text-nowrap">{{ partLine(p) }}</div>
+                      <span v-if="!m.parts?.length">—</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -158,21 +166,41 @@
           </ul>
         </div>
 
+        <!-- 勾選後每張礦物卡片多列「包含這種礦物的礦床」（只列機率 100% 的；含量、單顆訊號值） -->
+        <div class="form-check mb-3">
+          <input :id="`${mineralListId}-containing`" v-model="showContaining" class="form-check-input" type="checkbox">
+          <label class="form-check-label" :for="`${mineralListId}-containing`">顯示包含此礦物的礦床</label>
+        </div>
+        <!-- 名稱有「小行星」「礦床」的（Asteroid／Deposit）預設不列，勾了才列 -->
+        <div v-if="showContaining" class="form-check mb-3 ms-4">
+          <input :id="`${mineralListId}-generic`" v-model="showGenericDeposits" class="form-check-input" type="checkbox">
+          <label class="form-check-label" :for="`${mineralListId}-generic`">包含小行星、礦床</label>
+        </div>
+
         <div v-if="loadingDeposits" class="mining-echo__panel text-center py-4">
           <span class="spinner-border spinner-border-sm me-2"></span>載入中...
         </div>
-        <!-- 搜尋框沒輸入時只顯示提示（跟左側「回波」同樣的空狀態樣式），輸入了才列出符合的礦物 -->
-        <div v-else-if="!filteredMineralGroups.length" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
+        <!-- 沒有選定也沒有釘選時只顯示提示（跟左側「回波」同樣的空狀態樣式） -->
+        <div v-else-if="!displayGroups.length" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
           請輸入礦物名稱
         </div>
         <div v-else class="mining-echo__mineral-list">
-          <div v-for="g in filteredMineralGroups" :key="g.resource_key" class="mining-echo__panel mb-2">
-            <h3 class="mining-echo__title mb-1" style="font-size: 1.05rem">
+          <!-- 釘選的礦物常駐顯示（存在這台瀏覽器），後面接目前選定、還沒釘選的那一種 -->
+          <div v-for="g in displayGroups" :key="g.resource_key" class="mining-echo__panel mb-2"
+            :class="{ 'mining-echo__panel--pinned': isPinned(g) }">
+            <div class="d-flex align-items-start gap-2 mb-1">
+            <h3 class="mining-echo__title mb-0 flex-grow-1" style="font-size: 1.05rem">
+              <i v-if="isPinned(g)" class="bi bi-pin-angle-fill me-1 mining-echo__pin-icon" aria-label="已釘選"></i>
               {{ mineralLabel(g) }}
               <!-- UEX 商品縮寫（交易／價格網站用的代碼，例如 QUAN） -->
               <span v-if="g.uex?.code" class="mining-echo__tag mining-echo__tag--info ms-1" :title="`UEX：${g.uex.name || ''}`">{{ g.uex.code }}</span>
               <span v-if="ownSignatures(g)[0]?.tier" class="mining-echo__tag ms-1">{{ ownSignatures(g)[0].tier }}</span>
             </h3>
+            <button type="button" class="btn btn-sm text-nowrap" :class="isPinned(g) ? 'btn-warning' : 'btn-success'"
+              :aria-pressed="isPinned(g) ? 'true' : 'false'" @click="togglePin(g)">
+              <i class="bi me-1" :class="isPinned(g) ? 'bi-pin-angle-fill' : 'bi-pin-angle'"></i>{{ isPinned(g) ? '取消釘選' : '釘選' }}
+            </button>
+            </div>
             <p v-if="locationsFor(g).length" class="mining-echo__hint mb-2">
               可能出現地點：
               <span v-for="loc in locationsFor(g)" :key="loc.system + '/' + loc.location_name"
@@ -199,6 +227,31 @@
             <p v-else class="mining-echo__hint mb-0">
               資料裡沒有這種礦物單獨成礦的紀錄（只以其他礦床的成分出現），沒有它自己的訊號值可以參考。
             </p>
+            <!-- 包含這種礦物的礦床（勾選「顯示包含此礦物的礦床」才列） -->
+            <div v-if="showContaining" class="mt-2">
+              <div class="mining-echo__hint mb-1">包含這種礦物的礦床（機率 100%，{{ containingDeposits(g).length }}）：</div>
+              <div v-if="!containingDeposits(g).length" class="mining-echo__hint">—</div>
+              <div v-else style="overflow-x:auto">
+                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                  <thead>
+                    <tr>
+                      <SortTh :sort="containSort" field="deposit" class="ps-2">礦床</SortTh>
+                      <SortTh :sort="containSort" field="tier">Tier</SortTh>
+                      <SortTh :sort="containSort" field="range">含量</SortTh>
+                      <SortTh :sort="containSort" field="signature" class="pe-2 text-end">單顆訊號值</SortTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="d in containSort.sortList(containingDeposits(g))" :key="d.key">
+                      <td class="ps-2">{{ depositLabel(d) }}</td>
+                      <td><span v-if="d.tier" class="mining-echo__tag">{{ d.tier }}</span><span v-else>—</span></td>
+                      <td class="text-nowrap">{{ fmtRange(d.min_percentage, d.max_percentage) }}</td>
+                      <td class="pe-2 text-end">{{ fmtInt(d.signature) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -302,6 +355,11 @@ function fmtInt(v) {
   return Math.round(v).toLocaleString('en-US')
 }
 
+/** 可能礦物的一行：「中文（English）10–30%」 */
+function partLine(p) {
+  return `${mineralLabel(p)} ${fmtRange(p.min_percentage, p.max_percentage)}`
+}
+
 function partsSummary(parts) {
   if (!parts || !parts.length) return '—'
   return parts.map(p => {
@@ -313,10 +371,10 @@ function partsSummary(parts) {
 
 // ── 左：回波 —— 輸入船艦掃描訊號值 → 反查「單顆基準值 × 1~10 顆」───────
 //
-// 遊戲內一叢礦石最多 10 顆，掃描器回傳的整叢訊號值是「單顆基準值 × 顆數」
-// 的整數倍——這是確定性的算式，不是機率，所以容許誤差抓很小（1.5%）
-// 只是為了吸收顯示位數捨入，不是真的在做模糊比對。
-const SIGNATURE_TOLERANCE = 0.015
+// 遊戲內一叢礦石最多 10 顆，掃描器回傳的整叢訊號值（RS）是「單顆基準值 × 顆數」
+// 的整數倍（例如鐵礦單顆 4,270，兩顆 8,540）——確定性的算式，不是有 ± 誤差的範圍，
+// 所以只列「剛好等於」的組合（只容許 0.5 以內的小數捨入）。
+const SIGNATURE_ROUNDING = 0.5
 
 const resonanceInput = ref('')
 
@@ -339,38 +397,25 @@ const signatureMatches = computed(() => {
     const dedupeKey = `${d.deposit_name}__${d.tier}`
     for (let n = 1; n <= 10; n++) {
       const expected = sig * n
-      const diff = Math.abs(v - expected)
-      if (diff / expected > SIGNATURE_TOLERANCE) continue
+      if (Math.abs(v - expected) > SIGNATURE_ROUNDING) continue
       const key = `${dedupeKey}__${n}`
       if (seen.has(key)) continue
       seen.add(key)
       matches.push({
         deposit_name: d.deposit_name, deposit_name_zh: d.deposit_name_zh,
-        tier: d.tier, rock_count: n,
-        expected, diff, parts: d.parts,
+        tier: d.tier, rock_count: n, signature: sig,
+        expected, parts: d.parts,
       })
     }
   }
-  matches.sort((a, b) => a.diff - b.diff)
+  // 都是剛好吻合；顆數少的在前（一叢 2 顆比 8 顆常見），同顆數照礦床名稱
+  matches.sort((a, b) => a.rock_count - b.rock_count
+    || (a.deposit_name || '').localeCompare(b.deposit_name || ''))
   return matches
 })
 
-// 排序後的第一筆＝誤差最小的最佳吻合，主結果卡用這筆。
+// 排序後的第一筆（顆數最少的吻合）放主結果卡。
 const bestMatch = computed(() => signatureMatches.value[0] || null)
-
-function fmtConfidence(m) {
-  // 訊號值比對是「單顆基準值 × 顆數」的確定性算式，不是機率——這裡的信心度
-  // 只是把已經算出來、在 SIGNATURE_TOLERANCE 容許範圍內的誤差換算成好懂的
-  // 百分比顯示，不是額外的統計模型。
-  const pct = Math.max(0, Math.min(100, 100 - (m.diff / m.expected) * 100))
-  return `${pct.toFixed(1)}%`
-}
-
-function fmtDiff(m) {
-  if (m.diff < 0.5) return '完全吻合'
-  const pct = (m.diff / m.expected) * 100
-  return `±${fmtInt(m.diff)}（${pct.toFixed(1)}%）`
-}
 
 // ── 右：礦物訊號參考 —— 輸入名稱（中/英皆可）→ 依礦物分組列出礦床明細 ─
 //
@@ -423,6 +468,67 @@ const mineralSuggestions = computed(() => {
 // 下面只顯示選定的那一種礦物；純打字（還沒選）不顯示結果
 const filteredMineralGroups = computed(() =>
   mineralGroups.value.filter(g => g.resource_key === selectedMineralKey.value))
+
+// ── 釘選：好幾種礦物常駐顯示（存在這台瀏覽器的 localStorage；讀寫失敗就只在這次有效）──
+const PIN_KEY = 'sc_mining_pinned_minerals'
+const CONTAINING_KEY = 'sc_mining_show_containing'
+const PIN_MAX = 20
+function readStore(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : JSON.parse(raw)
+  } catch { return fallback }
+}
+function writeStore(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* 私密視窗等情況存不了，忽略 */ }
+}
+const storedPins = readStore(PIN_KEY, [])
+const pinnedKeys = ref(Array.isArray(storedPins) ? storedPins.filter(k => typeof k === 'string').slice(0, PIN_MAX) : [])
+watch(pinnedKeys, v => writeStore(PIN_KEY, v), { deep: true })
+const showContaining = ref(readStore(CONTAINING_KEY, false) === true)
+watch(showContaining, v => writeStore(CONTAINING_KEY, v))
+const GENERIC_KEY = 'sc_mining_show_generic_deposits'
+const showGenericDeposits = ref(readStore(GENERIC_KEY, false) === true)
+watch(showGenericDeposits, v => writeStore(GENERIC_KEY, v))
+// 名稱有「小行星」「礦床」的礦床（英文 Asteroid／Deposit）：預設不列在「包含這種礦物的礦床」
+const GENERIC_DEPOSIT_RE = /小行星|礦床|asteroid|deposit/i
+function isGenericDeposit(d) {
+  return GENERIC_DEPOSIT_RE.test(`${d.deposit_name_zh || ''} ${d.deposit_name || ''}`)
+}
+
+function isPinned(g) { return pinnedKeys.value.includes(g.resource_key) }
+function togglePin(g) {
+  if (isPinned(g)) pinnedKeys.value = pinnedKeys.value.filter(k => k !== g.resource_key)
+  else pinnedKeys.value = [...pinnedKeys.value, g.resource_key].slice(-PIN_MAX)
+}
+// 釘選的（照釘選順序）＋目前選定但還沒釘選的
+const displayGroups = computed(() => {
+  const byKey = new Map(mineralGroups.value.map(g => [g.resource_key, g]))
+  const out = pinnedKeys.value.map(k => byKey.get(k)).filter(Boolean)
+  for (const g of filteredMineralGroups.value) if (!isPinned(g)) out.push(g)
+  return out
+})
+
+// ── 包含這種礦物的礦床：只列機率 100%（這種礦床一定含有這種礦物）的那幾筆，
+//    同名同 Tier 同數字的變體去重 ──
+function containingDeposits(group) {
+  const seen = new Set()
+  const rows = []
+  for (const d of group.deposits) {
+    if (!(d.probability >= 1)) continue
+    if (!showGenericDeposits.value && isGenericDeposit(d)) continue
+    const key = [d.deposit_name, d.tier, d.signature, d.min_percentage, d.max_percentage, d.probability].join('|')
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push({ ...d, key })
+  }
+  return rows.sort((a, b) => (b.max_percentage || 0) - (a.max_percentage || 0)
+    || depositLabel(a).localeCompare(depositLabel(b), 'zh-Hant'))
+}
+const containSort = useTableSort(null, { accessors: {
+  deposit: d => depositLabel(d), range: d => d.max_percentage,
+} })
+
 
 function onMineralInput(value) {
   mineralQuery.value = value
@@ -750,4 +856,7 @@ function locationsFor(group) {
   font-size: .85rem;
 }
 .mining-echo__table tbody tr:hover { background: rgba(var(--sf-accent-rgb), .06); }
+.mining-echo__part { padding-left: .75rem; }
+.mining-echo__panel--pinned { border-color: var(--me-border-hi); }
+.mining-echo__pin-icon { color: var(--me-accent); }
 </style>
