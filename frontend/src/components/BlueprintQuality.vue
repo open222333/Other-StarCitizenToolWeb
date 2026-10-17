@@ -61,24 +61,32 @@
                 <div v-if="rangeOf(r)" class="mt-2">
                   <div class="bq-target">
                     <span class="bq-muted text-nowrap">目標</span>
+                    <!-- 輸入值限制在拉條範圍內（Q0～Q1000 做得到的值），超出就夾回最近的端點 -->
                     <input :value="targetValue(r)" type="number" step="any" class="form-control form-control-sm bq-tnum"
+                      :min="rangeOf(r).lo" :max="rangeOf(r).hi"
                       :placeholder="targetPlaceholder(r)" :aria-label="`${r.name_zh || r.name} 的目標數值（輸入）`"
-                      @change="setTarget(r, $event.target.value)">
+                      @change="setTarget(r, clampTarget(r, $event.target.value), true); $event.target.value = targetValue(r)">
                     <span v-if="usesBase(r)" class="bq-muted">{{ baseOf(r).unit }}</span>
                   </div>
-                  <input :value="targetValue(r)" type="range" class="w-100 bq-range mt-2"
-                    :min="rangeOf(r).lo" :max="rangeOf(r).hi" :step="rangeOf(r).step"
-                    :style="{ '--bq-fill': `${rangeOf(r).fill(targetValue(r))}%` }"
-                    :aria-label="`${r.name_zh || r.name} 的目標數值`" @input="setTarget(r, $event.target.value, true)">
+                  <div class="btn-group btn-group-sm mt-2 bq-presets" role="group" :aria-label="`${r.name_zh || r.name} 快速設定`">
+                    <button type="button" class="btn btn-info" @click="setTarget(r, rangeOf(r).worst)">MIN</button>
+                    <button type="button" class="btn btn-info" @click="setTarget(r, (rangeOf(r).lo + rangeOf(r).hi) / 2)">MID</button>
+                    <button type="button" class="btn btn-info" @click="setTarget(r, rangeOf(r).best)">MAX</button>
+                  </div>
+                  <!-- 拉條一律「左＝Q0、右＝Q1000」：最低耐溫、後座力這種數值變小才是變好的屬性，
+                       往右拉也是變好，跟其他屬性同方向（拉條本身是 0～1000 的位置，再換算成數值） -->
+                  <input :value="rangeOf(r).pos(targetValue(r))" type="range" class="w-100 bq-range mt-2"
+                    min="0" max="1000" step="1"
+                    :style="{ '--bq-fill': `${rangeOf(r).pos(targetValue(r)) / 10}%` }"
+                    :aria-label="`${r.name_zh || r.name} 的目標數值`" @input="setTarget(r, rangeOf(r).val($event.target.value), true)">
                   <div class="d-flex justify-content-between bq-muted bq-small">
-                    <span>{{ fmtTargetEnd(r, rangeOf(r).lo) }}</span><span>{{ fmtTargetEnd(r, rangeOf(r).hi) }}</span>
+                    <span>{{ fmtTargetEnd(r, rangeOf(r).worst) }}</span><span>{{ fmtTargetEnd(r, rangeOf(r).best) }}</span>
                   </div>
                 </div>
                 <div v-if="targetResults[r.key]" class="bq-small mt-1">
                   <template v-if="targetResults[r.key].reachable">
                     需要品質 <span class="fw-bold bq-accent">Q{{ targetResults[r.key].quality }}</span>
                     <span class="bq-muted">（{{ targetResults[r.key].slotNames }}）</span>
-                    <button type="button" class="btn btn-sm btn-success py-0 ms-1" @click="applyTarget(r)">套用</button>
                   </template>
                   <span v-else class="bq-warn">Q1000 也到不了，最多 {{ targetResults[r.key].bestLabel }}</span>
                 </div>
@@ -105,38 +113,29 @@
               <input :id="`bq-${uid}-${slot.key}`" v-model.number="qualities[slot.key]" type="range"
                 class="flex-grow-1 bq-range" :min="QUALITY_MIN" :max="QUALITY_MAX" step="1"
                 :style="{ '--bq-fill': `${(qualities[slot.key] / QUALITY_MAX) * 100}%` }">
-              <input v-model.number="qualities[slot.key]" type="number" class="form-control form-control-sm bq-qnum"
-                :min="QUALITY_MIN" :max="QUALITY_MAX" :aria-label="`${slot.name} 品質`">
+              <!-- 輸入值限制在 Q0～Q1000（整數），超出就夾回端點 -->
+              <input :value="qualities[slot.key]" type="number" class="form-control form-control-sm bq-qnum"
+                :min="QUALITY_MIN" :max="QUALITY_MAX" step="1" :aria-label="`${slot.name} 品質`"
+                @change="qualities[slot.key] = clampQuality($event.target.value); $event.target.value = qualities[slot.key]">
+            </div>
+            <!-- MIN＝這個材料能用的最低品質、MID＝Q500、MAX＝Q1000 -->
+            <div class="btn-group btn-group-sm mt-1 bq-presets" role="group" :aria-label="`${slot.name} 品質快速設定`">
+              <button type="button" class="btn btn-info" @click="qualities[slot.key] = Math.max(QUALITY_MIN, minQualityOf(slot))">MIN</button>
+              <button type="button" class="btn btn-info" @click="qualities[slot.key] = Math.round((QUALITY_MIN + QUALITY_MAX) / 2)">MID</button>
+              <button type="button" class="btn btn-info" @click="qualities[slot.key] = QUALITY_MAX">MAX</button>
             </div>
             <div v-if="qualities[slot.key] < minQualityOf(slot)" class="bq-warn">
               低於最低品質 Q{{ minQualityOf(slot) }}，這個材料不能用
             </div>
-            <div v-if="slot.modifiers.length" style="overflow-x: auto">
-              <table class="table table-sm align-middle mb-0 mt-1 bq-table">
-                <thead>
-                  <tr>
-                    <SortTh :sort="modSort" field="name">屬性</SortTh>
-                    <SortTh :sort="modSort" field="q0" class="text-end">Q0</SortTh>
-                    <SortTh :sort="modSort" field="q500" class="text-end">Q500</SortTh>
-                    <SortTh :sort="modSort" field="q1000" class="text-end">Q1000</SortTh>
-                    <th class="text-end">目前</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="m in modSort.sortList(slot.modifiers)" :key="m.key || m.name">
-                    <td>{{ m.name_zh || m.name }}</td>
-                    <td class="text-end bq-muted">{{ fmtModifier(modifierAt(m, 0), isAdditive(m)) }}</td>
-                    <td class="text-end bq-muted">{{ fmtModifier(modifierAt(m, 500), isAdditive(m)) }}</td>
-                    <td class="text-end bq-muted">{{ fmtModifier(modifierAt(m, 1000), isAdditive(m)) }}</td>
-                    <td class="text-end fw-bold">
-                      <!-- 顏色放在 span 上：Bootstrap 表格會用 --bs-table-color 蓋掉 td 上的文字顏色 -->
-                      <span :class="betterClass(m, modifierAt(m, qualities[slot.key]))">
-                        {{ fmtModifier(modifierAt(m, qualities[slot.key]), isAdditive(m)) }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <!-- 這個部位目前品質下，各屬性的加成（直接列「屬性 加成」，不再列 Q0／Q500／Q1000 對照表） -->
+            <div v-if="slot.modifiers.length" class="bq-mods mt-1">
+              <div v-for="m in slot.modifiers" :key="m.key || m.name" class="bq-mod">
+                <span>{{ m.name_zh || m.name }}</span>
+                <!-- 只顯示目前品質下的值（例如「完整性 1.00」），跟著上面的品質即時變動 -->
+                <span class="fw-bold" :class="betterClass(m, modifierAt(m, qualities[slot.key]))">
+                  {{ fmtSlotValue(m, modifierAt(m, qualities[slot.key])) }}
+                </span>
+              </div>
             </div>
             <div v-else class="bq-muted">這個部位的品質不影響屬性</div>
           </div>
@@ -148,8 +147,6 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import SortTh from '@/components/SortTh.vue'
-import { useTableSort } from '@/composables/useTableSort'
 import {
   QUALITY_MAX, QUALITY_MIN, applyToBase, combine, fmtModifier, fmtPercent, fmtStat, improves, isAdditive,
   modifierAt, requiredQuality, statKey,
@@ -214,7 +211,9 @@ function targetPlaceholder(r) {
   return r.additive ? '目標加減值' : '目標倍率，例如 1.1'
 }
 
-/** 拉條範圍：Q0 到 Q1000 這個屬性做得到的值（其他部位維持目前品質），用畫面上的單位 */
+/** 拉條範圍：Q0 到 Q1000 這個屬性做得到的值（其他部位維持目前品質），用畫面上的單位。
+ *  worst＝Q0 的值（拉條左端、MIN）、best＝Q1000 的值（右端、MAX）；lo／hi 是數值上的大小（夾輸入範圍用）。
+ *  pos(v)／val(p)：數值 ↔ 拉條位置 0～1000，數值變小才是變好的屬性也是往右變好。 */
 function rangeOf(r) {
   const res = requiredQuality(data.value?.slots, qualities, r.key, 1)
   if (!res) return null
@@ -226,12 +225,18 @@ function rangeOf(r) {
   const hi = Math.max(a, b)
   if (!(hi > lo)) return null
   const step = r.additive && !base ? 1 : Number(((hi - lo) / 1000).toPrecision(2))
-  return { lo, hi, step, fill: v => ((Number(v) - lo) / (hi - lo)) * 100 }
+  const pos = v => Math.round(Math.min(1000, Math.max(0, ((Number(v) - a) / (b - a)) * 1000)))
+  const val = p => a + (Number(p) / 1000) * (b - a)
+  return { lo, hi, worst: a, best: b, step, pos, val }
 }
 
 /** 目前的目標值：沒設過就用現在的數值 */
 function targetValue(r) {
-  if (targets[r.key] !== undefined && targets[r.key] !== '') return targets[r.key]
+  if (targets[r.key] !== undefined && targets[r.key] !== '') {
+    // MIN／MID／MAX 存的是不捨入的實際值（反推才準），顯示時才捨入
+    const v = Number(targets[r.key])
+    return Number.isNaN(v) ? targets[r.key] : Number(v.toFixed(usesBase(r) ? 2 : 3))
+  }
   const base = usesBase(r) ? baseOf(r) : null
   const v = base ? applyToBase(base.value, r.value, r.additive) : r.value
   return Number(v.toFixed(3))
@@ -244,13 +249,39 @@ function setTarget(r, value, fromSlider = false) {
   calcTarget(r)
 }
 
+/** 各部位的屬性值：倍率直接顯示數字（1.00），加減值帶正負號（+1／-1） */
+function fmtSlotValue(m, v) {
+  if (v === null || v === undefined) return '—'
+  return isAdditive(m) ? fmtModifier(v, true) : Number(v).toFixed(2)
+}
+
+/** 目標輸入值夾在拉條範圍內；不是數字就維持原輸入（讓 calcTarget 忽略） */
+function clampTarget(r, value) {
+  const range = rangeOf(r)
+  const v = Number(value)
+  if (value === '' || Number.isNaN(v) || !range) return value
+  return Math.min(range.hi, Math.max(range.lo, v))
+}
+
+/** 部位品質夾在 Q0～Q1000 的整數；輸入不是數字就回到 Q0 */
+function clampQuality(value) {
+  const v = Math.round(Number(value))
+  if (Number.isNaN(v)) return QUALITY_MIN
+  return Math.min(QUALITY_MAX, Math.max(QUALITY_MIN, v))
+}
+
 function fmtTargetEnd(r, v) {
   return usesBase(r) ? fmtStat(v, baseOf(r).unit) : fmtModifier(v, r.additive)
 }
 
 function calcTarget(r) {
-  const t = Number(targets[r.key])
+  let t = Number(targets[r.key])
   if (targets[r.key] === '' || Number.isNaN(t)) return
+  // 目標值會四捨五入到 2～3 位小數（例如 Q1000 是 ×1.10289，顯示成 ×1.103），
+  // 直接拿去反推會比 Q1000 還高一點點、被判成「Q1000 也到不了」。
+  // 輸入本來就限制在拉條範圍內，超出的部分只會是捨入誤差，所以夾回 Q0～Q1000 的實際端點再算。
+  const range = rangeOf(r)
+  if (range) t = Math.min(range.hi, Math.max(range.lo, t))
   const base = usesBase(r) ? baseOf(r) : null
   const goal = base ? (r.additive ? t - base.value : t / base.value) : t
   const res = requiredQuality(data.value.slots, qualities, r.key, goal)
@@ -262,12 +293,6 @@ function calcTarget(r) {
     bestLabel: base ? fmtStat(applyToBase(base.value, res.best, r.additive), base.unit)
       : `${fmtModifier(res.best, r.additive)}`,
   }
-}
-
-function applyTarget(r) {
-  const res = targetResults[r.key]
-  if (!res?.reachable) return
-  for (const k of res.slotKeys) qualities[k] = res.quality
 }
 
 function setAll(q) {
@@ -302,11 +327,6 @@ function betterClass(m, value) {
   return b === true ? 'bq-good' : b === false ? 'bq-bad' : ''
 }
 
-// 每個部位一張表，共用同一個排序狀態（屬性名稱、Q0／Q500／Q1000 的倍率）
-const modSort = useTableSort(null, { accessors: {
-  name: m => m.name_zh || m.name,
-  q0: m => modifierAt(m, 0), q500: m => modifierAt(m, 500), q1000: m => modifierAt(m, 1000),
-} })
 </script>
 
 <style scoped>
@@ -348,4 +368,7 @@ const modSort = useTableSort(null, { accessors: {
 .bq-table { --bs-table-bg: transparent; color: var(--sf-text); }
 .bq-table th { color: var(--sf-text-muted); font-weight: 600; border-color: var(--sf-border); }
 .bq-table td { border-color: var(--sf-border); }
+.bq-mods { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .25rem 1rem; }
+.bq-mod { display: flex; justify-content: flex-start; gap: .5rem; padding: .2rem 0; border-bottom: 1px solid var(--sf-border); }
+.bq-presets .btn { min-width: 3.2rem; font-weight: 700; letter-spacing: .03em; }
 </style>
