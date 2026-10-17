@@ -361,6 +361,10 @@ def test_item_list_filters_by_dismantle(client, auth_headers, seeded_master):
     assert body['data'][0]['dismantle_hits'][0]['name'] == name
     assert client.get('/item/', headers=auth_headers).get_json()['total'] == 2
     assert 'dismantle_hits' not in client.get('/item/', headers=auth_headers).get_json()['data'][0]
+    # 只看可拆解：有藍圖且藍圖有拆解回收的物品，附全部拆解回收
+    able = client.get('/item/?dismantlable=1', headers=auth_headers).get_json()
+    assert [r['_id'] for r in able['data']] == [API_ROW['output_item_uuid']]
+    assert [h['name'] for h in able['data'][0]['dismantle_hits']] == [d['name'] for d in API_ROW['dismantle_returns']]
 
 
 def test_master_list_unregistered_hides_my_registered(client, player_headers, auth_headers, seeded_master):

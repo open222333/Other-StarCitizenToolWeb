@@ -45,6 +45,11 @@
                 @change="$emit('update:buyable', $event.target.checked)">
               <label class="form-check-label" for="wh-buyable-m">只看買得到</label>
             </div>
+            <div v-if="showBuyable" class="form-check mt-2">
+              <input id="wh-dismantlable-m" class="form-check-input" type="checkbox" :checked="dismantlable"
+                @change="$emit('update:dismantlable', $event.target.checked)">
+              <label class="form-check-label" for="wh-dismantlable-m">只看可拆解</label>
+            </div>
           </template>
         </SfFilterSheet>
       </div>
@@ -54,6 +59,12 @@
           <input id="wh-buyable" class="form-check-input" type="checkbox" :checked="buyable"
             @change="$emit('update:buyable', $event.target.checked)">
           <label class="form-check-label" for="wh-buyable">只看買得到</label>
+        </div>
+        <!-- 只看可拆解：有藍圖、而且藍圖有拆解回收的物品（只給物品資料用，跟「只看買得到」一起出現） -->
+        <div v-if="showBuyable && !isPhone" class="form-check mb-0 me-2">
+          <input id="wh-dismantlable" class="form-check-input" type="checkbox" :checked="dismantlable"
+            @change="$emit('update:dismantlable', $event.target.checked)">
+          <label class="form-check-label" for="wh-dismantlable">只看可拆解</label>
         </div>
         <span v-if="active" class="form-text py-0 my-0">
           <template v-for="(c, i) in counts" :key="c.label">
@@ -92,6 +103,8 @@ const props = defineProps({
   locLabel:  { type: Function, default: (v) => v },
   // 「只看買得到」：只有物品資料用得到（UEX 有購買地點），物品資料展開時才顯示
   buyable:     { type: Boolean, default: false },
+  // 「只看可拆解」：同樣只給物品資料用
+  dismantlable: { type: Boolean, default: false },
   // 拆解材料（多選，空陣列＝不限）與選項（{ value, label }），父層查「哪些物品拆解會回收這些材料」
   dismantle:        { type: Array, default: () => [] },
   dismantleOptions: { type: Array, default: () => [] },
@@ -99,15 +112,17 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:q', 'update:types', 'update:systems', 'update:planets', 'update:locations',
-  'update:buyable', 'update:dismantle'])
+  'update:buyable', 'update:dismantle', 'update:dismantlable'])
 
 const active = computed(() => !!(props.q.trim() || props.types.length || props.systems.length
-  || props.planets.length || props.locations.length || props.dismantle.length || (props.showBuyable && props.buyable)))
+  || props.planets.length || props.locations.length || props.dismantle.length
+  || (props.showBuyable && (props.buyable || props.dismantlable))))
 
 const { isPhone } = useBreakpoint()
 // 手機「篩選」按鈕上的數字：收進面板的條件有幾個在作用
 const sheetCount = computed(() => props.types.length + props.systems.length + props.planets.length
-  + props.locations.length + props.dismantle.length + (props.showBuyable && props.buyable ? 1 : 0))
+  + props.locations.length + props.dismantle.length
+  + (props.showBuyable && props.buyable ? 1 : 0) + (props.showBuyable && props.dismantlable ? 1 : 0))
 
 const locationNames = computed(() =>
   [...new Set([...props.rows.map(r => r.location), ...props.knownLocations].filter(Boolean))])
@@ -119,6 +134,7 @@ function clear() {
   emit('update:planets', [])
   emit('update:locations', [])
   emit('update:buyable', false)
+  emit('update:dismantlable', false)
   emit('update:dismantle', [])
 }
 </script>

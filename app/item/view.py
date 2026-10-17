@@ -61,6 +61,7 @@ def list_items():
       - {in: query, name: size,              type: array, items: {type: integer}, description: "尺寸，可重複帶多個"}
       - {in: query, name: grade,             type: array, items: {type: integer}, description: "等級，可重複帶多個"}
       - {in: query, name: acquire,           type: array, items: {type: string}, description: "buy（UEX 有地方買得到）／sell（有地方收），可重複帶多個（取聯集）"}
+      - {in: query, name: dismantlable,      type: integer, description: "1 = 只看可拆解的物品（有藍圖且藍圖有拆解回收），每筆附 dismantle_hits（全部拆解回收）"}
       - {in: query, name: dismantle,         type: array, items: {type: string}, description: "拆解後會回收這些材料的物品（取聯集；見 /blueprint/master/dismantle-materials），每筆附 dismantle_hits"}
       - {in: query, name: player_visible,    type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的"}
       - {in: query, name: with_prices,       type: integer, description: "1 = 每筆附 uex_price（最低購買價／最高收購價與地點數）"}
@@ -81,6 +82,11 @@ def list_items():
     hits = BlueprintMaster.dismantle_by_item(dismantle) if dismantle else {}
     if dismantle:
         ids = set(hits) if ids is None else ids & set(hits)
+    # 只看可拆解：有藍圖、而且藍圖有拆解回收的物品
+    dismantlable = request.args.get('dismantlable') == '1'
+    if dismantlable and not dismantle:
+        able = set(BlueprintMaster.dismantlable_items())
+        ids = able if ids is None else ids & able
     rows, total = ItemMaster.list_all(
         query=(request.args.get('q') or '').strip(),
         types=request.args.getlist('type'),
@@ -98,6 +104,10 @@ def list_items():
         row['volume_scu'] = uscu_to_scu(row.get('volume_uscu'))
         if dismantle:
             row['dismantle_hits'] = hits.get(row['_id'], [])
+    if dismantlable and not dismantle:
+        returns = BlueprintMaster.dismantlable_items([r['_id'] for r in rows])
+        for row in rows:
+            row['dismantle_hits'] = returns.get(row['_id'], [])
     if request.args.get('with_prices') == '1':
         uex_item_price.attach_summaries(rows)
     return jsonify({'success': True, 'data': rows, 'total': total,

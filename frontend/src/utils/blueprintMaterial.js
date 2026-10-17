@@ -34,11 +34,10 @@ export function loadMaterialZh(recipe) {
   loadTranslations('item', names)
 }
 
-/** 拆解回收裡符合所選材料的那幾項：「中文（English）0.18 SCU」（依拆解材料找物品時列在名稱下）。 */
+/** 拆解回收裡符合所選材料的那幾項（沒選材料＝全部）：「中文（English）0.18 SCU」，列在物品名稱下。 */
 export function dismantleHits(returns, names) {
-  if (!names?.length) return []
-  const wanted = new Set(names)
-  return (returns || []).filter(r => wanted.has(r.name)).map(r => {
+  const wanted = names?.length ? new Set(names) : null
+  return (returns || []).filter(r => !wanted || wanted.has(r.name)).map(r => {
     const label = materialLabel({ ...r, resource_type_uuid: r.resource_type_uuid || 'x' })
     return r.quantity_scu !== null && r.quantity_scu !== undefined ? `${label} ${r.quantity_scu} SCU` : label
   })

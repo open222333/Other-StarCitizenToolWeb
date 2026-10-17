@@ -157,7 +157,7 @@
     <InventoryFilterBar v-show="activeTab === 'warehouse'"
       :rows="warehouseFilterRows" :known-locations="locations" :counts="warehouseFilterCounts" :loc-label="locLabel"
       :type-options="itemTypeOptions" v-model:q="stockFilter.q" v-model:types="stockFilter.types"
-      :show-buyable="itemDataOpen" v-model:buyable="stockFilter.buyable"
+      :show-buyable="itemDataOpen" v-model:buyable="stockFilter.buyable" v-model:dismantlable="stockFilter.dismantlable"
       v-model:dismantle="stockFilter.dismantle" :dismantle-options="dismantleOptions"
       v-model:systems="stockFilter.systems"
       v-model:planets="stockFilter.planets" v-model:locations="stockFilter.locations" />
@@ -1983,9 +1983,10 @@ function submitStockRows() {
 // 地點是「星系／行星／地點」三段多選（utils/locationArea.js 的 matchArea）。
 // 物品名稱比對英文＋中文（含即符合）、物品類型比對 item_type；名稱＋類型也帶給「物品資料」。
 // buyable（只看買得到）只給物品資料用
-const stockFilter   = reactive({ q: '', types: [], systems: [], planets: [], locations: [], buyable: false, dismantle: [] })
+const stockFilter   = reactive({ q: '', types: [], systems: [], planets: [], locations: [], buyable: false, dismantlable: false, dismantle: [] })
 const itemDataFilters = computed(() => ({
-  q: stockFilter.q.trim(), types: stockFilter.types, buyable: stockFilter.buyable, dismantle: stockFilter.dismantle }))
+  q: stockFilter.q.trim(), types: stockFilter.types, buyable: stockFilter.buyable,
+  dismantlable: stockFilter.dismantlable, dismantle: stockFilter.dismantle }))
 
 // 拆解材料：拆解後會回收所選材料的物品 {物品 uuid: [符合的拆解回收]}（後端從藍圖的拆解回收反查）。
 // 物品庫存、庫存紀錄在前端篩，物品資料把條件帶去後端

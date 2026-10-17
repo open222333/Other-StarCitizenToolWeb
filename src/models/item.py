@@ -795,6 +795,27 @@ class BlueprintMaster(_MasterBase):
         return sorted((v for v in values if v), key=str.lower)
 
     @classmethod
+    def dismantlable_items(cls, item_ids=None) -> dict:
+        """可拆解的物品（有藍圖、而且藍圖有拆解回收）：`{物品 uuid: [拆解回收…]}`。
+
+        item_ids 給定時只查這幾個物品（列表頁附上每筆的拆解回收）；None＝全部（「只看可拆解」篩選）。
+        同一個物品有好幾張藍圖時合併、同名材料只留一筆。
+        """
+        filt = {'is_current': True, 'output_item_uuid': {'$nin': [None, '']}, 'dismantle_returns.0': {'$exists': True}}
+        if item_ids is not None:
+            filt['output_item_uuid'] = {'$in': [i for i in item_ids if i]}
+        out: dict = {}
+        for row in cls._col().find(filt, {'output_item_uuid': 1, 'dismantle_returns': 1}):
+            hits = out.setdefault(row['output_item_uuid'], [])
+            seen = {h.get('name') for h in hits}
+            for ret in row.get('dismantle_returns') or []:
+                if ret.get('name') and ret.get('name') not in seen:
+                    hits.append({'name': ret.get('name'), 'resource_type_uuid': ret.get('resource_type_uuid'),
+                                 'quantity_scu': ret.get('quantity_scu')})
+                    seen.add(ret.get('name'))
+        return out
+
+    @classmethod
     def dismantle_by_item(cls, materials) -> dict:
         """拆解後會回收所選材料（多選取聯集）的物品：`{物品 uuid: [符合的拆解回收…]}`。
 

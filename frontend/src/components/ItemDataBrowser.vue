@@ -1,7 +1,8 @@
 <!--
   玩家頁「倉庫 › 物品資料」：瀏覽物品主檔（item_master），唯讀。
 
-  篩選用「倉庫」分頁頂端的共用搜尋卡（MyPlayerView 傳進 filters：{ q, types, buyable }），名稱＋類型跟
+  篩選用「倉庫」分頁頂端的共用搜尋卡（MyPlayerView 傳進 filters：{ q, types, buyable, dismantlable, dismantle }），
+  dismantlable（「只看可拆解」）＝ dismantlable=1、dismantle（拆解材料）＝ dismantle=…，兩者都會附 dismantle_hits；名稱＋類型跟
   物品庫存同一組條件；buyable（「只看買得到」勾選，物品資料展開時才出現在搜尋卡上）＝ acquire=buy。
   資料是 GET /item/?with_prices=1（後端分頁，玩家只看得到「玩家頁面顯示」的物品），每筆帶 uex_price
   （列表只顯示最低購買價）。點名稱展開詳細資料（components/ItemDetail.vue：基本欄位、遊戲內說明的數值、
@@ -96,6 +97,7 @@ async function reload(nextOffset = 0) {
   ;(f.types || []).forEach(v => params.append('type', v))
   if (f.buyable) params.append('acquire', 'buy')
   ;(f.dismantle || []).forEach(v => params.append('dismantle', v))
+  if (f.dismantlable) params.append('dismantlable', '1')
   const res = await props.fetcher(`/item/?${params.toString()}`)
   const data = res ? await res.json().catch(() => null) : null
   if (mine !== seq) return
