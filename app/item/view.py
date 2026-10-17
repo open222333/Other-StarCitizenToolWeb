@@ -65,7 +65,7 @@ def list_items():
       - {in: query, name: dismantle,         type: array, items: {type: string}, description: "拆解後會回收這些材料的物品（取聯集；見 /blueprint/master/dismantle-materials），每筆附 dismantle_hits"}
       - {in: query, name: player_visible,    type: integer, description: "後台用：1 = 只看玩家頁面顯示的、0 = 只看不顯示的"}
       - {in: query, name: with_prices,       type: integer, description: "1 = 每筆附 uex_price（最低購買價／最高收購價與地點數）"}
-      - {in: query, name: sort_by,           type: string,  description: "name（預設）／type／size／grade／volume_uscu／mass"}
+      - {in: query, name: sort_by,           type: string,  description: "name（預設）／type／size／grade／volume_uscu／mass／manufacturer_name／dismantle_scu（拆解回收量，要搭配 dismantle 或 dismantlable）"}
       - {in: query, name: sort_dir,          type: string,  description: "asc（預設）／desc"}
       - {in: query, name: limit,             type: integer, default: 50, description: "最多 200"}
       - {in: query, name: offset,            type: integer, default: 0}
@@ -87,6 +87,11 @@ def list_items():
     if dismantlable and not dismantle:
         able = set(BlueprintMaster.dismantlable_items())
         ids = able if ids is None else ids & able
+    sort_by = request.args.get('sort_by', 'name')
+    sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
+    # 依拆解回收量排序（所選材料的 SCU 加總；只勾「只看可拆解」時是全部拆解回收的加總）：
+    # 這不是 item_master 的欄位，先把符合條件的全部撈出來在這裡排，再切出這一頁
+    by_dismantle = sort_by == 'dismantle_scu' and (dismantle or dismantlable)
     rows, total = ItemMaster.list_all(
         query=(request.args.get('q') or '').strip(),
         types=request.args.getlist('type'),
@@ -96,10 +101,15 @@ def list_items():
         grades=request.args.getlist('grade'),
         ids=ids,
         visible_only=hide, visibility=None if hide else visibility_arg(request.args),
-        sort_by=request.args.get('sort_by', 'name'),
-        sort_dir=-1 if request.args.get('sort_dir') == 'desc' else 1,
-        limit=limit, offset=offset,
+        sort_by='name' if by_dismantle else sort_by,
+        sort_dir=1 if by_dismantle else sort_dir,
+        limit=ItemMaster.DISMANTLE_SORT_MAX if by_dismantle else limit, offset=0 if by_dismantle else offset,
     )
+    if by_dismantle:
+        returns = hits if dismantle else BlueprintMaster.dismantlable_items([r['_id'] for r in rows])
+        scu = {k: sum((h.get('quantity_scu') or 0) for h in v) for k, v in returns.items()}
+        rows.sort(key=lambda r: scu.get(r['_id'], 0), reverse=sort_dir == -1)
+        rows = rows[offset:offset + limit]
     for row in rows:
         row['volume_scu'] = uscu_to_scu(row.get('volume_uscu'))
         if dismantle:

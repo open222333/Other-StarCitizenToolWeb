@@ -361,6 +361,14 @@ def test_item_list_filters_by_dismantle(client, auth_headers, seeded_master):
     assert body['data'][0]['dismantle_hits'][0]['name'] == name
     assert client.get('/item/', headers=auth_headers).get_json()['total'] == 2
     assert 'dismantle_hits' not in client.get('/item/', headers=auth_headers).get_json()['data'][0]
+    # 依拆解回收量排序（所選材料 SCU 加總）
+    get_db()['blueprint_master'].insert_one({'_id': 'bp-other', 'is_current': True, 'output_item_uuid': 'item-other',
+                                             'dismantle_returns': [{'name': name, 'quantity_scu': 9.5}]})
+    by = lambda d: [r['_id'] for r in client.get(f'/item/?dismantle={name}&sort_by=dismantle_scu&sort_dir={d}',
+                                                 headers=auth_headers).get_json()['data']]
+    assert by('desc') == ['item-other', API_ROW['output_item_uuid']]
+    assert by('asc') == [API_ROW['output_item_uuid'], 'item-other']
+    get_db()['blueprint_master'].delete_one({'_id': 'bp-other'})
     # 只看可拆解：有藍圖且藍圖有拆解回收的物品，附全部拆解回收
     able = client.get('/item/?dismantlable=1', headers=auth_headers).get_json()
     assert [r['_id'] for r in able['data']] == [API_ROW['output_item_uuid']]

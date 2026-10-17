@@ -19,33 +19,38 @@
     </div>
     <div v-else-if="!rows.length" class="text-muted small">沒有符合條件的物品。</div>
     <template v-else>
+      <!-- 欄位名稱＋排序（後端排序）；拆解回收欄只有用「拆解材料」或「只看可拆解」篩選時才出現，
+           依所選材料的回收量（SCU 加總）排序 -->
+      <div class="idb-list" :style="{ '--sf-tree-cols': gridCols }">
+      <SfTreeHead :sort="sort" :columns="columns" />
       <div v-for="it in rows" :key="it._id" class="idb-item">
         <div class="idb-row">
-          <button type="button" class="sf-tree-row sf-tree-row--ship idb-main"
+          <button type="button" class="sf-tree-row sf-tree-row--ship sf-tree-row--cols idb-main"
             :aria-expanded="openId === it._id ? 'true' : 'false'" @click="openId = openId === it._id ? '' : it._id">
-            <i class="bi" :class="openId === it._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-            <span class="idb-name">
+            <span class="sf-tree-cell idb-name">
+              <i class="bi me-1" :class="openId === it._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
               <span class="sf-tree-title">{{ it.name_zh || it.name }}</span>
               <span v-if="it.name_zh" class="text-muted ms-1">{{ it.name }}</span>
-              <!-- 倉庫「拆解材料」篩選時：這個物品拆解會回收的那幾種材料（後端 dismantle_hits） -->
+              <!-- 拆解會回收的材料（有選材料時只列那幾種；後端 dismantle_hits） -->
               <span v-if="it.dismantle_hits?.length" class="d-block small text-muted">
                 拆解回收：{{ dismantleHits(it.dismantle_hits, filters?.dismantle).join('、') }}
               </span>
             </span>
-            <span class="idb-attrs">
-              <span>{{ itemTypeLabel(it.type, it.sub_type) || '—' }}</span>
-              <span v-if="it.size !== null && it.size !== undefined">S{{ it.size }}</span>
-              <span v-if="it.grade !== null && it.grade !== undefined">等級 {{ it.grade }}</span>
-              <span v-if="it.manufacturer_name || it.manufacturer_code">{{ it.manufacturer_name || it.manufacturer_code }}</span>
-            </span>
-            <span class="sf-tree-meta">
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ itemTypeLabel(it.type, it.sub_type) || '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ it.size !== null && it.size !== undefined ? `S${it.size}` : '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ it.grade ?? '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--opt">{{ it.manufacturer_name || it.manufacturer_code || '—' }}</span>
+            <span v-if="showDismantle" class="sf-tree-cell sf-tree-cell--end">{{ fmtScu(dismantleScu(it)) }}</span>
+            <span class="sf-tree-cell sf-tree-cell--end" :class="{ 'sf-tree-cell--opt': showDismantle }">
               <template v-if="it.uex_price?.buy_min">{{ fmtAuec(it.uex_price.buy_min) }} 起</template>
+              <template v-else>—</template>
             </span>
           </button>
         </div>
         <div v-if="openId === it._id" class="sf-tree-level">
           <ItemDetail :item="it" :fetcher="fetcher" player buy-only />
         </div>
+      </div>
       </div>
       <div class="d-flex align-items-center justify-content-between mt-2">
         <span class="small text-muted">共 {{ total }} 種 · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
@@ -61,7 +66,9 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import SfTreeHead from '@/components/SfTreeHead.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import ItemDetail from '@/components/ItemDetail.vue'
 import { itemTypeLabel, loadItemTypeZh } from '@/utils/itemType'
@@ -98,6 +105,7 @@ async function reload(nextOffset = 0) {
   if (f.buyable) params.append('acquire', 'buy')
   ;(f.dismantle || []).forEach(v => params.append('dismantle', v))
   if (f.dismantlable) params.append('dismantlable', '1')
+  for (const [k, v] of Object.entries(sort.params.value)) params.set(k, v)
   const res = await props.fetcher(`/item/?${params.toString()}`)
   const data = res ? await res.json().catch(() => null) : null
   if (mine !== seq) return
@@ -114,6 +122,31 @@ async function reload(nextOffset = 0) {
   openId.value = ''
 }
 
+// ── 欄位名稱＋排序（後端排序：name／type／size／grade／manufacturer_name／dismantle_scu）──
+const showDismantle = computed(() => !!(props.filters?.dismantle?.length || props.filters?.dismantlable))
+const columns = computed(() => [
+  { label: '物品', field: 'name' },
+  { label: '類型', field: 'type', opt: true },
+  { label: '尺寸', field: 'size', opt: true },
+  { label: '等級', field: 'grade', opt: true },
+  { label: '廠商', field: 'manufacturer_name', opt: true },
+  ...(showDismantle.value ? [{ label: '拆解回收', field: 'dismantle_scu', end: true }] : []),
+  { label: '最低價', end: true, opt: showDismantle.value },
+])
+const gridCols = computed(() => ['minmax(0, 1fr)', '9rem', '3.5rem', '3.5rem', '9rem',
+  ...(showDismantle.value ? ['6.5rem'] : []), '9.5rem'].join(' '))
+const sort = useTableSort(null, { onChange: () => reload(0) })
+
+/** 這個物品拆解回收的 SCU（有選材料時只算那幾種，跟後端 dismantle_scu 排序一致） */
+function dismantleScu(it) {
+  const names = props.filters?.dismantle || []
+  return (it.dismantle_hits || []).filter(h => !names.length || names.includes(h.name))
+    .reduce((n, h) => n + (h.quantity_scu || 0), 0)
+}
+function fmtScu(v) {
+  return v ? `${Number(v.toFixed(3))} SCU` : '—'
+}
+
 let loaded = false
 let timer = null
 watch(() => props.active, (v) => {
@@ -122,7 +155,11 @@ watch(() => props.active, (v) => {
   reload(0)
 }, { immediate: true })
 // 共用搜尋卡每打一個字就會換一次 filters，等停手 300ms 再查；還沒展開過就先不查
-watch(() => props.filters, () => {
+watch(() => props.filters, (f, old) => {
+  // 剛開始用拆解材料篩選、還沒自己選排序時，預設依回收量由多到少；拆解欄消失時取消這個排序
+  const nowDismantle = !!(f?.dismantle?.length || f?.dismantlable)
+  if (nowDismantle && !sort.sortKey.value) { sort.sortKey.value = 'dismantle_scu'; sort.sortDir.value = 'desc' }
+  if (!nowDismantle && sort.sortKey.value === 'dismantle_scu') sort.sortKey.value = ''
   if (!loaded) return
   clearTimeout(timer)
   timer = setTimeout(() => reload(0), 300)
@@ -142,7 +179,7 @@ async function goPage(newOffset) {
 <style scoped>
 .idb-item { margin-bottom: .4rem; }
 .idb-row { display: flex; align-items: center; gap: .5rem; }
-.idb-main { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
-.idb-name { min-width: 12rem; }
+.idb-main { flex: 1 1 auto; min-width: 0; }
+.idb-name { min-width: 0; }
 .idb-attrs { display: flex; flex-wrap: wrap; gap: .25rem .9rem; color: var(--sf-text); font-size: .95rem; }
 </style>

@@ -170,8 +170,10 @@ class ItemMaster(_MasterBase):
         **PROJECTION, 'manufacturer_name': 1, 'classification': 1, 'mass': 1,
         'is_craftable': 1, 'is_lootable': 1, **VISIBILITY_PROJECTION,
     }
+    #: 依拆解回收量排序時一次最多撈幾筆在記憶體裡排（可拆解的物品約一千多種）
+    DISMANTLE_SORT_MAX = 5000
     #: list_all 可以排序的欄位（白名單）
-    SORTABLE_FIELDS = ('name', 'type', 'size', 'grade', 'volume_uscu', 'mass')
+    SORTABLE_FIELDS = ('name', 'type', 'size', 'grade', 'volume_uscu', 'mass', 'manufacturer_name')
 
     @classmethod
     def list_all(cls, *, query: str = '', types=None, sub_types=None, manufacturer_codes=None,
