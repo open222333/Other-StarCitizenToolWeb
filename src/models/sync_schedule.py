@@ -199,6 +199,7 @@ SYNC_JOBS = [
     ('mining', '礦物', DEFAULT_CRON),
     ('locations', '地點', DEFAULT_CRON),
     ('uex', 'UEX 價格', DEFAULT_CRON),
+    ('uex_refinery', 'UEX 精煉', DEFAULT_CRON),
 ]
 JOB_KEYS = [k for k, _, _ in SYNC_JOBS]
 JOB_LABELS = {k: label for k, label, _ in SYNC_JOBS}
@@ -275,7 +276,7 @@ class SyncJobs:
             if legacy:
                 doc['cron'] = legacy.get('cron') or doc['cron']
                 enabled = legacy.get('enabled', True)
-                if key == 'uex':
+                if key in ('uex', 'uex_refinery'):
                     enabled = enabled and legacy.get('with_uex', True)
                 elif key in WIKI_JOB_KEYS and legacy.get('resources_custom'):
                     enabled = enabled and key in (legacy.get('resources') or [])
@@ -393,6 +394,7 @@ class SyncJobs:
         'mining': ('mining_deposit_master', {'is_current': True}),
         'locations': ('starmap_master', {'is_current': True}),
         'uex': ('uex_items', {}),
+        'uex_refinery': ('uex_refinery_yields', {}),
     }
 
     @classmethod

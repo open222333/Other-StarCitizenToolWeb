@@ -133,7 +133,7 @@ def test_all_creates_every_job_in_order(app):
 def test_job_keys_match_sync_sources():
     from src.scdata import WIKI_RESOURCES
     assert set(WIKI_JOB_KEYS) == set(WIKI_RESOURCES)
-    assert set(JOB_KEYS) == set(WIKI_RESOURCES) | {'translations', 'mining', 'locations', 'uex'}
+    assert set(JOB_KEYS) == set(WIKI_RESOURCES) | {'translations', 'mining', 'locations', 'uex', 'uex_refinery'}
     from src.scdata import SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_RESOURCES
     assert set(SCUNPACKED_EXTRA) <= set(WIKI_RESOURCES), '額外的 scunpacked 資源掛在 Wiki 同步項目後面'
     synced = [r for jobs in (SCUNPACKED_JOBS, SCUNPACKED_EXTRA) for rs in jobs.values() for r in rs]
@@ -187,6 +187,7 @@ def test_seed_migrates_legacy_single_schedule(app):
     assert jobs['items']['enabled'] and jobs['blueprints']['enabled']
     assert not jobs['vehicles']['enabled'], '舊排程沒選的資源要停用'
     assert not jobs['uex']['enabled'], 'with_uex=False'
+    assert not jobs['uex_refinery']['enabled'], 'with_uex=False'
     assert jobs['translations']['enabled'] and jobs['mining']['enabled']
     assert jobs['items']['last_finished_at'] == last, '不然部署完全部項目會立刻全量同步'
     assert not jobs['missions'].get('last_finished_at'), '舊版沒同步過（資料庫是空的）的不能借上次時間'

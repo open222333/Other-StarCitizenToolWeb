@@ -17,6 +17,7 @@ from src.models.log import Log
 from src.models.mining import MiningDeposit, MiningLocation
 from src.models.uex_commodity import UexCommodity
 from src.models.uex_commodity_price import UexCommodityPrice
+from src.models import uex_refinery_method, uex_refinery_yield
 
 app_mining = Blueprint('app_mining', __name__)
 
@@ -64,6 +65,37 @@ def list_systems():
         description: 成功
     """
     return jsonify({'success': True, 'data': MiningLocation.systems()})
+
+
+@app_mining.route('/refinery-yields', methods=['GET'])
+@jwt_required()
+def list_refinery_yields():
+    """精煉站產量加成（UEX，每個精煉站對每種礦物的 %）。玩家頁礦物訊號參考用 base 對礦物名稱。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{base, commodity, terminal, place, system, value}]，依加成由高到低"
+    """
+    return jsonify({'success': True, 'data': uex_refinery_yield.list_all()})
+
+
+@app_mining.route('/refinery-methods', methods=['GET'])
+@jwt_required()
+def list_refinery_methods():
+    """精煉方式清單＋依礦物×方式彙整的玩家精煉紀錄（UEX refineries_audits，最新遊戲版本）。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: {methods: [{id, name, code, ratings}], version, rows: [{base, commodity, method, samples, yield_pct, cost_per_scu, minutes_per_scu}]}"
+    """
+    stats = uex_refinery_method.method_stats()
+    return jsonify({'success': True, 'data': {'methods': uex_refinery_method.list_methods(), **stats}})
 
 
 @app_mining.route('/uex-commodities', methods=['GET'])

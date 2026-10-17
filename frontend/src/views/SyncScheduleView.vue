@@ -309,7 +309,7 @@ const canSync = computed(() => auth.role === 'admin' || auth.role === 'operator'
 // 舊版同步紀錄沒有 jobs 欄位，用這張表把 resources／with_* 翻成項目名稱
 const LEGACY_LABELS = {
   translations: '翻譯', items: '物品', vehicles: '載具', commodities: '商品', blueprints: '藍圖',
-  factions: '勢力', missions: '任務', mining: '礦物', locations: '地點', uex: 'UEX 價格',
+  factions: '勢力', missions: '任務', mining: '礦物', locations: '地點', uex: 'UEX 價格', uex_refinery: 'UEX 精煉',
 }
 
 const jobs = ref([])

@@ -227,6 +227,144 @@
             <p v-else class="mining-echo__hint mb-0">
               資料裡沒有這種礦物單獨成礦的紀錄（只以其他礦床的成分出現），沒有它自己的訊號值可以參考。
             </p>
+            <!-- 精煉產量加成（UEX）：每個精煉站對這種礦物的 %，預設加成高的在前、先列 5 筆 -->
+            <div v-if="refineryFor(g).length" class="mt-2">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="mining-echo__hint">精煉產量加成（{{ refineryFor(g).length }} 個精煉站）：</span>
+                <button v-if="refineryFor(g).length > REFINERY_PREVIEW" type="button" class="btn btn-sm btn-info py-0 ms-auto"
+                  @click="toggleRefinery(g)">{{ refineryOpen[g.resource_key] ? '收起' : '顯示全部' }}</button>
+              </div>
+              <div style="overflow-x:auto">
+                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                  <thead>
+                    <tr>
+                      <SortTh :sort="refinerySort" field="terminal" class="ps-2">精煉站</SortTh>
+                      <SortTh :sort="refinerySort" field="system">星系</SortTh>
+                      <SortTh :sort="refinerySort" field="value" class="pe-2 text-end">產量加成</SortTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="y in refineryRows(g)" :key="y.terminal + y.commodity">
+                      <td class="ps-2">{{ y.terminal }}<span v-if="y.place && y.place !== y.terminal" class="mining-echo__hint ms-1">{{ y.place }}</span></td>
+                      <td>{{ y.system || '—' }}</td>
+                      <td class="pe-2 text-end fw-bold" :class="y.value > 0 ? 'mining-echo__good' : y.value < 0 ? 'mining-echo__bad' : ''">{{ fmtYield(y.value) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <!-- 精煉方式：玩家回報的精煉紀錄（UEX refineries_audits，最新遊戲版本）依方式彙整 -->
+            <div v-if="methodsFor(g).length" class="mt-2">
+              <div class="mining-echo__hint mb-1">
+                精煉方式（玩家回報<template v-if="refineryVersion">，{{ refineryVersion }}</template>）：
+              </div>
+              <div style="overflow-x:auto">
+                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                  <thead>
+                    <tr>
+                      <SortTh :sort="methodSort" field="method" class="ps-2">方式</SortTh>
+                      <SortTh :sort="methodSort" field="yield_pct" class="text-end">產出率</SortTh>
+                      <SortTh :sort="methodSort" field="cost_per_scu" class="text-end">成本／SCU</SortTh>
+                      <SortTh :sort="methodSort" field="minutes_per_scu" class="text-end">時間／SCU</SortTh>
+                      <SortTh :sort="methodSort" field="samples" class="pe-2 text-end">紀錄數</SortTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="m in methodSort.sortList(methodsFor(g))" :key="m.method">
+                      <td class="ps-2">{{ m.method }}</td>
+                      <td class="text-end fw-bold">{{ m.yield_pct !== null ? `${m.yield_pct}%` : '—' }}</td>
+                      <td class="text-end">{{ m.cost_per_scu !== null ? `${Number(m.cost_per_scu.toFixed(1)).toLocaleString('en-US')} aUEC` : '—' }}</td>
+                      <td class="text-end">{{ fmtMinutes(m.minutes_per_scu) }}</td>
+                      <td class="pe-2 text-end">{{ m.samples }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <!-- 精煉試算（這張卡片的礦物）：原礦量 × 方式產出率 ×（1＋站點加成）；成本／時間用每 SCU 的平均 -->
+            <div v-for="rv in [refineView(g)]" v-show="rv.methods.length" :key="rv.base" class="mining-echo__refine mt-3">
+              <div class="mining-echo__hint fw-semibold mb-2">精煉試算</div>
+              <div class="row g-2 align-items-end">
+                <div class="col-12 col-sm-6">
+                  <label class="mining-echo__hint mb-1 d-block" :for="`${mineralListId}-${rv.base}-rf-station`">精煉站</label>
+                  <select :id="`${mineralListId}-${rv.base}-rf-station`" :value="rv.station" class="form-select form-select-sm"
+                    @change="setRefine(rv.base, { station: $event.target.value })">
+                    <option value="">不指定（加成 0%）</option>
+                    <option v-for="y in rv.stations" :key="y.terminal" :value="y.terminal">{{ y.terminal }}（{{ fmtYield(y.value) }}）</option>
+                  </select>
+                </div>
+                <div class="col-12 col-sm-6">
+                  <label class="mining-echo__hint mb-1 d-block" :for="`${mineralListId}-${rv.base}-rf-method`">精煉方式</label>
+                  <select :id="`${mineralListId}-${rv.base}-rf-method`" :value="rv.method" class="form-select form-select-sm"
+                    @change="setRefine(rv.base, { method: $event.target.value })">
+                    <option v-for="m in rv.methods" :key="m.method" :value="m.method">{{ m.method }}（{{ m.yield_pct }}%）</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="mining-echo__hint mb-1 d-block" :for="`${mineralListId}-${rv.base}-rf-qty`">原礦量</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input :value="rv.qty" type="range" class="flex-grow-1 mining-echo__range" min="1" :max="REFINE_SLIDER_MAX" step="1"
+                      :style="{ '--me-fill': `${Math.min(rv.qty, REFINE_SLIDER_MAX) / REFINE_SLIDER_MAX * 100}%` }"
+                      aria-label="原礦量（拉條）" @input="setRefine(rv.base, { qty: Number($event.target.value) })">
+                    <input :id="`${mineralListId}-${rv.base}-rf-qty`" :value="rv.qty" type="number" class="form-control form-control-sm mining-echo__qty"
+                      min="0" :max="REFINE_QTY_MAX" step="any"
+                      @change="setRefine(rv.base, { qty: clampRefineQty($event.target.value) }); $event.target.value = refineView(g).qty">
+                    <span class="mining-echo__hint">SCU</span>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="rv.result" class="mining-echo__stats mt-3">
+                <div class="mining-echo__stat mining-echo__stat--accent">
+                  <div class="mining-echo__stat-label">預估產出</div>
+                  <div class="mining-echo__stat-value">{{ fmtScu(rv.result.output) }} <small>SCU</small></div>
+                </div>
+                <div class="mining-echo__stat">
+                  <div class="mining-echo__stat-label">預估成本</div>
+                  <div class="mining-echo__stat-value">{{ rv.result.cost !== null ? fmtInt(rv.result.cost) : '—' }} <small v-if="rv.result.cost !== null">aUEC</small></div>
+                </div>
+                <div class="mining-echo__stat">
+                  <div class="mining-echo__stat-label">預估時間</div>
+                  <div class="mining-echo__stat-value">{{ fmtDuration(rv.result.minutes) }}</div>
+                </div>
+              </div>
+
+              <!-- 所有「站點 × 方式」組合，預設產出多的在前（點欄位名稱排序），先列 10 筆；點一列就套用 -->
+              <div v-if="rv.combos.length" class="mt-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <span class="mining-echo__hint">站點 × 方式組合（{{ rv.combos.length }}）：</span>
+                  <button v-if="rv.combos.length > COMBO_PREVIEW" type="button" class="btn btn-sm btn-info py-0 ms-auto"
+                    @click="setRefine(rv.base, { open: !rv.open })">{{ rv.open ? '收起' : '顯示全部' }}</button>
+                </div>
+                <div style="overflow-x:auto">
+                  <table class="table table-sm align-middle mb-0 mining-echo__table">
+                    <thead>
+                      <tr>
+                        <SortTh :sort="comboSort" field="station" class="ps-2">精煉站</SortTh>
+                        <SortTh :sort="comboSort" field="method">方式</SortTh>
+                        <SortTh :sort="comboSort" field="output" class="text-end">產出</SortTh>
+                        <SortTh :sort="comboSort" field="cost" class="text-end">成本</SortTh>
+                        <SortTh :sort="comboSort" field="minutes" class="pe-2 text-end">時間</SortTh>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="c in rv.comboRows" :key="c.station + '|' + c.method"
+                        :class="{ 'mining-echo__row--picked': c.station === rv.station && c.method === rv.method }"
+                        role="button" @click="setRefine(rv.base, { station: c.station, method: c.method })">
+                        <td class="ps-2">{{ c.station || '不指定' }}<span v-if="c.bonus" class="ms-1" :class="c.bonus > 0 ? 'mining-echo__good' : 'mining-echo__bad'">{{ fmtYield(c.bonus) }}</span></td>
+                        <td>{{ c.method }}</td>
+                        <td class="text-end fw-bold">{{ fmtScu(c.output) }} SCU</td>
+                        <td class="text-end">{{ c.cost !== null ? `${fmtInt(c.cost)} aUEC` : '—' }}</td>
+                        <td class="pe-2 text-end">{{ fmtDuration(c.minutes) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p class="mining-echo__footnote mt-2 mb-0">
+                產出率、成本、時間是玩家回報紀錄的平均<template v-if="refineryVersion">（{{ refineryVersion }}）</template>，站點加成來自 UEX，實際結果會有落差。
+              </p>
+            </div>
             <!-- 包含這種礦物的礦床（勾選「顯示包含此礦物的礦床」才列） -->
             <div v-if="showContaining" class="mt-2">
               <div class="mining-echo__hint mb-1">包含這種礦物的礦床（機率 100%，{{ containingDeposits(g).length }}）：</div>
@@ -254,17 +392,16 @@
             </div>
           </div>
         </div>
-
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { ownSignatures as mineralOwnSignatures } from '@/utils/miningSignature'
+import { mineralBaseName, ownSignatures as mineralOwnSignatures } from '@/utils/miningSignature'
 
 const props = defineProps({
   /** 帶身分的 fetch（後台用 apiFetch、玩家頁用 playerFetch），回傳 Response 或 null */
@@ -282,6 +419,11 @@ const props = defineProps({
 
 // ── 資料載入（第一次 active 變 true 時才載入一次）───────────────────
 const deposits = ref([])
+// 精煉站產量加成（UEX）：[{base, commodity, terminal, place, system, value}]，base＝去掉 (Ore)／(Raw) 的小寫名稱
+const refineryYields = ref([])
+// 精煉方式（玩家回報紀錄彙整）：[{base, commodity, method, samples, yield_pct, cost_per_scu, minutes_per_scu}]
+const refineryMethodRows = ref([])
+const refineryVersion = ref('')
 const locations = ref([])
 const loadingDeposits = ref(false)
 let loaded = false
@@ -291,10 +433,17 @@ async function loadData() {
   loaded = true
   loadingDeposits.value = true
   try {
-    const [depRes, locRes] = await Promise.all([
+    const [depRes, locRes, yieldRes, methodRes] = await Promise.all([
       props.fetcher('/mining/deposits'),
       props.fetcher('/mining/locations'),
+      props.fetcher('/mining/refinery-yields'),
+      props.fetcher('/mining/refinery-methods'),
     ])
+    const methodData = methodRes ? await methodRes.json().catch(() => null) : null
+    refineryMethodRows.value = methodData?.success ? (methodData.data?.rows || []) : []
+    refineryVersion.value = methodData?.success ? (methodData.data?.version || '') : ''
+    const yieldData = yieldRes ? await yieldRes.json().catch(() => null) : null
+    refineryYields.value = yieldData?.success ? (yieldData.data || []) : []
     const depData = depRes ? await depRes.json().catch(() => null) : null
     deposits.value = depData?.success ? (depData.data || []) : []
     const locData = locRes ? await locRes.json().catch(() => null) : null
@@ -509,6 +658,107 @@ const displayGroups = computed(() => {
   return out
 })
 
+// ── 精煉產量加成：用礦物英文名去掉 (Ore)／(Raw)／Raw 前綴後對 UEX 商品名稱（後端 base 欄位同規則）──
+const REFINERY_PREVIEW = 5
+const refineryOpen = reactive({})
+const refineryByBase = computed(() => {
+  const map = new Map()
+  for (const y of refineryYields.value) {
+    if (!map.has(y.base)) map.set(y.base, [])
+    map.get(y.base).push(y)
+  }
+  return map
+})
+function refineryFor(group) {
+  return refineryByBase.value.get(mineralBaseName(group.resource_name)) || []
+}
+const refinerySort = useTableSort(null, { key: 'value', dir: 'desc' })
+function refineryRows(group) {
+  const rows = refinerySort.sortList(refineryFor(group))
+  return refineryOpen[group.resource_key] ? rows : rows.slice(0, REFINERY_PREVIEW)
+}
+function toggleRefinery(group) {
+  refineryOpen[group.resource_key] = !refineryOpen[group.resource_key]
+}
+const methodByBase = computed(() => {
+  const map = new Map()
+  for (const m of refineryMethodRows.value) {
+    if (!map.has(m.base)) map.set(m.base, [])
+    map.get(m.base).push(m)
+  }
+  return map
+})
+function methodsFor(group) {
+  return methodByBase.value.get(mineralBaseName(group.resource_name)) || []
+}
+const methodSort = useTableSort(null, { key: 'yield_pct', dir: 'desc' })
+
+// ── 精煉試算（每張礦物卡片各自一組）：選精煉站、方式，輸入原礦量 ──────────────
+//    產出 = 原礦量 × 方式產出率 ×（1 + 站點加成）；成本、時間 = 原礦量 × 每 SCU 平均（站點不影響）
+//    沒選過就用「產出率最高的方式」＋「加成最高的站」；選過的存在 refineState[base]
+const REFINE_SLIDER_MAX = 1000
+const REFINE_QTY_MAX = 100000
+const COMBO_PREVIEW = 10
+const REFINE_DEFAULT_QTY = 100
+const refineState = reactive({})
+function setRefine(base, patch) {
+  refineState[base] = { ...(refineState[base] || {}), ...patch }
+}
+const comboSort = useTableSort(null, { key: 'output', dir: 'desc' })
+
+function calcRefine(qty, method, bonus) {
+  return {
+    output: qty * (method.yield_pct / 100) * (1 + (bonus || 0) / 100),
+    cost: method.cost_per_scu !== null ? qty * method.cost_per_scu : null,
+    minutes: method.minutes_per_scu !== null ? qty * method.minutes_per_scu : null,
+  }
+}
+function refineView(group) {
+  const base = mineralBaseName(group.resource_name)
+  const st = refineState[base] || {}
+  const methods = methodsFor(group).filter(m => m.yield_pct !== null).slice().sort((a, b) => b.yield_pct - a.yield_pct)
+  const stations = refineryFor(group).slice().sort((a, b) => b.value - a.value)
+  const method = methods.some(m => m.method === st.method) ? st.method : (methods[0]?.method || '')
+  const station = st.station === '' || stations.some(y => y.terminal === st.station) ? st.station : (stations[0]?.terminal || '')
+  const qty = st.qty ?? REFINE_DEFAULT_QTY
+  const picked = methods.find(m => m.method === method)
+  const result = picked ? calcRefine(qty, picked, stations.find(y => y.terminal === station)?.value) : null
+  const combos = []
+  for (const s of (stations.length ? stations : [{ terminal: '', value: 0 }])) {
+    for (const m of methods) combos.push({ station: s.terminal, bonus: s.value, method: m.method, ...calcRefine(qty, m, s.value) })
+  }
+  const sortedCombos = comboSort.sortList(combos)
+  const open = !!st.open
+  return { base, methods, stations, method, station, qty, result, combos, open,
+    comboRows: open ? sortedCombos : sortedCombos.slice(0, COMBO_PREVIEW) }
+}
+
+function clampRefineQty(value) {
+  const v = Number(value)
+  if (Number.isNaN(v) || v < 0) return 0
+  return Math.min(REFINE_QTY_MAX, v)
+}
+function fmtScu(v) {
+  if (v === null || v === undefined) return '—'
+  return Number(v.toFixed(2)).toLocaleString('en-US')
+}
+function fmtDuration(minutes) {
+  if (minutes === null || minutes === undefined) return '—'
+  if (minutes < 1) return `${Math.round(minutes * 60)} 秒`
+  if (minutes < 60) return `${Math.round(minutes)} 分`
+  const h = Math.floor(minutes / 60)
+  return `${h} 時 ${Math.round(minutes - h * 60)} 分`
+}
+function fmtMinutes(m) {
+  if (m === null || m === undefined) return '—'
+  return m < 1 ? `${Math.round(m * 60)} 秒` : `${Number(m.toFixed(1))} 分`
+}
+
+function fmtYield(v) {
+  if (v === null || v === undefined) return '—'
+  return `${v > 0 ? '+' : ''}${Number(v.toFixed(1))}%`
+}
+
 // ── 包含這種礦物的礦床：只列機率 100%（這種礦床一定含有這種礦物）的那幾筆，
 //    同名同 Tier 同數字的變體去重 ──
 function containingDeposits(group) {
@@ -717,6 +967,7 @@ function locationsFor(group) {
   padding: 1.1rem 1.25rem;
 }
 .mining-echo__panel--empty { color: var(--me-text-dim); }
+.mining-echo__refine { border-top: 1px dashed var(--me-border); padding-top: 0.75rem; }
 .mining-echo__panel--result { border-color: var(--me-border-hi); }
 .mining-echo__panel--table { padding: 0; }
 .mining-echo__panel--table table { color: var(--me-text); }
@@ -859,4 +1110,20 @@ function locationsFor(group) {
 .mining-echo__part { padding-left: .75rem; }
 .mining-echo__panel--pinned { border-color: var(--me-border-hi); }
 .mining-echo__pin-icon { color: var(--me-accent); }
+.mining-echo__good { color: var(--bs-success) !important; }
+.mining-echo__bad { color: var(--bs-danger) !important; }
+.mining-echo__qty { width: 7rem; }
+.mining-echo__row--picked td { background: rgba(var(--sf-accent-rgb), .12); }
+.mining-echo__table tbody tr[role="button"] { cursor: pointer; }
+.mining-echo__range {
+  -webkit-appearance: none; appearance: none; height: .45rem; border-radius: 999px; cursor: pointer;
+  background: linear-gradient(to right, var(--me-accent) var(--me-fill, 10%), var(--me-border) var(--me-fill, 10%));
+}
+.mining-echo__range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 1.1rem; height: 1.1rem; border-radius: 50%;
+  background: var(--me-accent); border: 2px solid var(--sf-text-strong);
+}
+.mining-echo__range::-moz-range-thumb {
+  width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--me-accent); border: 2px solid var(--sf-text-strong);
+}
 </style>

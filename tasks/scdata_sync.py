@@ -60,7 +60,7 @@ from src.models.item import VehicleMaster
 from src.models.starmap import Starmap
 from src import SCDATA_REQUEST_DELAY
 from src.scdata import (BULK_SIZE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_RESOURCES,
-                        UEX_PRUNE_MIN_RATIO, UEX_PRUNE_RESOURCES, UEX_RESOURCES,
+                        UEX_JOB_RESOURCES, UEX_PRUNE_MIN_RATIO, UEX_PRUNE_RESOURCES, UEX_RESOURCES,
                         WIKI_DETAIL_RESOURCES, WIKI_RESOURCES, ScDataError, build_client,
                         fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
                         normalize_labels, request_counts, requests_used, uex_doc_id, uex_rows,
@@ -556,14 +556,14 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
             logger.info('scdata_sync: 地點「可存放」更新 %d 筆', Starmap.apply_storage())
             logger.info('scdata_sync: 地點「可選居住地」更新 %d 筆', Starmap.apply_home())
 
-    elif key == 'uex':
+    elif key in UEX_JOB_RESOURCES:
         # 後台「資料同步排程」頁設定的 token 優先，沒有就用環境變數 UEX_API_TOKEN
         uex_token = UexToken.get()
         if not uex_token:
             logger.warning('scdata_sync: 沒有 UEX token，跳過 UEX 同步。'
                            '到 https://uexcorp.space/api/apps 建 app 取得免費 token')
-            return stats, ['uex: 未設定 UEX token，略過'], None
-        for resource in UEX_RESOURCES:
+            return stats, [f'{key}: 未設定 UEX token，略過'], None
+        for resource in UEX_JOB_RESOURCES[key]:
             try:
                 stats.append(_sync_uex_resource(client('uex', token=uex_token),
                                                 resource, run_id, stamp))

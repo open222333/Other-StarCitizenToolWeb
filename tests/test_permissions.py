@@ -273,7 +273,9 @@ UNGUARDED_ALLOWLIST = {
     'app_blueprint.search_master',
     'app_blueprint.master_output_types',
     'app_blueprint.master_dismantle_materials',   # 拆解材料選項，同 types 是公開遊戲資料
-    'app_blueprint.master_dismantle_items',       # 依拆解材料找物品，同上是公開遊戲資料
+    'app_blueprint.master_dismantle_items',
+    'app_mining.list_refinery_yields',
+    'app_mining.list_refinery_methods',            # 精煉方式與玩家精煉紀錄彙整，公開遊戲資料             # 精煉產量加成，公開遊戲資料（同 /mining/deposits）       # 依拆解材料找物品，同上是公開遊戲資料
     'app_blueprint.master_for_item',
     'app_blueprint.get_master',
     'app_blueprint.get_master_quality',   # 品質試算表，同 get_master 是公開遊戲資料

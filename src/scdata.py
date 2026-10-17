@@ -1060,12 +1060,26 @@ UEX_RESOURCES: dict = {
     'vehicles': ('uex_vehicles', ['id']),
     'vehicles_purchases_prices_all': ('uex_vehicles_purchases', ['id_vehicle', 'id_terminal']),
     'vehicles_rentals_prices_all': ('uex_vehicles_rentals', ['id_vehicle', 'id_terminal']),
+    # 精煉站對每種礦物的產量加成（%）：玩家頁「礦物 › 礦物訊號參考」（src/models/uex_refinery_yield.py）
+    'refineries_yields': ('uex_refinery_yields', ['id_commodity', 'id_terminal']),
+    # 精煉方式、玩家回報的精煉紀錄（原礦量／產出量／成本／時間）、精煉站容量（src/models/uex_refinery_method.py）
+    'refineries_methods': ('uex_refinery_methods', ['id']),
+    'refineries_audits': ('uex_refinery_audits', ['id']),
+    'refineries_capacities': ('uex_refinery_capacities', ['id']),
+}
+
+#: 精煉相關的 UEX 資源另外一個同步項目「UEX 精煉」（uex_refinery），其餘的歸「UEX 價格」（uex）
+UEX_REFINERY_RESOURCES = ('refineries_yields', 'refineries_methods', 'refineries_audits', 'refineries_capacities')
+UEX_JOB_RESOURCES = {
+    'uex': [r for r in UEX_RESOURCES if r not in UEX_REFINERY_RESOURCES],
+    'uex_refinery': list(UEX_REFINERY_RESOURCES),
 }
 
 #: 同步完要把「這次沒出現的舊列」刪掉的 UEX 資源：價格表的一列＝某終端有在賣／收某商品（或載具），
 #: 上游不再回報就代表已經不賣了，留著會讓玩家以為還買得到。
 UEX_PRUNE_RESOURCES = {'commodities_prices_all', 'items_prices_all',
-                       'vehicles_purchases_prices_all', 'vehicles_rentals_prices_all'}
+                       'vehicles_purchases_prices_all', 'vehicles_rentals_prices_all', 'refineries_yields',
+                       'refineries_methods', 'refineries_capacities'}
 #: 這次抓到的筆數不到上次的這個比例就不刪（上游異常回傳變短時，不要把整張表清掉）
 UEX_PRUNE_MIN_RATIO = 0.5
 
@@ -1250,5 +1264,6 @@ def job_upstreams() -> dict:
     for key, resources in SCUNPACKED_JOBS.items():
         out[key] = [g(SCUNPACKED_RESOURCES[r][1]) for r in resources]
     out['uex'] = [u('categories/'), u('items/?id_category=<id>', '每個物品分類一次，間隔 ≥ 0.5 秒')] + \
-        [u(f'{r}/') for r in UEX_RESOURCES if r != 'items']
+        [u(f'{r}/') for r in UEX_JOB_RESOURCES['uex'] if r != 'items']
+    out['uex_refinery'] = [u(f'{r}/') for r in UEX_JOB_RESOURCES['uex_refinery']]
     return out

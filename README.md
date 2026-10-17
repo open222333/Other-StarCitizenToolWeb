@@ -934,7 +934,7 @@ cd frontend && npm run test:calc
 玩家端 `/me` 的藍圖 autocomplete 需要打這裡。
 
 **排程存在 DB 裡，每個資料庫各自一筆（`sync_jobs` collection，`src/models/sync_schedule.py`
-的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、UEX 價格十個同步項目，
+的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、UEX 價格、UEX 精煉十一個同步項目，
 各自有 cron、啟用狀態與上次執行結果。後台「資料同步排程」頁（`/admin/sync-schedule`）
 可以個別改時間、個別「立即同步」，也可以「全部立即同步」。不用改 `tasks/celeryconfig.py`、
 也不用重啟 worker/beat。
@@ -1030,8 +1030,9 @@ curl -s -X POST http://localhost:8090/item/sync \
 | 地點 | GitHub raw | `scunpacked-data/master/starmap.json` | 之後重建階層、套用設施／倉儲／居住地 |
 | UEX 價格 | UEX | `/categories/` → `/items/?id_category=<id>` | 每個物品分類一次 |
 | | UEX | `/terminals/`、`/items_prices_all/`、`/commodities/`、`/commodities_prices_all/`、`/vehicles/`、`/vehicles_purchases_prices_all/`、`/vehicles_rentals_prices_all/` | 價格表會刪掉這次沒出現的舊列（新筆數 ≥ 舊的 50% 才刪） |
+| UEX 精煉 | UEX | `/refineries_yields/`、`/refineries_methods/`、`/refineries_audits/`、`/refineries_capacities/` | 紀錄（audits）以外會刪掉這次沒出現的舊列（同上規則）；精煉產量加成、方式與紀錄彙整給礦物頁用（`/mining/refinery-yields`、`/mining/refinery-methods`） |
 
-沒設定 UEX token 時 UEX 價格項目直接略過。聊天用的代碼字典（chsc-tw）是用到才抓，不在排程裡。
+沒設定 UEX token 時 UEX 價格、UEX 精煉兩個項目直接略過（共用同一個 token）。聊天用的代碼字典（chsc-tw）是用到才抓，不在排程裡。
 
 **請求數紀錄**：`build_client()` 會計算每個 client 實際送出的請求（含重試、轉址）與收到的 429，
 每一項同步完寫進 `sync_jobs.last_requests`（例如 `{"wiki": {"requests": 48, "rate_limited": 0}}`），
