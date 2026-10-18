@@ -8,33 +8,34 @@
 -->
 <template>
   <div>
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm" style="max-width: 16rem"
-            placeholder="搜尋商品縮寫、名稱或終端..." aria-label="搜尋商品價格">
-          <select v-model="commodity" class="form-select form-select-sm w-auto" aria-label="商品">
-            <option value="">商品：全部</option>
-            <option v-for="c in commodityOptions" :key="c.id" :value="c.id">
-              {{ c.code ? `${c.code} · ` : '' }}{{ c.name }}
-            </option>
-          </select>
-          <select v-model="starSystem" class="form-select form-select-sm w-auto" aria-label="星系">
-            <option value="">星系：全部</option>
-            <option v-for="s in starSystems" :key="s" :value="s">{{ s }}</option>
-          </select>
-          <select v-model="side" class="form-select form-select-sm w-auto" aria-label="買賣">
-            <option value="">買賣：全部</option>
-            <option value="buy">只看買得到的</option>
-            <option value="sell">只看能賣的</option>
-          </select>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
-          <span class="ms-auto small text-muted">共 {{ total }} 筆</span>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；文字打字停 300ms 就查 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="商品／交易終端" for-id="uex-price-q" col="col-12 col-md-6 col-xl-3">
+        <input id="uex-price-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入商品縮寫、名稱或終端">
+      </AdminSearchField>
+      <AdminSearchField label="商品" for-id="uex-price-commodity">
+        <select id="uex-price-commodity" v-model="commodity" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option v-for="c in commodityOptions" :key="c.id" :value="c.id">
+            {{ c.code ? `${c.code} · ` : '' }}{{ c.name }}
+          </option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="地點" for-id="uex-price-system" col="col-6 col-md-3 col-xl">
+        <select id="uex-price-system" v-model="starSystem" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option v-for="s in starSystems" :key="s" :value="s">{{ s }}</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="買價／賣價" for-id="uex-price-side" col="col-6 col-md-3 col-xl">
+        <select id="uex-price-side" v-model="side" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option value="buy">買得到</option>
+          <option value="sell">能賣</option>
+        </select>
+      </AdminSearchField>
+      <template #summary>共 {{ total }} 筆</template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -122,6 +123,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { miningApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import {

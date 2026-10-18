@@ -7,26 +7,28 @@
 -->
 <template>
   <div>
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm" style="max-width: 16rem"
-            placeholder="搜尋終端名稱、代碼或地點..." aria-label="搜尋交易終端">
-          <MultiSelectFilter v-model="systems" label="星系" :options="systemOptions" />
-          <MultiSelectFilter v-model="types" label="類型" :options="typeOptions" />
-          <div class="form-check form-check-inline mb-0 ms-1">
-            <input id="terminal-has-commodity" v-model="commodityOnly" class="form-check-input" type="checkbox">
-            <label class="form-check-label small" for="terminal-has-commodity">只看有商品價格</label>
-          </div>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
-          <span class="ms-auto small text-muted">
-            <template v-if="hasActiveFilters">符合 {{ filtered.length }} 筆 · </template>共 {{ rows.length }} 筆
-          </span>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；篩選在前端做，打字即篩 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="終端／代碼" for-id="uex-terminal-q" col="col-12 col-md-6 col-xl-3">
+        <input id="uex-terminal-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入終端名稱、代碼或地點">
+      </AdminSearchField>
+      <AdminSearchField label="類型" for-id="uex-terminal-type">
+        <MultiSelectFilter id="uex-terminal-type" v-model="types" label="類型" :options="typeOptions" block placeholder="全部" />
+      </AdminSearchField>
+      <AdminSearchField label="地點" for-id="uex-terminal-system">
+        <MultiSelectFilter id="uex-terminal-system" v-model="systems" label="星系" :options="systemOptions" block placeholder="全部" />
+      </AdminSearchField>
+      <AdminSearchField label="可買／可賣商品" for-id="uex-terminal-has-commodity" col="col-6 col-md-3 col-xl">
+        <select id="uex-terminal-has-commodity" v-model="hasCommodity" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option value="1">有</option>
+          <option value="0">無</option>
+        </select>
+      </AdminSearchField>
+      <template #summary>
+        <template v-if="hasActiveFilters">符合 {{ filtered.length }} 筆 · </template>共 {{ rows.length }} 筆
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -86,6 +88,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { miningApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -109,9 +113,9 @@ const loadFailed = ref(false)
 const query = ref('')
 const systems = ref([])
 const types = ref([])
-const commodityOnly = ref(false)
+const hasCommodity = ref('')   // '' 全部／'1' 有可買或可賣商品／'0' 都沒有
 const hasActiveFilters = computed(() => !!(query.value.trim() || systems.value.length || types.value.length
-  || commodityOnly.value))
+  || hasCommodity.value))
 
 async function load() {
   loading.value = true
@@ -146,7 +150,7 @@ function resetFilters() {
   query.value = ''
   systems.value = []
   types.value = []
-  commodityOnly.value = false
+  hasCommodity.value = ''
 }
 
 const filtered = computed(() => {
@@ -155,7 +159,7 @@ const filtered = computed(() => {
     (!q || [t.name, t.nickname, t.displayname, t.code, ...t.location].some(x => (x || '').toLowerCase().includes(q)))
     && (!systems.value.length || systems.value.includes(t.star_system_name))
     && (!types.value.length || types.value.includes(t.type))
-    && (!commodityOnly.value || t.commodity_buy_count || t.commodity_sell_count))
+    && (!hasCommodity.value || !!(t.commodity_buy_count || t.commodity_sell_count) === (hasCommodity.value === '1')))
 })
 const tSort = useTableSort(filtered, { accessors: {
   name: t => t.displayname || t.name, location: t => (t.location || []).join(' › '),

@@ -32,30 +32,31 @@
     <UexTerminalTable v-else-if="tab === 'terminals'" />
 
     <template v-else>
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm"
-            style="max-width: 16rem" placeholder="搜尋縮寫、英文或中文名稱..." aria-label="搜尋商品">
-          <MultiSelectFilter v-model="kinds" label="類別" :options="kindOptions" />
-          <select v-model="flag" class="form-select form-select-sm w-auto" aria-label="屬性">
-            <option value="">屬性：全部</option>
-            <option v-for="f in FLAGS" :key="f.key" :value="f.key">{{ f.label }}</option>
-          </select>
-          <div class="form-check form-check-inline mb-0 ms-1">
-            <input id="commodity-linked" v-model="linkedOnly" class="form-check-input" type="checkbox">
-            <label class="form-check-label small" for="commodity-linked">只看有關聯礦物</label>
-          </div>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
-          <span class="ms-auto small text-muted">
-            <template v-if="hasActiveFilters">符合 {{ filtered.length }} 筆 · </template>共 {{ rows.length }} 筆
-          </span>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；篩選在前端做，打字即篩 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="縮寫／商品（英文／中文）" for-id="commodity-q" col="col-12 col-md-6 col-xl-3">
+        <input id="commodity-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入縮寫或商品名稱">
+      </AdminSearchField>
+      <AdminSearchField label="類別" for-id="commodity-kind">
+        <MultiSelectFilter id="commodity-kind" v-model="kinds" label="類別" :options="kindOptions" block placeholder="全部" />
+      </AdminSearchField>
+      <AdminSearchField label="屬性" for-id="commodity-flag" col="col-6 col-md-3 col-xl">
+        <select id="commodity-flag" v-model="flag" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option v-for="f in FLAGS" :key="f.key" :value="f.key">{{ f.label }}</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="關聯礦物" for-id="commodity-linked" col="col-6 col-md-3 col-xl">
+        <select id="commodity-linked" v-model="linked" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option value="1">有</option>
+          <option value="0">無</option>
+        </select>
+      </AdminSearchField>
+      <template #summary>
+        <template v-if="hasActiveFilters">符合 {{ filtered.length }} 筆 · </template>共 {{ rows.length }} 筆
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -122,6 +123,8 @@
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { miningApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import UexCommodityPriceTable from '@/components/UexCommodityPriceTable.vue'
 import UexTerminalTable from '@/components/UexTerminalTable.vue'
@@ -160,7 +163,7 @@ const loadFailed = ref(false)
 const query = ref('')
 const kinds = ref([])
 const flag = ref('')
-const linkedOnly = ref(false)
+const linked = ref('')   // '' 全部／'1' 有關聯礦物／'0' 沒有
 const sortKey = ref('code')
 const sortAsc = ref(true)
 
@@ -198,13 +201,13 @@ const kindOptions = computed(() =>
 
 const flagsOf = r => FLAGS.filter(f => r[f.key])
 
-const hasActiveFilters = computed(() => !!(query.value.trim() || kinds.value.length || flag.value || linkedOnly.value))
+const hasActiveFilters = computed(() => !!(query.value.trim() || kinds.value.length || flag.value || linked.value))
 
 function resetFilters() {
   query.value = ''
   kinds.value = []
   flag.value = ''
-  linkedOnly.value = false
+  linked.value = ''
 }
 
 const filtered = computed(() => {
@@ -214,7 +217,7 @@ const filtered = computed(() => {
       .some(t => (t || '').toLowerCase().includes(q)))
     && (!kinds.value.length || kinds.value.includes(r.kind))
     && (!flag.value || r[flag.value])
-    && (!linkedOnly.value || r.minerals.length))
+    && (!linked.value || (r.minerals.length > 0) === (linked.value === '1')))
   const key = sortKey.value
   const dir = sortAsc.value ? 1 : -1
   return out.sort((a, b) => {

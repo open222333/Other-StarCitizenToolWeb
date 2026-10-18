@@ -26,51 +26,63 @@
   <div>
     <h5 class="mb-3 fw-bold"><i class="bi bi-geo-alt me-2 text-primary"></i>地點資料庫</h5>
 
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm"
-            style="max-width: 14rem" placeholder="搜尋英文或中文名稱..." @change="reload(0)">
-          <MultiSelectFilter :model-value="types" label="類型" :options="typeOptions" searchable
-            @update:model-value="v => { types = v; reload(0) }" />
-          <MultiSelectFilter :model-value="systems" label="星系" :options="systemOptions"
-            @update:model-value="v => { systems = v; reload(0) }" />
-          <MultiSelectFilter :model-value="jurisdictions" label="管轄" :options="jurisdictionOptions" searchable
-            @update:model-value="v => { jurisdictions = v; reload(0) }" />
-          <MultiSelectFilter :model-value="amenities" label="設施" :options="amenityOptions" searchable
-            @update:model-value="v => { amenities = v; reload(0) }" />
-          <MultiSelectFilter :model-value="features" label="屬性" :options="featureOptions" searchable
-            @update:model-value="v => { features = v; reload(0) }" />
-          <select v-model="canStore" class="form-select form-select-sm w-auto" aria-label="可存放" @change="reload(0)">
-            <option value="">可存放：全部</option>
-            <option value="1">可存放（{{ facets.can_store?.yes ?? 0 }}）</option>
-            <option value="0">不可存放（{{ facets.can_store?.no ?? 0 }}）</option>
-          </select>
-          <select v-model="home" class="form-select form-select-sm w-auto" aria-label="可選居住地" @change="reload(0)">
-            <option value="">居住地：全部</option>
-            <option value="1">可選居住地（{{ facets.home?.yes ?? 0 }}）</option>
-            <option value="0">不是居住地（{{ facets.home?.no ?? 0 }}）</option>
-          </select>
-          <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示"
-            @change="reload(0)">
-            <option value="">玩家頁面：全部</option>
-            <option value="1">玩家頁面：顯示</option>
-            <option value="0">玩家頁面：不顯示</option>
-          </select>
-          <div class="form-check form-check-inline mb-0 ms-1">
-            <input id="sm-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox" @change="reload(0)">
-            <label class="form-check-label small" for="sm-missing-zh">只看沒有中文</label>
-          </div>
-          <div class="form-check form-check-inline mb-0">
-            <input id="sm-unnamed" v-model="includeUnnamed" class="form-check-input" type="checkbox" @change="reload(0)">
-            <label class="form-check-label small" for="sm-unnamed">顯示未命名</label>
-          </div>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；名稱打字停 300ms 就查 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="地點（英文／中文）" for-id="sm-q" col="col-12 col-md-6 col-xl-3">
+        <input id="sm-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入地點名稱">
+      </AdminSearchField>
+      <AdminSearchField label="類型" for-id="sm-type" col="col-6 col-md-3 col-xl-3">
+        <MultiSelectFilter id="sm-type" :model-value="types" label="類型" :options="typeOptions" searchable block placeholder="全部"
+          @update:model-value="v => { types = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="星系" for-id="sm-system">
+        <MultiSelectFilter id="sm-system" :model-value="systems" label="星系" :options="systemOptions" block placeholder="全部"
+          @update:model-value="v => { systems = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="管轄" for-id="sm-jurisdiction">
+        <MultiSelectFilter id="sm-jurisdiction" :model-value="jurisdictions" label="管轄" :options="jurisdictionOptions" searchable block placeholder="全部"
+          @update:model-value="v => { jurisdictions = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="設施" for-id="sm-amenity">
+        <MultiSelectFilter id="sm-amenity" :model-value="amenities" label="設施" :options="amenityOptions" searchable block placeholder="全部"
+          @update:model-value="v => { amenities = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="屬性" for-id="sm-feature" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="sm-feature" :model-value="features" label="屬性" :options="featureOptions" searchable block placeholder="全部"
+          @update:model-value="v => { features = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="可存放" for-id="sm-can-store" col="col-6 col-md-3 col-xl">
+        <select id="sm-can-store" v-model="canStore" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">可存放（{{ facets.can_store?.yes ?? 0 }}）</option>
+          <option value="0">不可存放（{{ facets.can_store?.no ?? 0 }}）</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="居住地" for-id="sm-home" col="col-6 col-md-3 col-xl">
+        <select id="sm-home" v-model="home" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">可選居住地（{{ facets.home?.yes ?? 0 }}）</option>
+          <option value="0">不是居住地（{{ facets.home?.no ?? 0 }}）</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="玩家頁面" for-id="sm-visible" col="col-6 col-md-3 col-xl">
+        <select id="sm-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">顯示</option>
+          <option value="0">不顯示</option>
+        </select>
+      </AdminSearchField>
+      <template #options>
+        <div class="form-check form-check-inline mb-0">
+          <input id="sm-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox" @change="reload(0)">
+          <label class="form-check-label small" for="sm-missing-zh">只看沒有中文</label>
         </div>
-      </div>
-    </div>
+        <div class="form-check form-check-inline mb-0">
+          <input id="sm-unnamed" v-model="includeUnnamed" class="form-check-input" type="checkbox" @change="reload(0)">
+          <label class="form-check-label small" for="sm-unnamed">顯示未命名</label>
+        </div>
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -293,10 +305,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { starmapApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -358,8 +372,9 @@ async function reload(newOffset = 0) {
   offset.value = newOffset
   loading.value = true
   loadFailed.value = false
+  loadedQuery = query.value.trim()
   const res = await starmapApi.list({
-    q: query.value.trim(),
+    q: loadedQuery,
     type: types.value,
     system: systems.value,
     jurisdiction: jurisdictions.value,
@@ -562,6 +577,15 @@ async function loadFacets() {
   const body = res?.ok ? await res.json().catch(() => null) : null
   if (body?.success) facets.value = { ...EMPTY_FACETS, ...body.data }
 }
+
+// 名稱打字停 300ms 就查；跟上次查的一樣（例如按了清除篩選已經查過）就不重查
+let loadedQuery = ''
+let queryTimer = null
+watch(query, () => {
+  clearTimeout(queryTimer)
+  queryTimer = setTimeout(() => { if (query.value.trim() !== loadedQuery) reload(0) }, 300)
+})
+onBeforeUnmount(() => clearTimeout(queryTimer))
 
 watch(() => route.query.id, (id) => {
   onlyId.value = typeof id === 'string' ? id : ''

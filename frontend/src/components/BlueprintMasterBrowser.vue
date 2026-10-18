@@ -34,43 +34,42 @@
 <template>
   <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
   <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
-    <div v-if="!shared" :class="[cardClass, 'sf-search', 'mb-3']">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <template v-if="!shared">
-            <input v-model="nameQuery" type="search" class="form-control form-control-sm"
-              style="max-width: 14rem" placeholder="搜尋英文或中文名稱..." :aria-label="'搜尋藍圖名稱'"
-              @change="reload(0)">
-            <MultiSelectFilter :model-value="selectedTypes" label="類型" :options="typeOptions" searchable
-              @update:model-value="v => { selectedTypes = v; reload(0) }" />
-          </template>
-          <div class="form-check form-check-inline mb-0 ms-1">
-            <input :id="`${uid}-available`" v-model="availableOnly" class="form-check-input" type="checkbox"
-              @change="reload(0)">
-            <label class="form-check-label small" :for="`${uid}-available`">只看預設可用</label>
-          </div>
-          <div v-if="!player" class="form-check form-check-inline mb-0">
-            <input :id="`${uid}-missing-zh`" v-model="missingZhOnly" class="form-check-input" type="checkbox"
-              @change="reload(0)">
-            <label class="form-check-label small" :for="`${uid}-missing-zh`">只看沒有中文</label>
-          </div>
-          <div class="form-check form-check-inline mb-0">
-            <input :id="`${uid}-has-missions`" v-model="hasMissionsOnly" class="form-check-input" type="checkbox"
-              @change="reload(0)">
-            <label class="form-check-label small" :for="`${uid}-has-missions`">只看需任務解鎖</label>
-          </div>
-          <select v-if="!player" v-model="playerVisible" class="form-select form-select-sm w-auto"
-            aria-label="玩家頁面顯示" @change="reload(0)">
-            <option value="">玩家頁面：全部</option>
-            <option value="1">玩家頁面：顯示</option>
-            <option value="0">玩家頁面：不顯示</option>
-          </select>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm" :class="player ? 'btn-warning' : 'btn-outline-secondary'" @click="resetFilters">
-            清除全部篩選
-          </button>
+    <!-- 後台搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；玩家頁一律用「藍圖」分頁的共用搜尋卡 -->
+    <AdminSearchCard v-if="!shared" :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="藍圖（英文／中文）" :for-id="`${uid}-q`" col="col-12 col-md-6 col-xl-3">
+        <input :id="`${uid}-q`" v-model="nameQuery" type="search" class="form-control form-control-sm" placeholder="輸入藍圖名稱">
+      </AdminSearchField>
+      <AdminSearchField label="類型" :for-id="`${uid}-type`" col="col-6 col-md-3 col-xl-2">
+        <MultiSelectFilter :id="`${uid}-type`" :model-value="selectedTypes" label="類型" :options="typeOptions" searchable block placeholder="全部"
+          @update:model-value="v => { selectedTypes = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="預設可用" :for-id="`${uid}-available`" col="col-6 col-md-3 col-xl-2">
+        <select :id="`${uid}-available`" v-model="availableSel" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">是</option>
+          <option value="0">否</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="解鎖任務" :for-id="`${uid}-has-missions`" col="col-6 col-md-3 col-xl-2">
+        <select :id="`${uid}-has-missions`" v-model="hasMissionsOnly" class="form-select form-select-sm" @change="reload(0)">
+          <option :value="false">全部</option>
+          <option :value="true">需任務解鎖</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField v-if="!player" label="玩家頁面" :for-id="`${uid}-visible`" col="col-6 col-md-3 col-xl-2">
+        <select :id="`${uid}-visible`" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">顯示</option>
+          <option value="0">不顯示</option>
+        </select>
+      </AdminSearchField>
+      <template v-if="!player" #options>
+        <div class="form-check form-check-inline mb-0">
+          <input :id="`${uid}-missing-zh`" v-model="missingZhOnly" class="form-check-input" type="checkbox" @change="reload(0)">
+          <label class="form-check-label small" :for="`${uid}-missing-zh`">只看沒有中文</label>
         </div>
-      </div>
-    </div>
+      </template>
+    </AdminSearchCard>
 
     <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
 
@@ -282,6 +281,8 @@ import { scrollToListTop } from '@/utils/scrollAnchor'
 import { apiFetch } from '@/api'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import BlueprintQuality from '@/components/BlueprintQuality.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -317,8 +318,11 @@ const loadFailed = ref(false)
 
 const types = ref([])
 const nameQuery = ref('')
+// 上一次查詢用的名稱（名稱的延遲查詢用來判斷要不要再查）
+let lastName = ''
 const selectedTypes = ref([])
-const availableOnly = ref(false)
+// 預設可用：'' 不篩、'1' 只看預設可用、'0' 不列預設可用
+const availableSel = ref('')
 const missingZhOnly = ref(false)
 // 玩家頁「登記藍圖資料」預設只看需任務解鎖的（預設可用的不用特地登記）
 const hasMissionsOnly = ref(props.player && props.registeredUuids !== null)
@@ -329,7 +333,7 @@ const effectiveQuery = computed(() => (shared.value ? (props.sharedFilters.q || 
 const effectiveTypes = computed(() => (shared.value ? (props.sharedFilters.types || []) : selectedTypes.value))
 // '1' 只看預設可用、'0' 不列預設可用、'' 不篩
 const effectiveAvailable = computed(() => {
-  if (!shared.value) return availableOnly.value ? '1' : ''
+  if (!shared.value) return availableSel.value
   if (props.sharedFilters.hideAvailable) return '0'
   return props.sharedFilters.available ? '1' : ''
 })
@@ -416,7 +420,7 @@ const typeOptions = computed(() => types.value.map(t => ({ value: t, label: blue
 // 共用搜尋卡（玩家頁）時條件卡不顯示；空結果訊息用共用條件判斷
 const hasActiveFilters = computed(() => (shared.value
   ? !!(effectiveQuery.value || effectiveTypes.value.length || effectiveHasMissions.value)
-  : (!!nameQuery.value.trim() || selectedTypes.value.length > 0 || availableOnly.value || missingZhOnly.value
+  : (!!nameQuery.value.trim() || selectedTypes.value.length > 0 || !!availableSel.value || missingZhOnly.value
     || hasMissionsOnly.value || !!playerVisible.value)))
 
 const expandedId = ref('')
@@ -448,6 +452,7 @@ async function reload(newOffset = 0) {
   loading.value = true
   loadFailed.value = false
   expandedId.value = ''
+  if (!shared.value) lastName = effectiveQuery.value
   const body = await getJson(`/blueprint/master${query({
     q: effectiveQuery.value,
     output_type: effectiveTypes.value,
@@ -473,7 +478,7 @@ async function reload(newOffset = 0) {
 function resetFilters() {
   nameQuery.value = ''
   selectedTypes.value = []
-  availableOnly.value = false
+  availableSel.value = ''
   missingZhOnly.value = false
   hasMissionsOnly.value = false
   playerVisible.value = ''
@@ -537,7 +542,15 @@ watch(() => props.sharedFilters, () => {
   clearTimeout(sharedTimer)
   sharedTimer = setTimeout(() => reload(0), 300)
 }, { deep: true })
-onBeforeUnmount(() => { clearTimeout(sharedTimer); clearTimeout(flashTimer) })
+// 後台搜尋卡的名稱：打字停 300ms 就查（比照玩家頁的共用搜尋卡）
+let nameTimer = null
+watch(nameQuery, () => {
+  if (!loaded || shared.value) return
+  clearTimeout(nameTimer)
+  if (nameQuery.value.trim() === lastName) return   // 清除篩選時已經重查過
+  nameTimer = setTimeout(() => reload(0), 300)
+})
+onBeforeUnmount(() => { clearTimeout(sharedTimer); clearTimeout(flashTimer); clearTimeout(nameTimer) })
 
 // 上一頁／下一頁：載入後把列表頂端捲回畫面（不然會停在最下方的分頁按鈕，見 utils/scrollAnchor.js）
 const rootEl = ref(null)

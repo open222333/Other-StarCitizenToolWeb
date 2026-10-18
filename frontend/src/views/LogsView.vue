@@ -10,35 +10,30 @@
       </button>
     </div>
 
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <MultiSelectFilter :model-value="selectedUsernames" label="操作者" :options="usernameOptions"
-            @update:model-value="onUsernamesChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedActions" label="動作" :options="actionOptions"
-            @update:model-value="onActionsChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedResults" label="結果" :options="resultOptions"
-            @update:model-value="onResultsChange">
-          </MultiSelectFilter>
-
-          <div class="d-flex align-items-center gap-1">
-            <label class="small text-muted mb-0" :for="sinceId">從</label>
-            <input :id="sinceId" v-model="since" type="datetime-local"
-              class="form-control form-control-sm" style="max-width: 11rem" @change="reload(0)">
-            <label class="small text-muted mb-0" :for="untilId">到</label>
-            <input :id="untilId" v-model="until" type="datetime-local"
-              class="form-control form-control-sm" style="max-width: 11rem" @change="reload(0)">
-          </div>
-
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue） -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="時間" :for-id="sinceId" col="col-12 col-md-6 col-xl-4">
+        <div class="input-group input-group-sm">
+          <input :id="sinceId" v-model="since" type="datetime-local" class="form-control" aria-label="時間（從）"
+            @change="reload(0)">
+          <span class="input-group-text">到</span>
+          <input :id="untilId" v-model="until" type="datetime-local" class="form-control" aria-label="時間（到）"
+            @change="reload(0)">
         </div>
-      </div>
-    </div>
+      </AdminSearchField>
+      <AdminSearchField label="操作者" for-id="log-username" col="col-6 col-md-3 col-xl-3">
+        <MultiSelectFilter id="log-username" :model-value="selectedUsernames" label="操作者" :options="usernameOptions" block placeholder="全部"
+          @update:model-value="onUsernamesChange" />
+      </AdminSearchField>
+      <AdminSearchField label="動作" for-id="log-action" col="col-6 col-md-3 col-xl-3">
+        <MultiSelectFilter id="log-action" :model-value="selectedActions" label="動作" :options="actionOptions" block placeholder="全部"
+          @update:model-value="onActionsChange" />
+      </AdminSearchField>
+      <AdminSearchField label="結果" for-id="log-result" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="log-result" :model-value="selectedResults" label="結果" :options="resultOptions" block placeholder="全部"
+          @update:model-value="onResultsChange" />
+      </AdminSearchField>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -113,6 +108,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { logApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 
 const logs       = ref([])
@@ -136,9 +133,9 @@ const sortDir = ref('desc')
 const sinceId = 'log-since'
 const untilId = 'log-until'
 
-const hasActiveFilters = computed(() =>
+const hasActiveFilters = computed(() => !!(
   selectedUsernames.value.length || selectedActions.value.length ||
-  selectedResults.value.length || since.value || until.value)
+  selectedResults.value.length || since.value || until.value))
 
 const fmtDate = (d) => d ? new Date(d).toLocaleString('zh-TW') : '—'
 

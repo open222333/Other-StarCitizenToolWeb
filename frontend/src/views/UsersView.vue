@@ -15,20 +15,18 @@
       <div v-if="usersMsg" :class="`alert alert-${usersMsgType} py-2 mb-3`">{{ usersMsg }}</div>
     </Transition>
 
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="usernameQuery" type="text" class="form-control form-control-sm"
-            style="max-width: 12rem" placeholder="搜尋帳號...">
-          <MultiSelectFilter v-model="selectedRoles" label="角色" :options="roleOptions" />
-          <MultiSelectFilter v-model="selectedTemplates" label="模板" :options="templateFilterOptions" />
-          <button v-if="hasActiveUserFilters" type="button" class="btn btn-sm btn-link" @click="resetUserFilters">
-            清除全部篩選
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；前端即時過濾 -->
+    <AdminSearchCard :active="hasActiveUserFilters" @clear="resetUserFilters">
+      <AdminSearchField label="帳號" for-id="user-q" col="col-12 col-md-6 col-xl-3">
+        <input id="user-q" v-model="usernameQuery" type="search" class="form-control form-control-sm" placeholder="輸入帳號">
+      </AdminSearchField>
+      <AdminSearchField label="角色" for-id="user-role">
+        <MultiSelectFilter id="user-role" v-model="selectedRoles" label="角色" :options="roleOptions" block placeholder="全部" />
+      </AdminSearchField>
+      <AdminSearchField label="模板" for-id="user-template">
+        <MultiSelectFilter id="user-template" v-model="selectedTemplates" label="模板" :options="templateFilterOptions" block placeholder="全部" />
+      </AdminSearchField>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body p-0">
@@ -133,19 +131,15 @@
         <div v-if="tmplMsg" :class="`alert alert-${tmplMsgType} py-2 mb-3`">{{ tmplMsg }}</div>
       </Transition>
 
-      <!-- ── 篩選 ────────────────────────────────────────────── -->
-      <div class="card shadow-sm border-0 mb-3">
-        <div class="card-body py-2">
-          <div class="d-flex flex-wrap align-items-center gap-2">
-            <input v-model="tmplQuery" type="text" class="form-control form-control-sm"
-              style="max-width: 14rem" placeholder="搜尋模板名稱／說明...">
-            <MultiSelectFilter v-model="selectedTmplRoles" label="角色" :options="roleOptions" />
-            <button v-if="hasActiveTmplFilters" type="button" class="btn btn-sm btn-link" @click="resetTmplFilters">
-              清除全部篩選
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；前端即時過濾 -->
+      <AdminSearchCard :active="hasActiveTmplFilters" @clear="resetTmplFilters">
+        <AdminSearchField label="模板名稱／說明" for-id="tmpl-q" col="col-12 col-md-6 col-xl-3">
+          <input id="tmpl-q" v-model="tmplQuery" type="search" class="form-control form-control-sm" placeholder="輸入模板名稱／說明">
+        </AdminSearchField>
+        <AdminSearchField label="角色" for-id="tmpl-role">
+          <MultiSelectFilter id="tmpl-role" v-model="selectedTmplRoles" label="角色" :options="roleOptions" block placeholder="全部" />
+        </AdminSearchField>
+      </AdminSearchCard>
 
       <div class="card shadow-sm border-0">
         <div class="card-body p-0">
@@ -242,6 +236,8 @@ import TemplateModal    from '@/components/TemplateModal.vue'
 import ConfirmModal     from '@/components/ConfirmModal.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import FieldHint         from '@/components/FieldHint.vue'
+import AdminSearchCard   from '@/components/AdminSearchCard.vue'
+import AdminSearchField  from '@/components/AdminSearchField.vue'
 
 const auth = useAuthStore()
 
@@ -295,7 +291,7 @@ const templateFilterOptions = computed(() => [
 ])
 
 const hasActiveUserFilters = computed(() =>
-  usernameQuery.value.trim() || selectedRoles.value.length || selectedTemplates.value.length)
+  !!(usernameQuery.value.trim() || selectedRoles.value.length || selectedTemplates.value.length))
 
 function resetUserFilters() {
   usernameQuery.value = ''
@@ -353,7 +349,7 @@ const tmplSortBy  = ref('name')
 const tmplSortDir = ref('asc')
 
 const hasActiveTmplFilters = computed(() =>
-  tmplQuery.value.trim() || selectedTmplRoles.value.length)
+  !!(tmplQuery.value.trim() || selectedTmplRoles.value.length))
 
 function resetTmplFilters() {
   tmplQuery.value = ''

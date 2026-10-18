@@ -4,15 +4,6 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0 fw-bold"><i class="bi bi-people me-2 text-primary"></i>玩家</h5>
       <div class="d-flex gap-2 align-items-center">
-        <!-- 已移除的玩家預設不顯示，但要有辦法看到他們才能還原：
-             誤刪之後那個人在名冊上等於消失，而他的遊戲ID重新註冊時
-             又會被擋（同ID已有使用中資料），沒有這個開關就沒人能修。 -->
-        <div class="form-check form-check-inline mb-0 small text-nowrap">
-          <input class="form-check-input" type="checkbox" id="cb-include-deleted"
-            :checked="store.includeDeleted" @change="toggleDeleted($event.target.checked)">
-          <label class="form-check-label" for="cb-include-deleted">顯示已移除</label>
-        </div>
-        <SearchBox v-model="keyword" placeholder="搜尋玩家名稱 / SCID..." />
         <button class="btn btn-primary btn-sm" @click="playerModalRef.open()">
           <i class="bi bi-plus-lg me-1"></i>新增玩家
         </button>
@@ -22,6 +13,23 @@
     <Transition name="alert-slide">
       <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
     </Transition>
+
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；前端即時過濾 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="玩家名稱／SCID／Discord" col="col-12 col-md-6 col-xl-3">
+        <SearchBox v-model="keyword" placeholder="輸入玩家名稱 / SCID / Discord" />
+      </AdminSearchField>
+      <template #options>
+        <!-- 已移除的玩家預設不顯示，但要有辦法看到他們才能還原：
+             誤刪之後那個人在名冊上等於消失，而他的遊戲ID重新註冊時
+             又會被擋（同ID已有使用中資料），沒有這個開關就沒人能修。 -->
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input" type="checkbox" id="cb-include-deleted"
+            :checked="store.includeDeleted" @change="toggleDeleted($event.target.checked)">
+          <label class="form-check-label small" for="cb-include-deleted">顯示已移除</label>
+        </div>
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -92,6 +100,8 @@ import { playerApi } from '@/api'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import SearchBox        from '@/components/SearchBox.vue'
+import AdminSearchCard  from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import PlayerFormModal   from '@/components/PlayerFormModal.vue'
 import ConfirmModal      from '@/components/ConfirmModal.vue'
 
@@ -110,6 +120,12 @@ const filtered = computed(() => {
     `${p.player_name} ${p.star_citizen_id} ${p.discord_name || ''}`.toLowerCase().includes(kw)
   )
 })
+const hasActiveFilters = computed(() => !!keyword.value.trim() || !!store.includeDeleted)
+function resetFilters() {
+  keyword.value = ''
+  if (store.includeDeleted) store.load(false)
+}
+
 const pSort = useTableSort(filtered, { accessors: {
   created_at: p => (p.created_at ? new Date(p.created_at).getTime() : null),
 } })

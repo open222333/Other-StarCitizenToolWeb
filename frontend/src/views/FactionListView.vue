@@ -15,30 +15,35 @@
   <div>
     <h5 class="mb-3 fw-bold"><i class="bi bi-people me-2 text-primary"></i>勢力資料庫</h5>
 
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm"
-            style="max-width: 14rem" placeholder="搜尋英文或中文名稱...">
-          <MultiSelectFilter v-model="types" label="類型" :options="typeOptions" />
-          <div class="form-check form-check-inline mb-0 ms-1">
-            <input id="faction-has-rep" v-model="hasReputation" class="form-check-input" type="checkbox">
-            <label class="form-check-label small" for="faction-has-rep">只看有聲望</label>
-          </div>
-          <div class="form-check form-check-inline mb-0">
-            <input id="faction-has-missions" v-model="hasMissions" class="form-check-input" type="checkbox">
-            <label class="form-check-label small" for="faction-has-missions">只看有任務</label>
-          </div>
-          <div class="form-check form-check-inline mb-0">
-            <input id="faction-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox">
-            <label class="form-check-label small" for="faction-missing-zh">只看沒有中文</label>
-          </div>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；篩選在前端做，打字即篩 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="勢力（英文／中文）" for-id="faction-q" col="col-12 col-md-6 col-xl-3">
+        <input id="faction-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入勢力名稱">
+      </AdminSearchField>
+      <AdminSearchField label="類型" for-id="faction-type">
+        <MultiSelectFilter id="faction-type" v-model="types" label="類型" :options="typeOptions" block placeholder="全部" />
+      </AdminSearchField>
+      <AdminSearchField label="聲望" for-id="faction-has-rep" col="col-6 col-md-3 col-xl">
+        <select id="faction-has-rep" v-model="hasReputation" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option value="1">有</option>
+          <option value="0">無</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="任務數" for-id="faction-has-missions" col="col-6 col-md-3 col-xl">
+        <select id="faction-has-missions" v-model="hasMissions" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option value="1">有任務</option>
+          <option value="0">沒有任務</option>
+        </select>
+      </AdminSearchField>
+      <template #options>
+        <div class="form-check form-check-inline mb-0">
+          <input id="faction-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox">
+          <label class="form-check-label small" for="faction-missing-zh">只看沒有中文</label>
         </div>
-      </div>
-    </div>
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -164,6 +169,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { missionApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -177,8 +184,8 @@ const loadFailed = ref(false)
 
 const query = ref('')
 const types = ref([])
-const hasReputation = ref(false)
-const hasMissions = ref(false)
+const hasReputation = ref('')   // '' 全部／'1' 有／'0' 無
+const hasMissions = ref('')     // '' 全部／'1' 有任務／'0' 沒有任務
 const missingZh = ref(false)
 
 const expandedId = ref('')
@@ -190,15 +197,15 @@ const typeOptions = computed(() =>
   [...new Set(factions.value.map(f => f.faction_type).filter(Boolean))].sort())
 
 const hasActiveFilters = computed(() => !!query.value.trim() || types.value.length > 0
-  || hasReputation.value || hasMissions.value || missingZh.value)
+  || !!hasReputation.value || !!hasMissions.value || missingZh.value)
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
   return factions.value.filter(f =>
     (!q || [f.name, f.name_zh].some(t => (t || '').toLowerCase().includes(q)))
     && (!types.value.length || types.value.includes(f.faction_type))
-    && (!hasReputation.value || f.has_reputation)
-    && (!hasMissions.value || f.mission_count > 0)
+    && (!hasReputation.value || !!f.has_reputation === (hasReputation.value === '1'))
+    && (!hasMissions.value || (f.mission_count > 0) === (hasMissions.value === '1'))
     && (!missingZh.value || !f.name_zh))
 })
 const fSort = useTableSort(filtered)
@@ -206,8 +213,8 @@ const fSort = useTableSort(filtered)
 function resetFilters() {
   query.value = ''
   types.value = []
-  hasReputation.value = false
-  hasMissions.value = false
+  hasReputation.value = ''
+  hasMissions.value = ''
   missingZh.value = false
 }
 

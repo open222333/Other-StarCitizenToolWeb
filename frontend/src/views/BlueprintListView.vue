@@ -2,7 +2,7 @@
   後台「藍圖」頁，兩個分頁：
     - 藍圖資料庫：製造藍圖主檔 blueprint_master（唯讀，見 components/BlueprintMasterBrowser.vue）
     - 玩家擁有藍圖：玩家登記的名冊 blueprints（可編輯／刪除，不在後台新增——
-      登記由玩家在玩家頁面做；篩選/排序/分頁見全站搜尋優化計畫第 2 項）
+      登記由玩家在玩家頁面做；篩選用共用搜尋卡 AdminSearchCard，排序/分頁見全站搜尋優化計畫第 2 項）
 -->
 <template>
   <div>
@@ -28,31 +28,27 @@
         <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
       </Transition>
 
-      <!-- ── 篩選 ────────────────────────────────────────────── -->
-      <div class="card shadow-sm border-0 mb-3">
-        <div class="card-body py-2">
-          <div class="d-flex flex-wrap align-items-center gap-2">
-            <input v-model="nameQuery" type="text" class="form-control form-control-sm"
-              style="max-width: 12rem" placeholder="搜尋 Blueprint 名稱..." @change="reload(0)">
-            <input v-model="locationQuery" type="text" class="form-control form-control-sm"
-              style="max-width: 12rem" placeholder="搜尋取得地點..." @change="reload(0)">
-
-            <MultiSelectFilter :model-value="selectedMethods" label="取得方式" :options="methodOptions"
-              @update:model-value="onMethodsChange">
-            </MultiSelectFilter>
-            <MultiSelectFilter :model-value="selectedStatuses" label="狀態" :options="statusOptions"
-              @update:model-value="onStatusesChange">
-            </MultiSelectFilter>
-            <MultiSelectFilter :model-value="selectedPlayers" label="取得玩家" :options="playerOptions"
-              @update:model-value="onPlayersChange">
-            </MultiSelectFilter>
-
-            <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-              清除全部篩選
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；名稱、地點打字停 300ms 就查 -->
+      <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+        <AdminSearchField label="Blueprint 名稱" for-id="owned-bp-q" col="col-12 col-md-6 col-xl-3">
+          <input id="owned-bp-q" v-model="nameQuery" type="search" class="form-control form-control-sm" placeholder="輸入 Blueprint 名稱">
+        </AdminSearchField>
+        <AdminSearchField label="取得方式" for-id="owned-bp-method">
+          <MultiSelectFilter id="owned-bp-method" :model-value="selectedMethods" label="取得方式" :options="methodOptions" block placeholder="全部"
+            @update:model-value="onMethodsChange" />
+        </AdminSearchField>
+        <AdminSearchField label="取得地點" for-id="owned-bp-location">
+          <input id="owned-bp-location" v-model="locationQuery" type="search" class="form-control form-control-sm" placeholder="輸入取得地點">
+        </AdminSearchField>
+        <AdminSearchField label="取得玩家" for-id="owned-bp-player">
+          <MultiSelectFilter id="owned-bp-player" :model-value="selectedPlayers" label="取得玩家" :options="playerOptions" block placeholder="全部"
+            @update:model-value="onPlayersChange" />
+        </AdminSearchField>
+        <AdminSearchField label="狀態" for-id="owned-bp-status">
+          <MultiSelectFilter id="owned-bp-status" :model-value="selectedStatuses" label="狀態" :options="statusOptions" block placeholder="全部"
+            @update:model-value="onStatusesChange" />
+        </AdminSearchField>
+      </AdminSearchCard>
 
       <div class="card shadow-sm border-0">
         <div class="card-body p-0">
@@ -153,7 +149,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { usePlayerStore } from '@/stores/player'
 import { blueprintApi } from '@/api'
 import StatusBadge         from '@/components/StatusBadge.vue'
@@ -161,6 +157,8 @@ import BlueprintFormModal   from '@/components/BlueprintFormModal.vue'
 import ConfirmModal          from '@/components/ConfirmModal.vue'
 import MultiSelectFilter     from '@/components/MultiSelectFilter.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
+import AdminSearchCard       from '@/components/AdminSearchCard.vue'
+import AdminSearchField      from '@/components/AdminSearchField.vue'
 
 const playerStore = usePlayerStore()
 
@@ -210,9 +208,9 @@ const locationQuery = ref('')
 const sortBy  = ref('name')
 const sortDir = ref('asc')
 
-const hasActiveFilters = computed(() =>
+const hasActiveFilters = computed(() => !!(
   selectedMethods.value.length || selectedStatuses.value.length ||
-  selectedPlayers.value.length || nameQuery.value || locationQuery.value)
+  selectedPlayers.value.length || nameQuery.value.trim() || locationQuery.value.trim()))
 
 function playerName(id) {
   return id ? (playerStore.byId(id)?.player_name || '') : '—'
@@ -255,7 +253,17 @@ function resetFilters() {
   nameQuery.value = ''
   locationQuery.value = ''
   reload(0)
+  // 文字欄被清空也會觸發下面的 debounce watch；已經直接 reload 了，把那一次取消掉
+  nextTick(() => clearTimeout(queryTimer))
 }
+
+// 名稱、取得地點打字停 300ms 就查
+let queryTimer = null
+watch([nameQuery, locationQuery], () => {
+  clearTimeout(queryTimer)
+  queryTimer = setTimeout(() => reload(0), 300)
+})
+onBeforeUnmount(() => clearTimeout(queryTimer))
 
 async function reload(newOffset = 0) {
   offset.value = newOffset

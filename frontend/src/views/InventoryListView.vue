@@ -4,7 +4,6 @@
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h5 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2 text-primary"></i>庫存 Inventory</h5>
       <div class="d-flex gap-2 flex-wrap">
-        <SearchBox v-model="nameQuery" placeholder="搜尋物品名稱..." />
         <button v-if="canWrite" class="btn btn-success btn-sm" @click="openAdjust('add')">
           <i class="bi bi-plus-lg me-1"></i>入庫
         </button>
@@ -18,39 +17,37 @@
       <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
     </Transition>
 
-    <!-- ── 篩選列 ── -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <select class="form-select form-select-sm" style="width:auto" v-model="filters.owner_type" @change="onOwnerTypeChange">
-            <option value="guild">公會共享庫</option>
-            <option value="player">個人庫</option>
-          </select>
-          <input v-if="filters.owner_type === 'player'" class="form-control form-control-sm" style="width:180px"
-            v-model="filters.player" placeholder="玩家 SCID / RSI handle" @change="reload(0)">
-
-          <!-- 星系／行星／位置三段（星系、行星由後端透過地點資料庫換成位置名稱） -->
-          <LocationAreaFilter inline location-title="位置" :names="locationNames" :loc-label="locationLabel"
-            :systems="selectedSystems" :planets="selectedPlanets" :locations="selectedLocations"
-            @update:systems="v => { selectedSystems = v; reload(0) }"
-            @update:planets="v => { selectedPlanets = v; reload(0) }"
-            @update:locations="onLocationsChange" />
-          <input v-model="containerQuery" type="text" class="form-control form-control-sm"
-            style="max-width: 10rem" placeholder="搜尋容器..." @change="reload(0)">
-
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
-
-          <div class="ms-auto small text-muted" v-if="summary">
-            共 {{ summary.lines }} 筆 · {{ summary.units }} 件 · {{ summary.total_scu }} SCU
-            <span v-if="summary.unknown_volume" class="text-warning">
-              （{{ summary.unknown_volume }} 項無體積資料，總 SCU 可能低估）
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；玩家、物品、容器打字停 300ms 就查 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="歸屬" for-id="inv-owner-type" col="col-6 col-md-3 col-xl">
+        <select id="inv-owner-type" v-model="filters.owner_type" class="form-select form-select-sm" @change="onOwnerTypeChange">
+          <option value="guild">公會共享庫</option>
+          <option value="player">個人庫</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField v-if="filters.owner_type === 'player'" label="歸屬玩家" for-id="inv-player" col="col-6 col-md-3 col-xl-2">
+        <input id="inv-player" v-model="filters.player" type="search" class="form-control form-control-sm"
+          placeholder="玩家 SCID / RSI handle">
+      </AdminSearchField>
+      <AdminSearchField label="物品" col="col-12 col-md-6 col-xl-3">
+        <SearchBox v-model="nameQuery" placeholder="輸入物品名稱" />
+      </AdminSearchField>
+      <!-- 星系／行星／位置三格（星系、行星由後端透過地點資料庫換成位置名稱） -->
+      <LocationAreaFilter location-title="位置" col-class="col-6 col-md-3 col-xl" :names="locationNames" :loc-label="locationLabel"
+        :systems="selectedSystems" :planets="selectedPlanets" :locations="selectedLocations"
+        @update:systems="v => { selectedSystems = v; reload(0) }"
+        @update:planets="v => { selectedPlanets = v; reload(0) }"
+        @update:locations="onLocationsChange" />
+      <AdminSearchField label="容器" for-id="inv-container" col="col-6 col-md-3 col-xl">
+        <input id="inv-container" v-model="containerQuery" type="search" class="form-control form-control-sm" placeholder="輸入容器">
+      </AdminSearchField>
+      <template v-if="summary" #summary>
+        共 {{ summary.lines }} 筆 · {{ summary.units }} 件 · {{ summary.total_scu }} SCU
+        <span v-if="summary.unknown_volume" class="text-warning">
+          （{{ summary.unknown_volume }} 項無體積資料，總 SCU 可能低估）
+        </span>
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -212,13 +209,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { Modal } from 'bootstrap'
 import { useAuthStore } from '@/stores/auth'
 import { inventoryApi } from '@/api'
 import { loadStorageLocations, translate } from '@/utils/translations'
 import SearchBox          from '@/components/SearchBox.vue'
 import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
@@ -257,9 +256,10 @@ const nameQuery         = ref('')
 const sortBy  = ref('item_name')
 const sortDir = ref('asc')
 
-const hasActiveFilters = computed(() =>
-  selectedLocations.value.length || selectedSystems.value.length || selectedPlanets.value.length
-  || containerQuery.value.trim() || nameQuery.value.trim())
+const hasActiveFilters = computed(() => !!(
+  filters.owner_type !== 'guild' || filters.player.trim()
+  || selectedLocations.value.length || selectedSystems.value.length || selectedPlanets.value.length
+  || containerQuery.value.trim() || nameQuery.value.trim()))
 
 const msg = ref(''); const msgType = ref('success')
 function flash(text, type = 'danger') {
@@ -283,26 +283,29 @@ function onLocationsChange(values) {
 }
 
 function resetFilters() {
+  filters.owner_type = 'guild'
+  filters.player = ''
   selectedLocations.value = []
   selectedSystems.value = []
   selectedPlanets.value = []
   containerQuery.value = ''
   nameQuery.value = ''
   reload(0)
+  // 文字欄被清空也會觸發下面的 debounce watch；已經直接 reload 了，把那一次取消掉
+  nextTick(() => clearTimeout(nameDebounceTimer))
 }
 
 function onOwnerTypeChange() {
   if (filters.owner_type === 'guild') filters.player = ''
   reload(0)
+  nextTick(() => clearTimeout(nameDebounceTimer))
 }
 
-// 物品名稱是這頁唯一「邊打邊搜」的欄位（SearchBox 沒有像 Blueprint/Log
-// 頁那些次要篩選一樣等 blur 才送出的 @change），所以要 debounce，
-// 不然每敲一個字就打一次後端。
+// 歸屬玩家、物品名稱、容器打字停 300ms 就送後端查（不是每敲一個字就打一次後端）
 let nameDebounceTimer = null
-watch(nameQuery, () => {
+watch([() => filters.player, nameQuery, containerQuery], () => {
   clearTimeout(nameDebounceTimer)
-  nameDebounceTimer = setTimeout(() => reload(0), 350)
+  nameDebounceTimer = setTimeout(() => reload(0), 300)
 })
 onBeforeUnmount(() => clearTimeout(nameDebounceTimer))
 

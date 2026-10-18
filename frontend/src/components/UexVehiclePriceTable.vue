@@ -2,26 +2,23 @@
   後台「艦船 › 購買價格／租船價格」（唯讀）：UEX 載具價格表原始內容，方便檢查同步下來的資料。
 
   GET /item/uex-vehicle-prices?kind=purchase|rental（src/models/uex_vehicle_price.py 的 admin_list），
-  後端分頁。每筆列出 UEX 的載具名稱與對應到的載具主檔；「對應主檔」是空的代表 uuid、名稱都對不上，
+  後端分頁，上方是共用搜尋卡（components/AdminSearchCard.vue；「地點」選星系）。每筆列出 UEX 的載具名稱與對應到的載具主檔；「對應主檔」是空的代表 uuid、名稱都對不上，
   這艘船的價格不會出現在艦船列表跟玩家頁。
 -->
 <template>
   <div>
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm" style="max-width: 16rem"
-            placeholder="搜尋載具或終端名稱..." :aria-label="`搜尋${title}`">
-          <select v-model="starSystem" class="form-select form-select-sm w-auto" aria-label="星系">
-            <option value="">星系：全部</option>
-            <option v-for="s in starSystems" :key="s" :value="s">{{ s }}</option>
-          </select>
-          <button v-if="query || starSystem" type="button" class="btn btn-sm btn-link"
-            @click="query = ''; starSystem = ''">清除全部篩選</button>
-          <span class="ms-auto small text-muted">共 {{ total }} 筆</span>
-        </div>
-      </div>
-    </div>
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="UEX 載具／交易終端" :for-id="`uex-${kind}-q`" col="col-12 col-md-6 col-xl-3">
+        <input :id="`uex-${kind}-q`" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入載具或終端名稱">
+      </AdminSearchField>
+      <AdminSearchField label="地點" :for-id="`uex-${kind}-system`">
+        <select :id="`uex-${kind}-system`" v-model="starSystem" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option v-for="s in starSystems" :key="s" :value="s">{{ s }}</option>
+        </select>
+      </AdminSearchField>
+      <template #summary>共 {{ total }} 筆</template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -51,7 +48,7 @@
               </tr>
               <tr v-else-if="!rows.length">
                 <td colspan="6" class="text-center py-4 text-muted">
-                  {{ query || starSystem ? '沒有符合條件的價格' : `還沒有${title}資料（到「資料同步排程」同步 UEX 價格）` }}
+                  {{ hasActiveFilters ? '沒有符合條件的價格' : `還沒有${title}資料（到「資料同步排程」同步 UEX 價格）` }}
                 </td>
               </tr>
               <tr v-for="r in rows" :key="r.id">
@@ -88,6 +85,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
 import SortTh from '@/components/SortTh.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUexTime } from '@/utils/uexCommodity'
 
@@ -106,6 +105,15 @@ const loadFailed = ref(false)
 const starSystems = ref([])
 const query = ref('')
 const starSystem = ref('')
+const hasActiveFilters = computed(() => !!query.value.trim() || !!starSystem.value)
+
+// 清除：星系有選的話它的 watch 會重查，否則這裡直接查（名稱的 watch 看到查過了就不再查）
+function resetFilters() {
+  const systemWatchReloads = !!starSystem.value
+  query.value = ''
+  starSystem.value = ''
+  if (!systemWatchReloads) reload(0)
+}
 
 // 點表頭排序（後端，見 src/models/uex_vehicle_price.py 的 admin_list）
 const sort = useTableSort(null, { onChange: () => reload(0) })
@@ -116,6 +124,7 @@ async function reload(nextOffset = 0) {
   loading.value = true
   loadFailed.value = false
   const mine = ++seq
+  loadedQuery = query.value.trim()
   const res = await vehicleApi.uexPrices({
     kind: props.kind, q: query.value.trim(), star_system: starSystem.value, ...sort.params.value,
     limit, offset: nextOffset,
@@ -134,10 +143,11 @@ async function reload(nextOffset = 0) {
   starSystems.value = body.star_systems || starSystems.value
 }
 
+let loadedQuery = ''
 let timer = null
 watch(query, () => {
   clearTimeout(timer)
-  timer = setTimeout(() => reload(0), 300)
+  timer = setTimeout(() => { if (query.value.trim() !== loadedQuery) reload(0) }, 300)
 })
 watch(starSystem, () => reload(0))
 watch(() => props.kind, () => reload(0))

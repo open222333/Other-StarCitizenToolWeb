@@ -2,7 +2,8 @@
   工具網站連結管理（後台）。這裡維護的連結會顯示在玩家頁的「工具網站」分頁：
   依標籤分組（一個網址可以有好幾個標籤，會出現在每個標籤底下），標題是連結、說明收在
   標題旁的「?」裡。標籤存在 mongo 的 tool_link_tags（順序），見 src/models/tool_link.py。
-  列表上方可以用關鍵字（標題／網址／說明／標籤）與標籤篩選，篩選在前端做（量很少）。
+  列表上方是共用搜尋卡（components/AdminSearchCard.vue）：關鍵字（標題／網址／說明／標籤）與標籤篩選，
+  篩選在前端做（量很少）。
 
   JSON 批量匯入／匯出（app/links/view.py 的 /links/export、/links/import）：
   匯出檔可以直接拿來匯入；匯入以網址比對，同網址更新、新網址新增，勾「取代現有清單」
@@ -136,19 +137,16 @@
       </div>
     </div>
 
-    <!-- 搜尋 -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm" style="max-width: 18rem"
-            placeholder="搜尋標題、網址、說明、標籤..." aria-label="搜尋工具網站">
-          <MultiSelectFilter v-model="selectedTags" label="標籤" :options="tagOptions" searchable />
-          <button v-if="query || selectedTags.length" type="button" class="btn btn-sm btn-outline-secondary"
-            @click="query = ''; selectedTags = []">清除篩選</button>
-          <span class="small text-muted ms-auto">{{ filteredLinks.length }} / {{ links.length }}</span>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；篩選在前端即時做 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="標題／網址／說明" for-id="tl-q" col="col-12 col-md-6 col-xl-3">
+        <input id="tl-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入關鍵字">
+      </AdminSearchField>
+      <AdminSearchField label="標籤" for-id="tl-filter-tags">
+        <MultiSelectFilter id="tl-filter-tags" v-model="selectedTags" label="標籤" :options="tagOptions" searchable block placeholder="全部" />
+      </AdminSearchField>
+      <template #summary>{{ filteredLinks.length }} / {{ links.length }}</template>
+    </AdminSearchCard>
 
     <!-- 列表 -->
     <div class="card shadow-sm border-0">
@@ -205,6 +203,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { toolLinkApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
@@ -233,6 +233,11 @@ function toggleFormTag(tag) {
 // ── 搜尋／篩選（前端做，量很少）──
 const query = ref('')
 const selectedTags = ref([])
+const hasActiveFilters = computed(() => !!query.value.trim() || selectedTags.value.length > 0)
+function resetFilters() {
+  query.value = ''
+  selectedTags.value = []
+}
 const tagOptions = computed(() => allTags.value.map(t => ({ value: t, label: t })))
 const filteredLinks = computed(() => {
   const q = query.value.trim().toLowerCase()

@@ -14,35 +14,43 @@
   <div>
     <h5 class="mb-3 fw-bold"><i class="bi bi-database me-2 text-primary"></i>物品 Item</h5>
 
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="nameQuery" type="search" class="form-control form-control-sm" style="max-width: 14rem"
-            placeholder="搜尋物品名稱..." aria-label="搜尋物品名稱">
-          <MultiSelectFilter :model-value="selectedTypes" label="類型" :options="typeOptions" searchable
-            @update:model-value="v => { selectedTypes = v; reload(0) }" />
-          <MultiSelectFilter :model-value="selectedSubTypes" label="子類型" :options="subTypeOptions" searchable
-            @update:model-value="v => { selectedSubTypes = v; reload(0) }" />
-          <MultiSelectFilter :model-value="selectedManufacturers" label="製造商" :options="facets.manufacturers" searchable
-            @update:model-value="v => { selectedManufacturers = v; reload(0) }" />
-          <MultiSelectFilter :model-value="selectedSizes" label="尺寸" :options="sizeOptions"
-            @update:model-value="v => { selectedSizes = v; reload(0) }" />
-          <MultiSelectFilter :model-value="selectedGrades" label="等級" :options="gradeOptions"
-            @update:model-value="v => { selectedGrades = v; reload(0) }" />
-          <MultiSelectFilter :model-value="selectedAcquire" label="取得方式" :options="ITEM_ACQUIRE_OPTIONS"
-            @update:model-value="v => { selectedAcquire = v; reload(0) }" />
-          <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示"
-            @change="reload(0)">
-            <option value="">玩家頁面：全部</option>
-            <option value="1">玩家頁面：顯示</option>
-            <option value="0">玩家頁面：不顯示</option>
-          </select>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；名稱打字停 300ms 就查 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="名稱（英文／中文）" for-id="item-q" col="col-12 col-md-6 col-xl-3">
+        <input id="item-q" v-model="nameQuery" type="search" class="form-control form-control-sm" placeholder="輸入物品名稱">
+      </AdminSearchField>
+      <AdminSearchField label="類型" for-id="item-type" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="item-type" :model-value="selectedTypes" label="類型" :options="typeOptions" searchable block placeholder="全部"
+          @update:model-value="v => { selectedTypes = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="子類型" for-id="item-sub-type" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="item-sub-type" :model-value="selectedSubTypes" label="子類型" :options="subTypeOptions" searchable block placeholder="全部"
+          @update:model-value="v => { selectedSubTypes = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="尺寸" for-id="item-size" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="item-size" :model-value="selectedSizes" label="尺寸" :options="sizeOptions" block placeholder="全部"
+          @update:model-value="v => { selectedSizes = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="等級" for-id="item-grade" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="item-grade" :model-value="selectedGrades" label="等級" :options="gradeOptions" block placeholder="全部"
+          @update:model-value="v => { selectedGrades = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="製造商" for-id="item-manufacturer" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="item-manufacturer" :model-value="selectedManufacturers" label="製造商" :options="facets.manufacturers" searchable block placeholder="全部"
+          @update:model-value="v => { selectedManufacturers = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="取得方式" for-id="item-acquire" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="item-acquire" :model-value="selectedAcquire" label="取得方式" :options="ITEM_ACQUIRE_OPTIONS" block placeholder="全部"
+          @update:model-value="v => { selectedAcquire = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="玩家頁面" for-id="item-visible" col="col-6 col-md-3 col-xl">
+        <select id="item-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">顯示</option>
+          <option value="0">不顯示</option>
+        </select>
+      </AdminSearchField>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -140,6 +148,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { itemApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import ItemDetail from '@/components/ItemDetail.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
@@ -248,7 +258,7 @@ async function reload(newOffset = 0) {
 let timer = null
 watch(nameQuery, () => {
   clearTimeout(timer)
-  timer = setTimeout(() => reload(0), 350)
+  timer = setTimeout(() => reload(0), 300)
 })
 onBeforeUnmount(() => clearTimeout(timer))
 

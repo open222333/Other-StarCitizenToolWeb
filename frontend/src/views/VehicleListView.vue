@@ -16,6 +16,7 @@
       持有船艦、批量登記會顯示，換行照原樣）
 
   篩選/排序/分頁比照全站搜尋優化計畫（藍圖登記管理那批）的既有做法：
+  篩選放在共用搜尋卡（components/AdminSearchCard.vue，條件名稱跟列表欄位一致），
   多選篩選用 MultiSelectFilter，排序欄位在後端 VehicleMaster.SORTABLE_FIELDS
   有白名單擋著，分頁走 limit/offset。
 
@@ -60,41 +61,39 @@
 
     <div v-show="tab === 'master'">
 
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="nameQuery" type="text" class="form-control form-control-sm"
-            style="max-width: 12rem" placeholder="搜尋艦船名稱..." @change="reload(0)">
-
-          <MultiSelectFilter :model-value="selectedCareers" label="Career" :options="careerOptions"
-            @update:model-value="onCareersChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedRoles" label="Role" :options="roleOptions"
-            @update:model-value="onRolesChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedManufacturers" label="製造商" :options="manufacturerOptions"
-            @update:model-value="onManufacturersChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedSizeClasses" label="尺寸" :options="sizeClassOptions"
-            @update:model-value="onSizeClassesChange">
-          </MultiSelectFilter>
-          <MultiSelectFilter :model-value="selectedAcquire" label="取得方式" :options="VEHICLE_ACQUIRE_OPTIONS"
-            @update:model-value="onAcquireChange">
-          </MultiSelectFilter>
-          <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示"
-            @change="reload(0)">
-            <option value="">玩家頁面：全部</option>
-            <option value="1">玩家頁面：顯示</option>
-            <option value="0">玩家頁面：不顯示</option>
-          </select>
-
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；名稱打字停 300ms 就查 -->
+    <AdminSearchCard :active="!!hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="名稱（英文／中文）" for-id="vehicle-q" col="col-12 col-md-6 col-xl-3">
+        <input id="vehicle-q" v-model="nameQuery" type="search" class="form-control form-control-sm" placeholder="輸入艦船名稱">
+      </AdminSearchField>
+      <AdminSearchField label="製造商" for-id="vehicle-manufacturer">
+        <MultiSelectFilter id="vehicle-manufacturer" :model-value="selectedManufacturers" label="製造商" :options="manufacturerOptions"
+          block placeholder="全部" @update:model-value="onManufacturersChange" />
+      </AdminSearchField>
+      <AdminSearchField label="Career" for-id="vehicle-career">
+        <MultiSelectFilter id="vehicle-career" :model-value="selectedCareers" label="Career" :options="careerOptions"
+          block placeholder="全部" @update:model-value="onCareersChange" />
+      </AdminSearchField>
+      <AdminSearchField label="Role" for-id="vehicle-role">
+        <MultiSelectFilter id="vehicle-role" :model-value="selectedRoles" label="Role" :options="roleOptions"
+          block placeholder="全部" @update:model-value="onRolesChange" />
+      </AdminSearchField>
+      <AdminSearchField label="尺寸" for-id="vehicle-size" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="vehicle-size" :model-value="selectedSizeClasses" label="尺寸" :options="sizeClassOptions"
+          block placeholder="全部" @update:model-value="onSizeClassesChange" />
+      </AdminSearchField>
+      <AdminSearchField label="遊戲內購買／租船" for-id="vehicle-acquire" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="vehicle-acquire" :model-value="selectedAcquire" label="取得方式" :options="VEHICLE_ACQUIRE_OPTIONS"
+          block placeholder="全部" @update:model-value="onAcquireChange" />
+      </AdminSearchField>
+      <AdminSearchField label="玩家頁面" for-id="vehicle-visible" col="col-6 col-md-3 col-xl">
+        <select id="vehicle-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">顯示</option>
+          <option value="0">不顯示</option>
+        </select>
+      </AdminSearchField>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -255,9 +254,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import FleetOwnersBrowser from '@/components/FleetOwnersBrowser.vue'
 import UexVehiclePriceTable from '@/components/UexVehiclePriceTable.vue'
@@ -381,13 +382,14 @@ async function reload(newOffset = 0) {
   offset.value = newOffset
   loading.value = true
   loadFailed.value = false
+  loadedQuery = nameQuery.value.trim()
   const res = await vehicleApi.list({
     career: selectedCareers.value,
     role: selectedRoles.value,
     manufacturer_code: selectedManufacturers.value,
     size_class: selectedSizeClasses.value,
     acquire: selectedAcquire.value,
-    q: nameQuery.value,
+    q: loadedQuery,
     sort_by: sortBy.value,
     sort_dir: sortDir.value,
     player_visible: playerVisible.value,
@@ -404,6 +406,15 @@ async function reload(newOffset = 0) {
   }
   loading.value = false
 }
+
+// 名稱打字停 300ms 就查；跟上次查的一樣（例如按了清除篩選已經查過）就不重查
+let loadedQuery = ''
+let queryTimer = null
+watch(nameQuery, () => {
+  clearTimeout(queryTimer)
+  queryTimer = setTimeout(() => { if (nameQuery.value.trim() !== loadedQuery) reload(0) }, 300)
+})
+onBeforeUnmount(() => clearTimeout(queryTimer))
 
 onMounted(async () => {
   await reload(0)

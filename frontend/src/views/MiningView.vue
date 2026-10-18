@@ -35,29 +35,31 @@
       </li>
     </ul>
 
-    <!-- ── 篩選 ────────────────────────────────────────────── -->
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm"
-            style="max-width: 14rem" placeholder="搜尋名稱或 UEX 縮寫...">
-          <MultiSelectFilter v-if="tab !== 'locations'" v-model="tiers" label="Tier" :options="tierOptions" />
-          <MultiSelectFilter v-if="tab === 'locations'" v-model="systems" label="星系" :options="systemOptions" />
-          <div class="form-check form-check-inline mb-0 ms-1">
-            <input id="mining-missing-zh" v-model="missingZhOnly" class="form-check-input" type="checkbox">
-            <label class="form-check-label small" for="mining-missing-zh">只看沒有中文</label>
-          </div>
-          <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示">
-            <option value="">玩家頁面：全部</option>
-            <option value="1">玩家頁面：顯示</option>
-            <option value="0">玩家頁面：不顯示</option>
-          </select>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
+    <!-- 搜尋卡：條件照目前分頁的列表欄位排（見 components/AdminSearchCard.vue）；篩選在前端即時做 -->
+    <AdminSearchCard :key="tab" :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField :label="QUERY_LABELS[tab]" :for-id="`mining-${tab}-q`" col="col-12 col-md-6 col-xl-3">
+        <input :id="`mining-${tab}-q`" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入名稱">
+      </AdminSearchField>
+      <AdminSearchField v-if="tab !== 'locations'" label="Tier" :for-id="`mining-${tab}-tier`" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter :id="`mining-${tab}-tier`" v-model="tiers" label="Tier" :options="tierOptions" block placeholder="全部" />
+      </AdminSearchField>
+      <AdminSearchField v-else label="星系" for-id="mining-locations-system" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="mining-locations-system" v-model="systems" label="星系" :options="systemOptions" block placeholder="全部" />
+      </AdminSearchField>
+      <AdminSearchField label="玩家頁面" :for-id="`mining-${tab}-visible`" col="col-6 col-md-3 col-xl">
+        <select :id="`mining-${tab}-visible`" v-model="playerVisible" class="form-select form-select-sm">
+          <option value="">全部</option>
+          <option value="1">顯示</option>
+          <option value="0">不顯示</option>
+        </select>
+      </AdminSearchField>
+      <template #options>
+        <div class="form-check form-check-inline mb-0">
+          <input :id="`mining-${tab}-missing-zh`" v-model="missingZhOnly" class="form-check-input" type="checkbox">
+          <label class="form-check-label small" :for="`mining-${tab}-missing-zh`">只看沒有中文</label>
         </div>
-      </div>
-    </div>
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -237,6 +239,8 @@ import { computed, h, onMounted, ref, watch } from 'vue'
 import { miningApi, visibilityApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -439,6 +443,13 @@ const tierOptions = computed(() => {
 
 const systemOptions = computed(() =>
   [...new Set(rawLocations.value.map(l => l.system).filter(Boolean))].sort())
+
+// 搜尋卡名稱欄的標題（照各分頁列表的欄位名稱；搜尋範圍見下面的 filtered*）
+const QUERY_LABELS = {
+  minerals: '礦物（英文／中文）／UEX 縮寫',
+  deposits: '礦床（英文／中文）／成分',
+  locations: '地點（英文／中文）',
+}
 
 function matchesText(...texts) {
   const q = query.value.trim().toLowerCase()

@@ -6,19 +6,15 @@
 -->
 <template>
   <div>
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm" style="max-width: 14rem"
-            placeholder="搜尋船名（中英文）..." aria-label="搜尋船名" @change="reload(0)">
-          <input v-model="player" type="search" class="form-control form-control-sm" style="max-width: 14rem"
-            placeholder="搜尋玩家（遊戲ID／暱稱）..." aria-label="搜尋玩家" @change="reload(0)">
-          <button v-if="query || player" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；打字停 300ms 就查 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="船艦（英文／中文）" for-id="fleet-q" col="col-12 col-md-6 col-xl-3">
+        <input id="fleet-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入船名">
+      </AdminSearchField>
+      <AdminSearchField label="玩家" for-id="fleet-player" col="col-12 col-md-6 col-xl-3">
+        <input id="fleet-player" v-model="player" type="search" class="form-control form-control-sm" placeholder="輸入遊戲ID或暱稱">
+      </AdminSearchField>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -50,7 +46,7 @@
               </tr>
               <tr v-else-if="!rows.length">
                 <td colspan="8" class="text-center py-4 text-muted">
-                  {{ query || player ? '沒有符合篩選條件的登記。' : '還沒有玩家登記船艦' }}
+                  {{ hasActiveFilters ? '沒有符合篩選條件的登記。' : '還沒有玩家登記船艦' }}
                 </td>
               </tr>
               <template v-else>
@@ -98,9 +94,11 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
 import SortTh from '@/components/SortTh.vue'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
 
@@ -116,6 +114,10 @@ const loaded = ref(false)
 
 const query = ref('')
 const player = ref('')
+const hasActiveFilters = computed(() => !!query.value.trim() || !!player.value.trim())
+// 上次查詢用的條件（打字停 300ms 才查；跟上次一樣就不重查）
+let loadedKey = ''
+const filterKey = () => `${query.value.trim()}\u0000${player.value.trim()}`
 // 點表頭排序（後端 Fleet.admin_list 的 sort／sort_dir）
 const sort = useTableSort(null, { onChange: () => reload(0) })
 
@@ -123,6 +125,7 @@ async function reload(newOffset = 0) {
   offset.value = newOffset
   loading.value = true
   loadFailed.value = false
+  loadedKey = filterKey()
   const res = await vehicleApi.playerFleet({
     q: query.value.trim(), player: player.value.trim(), ...sort.params.value, limit, offset: newOffset,
   })
@@ -155,6 +158,13 @@ function fmtTime(value) {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('zh-TW', { hour12: false })
 }
+
+let queryTimer = null
+watch([query, player], () => {
+  clearTimeout(queryTimer)
+  queryTimer = setTimeout(() => { if (loaded.value && filterKey() !== loadedKey) reload(0) }, 300)
+})
+onBeforeUnmount(() => clearTimeout(queryTimer))
 
 watch(() => props.active, (on) => { if (on && !loaded.value) reload(0) }, { immediate: true })
 </script>

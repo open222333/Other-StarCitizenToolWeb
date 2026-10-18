@@ -15,41 +15,47 @@
   <div>
     <h5 class="mb-3 fw-bold"><i class="bi bi-flag me-2 text-primary"></i>任務資料庫</h5>
 
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <input v-model="query" type="search" class="form-control form-control-sm"
-            style="max-width: 14rem" placeholder="搜尋英文或中文標題..." @change="reload(0)">
-          <MultiSelectFilter :model-value="scopes" label="類型" :options="facets.reward_scopes" searchable
-            @update:model-value="v => { scopes = v; reload(0) }" />
-          <MultiSelectFilter :model-value="systems" label="星系" :options="facets.star_systems"
-            @update:model-value="v => { systems = v; reload(0) }" />
-          <MultiSelectFilter :model-value="factions" label="勢力" :options="factionOptions" searchable
-            @update:model-value="v => { factions = v; reload(0) }" />
-          <MultiSelectFilter :model-value="legality" label="合法性" :options="LEGALITY_OPTIONS"
-            @update:model-value="v => { legality = v; reload(0) }" />
-          <div class="form-check form-check-inline mb-0 ms-1">
-            <input id="mission-has-bp" v-model="hasBlueprints" class="form-check-input" type="checkbox"
-              @change="reload(0)">
-            <label class="form-check-label small" for="mission-has-bp">只看會給藍圖</label>
-          </div>
-          <div class="form-check form-check-inline mb-0">
-            <input id="mission-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox"
-              @change="reload(0)">
-            <label class="form-check-label small" for="mission-missing-zh">只看沒有中文</label>
-          </div>
-          <select v-model="playerVisible" class="form-select form-select-sm w-auto" aria-label="玩家頁面顯示"
-            @change="reload(0)">
-            <option value="">玩家頁面：全部</option>
-            <option value="1">玩家頁面：顯示</option>
-            <option value="0">玩家頁面：不顯示</option>
-          </select>
-          <button v-if="hasActiveFilters" type="button" class="btn btn-sm btn-link" @click="resetFilters">
-            清除全部篩選
-          </button>
+    <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；名稱打字停 300ms 就查 -->
+    <AdminSearchCard :active="hasActiveFilters" @clear="resetFilters">
+      <AdminSearchField label="任務（英文／中文）" for-id="mission-q" col="col-12 col-md-6 col-xl-3">
+        <input id="mission-q" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入任務名稱">
+      </AdminSearchField>
+      <AdminSearchField label="類型" for-id="mission-scope">
+        <MultiSelectFilter id="mission-scope" :model-value="scopes" label="類型" :options="facets.reward_scopes" searchable block placeholder="全部"
+          @update:model-value="v => { scopes = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="勢力／NPC" for-id="mission-faction">
+        <MultiSelectFilter id="mission-faction" :model-value="factions" label="勢力" :options="factionOptions" searchable block placeholder="全部"
+          @update:model-value="v => { factions = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="星系" for-id="mission-system" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="mission-system" :model-value="systems" label="星系" :options="facets.star_systems" block placeholder="全部"
+          @update:model-value="v => { systems = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="合法" for-id="mission-legality" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="mission-legality" :model-value="legality" label="合法性" :options="LEGALITY_OPTIONS" block placeholder="全部"
+          @update:model-value="v => { legality = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="藍圖" for-id="mission-has-bp" col="col-6 col-md-3 col-xl">
+        <select id="mission-has-bp" v-model="hasBlueprints" class="form-select form-select-sm" @change="reload(0)">
+          <option :value="false">全部</option>
+          <option :value="true">有藍圖</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="玩家頁面" for-id="mission-visible" col="col-6 col-md-3 col-xl">
+        <select id="mission-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="1">顯示</option>
+          <option value="0">不顯示</option>
+        </select>
+      </AdminSearchField>
+      <template #options>
+        <div class="form-check form-check-inline mb-0">
+          <input id="mission-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox" @change="reload(0)">
+          <label class="form-check-label small" for="mission-missing-zh">只看沒有中文</label>
         </div>
-      </div>
-    </div>
+      </template>
+    </AdminSearchCard>
 
     <div class="card shadow-sm border-0">
       <div class="card-body p-0">
@@ -184,9 +190,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { missionApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import SortTh from '@/components/SortTh.vue'
@@ -236,8 +244,9 @@ async function reload(newOffset = 0) {
   offset.value = newOffset
   loading.value = true
   loadFailed.value = false
+  lastQuery = query.value.trim()
   const res = await missionApi.list({
-    q: query.value.trim(),
+    q: lastQuery,
     reward_scope: scopes.value,
     star_system: systems.value,
     faction_uuid: factions.value,
@@ -327,6 +336,16 @@ watch(() => [route.query.id, route.query.faction], () => {
   applyRouteQuery()
   reload(0)
 })
+
+// 名稱打字停 300ms 就查（比照玩家頁的共用搜尋卡）
+let queryTimer = null
+let lastQuery = ''
+watch(query, () => {
+  clearTimeout(queryTimer)
+  if (query.value.trim() === lastQuery) return   // 清除篩選時已經重查過
+  queryTimer = setTimeout(() => reload(0), 300)
+})
+onBeforeUnmount(() => clearTimeout(queryTimer))
 
 onMounted(() => {
   applyRouteQuery()
