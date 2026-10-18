@@ -94,7 +94,8 @@ class Mission:
 
     @staticmethod
     def _attach_blueprint_names(rows: list) -> list:
-        """獎勵藍圖池的每張藍圖補上主檔的中文名稱（`name_zh`），一次 $in 查完。"""
+        """獎勵藍圖池的每張藍圖補上主檔的中文名稱（`name_zh`）與是否預設可用（`is_available_by_default`，
+        玩家頁「任務」分頁算已登記／未登記時視同已登記），一次 $in 查完。"""
         uuids = {it.get('blueprint_uuid') for r in rows for p in (r.get('blueprint_pools') or [])
                  for it in (p.get('items') or []) if it.get('blueprint_uuid')}
         if not uuids:
@@ -105,6 +106,7 @@ class Mission:
                 for it in p.get('items') or []:
                     master = names.get(it.get('blueprint_uuid')) or {}
                     it['name_zh'] = master.get('name_zh')
+                    it['is_available_by_default'] = bool(master.get('is_available_by_default'))
         return rows
 
     #: 列表可以排序的欄位（sort_by → 文件欄位）
@@ -112,6 +114,7 @@ class Mission:
         'title': 'title_lower', 'title_zh': 'title_zh', 'reward_scope': 'reward_scope',
         'giver': ['faction_name', 'mission_giver'], 'star_systems': 'star_systems', 'illegal': 'illegal',
         'reward': 'reward_max', 'player_visible': 'player_visible',
+        'reputation': 'reputation_gained.amount', 'cooldown': 'cooldown_seconds',
     }
 
     @classmethod

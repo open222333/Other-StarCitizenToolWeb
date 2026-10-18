@@ -22,6 +22,7 @@ labels.json）＋社群繁中化包（cosmo-chang-1701/sc-translation-pack）寫
   - 礦床：人工條目（岩石／小行星分類）→ 同礦物的查法。
   - 藍圖類型：人工條目（遊戲 output_type 代碼，翻譯包沒有）。
   - 任務／勢力：英文標題／名稱反查，key 用片段比對（見下方「任務／勢力」一節）。
+  - 任務類型（reward_scope）：英文反查 RepScope_*（聲望範圍名稱）→ mobiGlas_ui_MissionType_* → mobiglas_ui_*。
 """
 
 import re
@@ -317,6 +318,16 @@ def mission_text_zh(title: str, description: str = '', lang: str = DEFAULT_LANG)
     return {'title_zh': clean_title_zh(value, fills), 'description_zh': None, 'title_key': key}
 
 
+#: 任務類型（reward_scope）的查法：上游給的是聲望範圍名稱（RepScope_*_Name，例如 Assassination），
+#: 再來是 mobiGlas 合約分類（mobiGlas_ui_MissionType_*、mobiglas_ui_*）；人工條目放最前面，翻譯包沒有的才補
+_MISSION_TYPE_PREFIXES = ['repscope_', 'mobiglas_ui_missiontype_', 'mobiglas_ui_']
+
+
+def mission_type_zh(scope: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """任務類型（上游 reward_scope，例如 Hauling、Assassination），用英文反查翻譯包。"""
+    return T.by_english(scope, [_manual('mission_type')] + _MISSION_TYPE_PREFIXES, lang) if scope else None
+
+
 def mission_giver_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
     """任務發布者（NPC 名稱，例如 'Wallace Klim'）→ 翻譯。"""
     hit = T.match_english(name, _MISSION_GIVER_PATTERNS, lang)
@@ -448,6 +459,7 @@ LOOKUPS = {
     'item_sub_type':   item_sub_type_zh,
     'faction':         faction_name_zh,
     'mission_giver':   mission_giver_zh,
+    'mission_type':    mission_type_zh,
     'starmap_type':    starmap_type_zh,
     'amenity':         amenity_zh,
 }

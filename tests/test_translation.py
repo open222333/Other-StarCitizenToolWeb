@@ -170,6 +170,23 @@ def test_blueprint_types_are_manual_entries(client, seed_translations):
     assert names['PowerPlant'] == '發電機' and len(names) == 27
 
 
+def test_mission_type_from_translation_pack(client, seed_translations):
+    """任務類型（reward_scope）從翻譯包反查：聲望範圍名稱優先，再來是 mobiGlas 合約分類。"""
+    seed_translations({
+        'RepScope_Assassination_Name': ('Assassination', '暗殺'),
+        'RepScope_TransportGuild_Name': ('Hauling', '貨運'),
+        'mobiGlas_ui_MissionType_Hauling': ('Hauling', '貨運任務'),
+        'mobiglas_ui_Mercenary': ('Mercenary', '僱傭兵'),
+        'item_ShipFocus_Mining': ('Mining', '採礦焦點'),
+    })
+    assert Z.mission_type_zh('Hauling') == '貨運'
+    assert Z.mission_type_zh('mercenary') == '僱傭兵'
+    assert Z.mission_type_zh('Mining') is None, '其他類別的 key 不算'
+    assert Z.mission_type_zh('') is None
+    body = client.get('/item/translations?domain=mission_type&text=Assassination').get_json()
+    assert body['data'] == {'Assassination': '暗殺'}
+
+
 def test_manual_entries_are_written_at_startup(app):
     """app 啟動（ensure_indexes）就會寫人工條目，不用等第一次同步。"""
     from src.mongo import ensure_indexes

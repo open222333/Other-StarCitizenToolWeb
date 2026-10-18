@@ -891,6 +891,62 @@
       </template>
     </div>
 
+    <!-- ══════════ 任務（唯讀任務資料庫；藍圖欄標出自己已登記幾張，見 components/MissionBrowser.vue）══════════ -->
+    <div v-show="activeTab === 'missions'" class="sf-toolbar">
+      <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="missionBrowserRef?.reload()"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
+    </div>
+    <!-- 任務 › 共用搜尋：名稱即時篩；類型／星系／勢力／合法性手機收進「篩選」面板 -->
+    <div v-show="activeTab === 'missions'" class="card scifi-card sf-search mb-3">
+      <div class="card-body py-3">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold mb-1" for="ms-filter-q">任務名稱</label>
+            <input id="ms-filter-q" v-model="msFilter.q" type="search" class="form-control" placeholder="輸入任務名稱（中英文皆可）">
+          </div>
+          <SfFilterSheet :count="msSheetCount" @clear="clearMsFilter">
+            <div class="col-6 col-md-2">
+              <label class="form-label small fw-semibold mb-1" for="ms-filter-scope">類型</label>
+              <MultiSelectFilter id="ms-filter-scope" v-model="msFilter.scopes" :options="msScopeOptions"
+                label="類型" placeholder="全部" block searchable />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small fw-semibold mb-1" for="ms-filter-system">星系</label>
+              <MultiSelectFilter id="ms-filter-system" v-model="msFilter.systems" :options="msSystemOptions"
+                label="星系" placeholder="全部" block />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small fw-semibold mb-1" for="ms-filter-faction">勢力</label>
+              <MultiSelectFilter id="ms-filter-faction" v-model="msFilter.factions" :options="msFactionOptions"
+                label="勢力" placeholder="全部" block searchable />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small fw-semibold mb-1" for="ms-filter-legal">合法性</label>
+              <MultiSelectFilter id="ms-filter-legal" v-model="msFilter.legality" :options="MS_LEGALITY_OPTIONS"
+                label="合法性" placeholder="全部" block />
+            </div>
+
+            <template #more>
+              <div class="form-check mt-3">
+                <input id="ms-filter-bp-m" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
+                <label class="form-check-label" for="ms-filter-bp-m">只看有藍圖</label>
+              </div>
+            </template>
+          </SfFilterSheet>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+          <div v-if="!isPhone" class="form-check form-check-inline mb-0">
+            <input id="ms-filter-bp" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
+            <label class="form-check-label" for="ms-filter-bp">只看有藍圖</label>
+          </div>
+          <button v-if="msFilterActive && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearMsFilter">清除篩選</button>
+        </div>
+      </div>
+    </div>
+    <div v-show="activeTab === 'missions'" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
+      <MissionBrowser ref="missionBrowserRef" :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions'"
+        :filters="msFilter" :registered-uuids="myBlueprintUuids" />
+    </div>
+
     <!-- ══════════ 個人資料 ══════════ -->
     <!-- ══════════ 艦隊（我的艦隊＋登記船艦資料／JSON 匯入） ══════════ -->
     <div v-show="activeTab === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'">
@@ -1363,6 +1419,7 @@ import { fmtAuec, fmtUsd, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
+import MissionBrowser from '@/components/MissionBrowser.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetImport from '@/components/FleetImport.vue'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
@@ -1427,6 +1484,8 @@ const tabs = [
     // 原本的「我的藍圖／藍圖資料／批量登記」合併成一頁，後兩個再合併成按鈕展開的「登記藍圖資料」（比照艦隊）
     key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
   },
+  // 任務資料庫（唯讀），藍圖欄標出自己已登記幾張
+  { key: 'missions', label: '任務', icon: 'bi bi-flag' },
   {
     // 原本的「我的艦隊／批量登記」兩個下層分頁合併成一頁；批量登記後來併進按鈕展開的「登記船艦資料」
     key: 'fleet', label: '艦隊',  icon: 'bi bi-rocket-takeoff',
@@ -2195,6 +2254,36 @@ function clearBpFilter() {
   myBpTypes.value = []
   bpHasMissionsOnly.value = false
 }
+// ── 任務分頁：共用搜尋卡（條件直接傳給 MissionBrowser）；「只看有藍圖」預設勾選 ──
+const missionBrowserRef = ref(null)
+const MS_LEGALITY_OPTIONS = [{ value: 'legal', label: '合法' }, { value: 'illegal', label: '違法' }]
+const msFilter = reactive({ q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: true })
+const msFacets = ref({ reward_scopes: [], star_systems: [], factions: [] })
+const msFactionOptions = computed(() => msFacets.value.factions.map(f => ({
+  value: f.uuid, label: f.name_zh ? `${f.name_zh}（${f.name}）` : f.name,
+})))
+// 類型、星系選項：中文（英文），中文從翻譯資料庫查（見 utils/translations.js）
+const zhOption = (domain, en) => { const zh = translate(domain, en); return { value: en, label: zh ? `${zh}（${en}）` : en } }
+const msScopeOptions = computed(() => msFacets.value.reward_scopes.map(s => zhOption('mission_type', s)))
+const msSystemOptions = computed(() => msFacets.value.star_systems.map(s => zhOption('location', s)))
+const msSheetCount = computed(() => msFilter.scopes.length + msFilter.systems.length + msFilter.factions.length
+  + msFilter.legality.length + (msFilter.hasBlueprints ? 1 : 0))
+const msFilterActive = computed(() => !!msFilter.q.trim() || msSheetCount.value > 0)
+function clearMsFilter() {
+  Object.assign(msFilter, { q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: false })
+}
+let msFacetsLoaded = false
+watch(activeTab, async (tab) => {
+  if (tab !== 'missions' || msFacetsLoaded) return
+  msFacetsLoaded = true
+  const res = await playerAuth.playerFetch('/mission/facets')
+  const body = res?.ok ? await res.json().catch(() => null) : null
+  if (body?.success) {
+    msFacets.value = { reward_scopes: [], star_systems: [], factions: [], ...body.data }
+    loadTranslations('mission_type', msFacets.value.reward_scopes)
+    loadTranslations('location', msFacets.value.star_systems)
+  } else msFacetsLoaded = false
+}, { immediate: true })
 // 我的藍圖：預設可用的不列
 const visibleBlueprints = computed(() => blueprints.value.filter(bp => !bp.master?.is_available_by_default))
 // 藍圖名稱的候選用「查詢持有資訊」同一支 searchBlueprintNames（主檔，中英文都比對）；候選右邊顯示英文名與類型

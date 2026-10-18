@@ -198,6 +198,19 @@ def test_for_blueprint_lists_pool_blueprints(missions):
     assert rows['m4']['pool_size'] == 2
 
 
+def test_list_pool_items_mark_available_by_default(missions):
+    """列表的獎勵池藍圖附上中文名稱與是否預設可用（玩家頁「任務」分頁算已登記／未登記用）。"""
+    from src.mongo import get_db
+    get_db()['blueprint_master'].insert_many([
+        {'_id': 'bp-a', 'name': 'Gun A', 'name_zh': '槍 A', 'is_current': True},
+        {'_id': 'bp-b', 'name': 'Gun B', 'is_current': True, 'is_available_by_default': True},
+    ])
+    row = Mission.list_all(mission_id='m2')[0][0]
+    items = row['blueprint_pools'][0]['items']
+    assert [(it['blueprint_uuid'], it['name_zh'], it['is_available_by_default']) for it in items] == [
+        ('bp-a', '槍 A', False), ('bp-b', None, True)]
+
+
 def test_counts_for_blueprints(missions):
     assert Mission.counts_for_blueprints(['bp-a', 'bp-b', 'bp-c']) == {'bp-a': 2, 'bp-b': 1}
     assert sorted(Mission.blueprint_uuids_with_missions()) == ['bp-a', 'bp-b']
@@ -215,6 +228,13 @@ def test_list_filters(missions):
     assert [r['_id'] for r in Mission.list_all(blueprint_uuid='bp-b')[0]] == ['m2']
     assert [r['_id'] for r in Mission.list_all(mission_id='m3')[0]] == ['m3']
     assert 'raw' not in Mission.list_all()[0][0]
+
+
+def test_list_sort_by_cooldown_and_reputation(missions):
+    get_db()['mission_master'].update_one({'_id': 'm1'}, {'$set': {'cooldown_seconds': 600, 'reputation_gained': [{'amount': 50}]}})
+    get_db()['mission_master'].update_one({'_id': 'm2'}, {'$set': {'cooldown_seconds': 60, 'reputation_gained': [{'amount': 900}]}})
+    assert [r['_id'] for r in Mission.list_all(sort_by='cooldown', sort_dir='desc')[0]][:2] == ['m1', 'm2']
+    assert [r['_id'] for r in Mission.list_all(sort_by='reputation', sort_dir='desc')[0]][:2] == ['m2', 'm1']
 
 
 def test_faction_counts(missions):
