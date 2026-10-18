@@ -227,6 +227,35 @@
             <p v-else class="mining-echo__hint mb-0">
               資料裡沒有這種礦物單獨成礦的紀錄（只以其他礦床的成分出現），沒有它自己的訊號值可以參考。
             </p>
+            <!-- 售價（UEX）：原礦與精煉品各自能賣的終端，賣價高的在前、先列 5 筆 -->
+            <div v-for="s in sellSections(g)" :key="s.id" class="mt-2">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="mining-echo__hint">售價 · {{ s.label }}<span v-if="s.code" class="mining-echo__tag mining-echo__tag--info ms-1">{{ s.code }}</span>（{{ s.loading ? '載入中' : `${s.rows.length} 個終端` }}）：</span>
+                <button v-if="s.rows.length > SELL_PREVIEW" type="button" class="btn btn-sm btn-info py-0 ms-auto"
+                  @click="sellOpen[s.id] = !sellOpen[s.id]">{{ sellOpen[s.id] ? '收起' : '顯示全部' }}</button>
+              </div>
+              <div v-if="!s.loading && !s.rows.length" class="mining-echo__hint">—</div>
+              <div v-else-if="s.rows.length" style="overflow-x:auto">
+                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                  <thead>
+                    <tr>
+                      <SortTh :sort="sellSort" field="name" class="ps-2">終端</SortTh>
+                      <SortTh :sort="sellSort" field="system">星系</SortTh>
+                      <SortTh :sort="sellSort" field="price" class="text-end">賣價／SCU</SortTh>
+                      <SortTh :sort="sellSort" field="date" class="pe-2 text-end">更新</SortTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in sellRows(s)" :key="r.key">
+                      <td class="ps-2">{{ r.name }}<span v-if="r.place && r.place !== r.name" class="mining-echo__hint ms-1">{{ r.place }}</span></td>
+                      <td>{{ r.system || '—' }}</td>
+                      <td class="text-end fw-bold">{{ fmtPrice(r.price) }} <small class="mining-echo__hint">aUEC</small></td>
+                      <td class="pe-2 text-end text-nowrap mining-echo__hint">{{ fmtDate(r.date) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
             <!-- 精煉產量加成（UEX）：每個精煉站對這種礦物的 %，預設加成高的在前、先列 5 筆 -->
             <div v-if="refineryFor(g).length" class="mt-2">
               <div class="d-flex align-items-center gap-2 mb-1">
@@ -659,6 +688,54 @@ const displayGroups = computed(() => {
 })
 
 // ── 精煉產量加成：用礦物英文名去掉 (Ore)／(Raw)／Raw 前綴後對 UEX 商品名稱（後端 base 欄位同規則）──
+// ── 售價（UEX）：礦物關聯到的精煉品（uex.id）與原礦（uex.raw_id）在各終端的賣價 ──────────
+//    卡片出現時才查（GET /mining/sell-prices，一次最多 20 種），查過的留著
+const SELL_PREVIEW = 5
+const SELL_BATCH = 20
+const sellPrices = reactive({})      // commodity id → rows（undefined＝還沒查、null＝查詢中）
+const sellOpen = reactive({})
+const sellSort = useTableSort(null, { key: 'price', dir: 'desc' })
+function sellSections(group) {
+  const u = group.uex
+  if (!u) return []
+  const out = []
+  if (u.id) out.push({ id: String(u.id), label: u.is_raw ? '原礦' : '精煉品', code: u.code })
+  if (u.raw_id && String(u.raw_id) !== String(u.id)) out.push({ id: String(u.raw_id), label: '原礦', code: u.raw_code })
+  return out.map(s => ({ ...s, loading: !Array.isArray(sellPrices[s.id]), rows: sellPrices[s.id] || [] }))
+}
+function sellRows(section) {
+  const rows = sellSort.sortList(section.rows)
+  return sellOpen[section.id] ? rows : rows.slice(0, SELL_PREVIEW)
+}
+async function loadSellPrices(ids) {
+  const todo = ids.filter(id => sellPrices[id] === undefined)
+  if (!todo.length) return
+  todo.forEach(id => { sellPrices[id] = null })
+  for (let i = 0; i < todo.length; i += SELL_BATCH) {
+    const chunk = todo.slice(i, i + SELL_BATCH)
+    const res = await props.fetcher(`/mining/sell-prices?${chunk.map(id => `id=${encodeURIComponent(id)}`).join('&')}`)
+    const body = res?.ok ? await res.json().catch(() => null) : null
+    for (const id of chunk) {
+      sellPrices[id] = (body?.success ? (body.data?.[id] || []) : []).map(r => ({
+        key: r.terminal?.id || r.terminal?.name, name: r.terminal?.name || '—', place: r.terminal?.place,
+        system: r.terminal?.star_system, price: r.price_sell, date: r.date_modified,
+      }))
+    }
+  }
+}
+watch(displayGroups, groups => {
+  loadSellPrices(groups.flatMap(g => sellSections(g).map(s => s.id)))
+}, { immediate: true })
+function fmtPrice(v) {
+  return v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+function fmtDate(ts) {
+  const n = Number(ts)
+  if (!n) return '—'
+  const d = new Date(n * 1000)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const REFINERY_PREVIEW = 5
 const refineryOpen = reactive({})
 const refineryByBase = computed(() => {

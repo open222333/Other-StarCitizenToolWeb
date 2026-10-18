@@ -98,6 +98,29 @@ def list_refinery_methods():
     return jsonify({'success': True, 'data': {'methods': uex_refinery_method.list_methods(), **stats}})
 
 
+@app_mining.route('/sell-prices', methods=['GET'])
+@jwt_required()
+def list_sell_prices():
+    """礦物卡片「售價」：指定的 UEX 商品（原礦／精煉品）能賣的終端，賣價高的在前。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: id, type: string, description: "UEX 商品 id，可重複帶多個（最多 20）"}
+    responses:
+      200:
+        description: "data: {commodity_id: [{terminal, price_sell, price_sell_avg, scu_sell, status_sell, date_modified}]}"
+      400:
+        description: 商品太多
+    """
+    try:
+        data = UexCommodityPrice.sell_locations(request.args.getlist('id'))
+    except ValueError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    return jsonify({'success': True, 'data': data})
+
+
 @app_mining.route('/uex-commodities', methods=['GET'])
 @admin_api(*READ_ROLES)
 def list_uex_commodities():

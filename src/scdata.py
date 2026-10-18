@@ -1056,6 +1056,8 @@ UEX_RESOURCES: dict = {
     # 商品（貨物）在每個交易終端的買賣價：玩家頁「查詢 › 商品購買地點」、後台「商品資料庫 › 商品價格」
     # （src/models/uex_commodity_price.py）
     'commodities_prices_all': ('uex_commodities_prices', ['id_commodity', 'id_terminal']),
+    # 原礦（未精煉）在各終端的賣價，UEX 另外一個端點；玩家頁礦物卡片「售價 · 原礦」（src/models/uex_commodity_price.py）
+    'commodities_raw_prices_all': ('uex_commodities_raw_prices', ['id_commodity', 'id_terminal']),
     # 載具的遊戲內購買價／租船價（src/models/uex_vehicle_price.py）：後台「艦船」、玩家頁「艦隊 › 船艦資料」
     'vehicles': ('uex_vehicles', ['id']),
     'vehicles_purchases_prices_all': ('uex_vehicles_purchases', ['id_vehicle', 'id_terminal']),
@@ -1077,7 +1079,7 @@ UEX_JOB_RESOURCES = {
 
 #: 同步完要把「這次沒出現的舊列」刪掉的 UEX 資源：價格表的一列＝某終端有在賣／收某商品（或載具），
 #: 上游不再回報就代表已經不賣了，留著會讓玩家以為還買得到。
-UEX_PRUNE_RESOURCES = {'commodities_prices_all', 'items_prices_all',
+UEX_PRUNE_RESOURCES = {'commodities_prices_all', 'commodities_raw_prices_all', 'items_prices_all',
                        'vehicles_purchases_prices_all', 'vehicles_rentals_prices_all', 'refineries_yields',
                        'refineries_methods', 'refineries_capacities'}
 #: 這次抓到的筆數不到上次的這個比例就不刪（上游異常回傳變短時，不要把整張表清掉）

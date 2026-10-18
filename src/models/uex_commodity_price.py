@@ -23,6 +23,8 @@ from src.mongo import get_db
 from src.models.uex_commodity import COLLECTION as COMMODITIES
 
 PRICES = 'uex_commodities_prices'
+#: 原礦賣價（UEX /commodities_raw_prices_all），欄位跟 PRICES 同形狀；只有礦物卡片的售價會用到
+RAW_PRICES = 'uex_commodities_raw_prices'
 TERMINALS = 'uex_terminals'
 
 #: 玩家頁一次最多勾幾種商品（查「同時買得到」的地點）
@@ -225,6 +227,46 @@ class UexCommodityPrice:
         locations.sort(key=lambda r: ([(x or '').lower() for x in r['terminal']['location']],
                                       (r['terminal']['name'] or '').lower()))
         return {'locations': locations, 'commodities': summary}
+
+    @staticmethod
+    def sell_locations(commodity_ids) -> dict:
+        """玩家頁礦物卡片「售價」：每種商品能賣的終端（price_sell > 0），賣價高的在前。
+
+        回傳 {commodity_id: [{terminal, price_sell, price_sell_avg, scu_sell, status_sell, date_modified}]}；
+        一次最多 MAX_SELECTED 種（超過丟 ValueError），沒有能賣的終端就是空陣列。
+        原礦的賣價 UEX 放在另一個端點（uex_commodities_raw_prices），兩張表一起查，同一個終端取較新的。
+        """
+        ids = _clean_ids(commodity_ids)
+        if len(ids) > MAX_SELECTED:
+            raise ValueError(f'一次最多 {MAX_SELECTED} 種商品')
+        out = {cid: {} for cid in ids}
+        if not ids:
+            return {}
+        variants = [v for i in ids for v in _id_variants(i)]
+        filt = {'id_commodity': {'$in': variants}, 'price_sell': {'$gt': 0}}
+        rows = list(get_db()[PRICES].find(filt)) + list(get_db()[RAW_PRICES].find(filt))
+        for row in rows:
+            if row.get('id_terminal') in (None, ''):
+                continue
+            cid, tid = str(row['id_commodity']), str(row['id_terminal'])
+            if cid not in out:
+                continue
+            slot = out[cid]
+            slot[tid] = _newer(row, slot[tid]) if tid in slot else row
+        terminals = _terminal_map({tid for rows in out.values() for tid in rows})
+        result = {}
+        for cid, rows in out.items():
+            items = [{
+                'terminal': terminal_summary(terminals.get(tid), row),
+                'price_sell': _num(row.get('price_sell')),
+                'price_sell_avg': _num(row.get('price_sell_avg')),
+                'scu_sell': _num(row.get('scu_sell')),
+                'status_sell': row.get('status_sell'),
+                'date_modified': row.get('date_modified'),
+            } for tid, row in rows.items()]
+            items.sort(key=lambda r: (-(r['price_sell'] or 0), (r['terminal']['name'] or '').lower()))
+            result[cid] = items
+        return result
 
     @staticmethod
     def buy_areas() -> list:

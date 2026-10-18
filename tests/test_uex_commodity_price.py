@@ -142,3 +142,36 @@ def test_buy_areas(app):
         {'system': 'Stanton', 'planet': 'ArcCorp', 'place': 'Area18'},
         {'system': 'Stanton', 'planet': 'microTech', 'place': 'Port Tressler'},
     ]
+
+
+def test_sell_locations_sorted_by_price(app):
+    """礦物卡片售價：只列賣得掉的終端（price_sell > 0），賣價高的在前；沒有能賣的就是空陣列。"""
+    db = get_db()
+    _seed(db)
+    db['uex_commodities_prices'].insert_one({'_id': '1:12b', 'id_commodity': 1, 'id_terminal': 11,
+                                             'price_sell': 45, 'date_modified': 1790000001})
+    data = UexCommodityPrice.sell_locations(['1', '2', '3'])
+    assert [(r['terminal']['name'], r['price_sell']) for r in data['1']] == [
+        ('Admin - Port Tressler', 45), ('TDD - Area18', 30)]
+    assert [r['terminal']['star_system'] for r in data['2']] == ['Stanton']
+    assert data['3'] == []
+    assert UexCommodityPrice.sell_locations([]) == {}
+
+
+def test_sell_locations_include_raw_prices(app):
+    """原礦賣價在另一張表（UEX /commodities_raw_prices_all），售價要一起列。"""
+    db = get_db()
+    _seed(db)
+    db['uex_commodities_raw_prices'].insert_one({'_id': '3:12', 'id_commodity': 3, 'id_terminal': 12,
+                                                 'price_sell': 1200, 'date_modified': 1790000000})
+    assert [(r['terminal']['name'], r['price_sell']) for r in UexCommodityPrice.sell_locations(['3'])['3']] == [
+        ('Ruin Station', 1200)]
+
+
+def test_sell_prices_api(client, auth_headers, app):
+    _seed(get_db())
+    body = client.get('/mining/sell-prices?id=1&id=2', headers=auth_headers).get_json()
+    assert body['success'] and set(body['data']) == {'1', '2'}
+    too_many = '&'.join(f'id={i}' for i in range(MAX_SELECTED + 1))
+    assert client.get(f'/mining/sell-prices?{too_many}', headers=auth_headers).status_code == 400
+    assert client.get('/mining/sell-prices?id=1').status_code == 401
