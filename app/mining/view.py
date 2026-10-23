@@ -77,9 +77,24 @@ def list_refinery_yields():
       - Bearer: []
     responses:
       200:
-        description: "data: [{base, commodity, terminal, place, system, value}]，依加成由高到低"
+        description: "data: [{base, commodity, terminal, place, system, value, week, month}]，依加成由高到低（week／month 為近 7／30 天，沒有就是 null）"
     """
     return jsonify({'success': True, 'data': uex_refinery_yield.list_all()})
+
+
+@app_mining.route('/refinery-capacities', methods=['GET'])
+@jwt_required()
+def list_refinery_capacities():
+    """精煉站估算容量（UEX refineries_capacities，百分比估算值，不是 SCU）。玩家頁用終端名稱對上精煉站。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{terminal, place, system, capacity_pct}]"
+    """
+    return jsonify({'success': True, 'data': uex_refinery_yield.list_capacities()})
 
 
 @app_mining.route('/refinery-methods', methods=['GET'])

@@ -276,6 +276,7 @@ UNGUARDED_ALLOWLIST = {
     'app_blueprint.master_dismantle_items',       # 依拆解材料找物品，同上是公開遊戲資料
     'app_mining.list_refinery_yields',            # 精煉產量加成，公開遊戲資料（同 /mining/deposits）
     'app_mining.list_refinery_methods',           # 精煉方式與玩家精煉紀錄彙整，公開遊戲資料
+    'app_mining.list_refinery_capacities',        # 精煉站估算容量，公開遊戲資料
     'app_mission.faction_ladders',               # 勢力聲望階級，公開遊戲資料（同 /mission/factions）
     'app_mission.faction_reputation',            # 勢力聲望階級與各階任務，同上
     'app_mining.list_sell_prices',                # 礦物卡片售價（UEX 原礦／精煉品各終端賣價），公開遊戲資料

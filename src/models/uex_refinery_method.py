@@ -1,9 +1,10 @@
 """UEX 精煉方式（/refineries_methods）與玩家回報的精煉紀錄（/refineries_audits）。
 
-- `uex_refinery_methods`：方法 ID、名稱（例如 Dinyx Solventation），UEX 有給評等就一併帶出。
+- `uex_refinery_methods`：方法 ID、名稱（例如 Dinyx Solventation），UEX 有給評等（產率／成本／速度等級）就一併帶出；
+  礦物頁就算沒有玩家紀錄也會列出全部方式與等級。
 - `uex_refinery_audits`：玩家回報的每一筆精煉工作——原礦量、產出量、成本、時間、方法、站點、遊戲版本。
   礦物頁用它算「這種礦用每種方式精煉，實際的產出率／每 SCU 成本／每 SCU 時間」（樣本數一併顯示）。
-- `uex_refinery_capacities`：精煉站容量，原樣存著，目前只在後台／資料庫查得到。
+- `uex_refinery_capacities`：精煉站估算容量（%），整理在 src/models/uex_refinery_yield.py 的 list_capacities()。
 
 ⚠️ UEX 欄位名稱依文件推測（下面 *_FIELDS 依序取第一個有值的），第一次同步後請用
 db.uex_refinery_audits.findOne()／db.uex_refinery_methods.findOne() 確認，名稱不同改候選清單即可。
@@ -31,9 +32,10 @@ _TIME_FIELDS = (('time_minutes', 1), ('duration_minutes', 1), ('minutes', 1),
                 ('time_seconds', 1 / 60), ('duration_seconds', 1 / 60), ('duration', 1 / 60), ('time', 1 / 60),
                 ('time_hours', 60), ('hours', 60))
 _VERSION_FIELDS = ('game_version', 'version')
-# 方法本身的評等（有就帶出）
-_RATING_FIELDS = {'yield': ('rating_yield', 'yield'), 'cost': ('rating_cost', 'cost'),
-                  'speed': ('rating_speed', 'speed', 'rating_time')}
+# 方法本身的評等（等級數字，不是實際 %／aUEC／分鐘；依序取第一個有值的）
+_RATING_FIELDS = {'yield': ('rating_yield', 'yield_rating', 'rating_yields', 'yield'),
+                  'cost': ('rating_cost', 'cost_rating', 'cost'),
+                  'speed': ('rating_speed', 'speed_rating', 'rating_time', 'time_rating', 'speed')}
 
 
 def _num(value) -> Optional[float]:
@@ -74,7 +76,8 @@ def _minutes(row: dict) -> Optional[float]:
 
 
 def _version_key(v: str):
-    return [int(p) if p.isdigit() else p for p in re.split(r'[.\-\s]+', v or '') if p]
+    """版本號排序用：數字段比數字、其他比文字（每段是 (0, 數字) 或 (1, 文字)，不會拿 int 跟 str 比而出錯）。"""
+    return [(0, int(p), '') if p.isdigit() else (1, 0, p.lower()) for p in re.split(r'[.\-\s]+', v or '') if p]
 
 
 def list_methods() -> list:
