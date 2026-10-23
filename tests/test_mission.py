@@ -252,6 +252,15 @@ def test_faction_counts(missions):
     assert doc['missions'][0]['blueprint_count'] == 1
 
 
+def test_faction_hides_invisible_missions_for_players(missions):
+    get_db()['faction_master'].insert_one({'_id': 'f1', 'name': 'Faction One', 'name_lower': 'faction one', 'is_current': True})
+    get_db()['mission_master'].update_one({'_id': 'm3'}, {'$set': {'player_visible': False}})
+    assert [m['_id'] for m in Faction.get('f1')['missions']] == ['m1', 'm3']
+    assert [m['_id'] for m in Faction.get('f1', visible_only=True)['missions']] == ['m1']
+    rows = {r['_id']: r for r in Faction.list_all(visible_only=True)}
+    assert rows['f1']['mission_count'] == 1
+
+
 def test_faction_reputation_groups_missions_by_rank(missions):
     from src.models.mission import ladder_steps
     get_db()['faction_master'].insert_one({
@@ -305,6 +314,21 @@ def test_player_can_see_missions_for_blueprint(client, player_headers, missions)
     assert resp.status_code == 200
     assert [r['_id'] for r in resp.get_json()['data']] == ['m1', 'm2']
     assert client.get('/mission/for-blueprint/bp-a').status_code == 401
+
+
+def test_player_cannot_see_hidden_mission_or_its_facets(client, player_headers, auth_headers, missions):
+    get_db()['mission_master'].update_one({'_id': 'm2'}, {'$set': {'player_visible': False}})
+    assert client.get('/mission/m2', headers=player_headers).status_code == 404
+    assert client.get('/mission/m2', headers=auth_headers).status_code == 200, '後台看得到'
+    facets = client.get('/mission/facets', headers=player_headers).get_json()['data']
+    assert facets['reward_scopes'] == ['Hauling'] and facets['star_systems'] == ['Stanton']
+    assert [(f['uuid'], f['count']) for f in facets['factions']] == [('f1', 2)]
+
+
+def test_refinery_version_key_mixed_parts():
+    from src.models.uex_refinery_method import _version_key
+    # 數字段跟文字段混在一起不能出錯（原本會 TypeError）；純數字的照數字大小排
+    assert sorted(['4.1a', '4.1.1', '4.10', '4.2'], key=_version_key)[:3] == ['4.1.1', '4.2', '4.10']
 
 
 def test_blueprint_master_list_has_mission_count(client, auth_headers, missions):

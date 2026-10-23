@@ -28,7 +28,8 @@ export async function apiFetch(path, options = {}, _retry = true) {
     const ok = await auth.tryRefresh()
     if (ok) return apiFetch(path, options, false)
     auth.clearAuth()
-    router.push(ADMIN_LOGIN_PATH)
+    // 登入過期：帶著目前的網址，重新登入後導回來（LoginView 讀 ?redirect=）
+    router.push({ path: ADMIN_LOGIN_PATH, query: { redirect: router.currentRoute.value.fullPath } })
     return null
   }
   return res

@@ -57,7 +57,7 @@
             <span v-for="b in m.pool_blueprints" :key="b.uuid" class="bpm-chip"
               :class="[registered ? (isRegistered(b) ? 'bpm-chip--ok' : 'bpm-chip--todo') : '', { 'bpm-chip--current': b.uuid === blueprint?.uuid }]">
               <i v-if="registered" class="bi me-1" :class="isRegistered(b) ? 'bi-check-circle-fill' : 'bi-circle'"></i>{{ b.name_zh || b.name }}
-              <span v-if="registered" class="bpm-chip__state">{{ isRegistered(b) ? (b.is_available_by_default && !registered.has(b.uuid) ? '預設可用' : '已登記') : '未登記' }}</span>
+              <span v-if="registered" class="bpm-chip__state">{{ bpStateLabel(b, registered) }}</span>
             </span>
           </div>
           <details v-if="m.description_zh || m.description" class="mt-2">
@@ -75,6 +75,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import { factionLabel, fmtChance, reputationLabel, rewardLabel } from '@/utils/mission'
+import { bpStateLabel, isBpRegistered, registeredInPool } from '@/utils/missionBlueprints'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁用 playerFetch），回傳 Response 或 null */
@@ -84,12 +85,8 @@ const props = defineProps({
 })
 
 const registered = computed(() => (props.registeredUuids ? new Set(props.registeredUuids) : null))
-function isRegistered(b) {
-  return !!b.is_available_by_default || !!registered.value?.has(b.uuid)
-}
-function poolRegisteredCount(m) {
-  return (m.pool_blueprints || []).filter(isRegistered).length
-}
+const isRegistered = b => isBpRegistered(b, registered.value)
+const poolRegisteredCount = m => registeredInPool(m, registered.value)
 
 const visible = ref(false)
 const blueprint = ref(null)

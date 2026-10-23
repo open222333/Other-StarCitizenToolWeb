@@ -22,7 +22,7 @@
     <template v-else-if="data">
       <div v-for="g in groups" :key="g.key" class="card scifi-card mb-2">
         <div class="card-body py-2">
-          <button type="button" class="btn btn-link p-0 text-start w-100 fr-head" :aria-expanded="isOpen(g.key) ? 'true' : 'false'"
+          <button type="button" class="fr-head p-0 text-start w-100" :aria-expanded="isOpen(g.key) ? 'true' : 'false'"
             @click="toggle(g.key)">
             <i class="bi me-1" :class="isOpen(g.key) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
             <span class="fw-semibold">{{ g.title }}</span>
@@ -32,7 +32,7 @@
           <div v-if="isOpen(g.key)" class="mt-2">
             <div v-if="!g.missions.length" class="small text-muted">—</div>
             <div v-else style="overflow-x:auto">
-              <table class="table table-sm table-hover align-middle mb-0 sf-stack">
+              <table class="table table-hover align-middle mb-0 sf-stack">
                 <thead class="table-light">
                   <tr>
                     <th class="ps-2">任務</th>
@@ -44,6 +44,7 @@
                 </thead>
                 <tbody>
                   <template v-for="m in g.missions" :key="m._id">
+                  <template v-for="bp in [bpCounts.get(m)]" :key="m._id">
                   <tr class="fr-row" role="button" tabindex="0" :aria-expanded="openMission === m._id ? 'true' : 'false'"
                     @click="openMission = openMission === m._id ? '' : m._id" @keydown.enter.self="openMission = openMission === m._id ? '' : m._id">
                     <td class="ps-2 sf-stack__title">
@@ -57,8 +58,8 @@
                     <td class="d-none d-md-table-cell" data-label="星系">{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</td>
                     <td class="text-end text-nowrap" data-label="報酬">{{ rewardLabel(m) }}</td>
                     <td class="text-end text-nowrap pe-2" data-label="藍圖">
-                      <span v-if="poolOf(m).length" class="fw-semibold"
-                        :class="registeredCount(m) === poolOf(m).length ? 'text-success' : 'fr-count'">{{ registeredCount(m) }} / {{ poolOf(m).length }}</span>
+                      <span v-if="bp.poolSize" class="fw-semibold"
+                        :class="bp.regCount === bp.poolSize ? 'text-success' : 'fr-count'">{{ bp.regCount }} / {{ bp.poolSize }}</span>
                       <span v-else class="text-muted">—</span>
                     </td>
                   </tr>
@@ -68,9 +69,10 @@
                         <h3 class="sf-sheet__title">{{ m.title_zh || m.title }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="openMission = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladderMap" full />
+                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladderMap" full :fetcher="fetcher" @registered="$emit('registered')" />
                     </td>
                   </tr>
+                  </template>
                   </template>
                 </tbody>
               </table>
@@ -86,9 +88,11 @@
 import { computed, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MissionDetail from '@/components/MissionDetail.vue'
+import { missionPool, registeredInPool } from '@/utils/missionBlueprints'
 import { fmtInt, rewardLabel } from '@/utils/mission'
 import { loadTranslations, translate } from '@/utils/translations'
 
+defineEmits(['registered'])
 const props = defineProps({
   fetcher: { type: Function, required: true },
   /** 第一次變成可見才載入 */
@@ -128,16 +132,6 @@ function typeLabel(s) { return translate('mission_type', s) || s }
 function systemLabel(s) { return translate('location', s) || s }
 
 const registered = computed(() => new Set(props.registeredUuids))
-function poolOf(m) {
-  const seen = new Map()
-  for (const p of m.blueprint_pools || []) {
-    for (const it of p.items || []) if (it.blueprint_uuid && !seen.has(it.blueprint_uuid)) seen.set(it.blueprint_uuid, it)
-  }
-  return [...seen.values()]
-}
-function registeredCount(m) {
-  return poolOf(m).filter(it => it.is_available_by_default || registered.value.has(it.blueprint_uuid)).length
-}
 
 // 沒門檻 → 各階級（依階級表順序）→ 門檻對不到階級表的
 const groups = computed(() => {
@@ -147,6 +141,14 @@ const groups = computed(() => {
   ;(d.ranks || []).forEach((r, i) => out.push({ key: `rank-${i}`, title: r.name, threshold: r.min_reputation, missions: r.missions || [] }))
   if ((d.unmatched || []).length) out.push({ key: 'unmatched', title: '其他聲望門檻', threshold: null, missions: d.unmatched })
   return out
+})
+// 每個任務的藍圖數／已登記數只算一次（key 是任務物件本身）
+const bpCounts = computed(() => {
+  const map = new Map()
+  for (const g of groups.value) {
+    for (const m of g.missions) map.set(m, { poolSize: missionPool(m).length, regCount: registeredInPool(m, registered.value) })
+  }
+  return map
 })
 function isOpen(key) {
   return openKeys[key] ?? groups.value.find(g => g.key === key)?.missions.length > 0
@@ -183,13 +185,13 @@ watch(() => props.active, async (v) => {
 </script>
 
 <style scoped>
-.fr-head { color: var(--sf-text-strong); text-decoration: none; }
+.fr-head { display: block; background: none; border: 0; color: var(--sf-text-strong); }
 .fr-threshold { color: var(--sf-accent-2-text, var(--sf-accent-2)); font-weight: 600; font-size: .9rem; }
 .fr-count { color: var(--sf-text-strong); }
 .fr-row { cursor: pointer; }
 .fr-detail { background: var(--sf-inset); }
 .fr-chip {
-  display: inline-block; font-size: .72rem; padding: 0 .45rem;
+  display: inline-block; font-size: .9rem; padding: 0 .45rem;
   border: 1px solid var(--sf-border-hi); border-radius: 999px; color: var(--sf-text-muted);
 }
 .fr-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }

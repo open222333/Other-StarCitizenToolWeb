@@ -30,26 +30,19 @@ export const ADMIN_HOME = adminPath(PLAYER_BUILD ? '/players' : '/users')
 
 // 根路徑導向。
 //
-// ⚠️ 玩家站的根路徑導到 /me（玩家自己的頁面），不是後台首頁 ——
+// ⚠️ 玩家站的根路徑導到 /player/me（玩家自己的頁面），不是後台首頁 ——
 // 原本兩套 build 都導到後台頁面（/players），而那個路由掛在 requiresAuth 底下，
 // 所以任何人打開 https://<玩家網域>/ 都會被 guard 丟到**後台登入頁**。
 // 玩家站的訪客十個有九個是玩家，讓他們第一眼看到管理員登入畫面是錯的
 // （這也是 README 先前標註的待修 UX 問題）。
-// 現在：未登入的玩家 → /me → requiresPlayerAuth → 玩家登入頁；
+// 現在：未登入的玩家 → /player/me → requiresPlayerAuth → 玩家登入頁（/player/login）；
 //       管理員請直接走 /admin/login（兩個登入頁互相有連結）。
 const HOME_REDIRECT = PLAYER_BUILD ? PLAYER_HOME : '/users'
 
-// 後台登入頁的路徑：createWebHistory 的 base 會直接接在路徑前面，
-// admin build 的 base 已經是 /admin/，路徑維持 '/login' 最終網址就是
-// /admin/login，不用再疊一層；web build 的 base 是 '/'，所以這裡改成
-// '/admin/login'，讓兩套 build 最終看到的網址一致，也跟玩家登入頁
-// 在網址上就有明顯區隔，不會有人以為 /login 是玩家登入。
+// 後台登入頁：兩套 build 最終網址都是 /admin/login（admin build 靠 router base、web build 靠 ADMIN_PREFIX）。
 export const ADMIN_LOGIN_PATH = adminPath('/login')
 
-// 玩家登入頁的路徑：web build 上面 /login 已經讓給後台改用 /admin/login
-// 空出來了，玩家平常用的這個網域就把玩家登入放回最直覺的 /login；
-// admin build 的 /login 還是後台在用，玩家登入在那個網域本來就用不到，
-// 維持原本的 /player-login 就好，避免跟後台登入路徑撞在一起。
+// 玩家登入頁：/player/login（舊網址 /login、/player-login 由 LEGACY_REDIRECTS 導過來）。
 export const PLAYER_LOGIN_PATH = playerPath('/login')
 
 // 改成 /admin/、/player/ 分層前的舊網址 → 新網址（只有 web build 需要；admin build 的網址沒變）
@@ -65,6 +58,12 @@ const LEGACY_REDIRECTS = PLAYER_BUILD ? [
   { path: '/player-login', redirect: keepQuery(PLAYER_LOGIN_PATH) },
   { path: '/register', redirect: keepQuery(PLAYER_REGISTER_PATH) },
 ]
+
+/** 登入後要回去的網址（?redirect=）：只接受站內路徑，避免被拿來導到別的網站 */
+export function safeRedirect(value, prefix = '/') {
+  return typeof value === 'string' && value.startsWith(prefix) && !value.startsWith('//') && !value.includes('\\')
+    ? value : ''
+}
 
 const router = createRouter({
   history: createWebHistory(ROUTER_BASE),
@@ -105,6 +104,8 @@ const router = createRouter({
       component: () => import('@/layouts/DashboardLayout.vue'),
       meta: { requiresAuth: true },
       children: [
+        // 直接開 /admin（web build）時導到後台首頁，不要停在空白的版面
+        { path: '', redirect: ADMIN_HOME },
         {
           path: 'users',
           name: 'users',
@@ -214,10 +215,11 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
 
   // 尚未登入 → 導向登入頁
-  if (to.meta.requiresAuth && !auth.isLoggedIn) return ADMIN_LOGIN_PATH
+  // 帶著原本要去的網址，登入完導回去（LoginView／PlayerLoginView 讀 ?redirect=）
+  if (to.meta.requiresAuth && !auth.isLoggedIn) return { path: ADMIN_LOGIN_PATH, query: { redirect: to.fullPath } }
 
   // 已登入卻訪問 guest-only 頁面（後台登入頁）→ 後台首頁。
-  // 不能用 '/'：玩家站的 '/' 現在導到 /me，會把已登入的管理員丟到玩家登入頁。
+  // 不能用 '/'：玩家站的 '/' 導到 /player/me，會把已登入的管理員丟到玩家登入頁。
   if (to.meta.guest && auth.isLoggedIn) return ADMIN_HOME
 
   // 需要 admin 但不是 admin → 操作紀錄（最低權限頁）
@@ -226,7 +228,7 @@ router.beforeEach((to) => {
   // 玩家個人頁：需要玩家自己的登入狀態（跟後台 admin 登入分開）
   if (to.meta.requiresPlayerAuth) {
     const playerAuth = usePlayerAuthStore()
-    if (!playerAuth.isLoggedIn) return PLAYER_LOGIN_PATH
+    if (!playerAuth.isLoggedIn) return { path: PLAYER_LOGIN_PATH, query: { redirect: to.fullPath } }
   }
 })
 

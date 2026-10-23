@@ -44,7 +44,7 @@
                 <td colspan="8" class="text-center py-4 text-muted">沒有符合篩選條件的任務。</td>
               </tr>
               <template v-else>
-                <template v-for="m in rows" :key="m._id">
+                <template v-for="{ m, poolSize, regCount } in rowViews" :key="m._id">
                   <tr class="ms-row" role="button" tabindex="0" :aria-expanded="expandedId === m._id ? 'true' : 'false'"
                     @click="toggle(m)" @keydown.enter.self="toggle(m)">
                     <td class="ps-3 sf-stack__title">
@@ -66,9 +66,9 @@
                     </td>
                     <td class="text-end text-nowrap" data-label="冷卻">{{ fmtCooldown(m.cooldown_seconds) }}</td>
                     <td class="text-end pe-3 text-nowrap" data-label="藍圖">
-                      <span v-if="poolOf(m).length" class="fw-semibold"
-                        :class="registeredCount(m) === poolOf(m).length ? 'text-success' : 'ms-count'">
-                        {{ registeredCount(m) }} / {{ poolOf(m).length }}
+                      <span v-if="poolSize" class="fw-semibold"
+                        :class="regCount === poolSize ? 'text-success' : 'ms-count'">
+                        {{ regCount }} / {{ poolSize }}
                       </span>
                       <span v-else class="text-muted">—</span>
                     </td>
@@ -79,7 +79,7 @@
                         <h3 class="sf-sheet__title">{{ m.title_zh || m.title }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="expandedId = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladders" />
+                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladders" :fetcher="fetcher" @registered="$emit('registered')" />
                     </td>
                   </tr>
                 </template>
@@ -94,9 +94,9 @@
       <div class="small text-muted">
         共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
       </div>
-      <div class="btn-group btn-group-sm">
-        <button class="btn btn-scifi-outline" :disabled="offset === 0 || loading" @click="goPage(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-scifi-outline" :disabled="offset + limit >= total || loading" @click="goPage(offset + limit)">下一頁</button>
+      <div class="btn-group">
+        <button class="btn btn-sm btn-primary" :disabled="offset === 0 || loading" @click="goPage(Math.max(0, offset - limit))">上一頁</button>
+        <button class="btn btn-sm btn-primary" :disabled="offset + limit >= total || loading" @click="goPage(offset + limit)">下一頁</button>
       </div>
     </div>
   </div>
@@ -110,9 +110,11 @@ import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
 import { factionLabel, fmtCooldown, fmtRep, rewardLabel } from '@/utils/mission'
 import MissionDetail from '@/components/MissionDetail.vue'
+import { missionPool, registeredInPool } from '@/utils/missionBlueprints'
 import { loadTranslations, translate } from '@/utils/translations'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 
+defineEmits(['registered'])
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
   fetcher: { type: Function, required: true },
@@ -138,17 +140,6 @@ const loadFailed = ref(false)
 const expandedId = ref('')
 
 const registered = computed(() => new Set(props.registeredUuids))
-function isRegistered(it) {
-  return !!it.is_available_by_default || registered.value.has(it.blueprint_uuid)
-}
-/** 任務會給的所有藍圖（所有獎勵池合起來，同一張只算一次） */
-function poolOf(m) {
-  const seen = new Map()
-  for (const p of m.blueprint_pools || []) {
-    for (const it of p.items || []) if (it.blueprint_uuid && !seen.has(it.blueprint_uuid)) seen.set(it.blueprint_uuid, it)
-  }
-  return [...seen.values()]
-}
 // 類型、星系的中文從翻譯資料庫查（mission_type 是人工條目、星系走 location），查不到顯示英文
 function typeLabel(s) { return translate('mission_type', s) || s }
 function systemLabel(s) { return translate('location', s) || s }
@@ -158,9 +149,10 @@ function factionName(s) { return translate('faction', s) || s }
 // 聲望門檻的分數表（GET /mission/factions/ladders），傳給 MissionDetail
 const ladders = ref({})
 
-function registeredCount(m) {
-  return poolOf(m).filter(isRegistered).length
-}
+// 每列的藍圖數／已登記數只算一次（不要在模板裡每列呼叫好幾次 missionPool）
+const rowViews = computed(() => rows.value.map(m => ({
+  m, poolSize: missionPool(m).length, regCount: registeredInPool(m, registered.value),
+})))
 
 function query(params) {
   const sp = new URLSearchParams()
@@ -244,14 +236,12 @@ defineExpose({ reload: () => reload(offset.value) })
 <style scoped>
 .ms-row { cursor: pointer; }
 .ms-detail { background: var(--sf-inset); }
-.ms-chance { color: var(--sf-accent-2-text, var(--sf-accent-2)); font-weight: 600; }
 .ms-count { color: var(--sf-text-strong); }
 .ms-good { color: rgb(var(--bs-success-rgb)); }
 .ms-bad { color: rgb(var(--bs-danger-rgb)); }
 .ms-chip {
-  display: inline-block; font-size: .75rem; margin: 0 .25rem .25rem 0; padding: 0 .5rem;
+  display: inline-block; font-size: .9rem; margin: 0 .25rem .25rem 0; padding: 0 .5rem;
   border: 1px solid var(--sf-border-hi); border-radius: 999px; color: var(--sf-text-muted);
 }
 .ms-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }
-details > summary { cursor: pointer; }
 </style>

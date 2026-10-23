@@ -37,7 +37,11 @@ export function makeProxy(target = 'http://localhost:5000') {
     // （跟 conf/nginx-web/default.conf 的 Sec-Fetch-Mode: navigate 判斷一致）
     API_PREFIXES.map(prefix => [prefix, {
       target, changeOrigin: true,
-      bypass: req => (req.headers['sec-fetch-mode'] === 'navigate' ? '/index.html' : undefined),
+      bypass: (req) => {
+        const mode = req.headers['sec-fetch-mode']
+        const navigate = mode ? mode === 'navigate' : /text\/html/.test(req.headers.accept || '')
+        return navigate ? '/index.html' : undefined
+      },
     }]),
   )
 }

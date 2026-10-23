@@ -10,7 +10,7 @@
       <AdminSearchField label="欄位" :for-id="`${uid}-field`" col="col-6 col-md-4 col-xl-3">
         <select :id="`${uid}-field`" v-model="field" class="form-select form-select-sm" @change="reload(0)">
           <option value="">全部欄位</option>
-          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
+          <option v-for="c in searchFields" :key="c" :value="c">{{ c }}</option>
         </select>
       </AdminSearchField>
       <AdminSearchField label="關鍵字" :for-id="`${uid}-q`" col="col-6 col-md-8 col-xl-5">
@@ -87,6 +87,8 @@ const props = defineProps({
 const uid = `dct-${Math.random().toString(36).slice(2, 8)}`
 const limit = 50
 const columns = ref([])
+// 搜尋卡「欄位」的選項：列表欄位＋後端另外開放的巢狀欄位（例如翻譯的 text.en、text.zh-TW）
+const searchFields = ref([])
 const rows = ref([])
 const total = ref(0)
 const offset = ref(0)
@@ -116,6 +118,7 @@ async function reload(newOffset = 0) {
   if (my !== seq) return
   if (res?.ok && body?.success) {
     columns.value = body.data.columns || []
+    searchFields.value = body.data.search_fields || columns.value
     rows.value = body.data.rows || []
     total.value = body.data.total || 0
   } else {

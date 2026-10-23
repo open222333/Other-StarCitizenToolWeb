@@ -59,7 +59,7 @@
                   <span v-if="!r.vehicle" class="badge text-bg-warning ms-1">主檔查不到</span>
                 </td>
                 <td>
-                  <RouterLink v-if="r.player?._id" :to="`/players/${r.player._id}`">{{ playerLabel(r.player) }}</RouterLink>
+                  <RouterLink v-if="r.player?._id" :to="adminPath(`/players/${r.player._id}`)">{{ playerLabel(r.player) }}</RouterLink>
                   <span v-else class="text-muted">—</span>
                 </td>
                 <td class="text-end">{{ r.quantity ?? '—' }}</td>
@@ -100,6 +100,7 @@ import SortTh from '@/components/SortTh.vue'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { adminPath } from '@/router'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
 
 const props = defineProps({ active: { type: Boolean, default: false } })

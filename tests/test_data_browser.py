@@ -35,6 +35,26 @@ def test_list_columns_preview_and_search(app):
     assert [r['_id'] for r in data_browser.list_docs('uex_refinery_yields', sort_by='value', sort_dir='desc')['rows']] == ['1:10', '2:10']
 
 
+def test_large_collection_searches_name_like_fields_only(app, monkeypatch):
+    _seed()
+    monkeypatch.setattr(data_browser, 'LARGE_COLLECTION', 1)
+    # terminal_name 是名稱類欄位，照樣搜得到；value 不是，全部欄位搜尋時不比對
+    assert [r['_id'] for r in data_browser.list_docs('uex_refinery_yields', q='CRU')['rows']] == ['2:10']
+    assert data_browser.list_docs('uex_refinery_yields', q='-2')['rows'] == []
+    assert [r['_id'] for r in data_browser.list_docs('uex_refinery_yields', field='value', q='-2')['rows']] == ['2:10']
+
+
+def test_translations_search_nested_text(app):
+    get_db()['sc_translations'].insert_many([
+        {'_id': 'vehicle_NameX', 'key_lower': 'vehicle_namex', 'en_lower': 'x ship', 'text': {'en': 'X Ship', 'zh-TW': '某艘船'}},
+        {'_id': 'k' * 300, 'key_lower': 'long', 'text': {'en': 'Long'}},
+    ])
+    data = data_browser.list_docs('sc_translations', q='某艘')
+    assert [r['_id'] for r in data['rows']] == ['vehicle_NameX'] and 'text.zh-TW' in data['search_fields']
+    assert [r['_id'] for r in data_browser.list_docs('sc_translations', field='text.en', q='x ship')['rows']] == ['vehicle_NameX']
+    assert data_browser.list_docs('sc_translations', q='long')['rows'][0]['_id'] == 'k' * 300, '_id 不截斷'
+
+
 def test_doc_returns_full_document(app):
     _seed()
     assert data_browser.doc('uex_refinery_yields', '1:10')['raw']['big'] == 'x' * 500

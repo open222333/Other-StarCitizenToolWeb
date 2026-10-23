@@ -92,7 +92,7 @@ def mission_facets():
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': Mission.facets()})
+    return jsonify({'success': True, 'data': Mission.facets(visible_only=not viewer_sees_hidden())})
 
 
 @app_mission.route('/for-blueprint/<blueprint_uuid>', methods=['GET'])
@@ -125,7 +125,7 @@ def list_factions():
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': Faction.list_all()})
+    return jsonify({'success': True, 'data': Faction.list_all(visible_only=not viewer_sees_hidden())})
 
 
 @app_mission.route('/factions/ladders', methods=['GET'])
@@ -181,7 +181,7 @@ def get_faction(faction_id):
       404:
         description: 找不到勢力
     """
-    doc = Faction.get(faction_id)
+    doc = Faction.get(faction_id, visible_only=not viewer_sees_hidden())
     if not doc:
         return jsonify({'success': False, 'message': '找不到勢力'}), 404
     return jsonify({'success': True, 'data': doc})
@@ -203,7 +203,7 @@ def get_mission(mission_id):
       404:
         description: 找不到任務
     """
-    doc = Mission.get(mission_id)
+    doc = Mission.get(mission_id, visible_only=not viewer_sees_hidden())
     if not doc:
         return jsonify({'success': False, 'message': '找不到任務'}), 404
     return jsonify({'success': True, 'data': doc})

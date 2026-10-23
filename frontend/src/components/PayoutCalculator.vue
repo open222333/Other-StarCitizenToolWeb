@@ -1,6 +1,6 @@
 <!--
   玩家頁「酬勞分配」：輸入總金額、人數、稅率，每個人可以調成數（預設每人 1 成＝平均分），
-  列出每個人的稅前金額、稅、稅後金額。純前端計算，不存資料。
+  列出每個人的稅前金額、稅、稅後金額。純前端計算；成員名單、成數、稅率記在這台瀏覽器（localStorage），金額不記。
 
   金額以 aUEC 整數計：稅前依成數比例分，四捨五入後的零頭用「最大餘數法」補給小數部分最大的人，
   所以稅前合計一定等於總金額；稅＝稅前 × 稅率（四捨五入），稅後＝稅前 − 稅。
@@ -95,7 +95,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 defineProps({
   cardClass: { type: String, default: 'card' },
@@ -105,9 +105,34 @@ const MAX_PEOPLE = 50
 let idSeq = 0
 const newPerson = () => ({ id: ++idSeq, name: '', share: 1 })
 
+// 成員名單、成數、稅率記在這台瀏覽器（下次打開不用重打）；金額每次不同，不記
+const STORAGE_KEY = 'sc_payout_v1'
+function loadSaved() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
+    if (!saved || !Array.isArray(saved.people) || !saved.people.length) return null
+    return {
+      taxPct: Number.isFinite(Number(saved.taxPct)) ? Number(saved.taxPct) : 0.5,
+      people: saved.people.slice(0, MAX_PEOPLE).map(p => ({
+        ...newPerson(), name: String(p.name || '').slice(0, 40), share: Number(p.share) >= 0 ? Number(p.share) : 1,
+      })),
+    }
+  } catch {
+    return null
+  }
+}
+const saved = loadSaved()
+
 const total = ref(null)
-const taxPct = ref(0.5)
-const people = reactive([newPerson(), newPerson()])
+const taxPct = ref(saved ? saved.taxPct : 0.5)
+const people = reactive(saved ? saved.people : [newPerson(), newPerson()])
+watch([taxPct, () => people.map(p => [p.name, p.share])], () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      taxPct: taxPct.value, people: people.map(p => ({ name: p.name, share: p.share })),
+    }))
+  } catch { /* 無痕模式等存不了就算了 */ }
+}, { deep: true })
 const count = computed(() => people.length)
 
 function setCount(value) {

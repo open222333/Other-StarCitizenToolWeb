@@ -140,19 +140,19 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，由「UEX 價格」同步項目更新（需 UEX token）。三個分頁直接列資料庫內容方便檢查：「商品」UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性，每筆列出關聯的礦物）；「商品價格」`uex_commodities_prices`（商品 × 交易終端的買價／庫存／賣價／更新時間，後端分頁）；「交易終端」`uex_terminals`（地點、類型、屬性、可買／可賣商品數） |
 | 登記船艦資料／船艦價格 | http://localhost:8090/player/me?tab=fleet&sub=data | 玩家頁「艦隊 › 登記船艦資料」：用艦隊分頁頂端的共用搜尋卡篩選載具主檔（含「取得方式」：只看可用遊戲幣購買／可租船，多選取聯集；後台艦船列表也有，API 參數 `acquire=buy|rent`），列表直接顯示類型、尺寸、廠商、角色；每列有「登記」按鈕（登記 1 艘到我的艦隊），也能勾選多款一次登記（原本的「批量登記」併進來，已登記的標示並禁止重複）。點開看載員、貨艙、質量與價格：官網現金價（`msrp`，美金）、遊戲內最低購買價與租船價（UEX，aUEC）以及每個購買／租船地點。我的艦隊每艘船也顯示這三個價格。後台「艦船」列表多「遊戲內購買」「租船」兩欄（點開看地點），另有「購買價格」「租船價格」分頁列 UEX 價格表原始內容（含對不到載具主檔的） |
 | 商品購買地點 | http://localhost:8090/player/me?tab=search&sub=commodities | 玩家頁「查詢」：篩選並勾選多種商品（最多 20 種），列出**全部都買得到**的交易終端（蜂巢式下拉：終端 → 每種商品的買價、庫存、UEX 回報時間），可限定星系；沒有結果時列出每種商品各自買得到的地點數。資料是 `uex_commodities_prices`（`src/models/uex_commodity_price.py`） |
-| 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務；玩家頁「任務」分頁（`/me?tab=missions`）用共用搜尋卡篩名稱／類型／星系／勢力／合法性／只看有藍圖，藍圖欄顯示任務會給的藍圖自己已登記幾張（預設可用的視同已登記），點一列看說明（含聲望門檻：勢力＋階級＋門檻分數、接取星系）與各獎勵池藍圖的已登記／未登記；工具列「勢力聲望」選勢力看聲望階級，每一階列出要到這個階級才能接的任務（`/mission/factions/<id>/reputation`、`/mission/factions/ladders`） |
+| 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務；玩家頁「任務」分頁（`/player/me?tab=missions`）用共用搜尋卡篩名稱／類型／星系／勢力／合法性／只看有藍圖，藍圖欄顯示任務會給的藍圖自己已登記幾張（預設可用的視同已登記），點一列看說明（含聲望門檻：勢力＋階級＋門檻分數、接取星系）與各獎勵池藍圖的已登記／未登記；工具列「勢力聲望」選勢力看聲望階級，每一階列出要到這個階級才能接的任務（`/mission/factions/<id>/reputation`、`/mission/factions/ladders`） |
 | 玩家站根路徑 | http://localhost:8090/ | 導到 `/player/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好。玩家頁面一律在 `/player/` 底下、後台頁面一律在 `/admin/` 底下；舊網址（`/me`、`/login`、`/register`、玩家站上的 `/mining` 這類後台頁）會自動導到新位置。頁面網址跟 API 前綴同名（例如 `/player/me`）時，nginx 用 `Sec-Fetch-Mode: navigate` 判斷整頁導覽回 SPA、fetch 才轉給 api |
 | 玩家站上的後台 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面，網址在 `/admin/` 底下（例如 `/admin/mining`）。管理員平常請走 8080 |
 
 > **兩個登入頁是不同的身分體系，用錯頁面會一直顯示帳號或密碼錯誤**：
-> 玩家用 `/login`（查 `players` 集合），後台管理員用 `/admin/login`（查 `users` 集合）。
+> 玩家用 `/player/login`（查 `players` 集合），後台管理員用 `/admin/login`（查 `users` 集合）。
 > 兩頁互相有導引連結，路徑定義在 `frontend/src/router/index.js` 的
 > `PLAYER_LOGIN_PATH` / `ADMIN_LOGIN_PATH`（會依 build 自動切換：
 > 管理後台那個 build 的 base 本來就是 `/admin/`，所以它的後台登入頁
-> 就是 `:8080/admin/login`，玩家登入頁則是 `:8080/admin/player-login`）。
+> 就是 `:8080/admin/login`，玩家登入頁則是 `:8080/admin/player/login`）。
 >
 > 玩家站的頁面在 8080 也連得到（同一份 SPA），但 base path 是 `/admin/`，
-> 所以路徑會變成 `http://localhost:8080/admin/me`。正式使用請走 8090。
+> 所以路徑會變成 `http://localhost:8080/admin/player/me`。正式使用請走 8090。
 
 ### API 與文件
 
@@ -932,7 +932,7 @@ cd frontend && npm run test:calc
 | `GET /blueprint/master/for-item/<item_uuid>` | 做出這個物品的所有配方 |
 
 這些是公開遊戲資料，唯讀，只要求登入（比照 `/item/*`），不限後台角色 ——
-玩家端 `/me` 的藍圖 autocomplete 需要打這裡。
+玩家端 `/player/me` 的藍圖 autocomplete 需要打這裡。
 
 **排程存在 DB 裡，每個資料庫各自一筆（`sync_jobs` collection，`src/models/sync_schedule.py`
 的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、UEX 價格、UEX 精煉十一個同步項目，
@@ -1031,7 +1031,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 | 地點 | GitHub raw | `scunpacked-data/master/starmap.json` | 之後重建階層、套用設施／倉儲／居住地 |
 | UEX 價格 | UEX | `/categories/` → `/items/?id_category=<id>` | 每個物品分類一次 |
 | | UEX | `/terminals/`、`/items_prices_all/`、`/commodities/`、`/commodities_prices_all/`、`/commodities_raw_prices_all/`、`/vehicles/`、`/vehicles_purchases_prices_all/`、`/vehicles_rentals_prices_all/` | 價格表會刪掉這次沒出現的舊列（新筆數 ≥ 舊的 50% 才刪）；商品賣價也給玩家頁礦物卡片的「售價」（原礦／精煉品各自能賣的終端，`/mining/sell-prices`） |
-| UEX 精煉 | UEX | `/refineries_yields/`、`/refineries_methods/`、`/refineries_audits/`、`/refineries_capacities/` | 紀錄（audits）以外會刪掉這次沒出現的舊列（同上規則）；精煉產量加成、方式與紀錄彙整給礦物頁用（`/mining/refinery-yields`、`/mining/refinery-methods`） |
+| UEX 精煉 | UEX | `/refineries_yields/`、`/refineries_methods/`、`/refineries_audits/`、`/refineries_capacities/` | 紀錄（audits）以外會刪掉這次沒出現的舊列（同上規則）；精煉產量加成（含近 7／30 天）、方式等級與紀錄彙整、精煉站估算容量 % 給礦物頁用（`/mining/refinery-yields`、`/mining/refinery-methods`、`/mining/refinery-capacities`） |
 
 沒設定 UEX token 時 UEX 價格、UEX 精煉兩個項目直接略過（共用同一個 token）。聊天用的代碼字典（chsc-tw）是用到才抓，不在排程裡。
 

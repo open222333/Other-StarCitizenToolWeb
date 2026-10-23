@@ -903,7 +903,7 @@
     <div v-show="activeTab === 'missions' && factionRepOpen" class="sf-drawer">
       <h3 class="sf-drawer__title"><i class="bi bi-award me-1"></i>勢力聲望</h3>
       <FactionReputation :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions' && factionRepOpen"
-        :registered-uuids="myBlueprintUuids" />
+        :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </div>
     <!-- 任務 › 共用搜尋：名稱即時篩；類型／星系／勢力／合法性手機收進「篩選」面板 -->
     <div v-show="activeTab === 'missions'" class="card scifi-card sf-search mb-3">
@@ -954,7 +954,7 @@
     </div>
     <div v-show="activeTab === 'missions'" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
       <MissionBrowser ref="missionBrowserRef" :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions'"
-        :filters="msFilter" :registered-uuids="myBlueprintUuids" />
+        :filters="msFilter" :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </div>
 
     <!-- ══════════ 個人資料 ══════════ -->

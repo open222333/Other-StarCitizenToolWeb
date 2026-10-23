@@ -242,9 +242,9 @@
         共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
       </div>
       <div class="btn-group btn-group-sm">
-        <button class="btn" :class="player ? 'btn-scifi-outline' : 'btn-outline-secondary'"
+        <button class="btn" :class="player ? 'btn-primary' : 'btn-outline-secondary'"
           :disabled="offset === 0 || loading" @click="goPage(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn" :class="player ? 'btn-scifi-outline' : 'btn-outline-secondary'"
+        <button class="btn" :class="player ? 'btn-primary' : 'btn-outline-secondary'"
           :disabled="offset + limit >= total || loading" @click="goPage(offset + limit)">下一頁</button>
       </div>
     </div>

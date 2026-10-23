@@ -53,12 +53,13 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { loginPlayer } from '@/api'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
-import { PLAYER_HOME, PLAYER_REGISTER_PATH } from '@/router'
+import { PLAYER_HOME, PLAYER_REGISTER_PATH, safeRedirect } from '@/router'
 
 const router     = useRouter()
+const route      = useRoute()
 const playerAuth = usePlayerAuthStore()
 
 const form = reactive({ star_citizen_id: '', password: '', remember_me: true })   // 預設記住 30 天
@@ -78,7 +79,8 @@ async function submit() {
     const data = await res.json().catch(() => null)
     if (res.ok && data?.success) {
       playerAuth.setAuth(data)
-      router.push(PLAYER_HOME)
+      // 從別的玩家頁被導來登入的（?redirect=），登入完回原本那頁
+      router.push(safeRedirect(route.query.redirect, '/player/') || PLAYER_HOME)
     } else {
       error.value = data?.message || '登入失敗，請確認遊戲ID與密碼'
     }

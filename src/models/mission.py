@@ -130,15 +130,16 @@ class Mission:
         return cls._attach_blueprint_names(rows), total
 
     @classmethod
-    def get(cls, mission_id: str) -> Optional[dict]:
-        doc = cls._col().find_one({'_id': mission_id}, cls.PROJECTION)
+    def get(cls, mission_id: str, visible_only: bool = False) -> Optional[dict]:
+        """單一任務；visible_only＝玩家端，玩家頁面不顯示的當作找不到。"""
+        doc = cls._col().find_one(add_visibility_filter({'_id': mission_id}, visible_only=visible_only), cls.PROJECTION)
         return cls._attach_blueprint_names([doc])[0] if doc else None
 
     @classmethod
-    def facets(cls) -> dict:
-        """篩選下拉用：類型、星系、勢力（含任務數）。"""
+    def facets(cls, visible_only: bool = False) -> dict:
+        """篩選下拉用：類型、星系、勢力（含任務數）；visible_only＝只算玩家頁面顯示的任務。"""
         col = cls._col()
-        cur = {'is_current': True}
+        cur = add_visibility_filter({'is_current': True}, visible_only=visible_only)
         scopes = sorted(v for v in col.distinct('reward_scope', cur) if v)
         systems = sorted(v for v in col.distinct('star_systems', cur) if v)
         factions = {}
@@ -310,11 +311,13 @@ class Faction:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def _mission_counts(cls) -> dict:
-        """`{faction_uuid: {'missions': n, 'blueprint_missions': n}}`"""
+    def _mission_counts(cls, visible_only: bool = False) -> dict:
+        """`{faction_uuid: {'missions': n, 'blueprint_missions': n}}`；visible_only＝只算玩家頁面顯示的任務"""
         out = {}
+        filt = add_visibility_filter({'is_current': True, 'faction_uuid': {'$nin': [None, '']}},
+                                     visible_only=visible_only)
         for row in get_db()[MISSION_COLLECTION].find(
-                {'is_current': True, 'faction_uuid': {'$nin': [None, '']}},
+                filt,
                 {'faction_uuid': 1, 'has_blueprints': 1}):
             c = out.setdefault(row['faction_uuid'], {'missions': 0, 'blueprint_missions': 0})
             c['missions'] += 1
@@ -323,9 +326,9 @@ class Faction:
         return out
 
     @classmethod
-    def list_all(cls) -> list:
-        """全部勢力（約 64 筆，不分頁，篩選在前端做），附任務數。"""
-        counts = cls._mission_counts()
+    def list_all(cls, visible_only: bool = False) -> list:
+        """全部勢力（約 64 筆，不分頁，篩選在前端做），附任務數（玩家只算玩家頁面顯示的任務）。"""
+        counts = cls._mission_counts(visible_only=visible_only)
         rows = list(cls._col().find({'is_current': True}, cls.PROJECTION)
                     .sort('name_lower', ASCENDING))
         for row in rows:
@@ -350,19 +353,27 @@ class Faction:
         return len(ops)
 
     @classmethod
-    def get(cls, faction_id: str) -> Optional[dict]:
-        """單一勢力＋它發布的任務（摘要）。"""
+    def get(cls, faction_id: str, visible_only: bool = False) -> Optional[dict]:
+        """單一勢力＋它發布的任務（摘要；玩家只看得到玩家頁面顯示的任務）。"""
         doc = cls._col().find_one({'_id': faction_id}, cls.PROJECTION)
         if not doc:
             return None
         doc['missions'] = list(get_db()[MISSION_COLLECTION].find(
-            {'is_current': True, 'faction_uuid': faction_id},
+            add_visibility_filter({'is_current': True, 'faction_uuid': faction_id}, visible_only=visible_only),
             {'title': 1, 'title_zh': 1, 'reward_scope': 1, 'has_blueprints': 1,
              'blueprint_uuids': 1, 'illegal': 1},
         ).sort('title_lower', ASCENDING))
         for m in doc['missions']:
             m['blueprint_count'] = len(m.pop('blueprint_uuids', None) or [])
         return doc
+
+    #: 勢力聲望分頁每個任務要的欄位（列表＋展開的 MissionDetail）
+    REPUTATION_MISSION_FIELDS = {f: 1 for f in (
+        'title', 'title_zh', 'description', 'description_zh', 'reward_scope', 'illegal', 'star_systems',
+        'faction_uuid', 'faction_name', 'faction_name_zh', 'mission_giver', 'mission_giver_zh',
+        'min_standing_name', 'max_standing_name', 'blueprint_pools', 'reward_min', 'reward_max', 'reward_currency',
+        'reputation_gained', 'cooldown_seconds', 'shareable', 'once_only', 'has_combat',
+        'enemy_count_min', 'enemy_count_max', 'has_chain', 'has_prerequisites', 'max_players_per_instance')}
 
     @classmethod
     def ladders(cls) -> dict:
@@ -382,9 +393,9 @@ class Faction:
         if not doc:
             return None
         filt = add_visibility_filter({'is_current': True, 'faction_uuid': faction_id}, visible_only=visible_only)
-        # 每個任務可以展開看細節（說明、條件、報酬、聲望異動、獎勵藍圖），所以整筆給（不含 raw）
+        # 每個任務可以展開看細節（說明、條件、報酬、聲望異動、獎勵藍圖）：只取 MissionDetail 用得到的欄位
         missions = Mission._attach_blueprint_names(
-            list(get_db()[MISSION_COLLECTION].find(filt, Mission.PROJECTION).sort('title_lower', ASCENDING)))
+            list(get_db()[MISSION_COLLECTION].find(filt, cls.REPUTATION_MISSION_FIELDS).sort('title_lower', ASCENDING)))
         steps = ladder_steps(doc.get('reputation_ladder'))
         ranks = [{**s, 'missions': []} for s in steps]
         by_key = {standing_key(s['name']): r for s, r in zip(steps, ranks) if standing_key(s['name'])}

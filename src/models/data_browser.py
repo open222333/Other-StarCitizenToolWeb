@@ -3,6 +3,7 @@
 只開放下面 CATALOG 列的遊戲資料／同步紀錄（唯讀）；帳號、玩家、token、登入失敗這類資料一律不列。
 列表的欄位是取前 SAMPLE 筆文件的頂層欄位（依出現順序），陣列／物件只回縮短的 JSON 預覽，
 完整內容（含 raw）要點開單筆看（doc()）。
+大資料表（翻譯約 9 萬筆）「全部欄位」搜尋只比對名稱類欄位，每次查詢最多跑 MAX_TIME_MS，超過就請使用者指定欄位。
 """
 
 import json
@@ -52,6 +53,15 @@ LABELS = {name: label for _, items in CATALOG for name, label in items}
 
 SAMPLE = 100
 MAX_LIMIT = 200
+#: 超過這個筆數的資料表，「全部欄位」搜尋只比對名稱類欄位（_id、name、title、key、code…），避免每個欄位都做模糊比對
+LARGE_COLLECTION = 20000
+_NAME_LIKE = re.compile(r'(^_id$|name|title|key|code|label)', re.IGNORECASE)
+#: 搜尋欄位的特別設定：巢狀欄位（翻譯的英文／中文在 text.en、text.zh-TW）也能選、也是「全部欄位」的比對範圍
+SEARCH_FIELDS = {
+    'sc_translations': ['_id', 'key_lower', 'en_lower', 'text.en', 'text.zh-TW', 'source', 'domain'],
+}
+#: 單次查詢最多跑幾毫秒（太久就請使用者指定欄位）
+MAX_TIME_MS = 5000
 PREVIEW_CHARS = 160
 #: 列表不列的欄位（太大或內部用）；點開單筆仍看得到
 HIDDEN_IN_LIST = {'raw', '_sync'}
@@ -100,14 +110,20 @@ def catalog() -> list:
 def columns(collection: str) -> list:
     """取前 SAMPLE 筆的頂層欄位（依出現順序，_id 第一）。"""
     out = ['_id']
-    for doc in get_db()[_check(collection)].find({}).limit(SAMPLE):
+    for doc in get_db()[_check(collection)].find({}, {k: 0 for k in HIDDEN_IN_LIST}).limit(SAMPLE):
         for key in doc:
             if key not in out and key not in HIDDEN_IN_LIST:
                 out.append(key)
     return out
 
 
-def _search_filter(cols: list, field: str, q: str) -> dict:
+def search_fields(collection: str, cols: list) -> list:
+    """搜尋卡「欄位」下拉的選項：列表欄位＋SEARCH_FIELDS 另外指定的巢狀欄位。"""
+    extra = [f for f in SEARCH_FIELDS.get(collection, []) if f not in cols]
+    return cols + extra
+
+
+def _search_filter(cols: list, field: str, q: str, large: bool = False, preferred=None) -> dict:
     q = (q or '').strip()
     if not q:
         return {}
@@ -118,7 +134,8 @@ def _search_filter(cols: list, field: str, q: str) -> dict:
             raise ValueError('欄位不存在')
         conds = conds_for(field)
     else:
-        conds = [c for f in cols for c in conds_for(f)]
+        fields = preferred or ([f for f in cols if _NAME_LIKE.search(f)] if large else cols)
+        conds = [c for f in (fields or cols[:1]) for c in conds_for(f)]
     return {'$or': conds}
 
 
@@ -133,21 +150,30 @@ def _num(text: str):
 def list_docs(collection: str, *, field: str = '', q: str = '', sort_by: str = '', sort_dir: str = 'asc',
               limit: int = 50, offset: int = 0) -> dict:
     """{label, columns, rows, total}；rows 的陣列／物件值是縮短的 JSON 字串。"""
+    from pymongo.errors import ExecutionTimeout
+
     cols = columns(collection)
-    filt = _search_filter(cols, field, q)
+    searchable = search_fields(collection, cols)
     col = get_db()[collection]
+    estimated = col.estimated_document_count()
+    filt = _search_filter(searchable, field, q, large=estimated > LARGE_COLLECTION,
+                          preferred=SEARCH_FIELDS.get(collection))
     limit = max(1, min(int(limit or 50), MAX_LIMIT))
     offset = max(0, int(offset or 0))
-    cursor = col.find(filt, {k: 0 for k in HIDDEN_IN_LIST})
+    cursor = col.find(filt, {k: 0 for k in HIDDEN_IN_LIST}).max_time_ms(MAX_TIME_MS)
     if sort_by:
         if sort_by not in cols:
             raise ValueError('欄位不存在')
         cursor = cursor.sort([(sort_by, -1 if sort_dir == 'desc' else 1), ('_id', 1)])
     else:
         cursor = cursor.sort('_id', 1)
-    rows = [{k: _preview(v) for k, v in doc.items()} for doc in cursor.skip(offset).limit(limit)]
-    return {'label': LABELS[collection], 'columns': cols, 'rows': rows,
-            'total': col.count_documents(filt) if filt else col.estimated_document_count()}
+    try:
+        # _id 不截斷：點開單筆要用完整的 _id 去查
+        rows = [{k: (_plain(v) if k == '_id' else _preview(v)) for k, v in doc.items()} for doc in cursor.skip(offset).limit(limit)]
+        total = col.count_documents(filt, maxTimeMS=MAX_TIME_MS) if filt else estimated
+    except ExecutionTimeout:
+        raise ValueError('查詢太久，請指定欄位再搜尋') from None
+    return {'label': LABELS[collection], 'columns': cols, 'search_fields': searchable, 'rows': rows, 'total': total}
 
 
 def doc(collection: str, doc_id: str) -> Optional[dict]:
