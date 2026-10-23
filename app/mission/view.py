@@ -128,6 +128,43 @@ def list_factions():
     return jsonify({'success': True, 'data': Faction.list_all()})
 
 
+@app_mission.route('/factions/ladders', methods=['GET'])
+@jwt_required()
+def faction_ladders():
+    """每個勢力的聲望階級（名稱＋門檻），玩家頁任務說明顯示「聲望門檻」用。
+    ---
+    tags: [Mission]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: {faction_uuid: [{name, min_reputation}]}"
+    """
+    return jsonify({'success': True, 'data': Faction.ladders()})
+
+
+@app_mission.route('/factions/<faction_id>/reputation', methods=['GET'])
+@jwt_required()
+def faction_reputation(faction_id):
+    """勢力的聲望階級，每一階要這個階級才能接的任務（玩家頁「任務 › 勢力聲望」）。
+    ---
+    tags: [Mission]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: faction_id, type: string, required: true}
+    responses:
+      200:
+        description: "data: {faction, ranks: [{name, min_reputation, missions}], open, unmatched}"
+      404:
+        description: 找不到勢力
+    """
+    data = Faction.reputation(faction_id, visible_only=not viewer_sees_hidden())
+    if not data:
+        return jsonify({'success': False, 'message': '找不到勢力'}), 404
+    return jsonify({'success': True, 'data': data})
+
+
 @app_mission.route('/factions/<faction_id>', methods=['GET'])
 @jwt_required()
 def get_faction(faction_id):

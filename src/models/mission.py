@@ -274,6 +274,33 @@ class Mission:
         return cls._col().count_documents({'is_current': True})
 
 
+
+def standing_key(name) -> str:
+    """聲望階級名稱比對用（不分大小寫、去空白）；PLACEHOLDER 這類上游佔位字當作沒有。"""
+    text = (name or '').strip() if isinstance(name, str) else ''
+    return '' if not text or 'placeholder' in text.lower() else text.lower()
+
+
+def ladder_steps(ladder) -> list:
+    """勢力 reputation_ladder 整理成 [{name, min_reputation}]（結構隨上游變動，盡量抓名稱＋門檻）。"""
+    if isinstance(ladder, dict):
+        ladder = (ladder.get('ranks') or ladder.get('standings') or ladder.get('steps')
+                  or next((v for v in ladder.values() if isinstance(v, list)), []))
+    out = []
+    for step in ladder if isinstance(ladder, list) else []:
+        if isinstance(step, str):
+            out.append({'name': step, 'min_reputation': None})
+            continue
+        if not isinstance(step, dict):
+            continue
+        name = step.get('display_name') or step.get('name') or step.get('title') or step.get('label')
+        value = next((step[k] for k in ('min_reputation', 'reputation', 'min', 'threshold', 'value')
+                      if isinstance(step.get(k), (int, float)) and not isinstance(step.get(k), bool)), None)
+        if name:
+            out.append({'name': name, 'min_reputation': value})
+    return out
+
+
 class Faction:
     COLLECTION = FACTION_COLLECTION
     PROJECTION = {'raw': 0}
@@ -336,6 +363,43 @@ class Faction:
         for m in doc['missions']:
             m['blueprint_count'] = len(m.pop('blueprint_uuids', None) or [])
         return doc
+
+    @classmethod
+    def ladders(cls) -> dict:
+        """{faction_uuid: [{name, min_reputation}]}，玩家頁任務說明顯示「聲望門檻」的分數用。"""
+        return {r['_id']: ladder_steps(r.get('reputation_ladder'))
+                for r in cls._col().find({'is_current': True}, {'reputation_ladder': 1})}
+
+    @classmethod
+    def reputation(cls, faction_id: str, visible_only: bool = False) -> Optional[dict]:
+        """玩家頁「任務 › 勢力聲望」：勢力的聲望階級，每一階列出要這個階級才能接的任務。
+
+        任務的 min_standing_name 對到階級名稱（不分大小寫）；沒有門檻的放 open，
+        門檻對不到階級表的放 unmatched（名稱照原樣顯示）。
+        """
+        doc = cls._col().find_one({'_id': faction_id}, {'name': 1, 'name_zh': 1, 'reputation_ladder': 1,
+                                                       'faction_type': 1, 'lawful': 1})
+        if not doc:
+            return None
+        filt = add_visibility_filter({'is_current': True, 'faction_uuid': faction_id}, visible_only=visible_only)
+        # 每個任務可以展開看細節（說明、條件、報酬、聲望異動、獎勵藍圖），所以整筆給（不含 raw）
+        missions = Mission._attach_blueprint_names(
+            list(get_db()[MISSION_COLLECTION].find(filt, Mission.PROJECTION).sort('title_lower', ASCENDING)))
+        steps = ladder_steps(doc.get('reputation_ladder'))
+        ranks = [{**s, 'missions': []} for s in steps]
+        by_key = {standing_key(s['name']): r for s, r in zip(steps, ranks) if standing_key(s['name'])}
+        open_missions, unmatched = [], []
+        for m in missions:
+            key = standing_key(m.get('min_standing_name'))
+            if not key:
+                open_missions.append(m)
+            elif key in by_key:
+                by_key[key]['missions'].append(m)
+            else:
+                unmatched.append(m)
+        return {'faction': {'_id': doc['_id'], 'name': doc.get('name'), 'name_zh': doc.get('name_zh'),
+                            'faction_type': doc.get('faction_type'), 'lawful': doc.get('lawful')},
+                'ranks': ranks, 'open': open_missions, 'unmatched': unmatched}
 
     @classmethod
     def count_current(cls) -> int:

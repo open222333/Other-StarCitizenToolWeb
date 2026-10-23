@@ -252,6 +252,27 @@ def test_faction_counts(missions):
     assert doc['missions'][0]['blueprint_count'] == 1
 
 
+def test_faction_reputation_groups_missions_by_rank(missions):
+    from src.models.mission import ladder_steps
+    get_db()['faction_master'].insert_one({
+        '_id': 'f1', 'name': 'Faction One', 'name_lower': 'faction one', 'is_current': True,
+        'reputation_ladder': [{'name': 'Applicant', 'min_reputation': 0}, {'name': 'Junior', 'min_reputation': 1500}]})
+    db = get_db()['mission_master']
+    db.update_one({'_id': 'm1'}, {'$set': {'min_standing_name': 'junior'}})
+    db.update_one({'_id': 'm3'}, {'$set': {'min_standing_name': 'PLACEHOLDER'}})
+    _insert_mission('m5', 'Epsilon Job', min_standing_name='Veteran')
+    data = Faction.reputation('f1')
+    assert [(r['name'], r['min_reputation'], [m['_id'] for m in r['missions']]) for r in data['ranks']] == [
+        ('Applicant', 0, []), ('Junior', 1500, ['m1'])]
+    assert [m['_id'] for m in data['open']] == ['m3'], 'PLACEHOLDER 當作沒有門檻'
+    assert [m['_id'] for m in data['unmatched']] == ['m5']
+    assert data['ranks'][1]['missions'][0]['blueprint_pools'][0]['items'][0]['blueprint_uuid'] == 'bp-a'
+    assert Faction.reputation('nope') is None
+    assert Faction.ladders()['f1'][1] == {'name': 'Junior', 'min_reputation': 1500}
+    assert ladder_steps({'ranks': ['A', {'display_name': 'B', 'threshold': 5}]}) == [
+        {'name': 'A', 'min_reputation': None}, {'name': 'B', 'min_reputation': 5}]
+
+
 # ═══════════════════════════════════════════════════════════
 #  API
 # ═══════════════════════════════════════════════════════════
@@ -275,6 +296,8 @@ def test_mission_endpoints(client, auth_headers, missions):
     assert client.get('/mission/m1', headers=auth_headers).get_json()['data']['title'] == 'Alpha Job'
     assert client.get('/mission/nope', headers=auth_headers).status_code == 404
     assert client.get('/mission/factions/nope', headers=auth_headers).status_code == 404
+    assert client.get('/mission/factions/nope/reputation', headers=auth_headers).status_code == 404
+    assert client.get('/mission/factions/ladders', headers=auth_headers).get_json()['success']
 
 
 def test_player_can_see_missions_for_blueprint(client, player_headers, missions):

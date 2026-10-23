@@ -893,7 +893,17 @@
 
     <!-- ══════════ 任務（唯讀任務資料庫；藍圖欄標出自己已登記幾張，見 components/MissionBrowser.vue）══════════ -->
     <div v-show="activeTab === 'missions'" class="sf-toolbar">
+      <button :aria-label="factionRepOpen ? '收起勢力聲望' : '勢力聲望'" class="btn btn-sm" :class="factionRepOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="factionRepOpen ? 'true' : 'false'" @click="factionRepOpen = !factionRepOpen">
+        <i class="bi me-1" :class="factionRepOpen ? 'bi-x-lg' : 'bi-award'"></i><span class="sf-btn-text">{{ factionRepOpen ? '收起勢力聲望' : '勢力聲望' }}</span>
+      </button>
       <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="missionBrowserRef?.reload()"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
+    </div>
+    <!-- 任務 › 勢力聲望：勢力的聲望階級與每一階解鎖的任務（見 components/FactionReputation.vue） -->
+    <div v-show="activeTab === 'missions' && factionRepOpen" class="sf-drawer">
+      <h3 class="sf-drawer__title"><i class="bi bi-award me-1"></i>勢力聲望</h3>
+      <FactionReputation :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions' && factionRepOpen"
+        :registered-uuids="myBlueprintUuids" />
     </div>
     <!-- 任務 › 共用搜尋：名稱即時篩；類型／星系／勢力／合法性手機收進「篩選」面板 -->
     <div v-show="activeTab === 'missions'" class="card scifi-card sf-search mb-3">
@@ -1177,6 +1187,11 @@
       <GameLogReader card-class="card scifi-card" :player-name="playerAuth.starCitizenId" />
     </div>
 
+    <!-- ══════════ 酬勞分配（總金額依人數／成數分，扣稅前後；純前端，見 components/PayoutCalculator.vue）══════════ -->
+    <div v-show="activeTab === 'payout'" role="tabpanel" id="panel-payout" :aria-labelledby="'tab-payout'">
+      <PayoutCalculator card-class="card scifi-card" />
+    </div>
+
     <!-- ══════════ 中文轉碼（遊戲聊天用的 中文 ↔ @代碼，見 components/ChatCodeTranslator.vue）══════════ -->
     <div v-show="activeTab === 'chatcode'" role="tabpanel" id="panel-chatcode" :aria-labelledby="'tab-chatcode'">
       <ChatCodeTranslator :fetcher="playerAuth.playerFetch" :active="activeTab === 'chatcode'"
@@ -1417,9 +1432,11 @@ import { itemTypeOption, loadItemTypeZh } from '@/utils/itemType'
 import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { fmtAuec, fmtUsd, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
+import PayoutCalculator from '@/components/PayoutCalculator.vue'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MissionBrowser from '@/components/MissionBrowser.vue'
+import FactionReputation from '@/components/FactionReputation.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetImport from '@/components/FleetImport.vue'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
@@ -1497,6 +1514,7 @@ const tabs = [
     key: 'search',    label: '查詢持有資訊',   icon: 'bi bi-search', short: '查詢',
   },
   { key: 'gamelog',   label: 'LOG 解析', icon: 'bi bi-journal-code' },
+  { key: 'payout',    label: '酬勞分配', icon: 'bi bi-cash-coin' },
   { key: 'chatcode',  label: '中文轉碼', icon: 'bi bi-translate' },
   { key: 'tools',     label: '工具網站', icon: 'bi bi-link-45deg' },
   { key: 'profile',   label: '個人資料', icon: 'bi bi-person-gear' },
@@ -2256,6 +2274,8 @@ function clearBpFilter() {
 }
 // ── 任務分頁：共用搜尋卡（條件直接傳給 MissionBrowser）；「只看有藍圖」預設勾選 ──
 const missionBrowserRef = ref(null)
+// 任務 › 勢力聲望（?tab=missions&sub=reputation 直接展開）
+const factionRepOpen = ref(activeTab.value === 'missions' && route.query.sub === 'reputation')
 const MS_LEGALITY_OPTIONS = [{ value: 'legal', label: '合法' }, { value: 'illegal', label: '違法' }]
 const msFilter = reactive({ q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: true })
 const msFacets = ref({ reward_scopes: [], star_systems: [], factions: [] })

@@ -44,3 +44,37 @@ export function reputationLabel(m) {
 export function factionLabel(m) {
   return zhPair(m?.faction_name, m?.faction_name_zh) || zhPair(m?.mission_giver, m?.mission_giver_zh) || '—'
 }
+
+/** 聲望異動數字：+1,500／-250 */
+export function fmtRep(v) {
+  const n = Number(v)
+  return Number.isFinite(n) ? `${n > 0 ? '+' : ''}${fmtInt(n)}` : '—'
+}
+
+/** 冷卻秒數 → 「45 秒」「10 分」「2 時 30 分」「1 天 4 時」 */
+export function fmtCooldown(sec) {
+  const s = Number(sec)
+  if (!Number.isFinite(s) || s <= 0) return '—'
+  if (s < 60) return `${Math.round(s)} 秒`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m} 分`
+  const h = Math.floor(m / 60), rm = m % 60
+  if (h < 24) return rm ? `${h} 時 ${rm} 分` : `${h} 時`
+  const d = Math.floor(h / 24), rh = h % 24
+  return rh ? `${d} 天 ${rh} 時` : `${d} 天`
+}
+
+/** 任務條件一行（玩家頁）：可分享、可重複接、戰鬥、任務鏈… */
+export function missionConditions(m) {
+  const parts = []
+  if (m.shareable) parts.push('可分享')
+  parts.push(m.once_only ? '只能接一次' : '可重複接')
+  if (m.has_combat) {
+    const lo = m.enemy_count_min, hi = m.enemy_count_max
+    parts.push(lo || hi ? `戰鬥（敵人 ${lo ?? '?'}–${hi ?? '?'}）` : '戰鬥')
+  }
+  if (m.has_chain) parts.push('任務鏈')
+  if (m.has_prerequisites) parts.push('有前置條件')
+  if (m.max_players_per_instance > 1) parts.push(`最多 ${m.max_players_per_instance} 人`)
+  return parts.join(' · ')
+}

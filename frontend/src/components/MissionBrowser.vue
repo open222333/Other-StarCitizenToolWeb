@@ -79,39 +79,7 @@
                         <h3 class="sf-sheet__title">{{ m.title_zh || m.title }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="expandedId = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <div class="row g-3">
-                        <div class="col-lg-6">
-                          <div class="mb-2">
-                            <span v-for="s in m.star_systems || []" :key="s" class="ms-chip">{{ systemLabel(s) }}</span>
-                            <span v-if="m.faction_name || m.mission_giver" class="ms-chip">{{ factionLabel(m) }}</span>
-                            <span v-if="m.reward_scope" class="ms-chip">{{ typeLabel(m.reward_scope) }}</span>
-                          </div>
-                          <div v-if="m.description_zh || m.description" class="small ms-desc">{{ m.description_zh || m.description }}</div>
-                          <details v-if="m.description_zh && m.description" class="mt-1">
-                            <summary class="small text-muted">英文</summary>
-                            <div class="small text-muted ms-desc mt-1">{{ m.description }}</div>
-                          </details>
-                          <div v-if="conditions(m)" class="small text-muted mt-2">{{ conditions(m) }}</div>
-                        </div>
-                        <div class="col-lg-6">
-                          <div class="small text-muted mb-1">
-                            獎勵藍圖<template v-if="poolOf(m).length">：{{ poolOf(m).length }} 種 · 已登記
-                              <span class="fw-semibold" :class="registeredCount(m) === poolOf(m).length ? 'text-success' : 'ms-count'">{{ registeredCount(m) }} / {{ poolOf(m).length }}</span></template>
-                          </div>
-                          <div v-if="!m.blueprint_pools?.length" class="small text-muted">—</div>
-                          <div v-for="(pool, i) in m.blueprint_pools || []" :key="pool.pool_uuid || i" class="mb-2">
-                            <div v-if="pool.drop_chance !== null && pool.drop_chance !== undefined" class="small ms-chance">
-                              機率 {{ fmtChance(pool.drop_chance) }}
-                              <span v-if="(pool.items || []).length > 1" class="text-muted fw-normal">（{{ pool.items.length }} 張抽一張）</span>
-                            </div>
-                            <span v-for="(it, j) in pool.items || []" :key="it.blueprint_uuid || j" class="ms-chip"
-                              :class="isRegistered(it) ? 'ms-chip--ok' : 'ms-chip--todo'">
-                              <i class="bi me-1" :class="isRegistered(it) ? 'bi-check-circle-fill' : 'bi-circle'"></i>{{ it.name_zh || it.name }}
-                              <span class="ms-chip__state">{{ isRegistered(it) ? (it.is_available_by_default && !registered.has(it.blueprint_uuid) ? '預設可用' : '已登記') : '未登記' }}</span>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladders" />
                     </td>
                   </tr>
                 </template>
@@ -140,7 +108,8 @@ import SortSelect from '@/components/SortSelect.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
-import { factionLabel, fmtChance, fmtInt, rewardLabel } from '@/utils/mission'
+import { factionLabel, fmtCooldown, fmtRep, rewardLabel } from '@/utils/mission'
+import MissionDetail from '@/components/MissionDetail.vue'
 import { loadTranslations, translate } from '@/utils/translations'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 
@@ -184,40 +153,13 @@ function poolOf(m) {
 function typeLabel(s) { return translate('mission_type', s) || s }
 function systemLabel(s) { return translate('location', s) || s }
 
+
 function factionName(s) { return translate('faction', s) || s }
-function fmtRep(v) {
-  const n = Number(v)
-  return Number.isFinite(n) ? `${n > 0 ? '+' : ''}${fmtInt(n)}` : '—'
-}
-/** 冷卻秒數 → 「45 秒」「10 分」「2 時 30 分」「1 天 4 時」 */
-function fmtCooldown(sec) {
-  const s = Number(sec)
-  if (!Number.isFinite(s) || s <= 0) return '—'
-  if (s < 60) return `${Math.round(s)} 秒`
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m} 分`
-  const h = Math.floor(m / 60), rm = m % 60
-  if (h < 24) return rm ? `${h} 時 ${rm} 分` : `${h} 時`
-  const d = Math.floor(h / 24), rh = h % 24
-  return rh ? `${d} 天 ${rh} 時` : `${d} 天`
-}
+// 聲望門檻的分數表（GET /mission/factions/ladders），傳給 MissionDetail
+const ladders = ref({})
 
 function registeredCount(m) {
   return poolOf(m).filter(isRegistered).length
-}
-
-function conditions(m) {
-  const parts = []
-  if (m.shareable) parts.push('可分享')
-  parts.push(m.once_only ? '只能接一次' : '可重複接')
-  if (m.has_combat) {
-    const lo = m.enemy_count_min, hi = m.enemy_count_max
-    parts.push(lo || hi ? `戰鬥（敵人 ${lo ?? '?'}–${hi ?? '?'}）` : '戰鬥')
-  }
-  if (m.has_chain) parts.push('任務鏈')
-  if (m.has_prerequisites) parts.push('有前置條件')
-  if (m.max_players_per_instance > 1) parts.push(`最多 ${m.max_players_per_instance} 人`)
-  return parts.join(' · ')
 }
 
 function query(params) {
@@ -275,6 +217,8 @@ let loaded = false
 watch(() => props.active, (v) => {
   if (!v || loaded) return
   loaded = true
+  props.fetcher('/mission/factions/ladders').then(res => (res?.ok ? res.json() : null))
+    .then(body => { if (body?.success) ladders.value = body.data || {} }).catch(() => {})
   reload(0)
 }, { immediate: true })
 
@@ -300,7 +244,6 @@ defineExpose({ reload: () => reload(offset.value) })
 <style scoped>
 .ms-row { cursor: pointer; }
 .ms-detail { background: var(--sf-inset); }
-.ms-desc { white-space: pre-line; }
 .ms-chance { color: var(--sf-accent-2-text, var(--sf-accent-2)); font-weight: 600; }
 .ms-count { color: var(--sf-text-strong); }
 .ms-good { color: rgb(var(--bs-success-rgb)); }
@@ -310,8 +253,5 @@ defineExpose({ reload: () => reload(offset.value) })
   border: 1px solid var(--sf-border-hi); border-radius: 999px; color: var(--sf-text-muted);
 }
 .ms-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }
-.ms-chip--ok { border-color: rgba(var(--bs-success-rgb), .7); color: rgb(var(--bs-success-rgb)); }
-.ms-chip--todo { border-style: dashed; }
-.ms-chip__state { margin-left: .35rem; font-size: .78em; opacity: .85; }
 details > summary { cursor: pointer; }
 </style>
