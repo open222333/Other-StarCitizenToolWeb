@@ -27,11 +27,17 @@ export const API_PREFIXES = [
   '/links',
   '/mission',
   '/starmap',
+  '/data',
 ]
 
 /** 產生 Vite dev server 的 proxy 設定物件。 */
 export function makeProxy(target = 'http://localhost:5000') {
   return Object.fromEntries(
-    API_PREFIXES.map(prefix => [prefix, { target, changeOrigin: true }]),
+    // 頁面網址剛好撞到 API 前綴（例如 /data、/mining）時，整頁重新整理要回 SPA，不轉給 Flask
+    // （跟 conf/nginx-web/default.conf 的 Sec-Fetch-Mode: navigate 判斷一致）
+    API_PREFIXES.map(prefix => [prefix, {
+      target, changeOrigin: true,
+      bypass: req => (req.headers['sec-fetch-mode'] === 'navigate' ? '/index.html' : undefined),
+    }]),
   )
 }

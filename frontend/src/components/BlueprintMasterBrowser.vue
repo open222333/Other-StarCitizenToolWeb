@@ -212,7 +212,7 @@
                             <button v-if="player" type="button" class="btn btn-sm btn-info py-0 px-2 text-start" @click="openMissions(bp)">
                               {{ zhPair(m.title, m.title_zh) }}
                             </button>
-                            <RouterLink v-else :to="{ path: '/missions', query: { id: m._id } }">{{ zhPair(m.title, m.title_zh) }}</RouterLink>
+                            <RouterLink v-else :to="{ path: adminPath('/missions'), query: { id: m._id } }">{{ zhPair(m.title, m.title_zh) }}</RouterLink>
                             <span class="text-muted">
                               · {{ factionLabel(m) }}
                               <template v-if="m.star_systems?.length"> · {{ m.star_systems.join('、') }}</template>
@@ -286,6 +286,7 @@ import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { adminPath } from '@/router'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import { factionLabel, fmtChance, zhPair } from '@/utils/mission'

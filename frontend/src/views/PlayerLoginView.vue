@@ -42,7 +42,7 @@
 
         <div class="text-center mt-3">
           <span class="small text-muted">還沒有帳號？</span>
-          <RouterLink to="/register" class="btn btn-sm btn-primary ms-1">前往註冊</RouterLink>
+          <RouterLink :to="PLAYER_REGISTER_PATH" class="btn btn-sm btn-primary ms-1">前往註冊</RouterLink>
         </div>
 
         <!-- 刻意不放「前往後台登入」的入口：後台登入頁不對玩家公開，管理員自己記網址 -->
@@ -56,6 +56,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginPlayer } from '@/api'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
+import { PLAYER_HOME, PLAYER_REGISTER_PATH } from '@/router'
 
 const router     = useRouter()
 const playerAuth = usePlayerAuthStore()
@@ -77,7 +78,7 @@ async function submit() {
     const data = await res.json().catch(() => null)
     if (res.ok && data?.success) {
       playerAuth.setAuth(data)
-      router.push('/me')
+      router.push(PLAYER_HOME)
     } else {
       error.value = data?.message || '登入失敗，請確認遊戲ID與密碼'
     }

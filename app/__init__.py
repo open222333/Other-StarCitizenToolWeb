@@ -23,6 +23,7 @@ from app.blueprint.view import app_blueprint
 from app.mining.view import app_mining
 from app.mission.view import app_mission
 from app.starmap.view import app_starmap
+from app.data.view import app_data
 from app.links.view import app_links
 from src import FLASK_JSON_PATH
 from src.limiter import limiter
@@ -192,6 +193,7 @@ def create_app(config_object=None):
     app.register_blueprint(blueprint=app_mission, url_prefix='/mission')
     app.register_blueprint(blueprint=app_starmap, url_prefix='/starmap')
     app.register_blueprint(blueprint=app_links, url_prefix='/links')
+    app.register_blueprint(blueprint=app_data, url_prefix='/data')
     if config_object:
         app.config.from_object(config_object)
     return app

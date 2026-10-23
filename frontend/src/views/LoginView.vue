@@ -36,7 +36,7 @@
         <!-- 只有「星際公民工具」這個 build 開放玩家自助註冊，管理後台不顯示 -->
         <div v-if="showRegisterLink" class="text-center mt-3">
           <span class="small text-muted">還沒有帳號？</span>
-          <RouterLink to="/register" class="small">前往註冊</RouterLink>
+          <RouterLink :to="PLAYER_REGISTER_PATH" class="small">前往註冊</RouterLink>
         </div>
 
         <!-- 這裡是「後台管理員」登入，玩家常常點錯頁面跑來這裡輸入遊戲ID／密碼
@@ -55,7 +55,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { ADMIN_HOME, PLAYER_LOGIN_PATH } from '@/router'
+import { ADMIN_HOME, PLAYER_LOGIN_PATH, PLAYER_REGISTER_PATH } from '@/router'
 
 const router  = useRouter()
 const auth    = useAuthStore()

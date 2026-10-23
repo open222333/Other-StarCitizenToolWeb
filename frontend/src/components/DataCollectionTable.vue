@@ -1,0 +1,170 @@
+<!--
+  後台「資料庫檢視」的單一資料表列表（唯讀，GET /data/collections/<name>）。
+  欄位是後端取樣出來的頂層欄位；陣列／物件只顯示縮短的 JSON，點一列看完整內容（含 raw）。
+  搜尋卡：「欄位」選要比對的欄位（空＝全部欄位）＋「關鍵字」（部分比對，數字也比對相等）。
+  後台「資料庫檢視」頁、礦物資料庫的「精煉站」分頁共用。
+-->
+<template>
+  <div class="sf-scroll-anchor">
+    <AdminSearchCard :active="!!(field || query.trim())" @clear="clearFilters">
+      <AdminSearchField label="欄位" :for-id="`${uid}-field`" col="col-6 col-md-4 col-xl-3">
+        <select :id="`${uid}-field`" v-model="field" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部欄位</option>
+          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
+        </select>
+      </AdminSearchField>
+      <AdminSearchField label="關鍵字" :for-id="`${uid}-q`" col="col-6 col-md-8 col-xl-5">
+        <input :id="`${uid}-q`" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入關鍵字">
+      </AdminSearchField>
+      <template #summary>共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span></template>
+    </AdminSearchCard>
+
+    <div v-if="error" class="alert alert-warning py-2">{{ error }}</div>
+
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-0">
+        <div style="overflow-x:auto">
+          <table class="table table-hover table-sm align-middle mb-0 small dct">
+            <thead class="table-light">
+              <tr>
+                <SortTh v-for="(c, i) in columns" :key="c" :sort="sort" :field="c" :class="{ 'ps-3': i === 0 }">{{ c }}</SortTh>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loading && !rows.length">
+                <td :colspan="columns.length || 1" class="text-center py-4 text-muted">
+                  <span class="spinner-border spinner-border-sm me-2"></span>載入中...
+                </td>
+              </tr>
+              <tr v-else-if="!rows.length">
+                <td :colspan="columns.length || 1" class="text-center py-4 text-muted">沒有資料</td>
+              </tr>
+              <template v-for="r in rows" v-else :key="String(r._id)">
+                <tr class="dct-row" role="button" tabindex="0" :aria-expanded="openId === String(r._id) ? 'true' : 'false'"
+                  @click="toggle(r)" @keydown.enter="toggle(r)">
+                  <td v-for="(c, i) in columns" :key="c" :class="{ 'ps-3 font-monospace': i === 0 }">
+                    <span v-if="r[c] === undefined || r[c] === null || r[c] === ''" class="text-muted">—</span>
+                    <span v-else-if="typeof r[c] === 'boolean'" class="badge" :class="r[c] ? 'text-bg-success' : 'text-bg-secondary'">{{ r[c] }}</span>
+                    <span v-else class="dct-cell">{{ r[c] }}</span>
+                  </td>
+                </tr>
+                <tr v-if="openId === String(r._id)">
+                  <td :colspan="columns.length" class="dct-detail">
+                    <div v-if="detailLoading" class="text-muted">載入中...</div>
+                    <pre v-else class="mb-0">{{ detailText }}</pre>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-end mt-2">
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading" @click="reload(Math.max(0, offset - limit))">上一頁</button>
+        <button class="btn btn-outline-secondary" :disabled="offset + limit >= total || loading" @click="reload(offset + limit)">下一頁</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { dataApi } from '@/api'
+import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import AdminSearchField from '@/components/AdminSearchField.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
+
+const props = defineProps({
+  /** 資料表名稱（要在後端 src/models/data_browser.py 的 CATALOG 裡） */
+  collection: { type: String, required: true },
+})
+
+
+const uid = `dct-${Math.random().toString(36).slice(2, 8)}`
+const limit = 50
+const columns = ref([])
+const rows = ref([])
+const total = ref(0)
+const offset = ref(0)
+const loading = ref(false)
+const error = ref('')
+const field = ref('')
+const query = ref('')
+const openId = ref('')
+const detailText = ref('')
+const detailLoading = ref(false)
+
+const sort = useTableSort(null, { onChange: () => reload(0) })
+
+let seq = 0
+let lastQuery = ''
+async function reload(newOffset = 0) {
+  const my = ++seq
+  offset.value = newOffset
+  loading.value = true
+  error.value = ''
+  openId.value = ''
+  lastQuery = query.value.trim()
+  const res = await dataApi.list(props.collection, {
+    field: field.value, q: lastQuery, ...sort.params.value, limit, offset: newOffset,
+  })
+  const body = res ? await res.json().catch(() => null) : null
+  if (my !== seq) return
+  if (res?.ok && body?.success) {
+    columns.value = body.data.columns || []
+    rows.value = body.data.rows || []
+    total.value = body.data.total || 0
+  } else {
+    rows.value = []
+    total.value = 0
+    error.value = body?.message || '讀取資料失敗。'
+  }
+  loading.value = false
+}
+
+function clearFilters() {
+  field.value = ''
+  query.value = ''
+  reload(0)
+}
+
+async function toggle(r) {
+  const id = String(r._id)
+  if (openId.value === id) { openId.value = ''; return }
+  openId.value = id
+  detailLoading.value = true
+  const res = await dataApi.doc(props.collection, id)
+  const body = res?.ok ? await res.json().catch(() => null) : null
+  if (openId.value !== id) return
+  detailText.value = body?.success ? JSON.stringify(body.data, null, 2) : '讀取失敗。'
+  detailLoading.value = false
+}
+
+// 關鍵字打字停 300ms 就查
+let timer = null
+watch(query, () => {
+  clearTimeout(timer)
+  if (query.value.trim() === lastQuery) return
+  timer = setTimeout(() => reload(0), 300)
+})
+onBeforeUnmount(() => clearTimeout(timer))
+
+watch(() => props.collection, () => {
+  field.value = ''
+  query.value = ''
+  lastQuery = ''
+  sort.sortKey.value = ''
+  reload(0)
+}, { immediate: true })
+</script>
+
+<style scoped>
+.dct-row { cursor: pointer; }
+.dct-cell { display: inline-block; max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.dct-detail { background: var(--bs-tertiary-bg); }
+.dct-detail pre { max-height: 32rem; overflow: auto; font-size: .75rem; white-space: pre-wrap; word-break: break-all; }
+</style>

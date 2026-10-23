@@ -126,22 +126,23 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 |------|-----|------|
 | **管理後台** | http://localhost:8080/admin/ | 使用者／玩家／藍圖／庫存管理、操作紀錄、資料同步排程、系統設定。需後台帳號登入 |
 | 後台登入 | http://localhost:8080/admin/login | 預設帳號 `admin`，密碼見 `.env` 的 `ADMIN_PASSWORD`（**必須改掉，否則 api 會拒絕啟動**） |
-| 玩家自助註冊 | http://localhost:8090/register | 公開，不需登入 |
-| **玩家登入** | http://localhost:8090/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
-| **玩家個人頁** | http://localhost:8090/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
-| 藍圖材料試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「材料」展開） | 輸入要做幾個，列出每種材料總共需要多少；藍圖與礦物材料附 sc-datahub.com 對應頁面的按鈕（後台沒有這個功能） |
-| 艦隊 JSON 匯入 | http://localhost:8090/me?tab=fleet（「JSON 匯入」按鈕） | 匯入 [HangarXPLOR](https://chromewebstore.google.com/detail/star-citizen-hangar-xplor/bhkgemjdepodofcnmekdobmmbifemhkc)（RSI 機庫頁的 Chrome 擴充功能，匯入區有「安裝 HangarXPLOR」按鈕）匯出的 `shiplist.json`：先預覽再確認；數量取現有與船單較大值（重複匯入不會變多），船的自訂名稱填進每艘的區別名稱。規則見 `src/models/fleet_import.py` |
-| LOG 解析 | http://localhost:8090/me?tab=gamelog | 選擇自己的 `Game.log`（或「貼上文字」直接貼一段 log），整理成中文事件時間軸與本次遊玩回顧；**只在瀏覽器裡解析、不上傳**。死亡紀錄（`<Actor Death>`）會講出原因（damage type 對照成中文）、可能是被誰殺的（NPC 會標 NPC）、武器與地點，回顧列出「可能是被誰殺的」「死亡原因」；判斷「你」用 log 裡的登入紀錄 `Handle[...]`，沒有的話用玩家頁登入的遊戲ID。每個事件下面列出明確數據（死者／兇手與 ID、武器、死亡原因、地點、攻擊方向、Shard、交易金額…，整理過的值旁邊附 log 原文），「原始紀錄」按鈕可看整行原文。Chrome／Edge 可「持續監看」（遊戲進行中即時更新）。規則在 `frontend/src/utils/gameLogRules.json` |
-| 中文轉碼 | http://localhost:8090/me?tab=chatcode | 上半部：遊戲聊天用的 中文 ↔ `@代碼` 互轉（自動判斷或手動指定方向），字典由伺服器從社群 chsc-tw 下載並快取 24 小時；下半部：遊戲文字代碼（localization key，例如 `vehicle_NameAEGS_Avenger_Stalker`）⇄ 中文／英文查詢，資料是翻譯資料庫 `sc_translations` |
-| 藍圖品質試算 | http://localhost:8090/me?tab=blueprints（我的藍圖 › 每張的「品質試算」） | 每個部位（Frame／Barrel…）拖拉材料品質 0–1000，看各屬性倍率與綜合加成；資料來自 scunpacked-data `blueprints.json`（`blueprint_quality_master`），跟著「藍圖」同步項目更新 |
-| 登記藍圖資料 | http://localhost:8090/me?tab=blueprints&sub=data | 遊戲藍圖資料庫（點一列看配方與解鎖任務）＋登記：每列「登記」按鈕登記一張，或勾選多張一次登記（已登記的會標示並禁止重複勾）；原本的「藍圖資料」「批量登記」合併在這裡（舊網址 `sub=bulk` 也會打開） |
+| 玩家自助註冊 | http://localhost:8090/player/register | 公開，不需登入 |
+| **玩家登入** | http://localhost:8090/player/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
+| **玩家個人頁** | http://localhost:8090/player/me | 存入／取出／倉庫（物品庫存・庫存紀錄・藍圖）／**試算**／查詢／我的資料 |
+| 藍圖材料試算 | http://localhost:8090/player/me?tab=blueprints（我的藍圖 › 每張的「材料」展開） | 輸入要做幾個，列出每種材料總共需要多少；藍圖與礦物材料附 sc-datahub.com 對應頁面的按鈕（後台沒有這個功能） |
+| 艦隊 JSON 匯入 | http://localhost:8090/player/me?tab=fleet（「JSON 匯入」按鈕） | 匯入 [HangarXPLOR](https://chromewebstore.google.com/detail/star-citizen-hangar-xplor/bhkgemjdepodofcnmekdobmmbifemhkc)（RSI 機庫頁的 Chrome 擴充功能，匯入區有「安裝 HangarXPLOR」按鈕）匯出的 `shiplist.json`：先預覽再確認；數量取現有與船單較大值（重複匯入不會變多），船的自訂名稱填進每艘的區別名稱。規則見 `src/models/fleet_import.py` |
+| LOG 解析 | http://localhost:8090/player/me?tab=gamelog | 選擇自己的 `Game.log`（或「貼上文字」直接貼一段 log），整理成中文事件時間軸與本次遊玩回顧；**只在瀏覽器裡解析、不上傳**。死亡紀錄（`<Actor Death>`）會講出原因（damage type 對照成中文）、可能是被誰殺的（NPC 會標 NPC）、武器與地點，回顧列出「可能是被誰殺的」「死亡原因」；判斷「你」用 log 裡的登入紀錄 `Handle[...]`，沒有的話用玩家頁登入的遊戲ID。每個事件下面列出明確數據（死者／兇手與 ID、武器、死亡原因、地點、攻擊方向、Shard、交易金額…，整理過的值旁邊附 log 原文），「原始紀錄」按鈕可看整行原文。Chrome／Edge 可「持續監看」（遊戲進行中即時更新）。規則在 `frontend/src/utils/gameLogRules.json` |
+| 中文轉碼 | http://localhost:8090/player/me?tab=chatcode | 上半部：遊戲聊天用的 中文 ↔ `@代碼` 互轉（自動判斷或手動指定方向），字典由伺服器從社群 chsc-tw 下載並快取 24 小時；下半部：遊戲文字代碼（localization key，例如 `vehicle_NameAEGS_Avenger_Stalker`）⇄ 中文／英文查詢，資料是翻譯資料庫 `sc_translations` |
+| 藍圖品質試算 | http://localhost:8090/player/me?tab=blueprints（我的藍圖 › 每張的「品質試算」） | 每個部位（Frame／Barrel…）拖拉材料品質 0–1000，看各屬性倍率與綜合加成；資料來自 scunpacked-data `blueprints.json`（`blueprint_quality_master`），跟著「藍圖」同步項目更新 |
+| 登記藍圖資料 | http://localhost:8090/player/me?tab=blueprints&sub=data | 遊戲藍圖資料庫（點一列看配方與解鎖任務）＋登記：每列「登記」按鈕登記一張，或勾選多張一次登記（已登記的會標示並禁止重複勾）；原本的「藍圖資料」「批量登記」合併在這裡（舊網址 `sub=bulk` 也會打開） |
 | 地點資料庫 | http://localhost:8080/admin/locations | 唯讀，星圖地點（星系、行星、衛星、太空站、前哨站…約 2,000 筆），來源 scunpacked-data `starmap.json`，由「地點」同步項目更新；名稱、說明、設施、管轄由翻譯資料庫比對中文 |
+| 資料庫檢視 | http://localhost:8080/admin/data | 唯讀，沒有專屬後台頁面的資料表（Wiki 商品、藍圖品質、UEX 物品／載具／原礦價格、UEX 精煉四張表、翻譯、同步紀錄…）依類別列出筆數，點一個看文件：可選欄位＋關鍵字搜尋、點欄位名稱排序，點一列看完整內容（含 raw）。開放的資料表在 `src/models/data_browser.py` 的 CATALOG，帳號、玩家、token 一律不列；API 在 `/data/collections`。礦物資料庫的「精煉站」分頁用同一套列出 UEX 精煉資料 |
 | 商品資料庫 | http://localhost:8080/admin/commodities | 唯讀，由「UEX 價格」同步項目更新（需 UEX token）。三個分頁直接列資料庫內容方便檢查：「商品」UEX 商品（縮寫代碼如 AGRI、QUAN、類別、參考買賣價、屬性，每筆列出關聯的礦物）；「商品價格」`uex_commodities_prices`（商品 × 交易終端的買價／庫存／賣價／更新時間，後端分頁）；「交易終端」`uex_terminals`（地點、類型、屬性、可買／可賣商品數） |
-| 登記船艦資料／船艦價格 | http://localhost:8090/me?tab=fleet&sub=data | 玩家頁「艦隊 › 登記船艦資料」：用艦隊分頁頂端的共用搜尋卡篩選載具主檔（含「取得方式」：只看可用遊戲幣購買／可租船，多選取聯集；後台艦船列表也有，API 參數 `acquire=buy|rent`），列表直接顯示類型、尺寸、廠商、角色；每列有「登記」按鈕（登記 1 艘到我的艦隊），也能勾選多款一次登記（原本的「批量登記」併進來，已登記的標示並禁止重複）。點開看載員、貨艙、質量與價格：官網現金價（`msrp`，美金）、遊戲內最低購買價與租船價（UEX，aUEC）以及每個購買／租船地點。我的艦隊每艘船也顯示這三個價格。後台「艦船」列表多「遊戲內購買」「租船」兩欄（點開看地點），另有「購買價格」「租船價格」分頁列 UEX 價格表原始內容（含對不到載具主檔的） |
-| 商品購買地點 | http://localhost:8090/me?tab=search&sub=commodities | 玩家頁「查詢」：篩選並勾選多種商品（最多 20 種），列出**全部都買得到**的交易終端（蜂巢式下拉：終端 → 每種商品的買價、庫存、UEX 回報時間），可限定星系；沒有結果時列出每種商品各自買得到的地點數。資料是 `uex_commodities_prices`（`src/models/uex_commodity_price.py`） |
-| 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務；玩家頁「任務」分頁（`/me?tab=missions`）用共用搜尋卡篩名稱／類型／星系／勢力／合法性／只看有藍圖，藍圖欄顯示任務會給的藍圖自己已登記幾張（預設可用的視同已登記），點一列看說明與各獎勵池藍圖的已登記／未登記 |
-| 玩家站根路徑 | http://localhost:8090/ | 導到 `/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好 |
-| 玩家站上的後台登入 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面。管理員平常請走 8080 |
+| 登記船艦資料／船艦價格 | http://localhost:8090/player/me?tab=fleet&sub=data | 玩家頁「艦隊 › 登記船艦資料」：用艦隊分頁頂端的共用搜尋卡篩選載具主檔（含「取得方式」：只看可用遊戲幣購買／可租船，多選取聯集；後台艦船列表也有，API 參數 `acquire=buy|rent`），列表直接顯示類型、尺寸、廠商、角色；每列有「登記」按鈕（登記 1 艘到我的艦隊），也能勾選多款一次登記（原本的「批量登記」併進來，已登記的標示並禁止重複）。點開看載員、貨艙、質量與價格：官網現金價（`msrp`，美金）、遊戲內最低購買價與租船價（UEX，aUEC）以及每個購買／租船地點。我的艦隊每艘船也顯示這三個價格。後台「艦船」列表多「遊戲內購買」「租船」兩欄（點開看地點），另有「購買價格」「租船價格」分頁列 UEX 價格表原始內容（含對不到載具主檔的） |
+| 商品購買地點 | http://localhost:8090/player/me?tab=search&sub=commodities | 玩家頁「查詢」：篩選並勾選多種商品（最多 20 種），列出**全部都買得到**的交易終端（蜂巢式下拉：終端 → 每種商品的買價、庫存、UEX 回報時間），可限定星系；沒有結果時列出每種商品各自買得到的地點數。資料是 `uex_commodities_prices`（`src/models/uex_commodity_price.py`） |
+| 任務／勢力資料庫 | http://localhost:8080/admin/missions ／ `/admin/factions` | 唯讀，資料由同步排程從 Star Citizen Wiki API 抓（任務帶獎勵藍圖池），中文由翻譯資料庫比對。玩家頁藍圖名稱可點開看解鎖任務；玩家頁「任務」分頁（`/me?tab=missions`）用共用搜尋卡篩名稱／類型／星系／勢力／合法性／只看有藍圖，藍圖欄顯示任務會給的藍圖自己已登記幾張（預設可用的視同已登記），點一列看說明（含聲望門檻：勢力＋階級＋門檻分數、接取星系）與各獎勵池藍圖的已登記／未登記；工具列「勢力聲望」選勢力看聲望階級，每一階列出要到這個階級才能接的任務（`/mission/factions/<id>/reputation`、`/mission/factions/ladders`） |
+| 玩家站根路徑 | http://localhost:8090/ | 導到 `/player/me`；未登入者落在玩家登入頁。給玩家發網址直接用根路徑就好。玩家頁面一律在 `/player/` 底下、後台頁面一律在 `/admin/` 底下；舊網址（`/me`、`/login`、`/register`、玩家站上的 `/mining` 這類後台頁）會自動導到新位置。頁面網址跟 API 前綴同名（例如 `/player/me`）時，nginx 用 `Sec-Fetch-Mode: navigate` 判斷整頁導覽回 SPA、fetch 才轉給 api |
+| 玩家站上的後台 | http://localhost:8090/admin/login | 同一份 SPA 也含後台頁面，網址在 `/admin/` 底下（例如 `/admin/mining`）。管理員平常請走 8080 |
 
 > **兩個登入頁是不同的身分體系，用錯頁面會一直顯示帳號或密碼錯誤**：
 > 玩家用 `/login`（查 `players` 集合），後台管理員用 `/admin/login`（查 `users` 集合）。

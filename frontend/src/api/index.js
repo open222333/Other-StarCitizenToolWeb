@@ -243,6 +243,18 @@ export const toolLinkApi = {
   importAll: (body)   => apiFetch('/links/import', { method: 'POST', body: JSON.stringify(body) }),
 }
 
+// ── 資料庫檢視（唯讀，見 app/data/view.py）──────────────────────────
+export const dataApi = {
+  collections: () => apiFetch('/data/collections'),
+  // params：field（空＝全部欄位）、q、sort_by、sort_dir、limit、offset
+  list: (name, params = {}) => {
+    const sp = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) if (v !== '' && v !== null && v !== undefined) sp.append(k, v)
+    return apiFetch(`/data/collections/${encodeURIComponent(name)}?${sp.toString()}`)
+  },
+  doc: (name, id) => apiFetch(`/data/collections/${encodeURIComponent(name)}/doc?id=${encodeURIComponent(id)}`),
+}
+
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────
 // 對應 app/item/view.py 的 /item/sync-status、/item/sync、/item/sync-jobs
 // （每個資料庫一個同步項目，各自排程；syncNow 帶 { jobs: [...] } 只同步那幾項）

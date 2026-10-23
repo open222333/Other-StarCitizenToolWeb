@@ -9,9 +9,24 @@ const ROUTER_BASE = import.meta.env.VITE_ROUTER_BASE || '/admin/'
 // 這個 build 是不是玩家站（web build，掛在網域根路徑）
 const PLAYER_BUILD = ROUTER_BASE === '/'
 
+// ── 網址分層 ─────────────────────────────────────────────────────
+// 後台頁面一律在 /admin/ 底下、玩家頁面一律在 /player/ 底下（兩套 build 看到的網址一致）：
+//   - admin build：router base 本來就是 /admin/，後台路由不用再加前綴（ADMIN_PREFIX＝''）
+//   - web build（玩家站，base '/'）：後台路由掛在 /admin 底下
+// 前端網址也可能跟 API 前綴同名（/player/me 頁面 vs GET /player/me API），nginx 與 dev proxy
+// 用 Sec-Fetch-Mode: navigate 區分「整頁導覽」跟 fetch（見 conf/nginx-web/default.conf）。
+const ADMIN_PREFIX = PLAYER_BUILD ? '/admin' : ''
+/** 後台頁面的路由路徑（'/users' → web build 的 '/admin/users'；admin build 不變） */
+export const adminPath = path => `${ADMIN_PREFIX}${path}`
+export const PLAYER_PREFIX = '/player'
+/** 玩家頁面的路由路徑（'/me' → '/player/me'） */
+export const playerPath = path => `${PLAYER_PREFIX}${path}`
+export const PLAYER_HOME = playerPath('/me')
+export const PLAYER_REGISTER_PATH = playerPath('/register')
+
 // 後台登入成功後要去哪。玩家站上也有完整的後台頁面（同一份 SPA），
 // 所以兩套 build 都要有一個「後台首頁」，不能用 '/'（見下面 HOME_REDIRECT）。
-export const ADMIN_HOME = PLAYER_BUILD ? '/players' : '/users'
+export const ADMIN_HOME = adminPath(PLAYER_BUILD ? '/players' : '/users')
 
 // 根路徑導向。
 //
@@ -22,20 +37,34 @@ export const ADMIN_HOME = PLAYER_BUILD ? '/players' : '/users'
 // （這也是 README 先前標註的待修 UX 問題）。
 // 現在：未登入的玩家 → /me → requiresPlayerAuth → 玩家登入頁；
 //       管理員請直接走 /admin/login（兩個登入頁互相有連結）。
-const HOME_REDIRECT = PLAYER_BUILD ? '/me' : '/users'
+const HOME_REDIRECT = PLAYER_BUILD ? PLAYER_HOME : '/users'
 
 // 後台登入頁的路徑：createWebHistory 的 base 會直接接在路徑前面，
 // admin build 的 base 已經是 /admin/，路徑維持 '/login' 最終網址就是
 // /admin/login，不用再疊一層；web build 的 base 是 '/'，所以這裡改成
 // '/admin/login'，讓兩套 build 最終看到的網址一致，也跟玩家登入頁
 // 在網址上就有明顯區隔，不會有人以為 /login 是玩家登入。
-export const ADMIN_LOGIN_PATH = ROUTER_BASE === '/' ? '/admin/login' : '/login'
+export const ADMIN_LOGIN_PATH = adminPath('/login')
 
 // 玩家登入頁的路徑：web build 上面 /login 已經讓給後台改用 /admin/login
 // 空出來了，玩家平常用的這個網域就把玩家登入放回最直覺的 /login；
 // admin build 的 /login 還是後台在用，玩家登入在那個網域本來就用不到，
 // 維持原本的 /player-login 就好，避免跟後台登入路徑撞在一起。
-export const PLAYER_LOGIN_PATH = ROUTER_BASE === '/' ? '/login' : '/player-login'
+export const PLAYER_LOGIN_PATH = playerPath('/login')
+
+// 改成 /admin/、/player/ 分層前的舊網址 → 新網址（只有 web build 需要；admin build 的網址沒變）
+const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles'
+const keepQuery = path => to => ({ path: typeof path === 'function' ? path(to) : path, query: to.query, hash: to.hash })
+const LEGACY_REDIRECTS = PLAYER_BUILD ? [
+  { path: '/me', redirect: keepQuery(PLAYER_HOME) },
+  { path: '/login', redirect: keepQuery(PLAYER_LOGIN_PATH) },
+  { path: '/register', redirect: keepQuery(PLAYER_REGISTER_PATH) },
+  { path: `/:page(${ADMIN_PAGES})/:rest(.*)*`, redirect: keepQuery(to => adminPath(to.path)) },
+] : [
+  { path: '/me', redirect: keepQuery(PLAYER_HOME) },
+  { path: '/player-login', redirect: keepQuery(PLAYER_LOGIN_PATH) },
+  { path: '/register', redirect: keepQuery(PLAYER_REGISTER_PATH) },
+]
 
 const router = createRouter({
   history: createWebHistory(ROUTER_BASE),
@@ -50,7 +79,7 @@ const router = createRouter({
 
     {
       // 公開自助註冊頁，不需要登入，也不因為已登入而被導開
-      path: '/register',
+      path: PLAYER_REGISTER_PATH,
       name: 'register',
       component: () => import('@/views/RegisterView.vue'),
     },
@@ -64,15 +93,15 @@ const router = createRouter({
 
     {
       // 玩家個人頁，需要玩家自己登入（不是後台 admin/operator/viewer 登入）
-      path: '/me',
+      path: PLAYER_HOME,
       name: 'my-player',
       component: () => import('@/views/MyPlayerView.vue'),
       meta: { requiresPlayerAuth: true },
     },
 
     {
-      // 需登入的頁面共用 DashboardLayout
-      path: '/',
+      // 需登入的頁面共用 DashboardLayout（web build 掛在 /admin 底下，見上面 ADMIN_PREFIX）
+      path: ADMIN_PREFIX || '/',
       component: () => import('@/layouts/DashboardLayout.vue'),
       meta: { requiresAuth: true },
       children: [
@@ -163,6 +192,12 @@ const router = createRouter({
           component: () => import('@/views/ToolLinksView.vue'),
         },
         {
+          // 資料庫檢視（唯讀）：沒有專屬頁面的資料表依類別列出，見 DataBrowserView.vue 檔頭；?c= 直接打開某個資料表
+          path: 'data',
+          name: 'data-browser',
+          component: () => import('@/views/DataBrowserView.vue'),
+        },
+        {
           // 艦船基本資料（唯讀，遊戲主檔，見 VehicleListView.vue 檔頭）
           path: 'vehicles',
           name: 'vehicles',
@@ -170,6 +205,8 @@ const router = createRouter({
         },
       ],
     },
+    // 舊網址（改分層前的書籤、分享連結）導到新位置，查詢參數照帶
+    ...LEGACY_REDIRECTS,
   ],
 })
 
@@ -184,7 +221,7 @@ router.beforeEach((to) => {
   if (to.meta.guest && auth.isLoggedIn) return ADMIN_HOME
 
   // 需要 admin 但不是 admin → 操作紀錄（最低權限頁）
-  if (to.meta.requiresAdmin && !auth.isAdmin) return '/logs'
+  if (to.meta.requiresAdmin && !auth.isAdmin) return adminPath('/logs')
 
   // 玩家個人頁：需要玩家自己的登入狀態（跟後台 admin 登入分開）
   if (to.meta.requiresPlayerAuth) {

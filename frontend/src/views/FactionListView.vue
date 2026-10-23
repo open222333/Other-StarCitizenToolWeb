@@ -100,7 +100,7 @@
                     <td>{{ yesNo(f.is_npc) }}</td>
                     <td>{{ f.has_reputation === true ? '有' : f.has_reputation === false ? '無' : '—' }}</td>
                     <td class="text-end">
-                      <RouterLink v-if="f.mission_count" :to="{ path: '/missions', query: { faction: f._id } }"
+                      <RouterLink v-if="f.mission_count" :to="{ path: adminPath('/missions'), query: { faction: f._id } }"
                         @click.stop>{{ f.mission_count }}</RouterLink>
                       <span v-else class="text-muted">0</span>
                     </td>
@@ -143,7 +143,7 @@
                           <div v-else-if="!detail.missions?.length" class="text-muted">—</div>
                           <ul v-else class="list-unstyled mb-0 mission-list">
                             <li v-for="m in detail.missions" :key="m._id">
-                              <RouterLink :to="{ path: '/missions', query: { id: m._id } }">{{ zhPair(m.title, m.title_zh) }}</RouterLink>
+                              <RouterLink :to="{ path: adminPath('/missions'), query: { id: m._id } }">{{ zhPair(m.title, m.title_zh) }}</RouterLink>
                               <span v-if="m.blueprint_count" class="badge text-bg-primary ms-1">{{ m.blueprint_count }}</span>
                             </li>
                           </ul>
@@ -174,6 +174,7 @@ import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { adminPath } from '@/router'
 import { fmtInt, zhPair } from '@/utils/mission'
 
 const route = useRoute()

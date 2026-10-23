@@ -12,7 +12,7 @@
 -->
 <template>
   <div v-if="player">
-    <RouterLink to="/players" class="btn btn-sm btn-outline-secondary mb-3">
+    <RouterLink :to="adminPath('/players')" class="btn btn-sm btn-outline-secondary mb-3">
       <i class="bi bi-arrow-left me-1"></i>返回玩家列表
     </RouterLink>
 
@@ -96,7 +96,7 @@
 
   <div v-else-if="notFound" class="text-center text-muted py-5">
     <p class="mb-2">找不到這位玩家（可能已被移除）。</p>
-    <RouterLink to="/players" class="btn btn-sm btn-outline-secondary">返回玩家列表</RouterLink>
+    <RouterLink :to="adminPath('/players')" class="btn btn-sm btn-outline-secondary">返回玩家列表</RouterLink>
   </div>
 
   <div v-else class="text-center text-muted py-5">
@@ -111,6 +111,7 @@ import { usePlayerStore } from '@/stores/player'
 import { inventoryApi, blueprintApi } from '@/api'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { adminPath } from '@/router'
 
 const route = useRoute()
 const store = usePlayerStore()

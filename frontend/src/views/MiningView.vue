@@ -10,7 +10,9 @@
     - 礦物：沒有獨立的 collection，從礦床的成分（parts）彙整而來
     - UEX 縮寫：parts[].uex，後端依英文名稱對應 uex_commodities（UEX 同步項目），
       對不到可以在礦物分頁手動指定（見 src/models/uex_commodity.py）
-  三者都由 tasks/scdata_sync.py 從 scunpacked-data 同步。資料量小（約 270 個
+  三者都由 tasks/scdata_sync.py 從 scunpacked-data 同步。
+    - 精煉站分頁：UEX 精煉資料（uex_refinery_yields／methods／audits／capacities）原樣列出，
+      走後台「資料庫檢視」同一支 API（/data/collections/<name>）。資料量小（約 270 個
   礦床、60 多個地點），一次載入、篩選都在前端做。
 
   玩家頁面顯示：三個分頁都有開關（PlayerVisibleToggle，規則見 src/models/visibility.py）。
@@ -30,12 +32,23 @@
       <li v-for="t in TABS" :key="t.key" class="nav-item">
         <button type="button" class="nav-link" :class="{ active: tab === t.key }" @click="tab = t.key">
           {{ t.label }}
-          <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">{{ counts[t.key] }}</span>
+          <span v-if="counts[t.key] !== undefined" class="badge bg-secondary-subtle text-secondary-emphasis ms-1">{{ counts[t.key] }}</span>
         </button>
       </li>
     </ul>
 
     <!-- 搜尋卡：條件照目前分頁的列表欄位排（見 components/AdminSearchCard.vue）；篩選在前端即時做 -->
+    <!-- ══ 精煉站：UEX 精煉資料原樣列出（產量加成／精煉方式／玩家精煉紀錄／容量），見 components/DataCollectionTable.vue ══ -->
+    <template v-if="tab === 'refinery'">
+      <ul class="nav nav-pills mb-3">
+        <li v-for="r in REFINERY_TABLES" :key="r.key" class="nav-item">
+          <button type="button" class="nav-link py-1" :class="{ active: refineryTable === r.key }" @click="refineryTable = r.key">{{ r.label }}</button>
+        </li>
+      </ul>
+      <DataCollectionTable :collection="refineryTable" />
+    </template>
+
+    <template v-else>
     <AdminSearchCard :key="tab" :active="hasActiveFilters" @clear="resetFilters">
       <AdminSearchField :label="QUERY_LABELS[tab]" :for-id="`mining-${tab}-q`" col="col-12 col-md-6 col-xl-3">
         <input :id="`mining-${tab}-q`" v-model="query" type="search" class="form-control form-control-sm" placeholder="輸入名稱">
@@ -231,6 +244,7 @@
     <div v-if="!loading && !loadFailed" class="small text-muted mt-2">
       共 {{ currentTotal }} 筆<span v-if="hasActiveFilters"> · 符合 {{ currentShown }} 筆</span>
     </div>
+    </template>
   </div>
 </template>
 
@@ -243,6 +257,7 @@ import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import SortTh from '@/components/SortTh.vue'
+import DataCollectionTable from '@/components/DataCollectionTable.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { loadTranslations, translate } from '@/utils/translations'
 import { ownSignatures } from '@/utils/miningSignature'
@@ -251,7 +266,16 @@ const TABS = [
   { key: 'minerals',  label: '礦物' },
   { key: 'deposits',  label: '礦床' },
   { key: 'locations', label: '地點' },
+  { key: 'refinery',  label: '精煉站' },
 ]
+// 精煉站分頁的四張 UEX 資料表（同步項目「UEX 精煉」）
+const REFINERY_TABLES = [
+  { key: 'uex_refinery_yields', label: '產量加成' },
+  { key: 'uex_refinery_methods', label: '精煉方式' },
+  { key: 'uex_refinery_audits', label: '玩家精煉紀錄' },
+  { key: 'uex_refinery_capacities', label: '精煉站容量' },
+]
+const refineryTable = ref(REFINERY_TABLES[0].key)
 const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 const TIER_NONE = '__none__'
 

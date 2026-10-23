@@ -107,7 +107,7 @@
                     </td>
                     <td>{{ m.reward_scope || '—' }}</td>
                     <td>
-                      <RouterLink v-if="m.faction_uuid" :to="{ path: '/factions', query: { id: m.faction_uuid } }"
+                      <RouterLink v-if="m.faction_uuid" :to="{ path: adminPath('/factions'), query: { id: m.faction_uuid } }"
                         @click.stop>{{ zhPair(m.faction_name, m.faction_name_zh) }}</RouterLink>
                       <span v-else>{{ zhPair(m.mission_giver, m.mission_giver_zh) || '—' }}</span>
                     </td>
@@ -199,6 +199,7 @@ import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { adminPath } from '@/router'
 import { fmtChance, fmtInt, reputationLabel, rewardLabel, zhPair } from '@/utils/mission'
 
 const LEGALITY_OPTIONS = [

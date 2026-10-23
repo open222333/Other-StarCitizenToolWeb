@@ -94,6 +94,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { adminPath } from '@/router'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { playerApi } from '@/api'
@@ -131,7 +132,7 @@ const pSort = useTableSort(filtered, { accessors: {
 } })
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-TW') : '—' }
-function goDetail(id) { router.push(`/players/${id}`) }
+function goDetail(id) { router.push(adminPath(`/players/${id}`)) }
 
 function flash(text, type = 'danger') {
   msg.value = text; msgType.value = type

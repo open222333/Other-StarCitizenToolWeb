@@ -41,54 +41,57 @@
         </div>
 
         <div class="nav-section">Star Citizen 工具</div>
-        <RouterLink class="nav-link" to="/players" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/players')" @click="sidebarOpen = false">
           <i class="bi bi-person-badge"></i>玩家
         </RouterLink>
-        <RouterLink class="nav-link" to="/blueprints" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/blueprints')" @click="sidebarOpen = false">
           <i class="bi bi-journal-bookmark"></i>藍圖
         </RouterLink>
-        <RouterLink class="nav-link" to="/inventory" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/inventory')" @click="sidebarOpen = false">
           <i class="bi bi-box-seam"></i>庫存
         </RouterLink>
-        <RouterLink class="nav-link" to="/items" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/items')" @click="sidebarOpen = false">
           <i class="bi bi-database"></i>物品
         </RouterLink>
-        <RouterLink class="nav-link" to="/mining" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/mining')" @click="sidebarOpen = false">
           <i class="bi bi-gem"></i>礦物
         </RouterLink>
-        <RouterLink class="nav-link" to="/commodities" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/commodities')" @click="sidebarOpen = false">
           <i class="bi bi-boxes"></i>商品
         </RouterLink>
-        <RouterLink class="nav-link" to="/missions" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/missions')" @click="sidebarOpen = false">
           <i class="bi bi-flag"></i>任務
         </RouterLink>
-        <RouterLink class="nav-link" to="/factions" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/factions')" @click="sidebarOpen = false">
           <i class="bi bi-people"></i>勢力
         </RouterLink>
-        <RouterLink class="nav-link" to="/locations" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/locations')" @click="sidebarOpen = false">
           <i class="bi bi-geo-alt"></i>地點
         </RouterLink>
-        <RouterLink class="nav-link" to="/vehicles" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/vehicles')" @click="sidebarOpen = false">
           <i class="bi bi-rocket-takeoff"></i>艦船
         </RouterLink>
-        <RouterLink class="nav-link" to="/tool-links" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/tool-links')" @click="sidebarOpen = false">
           <i class="bi bi-link-45deg"></i>工具網站
         </RouterLink>
 
         <div class="nav-section">管理</div>
         <RouterLink v-if="auth.isAdmin"
-          class="nav-link" to="/users" @click="sidebarOpen = false">
+          class="nav-link" :to="adminPath('/users')" @click="sidebarOpen = false">
           <i class="bi bi-people"></i>使用者管理
         </RouterLink>
-        <RouterLink class="nav-link" to="/logs" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/logs')" @click="sidebarOpen = false">
           <i class="bi bi-journal-text"></i>操作紀錄
         </RouterLink>
 
         <div class="nav-section">系統</div>
-        <RouterLink class="nav-link" to="/sync-schedule" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/sync-schedule')" @click="sidebarOpen = false">
           <i class="bi bi-arrow-repeat"></i>資料同步排程
         </RouterLink>
-        <RouterLink class="nav-link" to="/settings" @click="sidebarOpen = false">
+        <RouterLink class="nav-link" :to="adminPath('/data')" @click="sidebarOpen = false">
+          <i class="bi bi-database"></i>資料庫檢視
+        </RouterLink>
+        <RouterLink class="nav-link" :to="adminPath('/settings')" @click="sidebarOpen = false">
           <i class="bi bi-palette"></i>系統設定
         </RouterLink>
 
@@ -110,7 +113,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ADMIN_LOGIN_PATH } from '@/router'
+import { ADMIN_LOGIN_PATH, adminPath } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 
