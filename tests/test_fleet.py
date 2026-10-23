@@ -317,6 +317,8 @@ VEHICLE_TRANSLATIONS = {
     'vehicle_class_heavyrefuelling': ('Heavy Refueling', '重型加油'),
     'vehicle_class_mediumfreightgunshio': ('Medium Freight / Gun Shio', '中型貨運船 / 火砲船'),
     'vehicle_focus_combat': ('Combat', '戰鬥'),
+    # 遊戲 key 跟 Wiki class_name 不同（Centaurus 在遊戲裡沿用 Andromeda 的 key）
+    'vehicle_NameRSI_Constellation_Mk5_Andromeda': ('RSI Constellation Mk V Centaurus', '羅伯茲太空工業 星座 Mk V 半人馬座'),
 }
 
 
@@ -331,6 +333,9 @@ def test_vehicle_zh_lookup(vehicle_zh):
     assert vehicle_name_zh('aegs_avenger_stalker') == '復仇者 追獵', 'class_name 不分大小寫'
     assert vehicle_name_zh('NOPE_Class', 'Avenger Stalker') == '復仇者 追獵', 'class_name 對不上時用英文名稱備援'
     assert vehicle_name_zh('NOPE_Class', 'No Such Ship') is None
+    assert vehicle_name_zh('RSI_Constellation_Mk5_Centaurus', 'Constellation Mk V Centaurus',
+                           game_name='RSI Constellation Mk V Centaurus') == '羅伯茲太空工業 星座 Mk V 半人馬座', \
+        'class_name 對不上、name 少廠商前綴時用 game_name（遊戲英文全名）'
     assert vehicle_role_zh('Heavy Fighter') == '重型戰鬥'
     assert vehicle_role_zh('Starter / Light Freight') == '新手 / 輕型貨運'
     assert vehicle_role_zh('Heavy Refueling') == '重型加油'

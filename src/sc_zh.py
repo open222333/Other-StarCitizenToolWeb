@@ -38,14 +38,25 @@ def _manual(domain: str) -> str:
 
 # ── 載具 ────────────────────────────────────────────────────────────
 
-def vehicle_name_zh(class_name: str = '', name: str = '', lang: str = DEFAULT_LANG) -> Optional[str]:
-    """載具 class_name（優先）或英文名稱 → 翻譯，查不到回傳 None。"""
+def vehicle_name_zh(class_name: str = '', name: str = '', lang: str = DEFAULT_LANG,
+                    game_name: str = '') -> Optional[str]:
+    """載具 class_name（優先）→ 遊戲內英文全名 game_name → 英文名稱 → 翻譯，查不到回傳 None。
+
+    Wiki 的 class_name 跟遊戲 key 不一定一樣（例如 Constellation Mk V Centaurus 在遊戲裡是
+    vehicle_NameRSI_Constellation_Mk5_Andromeda），name 又常少了廠商前綴（Constellation Mk V Taurus
+    ↔ 遊戲英文 RSI Constellation Mk V Taurus），所以中間用 game_name（遊戲裡的英文全名）反查。
+    """
     cls = (class_name or '').strip()
     if cls:
         value = T.by_keys([f'vehicle_Name{cls}_short', f'vehicle_Name{cls}'], lang)
         if value:
             return value
-    return T.by_english(name, [_manual('vehicle'), 'vehicle_name'], lang)
+    prefixes = [_manual('vehicle'), 'vehicle_name']
+    for text in (game_name, name):
+        value = T.by_english(text, prefixes, lang) if text else None
+        if value:
+            return value
+    return None
 
 
 #: 上游 role 字串 → 翻譯包 key（英文對不上、但翻譯包確實有同義條目的）

@@ -391,7 +391,7 @@ def _vehicle_type_condition(vehicle_type: str) -> Optional[dict]:
 class VehicleMaster(_MasterBase):
     COLLECTION = 'vehicle_master'
     PROJECTION = {
-        'name': 1, 'class_name': 1, 'cargo_capacity_scu': 1,
+        'name': 1, 'class_name': 1, 'game_name': 1, 'cargo_capacity_scu': 1,
         'vehicle_inventory_uscu': 1, 'manufacturer_code': 1, 'manufacturer_name': 1,
         'size_class': 1, 'career': 1, 'role': 1, 'crew_min': 1, 'crew_max': 1,
         'mass_hull': 1, 'msrp': 1, 'is_current': 1,
@@ -488,7 +488,7 @@ class VehicleMaster(_MasterBase):
         """
         for row in rows:
             row['vehicle_type'] = vehicle_type_of(row)
-            row['name_zh'] = vehicle_name_zh(row.get('class_name'), row.get('name'))
+            row['name_zh'] = vehicle_name_zh(row.get('class_name'), row.get('name'), game_name=row.get('game_name'))
             row['role_zh'] = vehicle_role_zh(row.get('role'))
         return rows
 
@@ -551,9 +551,9 @@ class VehicleMaster(_MasterBase):
         q = (query or '').strip()
         if not q:
             return []
-        rows = cls._col().find({'is_current': True}, {'class_name': 1, 'name': 1})
+        rows = cls._col().find({'is_current': True}, {'class_name': 1, 'name': 1, 'game_name': 1})
         return [r['_id'] for r in rows
-                if q in (vehicle_name_zh(r.get('class_name'), r.get('name')) or '')]
+                if q in (vehicle_name_zh(r.get('class_name'), r.get('name'), game_name=r.get('game_name')) or '')]
 
     @classmethod
     def search(cls, query: str = '', limit: int = 25, include_retired: bool = False,
