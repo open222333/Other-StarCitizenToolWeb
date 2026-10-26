@@ -58,13 +58,10 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th v-for="c in COLUMNS" :key="c.label" :class="[c.cls, 'text-nowrap', c.sort ? 'sortable-th' : '']"
-                  :role="c.sort ? 'button' : undefined" :tabindex="c.sort ? 0 : undefined"
-                  @click="c.sort && toggleSort(c.sort)" @keydown.enter="c.sort && toggleSort(c.sort)">
-                  {{ c.label }}
-                  <i v-if="c.sort && sortBy === c.sort" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
+                <template v-for="c in COLUMNS" :key="c.label">
+                  <SortTh v-if="c.sort" :sort="sort" :field="c.sort" :class="[c.cls, 'text-nowrap']">{{ c.label }}</SortTh>
+                  <th v-else :class="[c.cls, 'text-nowrap']">{{ c.label }}</th>
+                </template>
               </tr>
             </thead>
             <tbody>
@@ -131,17 +128,7 @@
       </div>
     </div>
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
-      <div class="small text-muted">
-        共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
-      </div>
-      <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
-          @click="reload(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-outline-secondary" :disabled="loading || offset + limit >= total"
-          @click="reload(offset + limit)">下一頁</button>
-      </div>
-    </div>
+    <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" admin @page="reload" />
   </div>
 </template>
 
@@ -149,6 +136,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { itemApi } from '@/api'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import SortTh from '@/components/SortTh.vue'
+import SfPager from '@/components/SfPager.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import ItemDetail from '@/components/ItemDetail.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -191,8 +181,10 @@ const selectedSizes = ref([])
 const selectedGrades = ref([])
 const selectedAcquire = ref([])
 const playerVisible = ref('')
-const sortBy = ref('name')
-const sortDir = ref('asc')
+// 後端排序：點同一欄升冪↔降冪（不取消），換欄從升冪開始，改了就回第一頁重查
+const sort = useTableSort(null, { key: 'name', dir: 'asc', cycle: false, onChange: () => reload(0) })
+const sortBy = sort.sortKey
+const sortDir = sort.sortDir
 
 const hasActiveFilters = computed(() => !!(nameQuery.value.trim() || selectedTypes.value.length
   || selectedSubTypes.value.length || selectedManufacturers.value.length || selectedSizes.value.length
@@ -200,12 +192,6 @@ const hasActiveFilters = computed(() => !!(nameQuery.value.trim() || selectedTyp
 
 function fmtNum(v) {
   return Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 })
-}
-
-function toggleSort(field) {
-  if (sortBy.value === field) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  else { sortBy.value = field; sortDir.value = 'asc' }
-  reload(0)
 }
 
 function resetFilters() {
@@ -274,7 +260,5 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.sortable-th { cursor: pointer; user-select: none; }
-.sortable-th:hover { color: var(--bs-primary); }
 .detail-cell { background: var(--bs-tertiary-bg); }
 </style>

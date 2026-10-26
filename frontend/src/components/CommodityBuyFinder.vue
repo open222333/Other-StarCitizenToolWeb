@@ -17,18 +17,19 @@
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
-          <label class="form-label small fw-semibold mb-0">搜尋條件</label>
-          <button type="button" class="btn btn-sm btn-warning py-0" :disabled="!hasAnyFilter" @click="clearAll">
+          <span class="form-label small fw-semibold mb-0">搜尋條件</span>
+          <button type="button" class="btn btn-sm btn-warning" :disabled="!hasAnyFilter" @click="clearAll">
             清除全部
           </button>
         </div>
-        <FieldHint :text="`勾選的商品要在同一個交易終端全部都買得到才會列出，一次最多 ${maxSelected} 種。價格與庫存是玩家回報到 UEX 的資料，請參考更新時間。`" />
-        <div class="row g-2">
-          <div class="col-12 col-md-8">
+        <div class="row g-2 align-items-end">
+          <div class="col col-md-8">
             <label class="form-label small mb-1" :for="`${uid}-q`">商品名稱</label>
             <input :id="`${uid}-q`" v-model="nameQuery" type="search" class="form-control form-control-sm"
               placeholder="輸入商品名稱或縮寫…" autocomplete="off">
           </div>
+          <!-- 手機：名稱以外的條件收進「篩選」底部面板（電腦／平板照原樣） -->
+          <SfFilterSheet :count="sheetCount" @clear="clearSheet">
           <div class="col-12 col-md-4">
             <label class="form-label small mb-1" :for="`${uid}-kind`">類別</label>
             <MultiSelectFilter :id="`${uid}-kind`" v-model="kinds" :options="kindOptions"
@@ -49,6 +50,7 @@
             <MultiSelectFilter :id="`${uid}-place`" v-model="places" :options="placeOptions"
               label="地點" placeholder="全部" block searchable />
           </div>
+          </SfFilterSheet>
         </div>
 
         <div v-if="selected.length" class="cbf-picked mt-2">
@@ -59,13 +61,9 @@
           </button>
         </div>
 
-        <div v-if="loading" class="text-muted small mt-2">載入中…</div>
-        <div v-else-if="loadFailed" class="mt-2">
-          <span class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>讀取商品清單失敗。</span>
-          <button type="button" class="btn btn-sm btn-primary ms-1" @click="loadCommodities">重新整理</button>
-        </div>
-        <div v-else-if="!commodities.length" class="text-muted small mt-2">目前沒有商品價格資料。</div>
-        <div v-else class="cbf-list mt-2" role="group" aria-label="商品">
+        <SfState :loading="loading" :error="loadFailed ? '讀取商品清單失敗。' : ''" :empty="!commodities.length"
+          empty-text="目前沒有商品價格資料。" @retry="loadCommodities">
+        <div class="cbf-list mt-2" role="group" aria-label="商品">
           <div v-if="!filteredCommodities.length" class="small text-muted px-2 py-2">沒有符合的商品</div>
           <label v-for="c in filteredCommodities" :key="c.id" class="cbf-item"
             :class="{ 'is-checked': selectedSet.has(c.id) }">
@@ -78,15 +76,14 @@
             <span class="cbf-item__meta">{{ c.terminal_count }} 個地點</span>
           </label>
         </div>
+        </SfState>
       </div>
     </div>
 
     <!-- ── 結果 ───────────────────────────────────────────── -->
     <template v-if="selected.length">
-      <div v-if="resultsLoading" class="text-muted small">查詢中…</div>
-      <div v-else-if="resultsFailed" class="text-warning small">
-        <i class="bi bi-exclamation-triangle me-1"></i>{{ resultsFailed }}
-      </div>
+      <SfState v-if="resultsLoading || resultsFailed" :loading="resultsLoading" :error="resultsFailed"
+        loading-text="查詢中…" @retry="loadLocations" />
       <div v-else-if="!locations.length" class="cbf-empty">
         <div class="mb-1">沒有交易終端同時買得到這 {{ selected.length }} 種商品<template v-if="areaPicked.length">（限 {{ areaPicked.map(x => locationZh(x) || x).join('、') }}）</template>。</div>
         <div class="small text-muted">
@@ -132,8 +129,9 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import FieldHint from '@/components/FieldHint.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import SfFilterSheet from '@/components/SfFilterSheet.vue'
+import SfState from '@/components/SfState.vue'
 import {
   commodityLabel, commodityZh, fmtAuec, fmtScu, fmtUexTime, loadCommodityZh, loadLocationZh,
   locationPathLabel, locationZh, uexStatusLabel,
@@ -211,6 +209,15 @@ function toggle(id, checked) {
   } else {
     selected.value = selected.value.filter(x => x !== id)
   }
+}
+
+/** 手機「篩選」面板裡的條件數（名稱以外） */
+const sheetCount = computed(() => kinds.value.length + areaPicked.value.length)
+function clearSheet() {
+  kinds.value = []
+  systems.value = []
+  planets.value = []
+  places.value = []
 }
 
 function clearAll() {

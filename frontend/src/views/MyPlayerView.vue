@@ -39,8 +39,8 @@
   物品那張的 nickname 是後端 /inventory/where 補的 ——
   inventory.player 只存 RSI handle，沒有暱稱（見 Player.display_names_by_scid）。
 
-  欄位的固定說明一律做成標題後面的「?」（components/FieldHint.vue），
-  hover 或點一下才展開，不佔版面高度。會隨狀態變的訊息（「以下 3 筆都會登記到
+  畫面上不放固定的使用說明（CLAUDE.md 介面文字原則；FieldHint 只留給工具網站的連結描述）。
+  會隨狀態變的訊息（「以下 3 筆都會登記到
   Area18」、「顯示 2 / 3 筆」、選中物品的綠色勾勾）留在原地常駐顯示。
 
   藍圖刻意獨立在頂層，不塞進倉庫：它是布林狀態的名冊（有／沒有這張圖），
@@ -71,7 +71,7 @@
 
       <div class="scifi-topbar__side scifi-topbar__actions">
         <ScifiThemePicker />
-        <button class="btn btn-scifi-outline btn-sm" aria-label="登出" title="登出" @click="logout">
+        <button class="btn btn-secondary btn-sm" aria-label="登出" title="登出" @click="logout">
           <i class="bi bi-box-arrow-right"></i>
           <span class="d-none d-sm-inline ms-1">登出</span>
         </button>
@@ -116,8 +116,7 @@
 
     <!-- ══════════ 內容區（滿版） ══════════ -->
     <div class="scifi-body">
-    <div v-if="loadingPlayer" class="text-muted small mb-3">載入中…</div>
-    <div v-else-if="playerError" class="alert alert-danger">{{ playerError }}</div>
+    <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
 
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
@@ -166,7 +165,7 @@
     <div v-show="activeTab === 'warehouse' && homeOpen" class="sf-drawer">
       <h3 class="sf-drawer__title"><i class="bi bi-house me-1"></i>定居點</h3>
       <div v-if="homeMessage" :class="['alert', 'py-2', homeMessageType]">{{ homeMessage }}</div>
-      <div class="card scifi-card sf-search">
+      <div class="card scifi-card">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
             <div class="col-12 col-md-6">
@@ -179,7 +178,7 @@
               </select>
             </div>
             <div class="col-12 col-md-6 d-flex gap-2">
-              <button type="button" class="btn btn-sm btn-success" :disabled="savingHome || homeDraft === (homeLocation || '')"
+              <button type="button" class="btn btn-sm btn-primary" :disabled="savingHome || homeDraft === (homeLocation || '')"
                 @click="saveHome(homeDraft)">儲存</button>
               <button v-if="homeLocation" type="button" class="btn btn-sm btn-warning" :disabled="savingHome"
                 @click="saveHome('')">清除定居點</button>
@@ -240,7 +239,7 @@
       <!-- 地點是整批共用的一份，放在最上面：通常是「站在某個據點前面，把這裡的東西
            一次處理完」，地點只需要選一次。送出後刻意**不清空**，方便繼續處理同一個地點。
            星系／行星只是縮小地點候選，送出的是「地點」欄位的值（可以直接輸入新地點）。 -->
-      <div class="card scifi-card sf-search mb-3">
+      <div class="card scifi-card mb-3">
         <div class="card-body py-3">
           <div class="row g-2">
             <div class="col-6 col-md-3">
@@ -260,7 +259,6 @@
             </div>
             <div class="col-12 col-md-6 position-relative">
               <label class="form-label small fw-semibold mb-1" for="stock-location">地點</label>
-              <FieldHint text="先選地點，下面每一筆的增減都會套用到這裡。送出後地點會保留，方便繼續處理同一個地點。" />
               <input id="stock-location" v-model="stockLocation.location"
                 @input="filterRowLocations(stockLocation)" @focus="filterRowLocations(stockLocation)"
                 @blur="closeRowLocations(stockLocation)"
@@ -274,7 +272,7 @@
                 </li>
                 <li v-if="!stockLocation.locationResults.length"
                     class="list-group-item py-1 px-2 small text-muted">
-                  沒有符合的地點，直接輸入即可新增
+                  沒有符合的地點
                 </li>
               </ul>
               <div v-if="stockLocation.location.trim()" class="form-text text-success py-0">
@@ -286,7 +284,7 @@
         </div>
       </div>
 
-      <div v-for="(row, idx) in stockRows" :key="row.key" class="card scifi-card sf-search mb-2">
+      <div v-for="(row, idx) in stockRows" :key="row.key" class="card scifi-card mb-2">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="d-flex align-items-center gap-2">
@@ -307,8 +305,8 @@
 
           <div class="row g-2">
             <div class="col-12 col-md-9 position-relative">
-              <label class="form-label small fw-semibold mb-1">物品</label>
-              <input v-model="row.itemQuery" @input="searchRowItems(row)" @focus="searchRowItems(row)"
+              <label class="form-label small fw-semibold mb-1" :for="`stock-row-${idx}-item`">物品</label>
+              <input :id="`stock-row-${idx}-item`" v-model="row.itemQuery" @input="searchRowItems(row)" @focus="searchRowItems(row)"
                 type="text" class="form-control form-control-sm" placeholder="輸入物品名稱…" autocomplete="off">
               <ul v-if="row.itemResults.length" class="list-group position-absolute w-100 shadow-sm"
                   style="z-index: 20; max-height: 220px; overflow-y: auto;">
@@ -326,13 +324,13 @@
             </div>
 
             <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold mb-1">數量</label>
-              <input v-model.number="row.quantity" type="number" min="1" class="form-control form-control-sm">
+              <label class="form-label small fw-semibold mb-1" :for="`stock-row-${idx}-qty`">數量</label>
+              <input :id="`stock-row-${idx}-qty`" v-model.number="row.quantity" type="number" min="1" class="form-control form-control-sm">
             </div>
 
             <div class="col-12">
-              <label class="form-label small fw-semibold mb-1">備註（選填）</label>
-              <input v-model="row.note" type="text" class="form-control form-control-sm"
+              <label class="form-label small fw-semibold mb-1" :for="`stock-row-${idx}-note`">備註（選填）</label>
+              <input :id="`stock-row-${idx}-note`" v-model="row.note" type="text" class="form-control form-control-sm"
                 :placeholder="row.direction === 'out' ? '例如：分給公會、任務用掉…' : '例如：打怪撿到、盤點補回…'">
             </div>
           </div>
@@ -346,7 +344,7 @@
           @click="stockRows.push(makeRow())">
           <i class="bi bi-plus-lg me-1"></i>再加一筆
         </button>
-        <button class="btn btn-scifi" :disabled="stockSubmitting" @click="submitStockRows">
+        <button class="btn btn-primary" :disabled="stockSubmitting" @click="submitStockRows">
           <span v-if="stockSubmitting" class="spinner-border spinner-border-sm me-1"></span>
           全部送出
         </button>
@@ -369,19 +367,20 @@
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <label class="form-label small fw-semibold mb-0">搜尋條件</label>
-            <button type="button" class="btn btn-sm btn-warning py-0"
+            <span class="form-label small fw-semibold mb-0">搜尋條件</span>
+            <button type="button" class="btn btn-sm btn-warning"
               @click="clearItemsFilters">清除全部</button>
           </div>
-          <FieldHint text="打字選一個候選代入（不是子字串比對），有填的欄位要同時符合才會出現在結果裡。物品名稱／物品類型只能擇一——選了名稱等於已經鎖定單一物品，類型會被忽略。" />
-          <div class="row g-2">
-            <div class="col-12 col-md-6">
+          <div class="row g-2 align-items-end">
+            <div class="col col-md-6">
               <label class="form-label small mb-1" for="items-name">物品名稱</label>
               <AutocompleteField id="items-name" v-model="itemsNameText"
                 :search="searchItemNames" :get-label="itemNameLabel"
                 aria-label="物品名稱" placeholder="輸入物品名稱…" :min-chars="1"
                 @select="onItemsNameSelect" />
             </div>
+            <!-- 手機：名稱以外的條件收進「篩選」底部面板 -->
+            <SfFilterSheet :count="itemsSheetCount" @clear="clearItemsSheet">
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="items-type">物品類型</label>
               <MultiSelectFilter id="items-type" v-model="itemsSelectedTypes" :options="itemTypeOptions"
@@ -404,18 +403,16 @@
                 aria-label="玩家暱稱" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onItemsPlayerNicknameSelect" />
             </div>
+            </SfFilterSheet>
           </div>
         </div>
       </div>
 
       <div v-if="loadingWho" class="text-muted small">查詢中…</div>
-      <div v-else-if="!hasStockFilter" class="text-muted small">
-        至少選擇一個篩選條件開始搜尋。
-      </div>
-      <div v-else-if="!whoRows.length" class="text-muted small">
+      <div v-else-if="hasStockFilter && !whoRows.length" class="text-muted small">
         找不到符合條件的庫存。
       </div>
-      <div v-else class="holder-tree" style="--sf-tree-cols: minmax(0, 1fr) 7rem 7rem">
+      <div v-else-if="hasStockFilter" class="holder-tree" style="--sf-tree-cols: minmax(0, 1fr) 7rem 7rem">
         <!-- 蜂巢式下拉：物品 → 持有者（含公會共享庫）→ 放在哪些地點，每一層按了才展開（樣式見 scifi-theme.css）。
              最上層有欄位名稱、可以點擊排序（SfTreeHead） -->
         <SfTreeHead :sort="whoSort" :columns="WHO_COLUMNS" />
@@ -463,19 +460,19 @@
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <label class="form-label small fw-semibold mb-0">搜尋條件</label>
-            <button type="button" class="btn btn-sm btn-warning py-0"
+            <span class="form-label small fw-semibold mb-0">搜尋條件</span>
+            <button type="button" class="btn btn-sm btn-warning"
               @click="clearBpFilters">清除全部</button>
           </div>
-          <FieldHint text="打字選一個候選代入。都留空則列出全部人的登記；填了的話要同時符合才會出現。" />
-          <div class="row g-2">
-            <div class="col-12 col-md-6">
+          <div class="row g-2 align-items-end">
+            <div class="col col-md-6">
               <label class="form-label small mb-1" for="bp-name">藍圖名稱</label>
               <AutocompleteField id="bp-name" v-model="bpNameText"
                 :search="searchBlueprintNames" :get-label="blueprintNameLabel"
                 aria-label="藍圖名稱" placeholder="輸入藍圖名稱…" :min-chars="1"
                 @select="onBpNameSelect" />
             </div>
+            <SfFilterSheet :count="bpHolderSheetCount" @clear="clearBpHolderSheet">
             <div class="col-12 col-md-6">
               <label class="form-label small mb-1" for="bp-type">藍圖類型</label>
               <MultiSelectFilter id="bp-type" v-model="bpSelectedTypes" :options="blueprintTypeOptions"
@@ -495,6 +492,7 @@
                 aria-label="玩家暱稱" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onBpPlayerNicknameSelect" />
             </div>
+            </SfFilterSheet>
           </div>
         </div>
       </div>
@@ -536,18 +534,19 @@
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <label class="form-label small fw-semibold mb-0">搜尋條件</label>
-            <button type="button" class="btn btn-sm btn-warning py-0"
+            <span class="form-label small fw-semibold mb-0">搜尋條件</span>
+            <button type="button" class="btn btn-sm btn-warning"
               @click="clearFleetFilters">清除全部</button>
           </div>
-          <div class="row g-2">
-            <div class="col-12 col-md-4">
+          <div class="row g-2 align-items-end">
+            <div class="col col-md-4">
               <label class="form-label small mb-1" for="fl-name">船艦名稱</label>
               <AutocompleteField id="fl-name" v-model="flNameText"
                 :search="searchVehicleNames" :get-label="c => vehicleNameLabel(c.name, c.name_zh)"
                 aria-label="船艦名稱" placeholder="輸入船名…" :min-chars="1"
                 @select="c => { flSelectedVehicleId = c ? c._id : '' }" />
             </div>
+            <SfFilterSheet :count="flSheetCount" @clear="clearFlSheet">
             <div class="col-6 col-md-4">
               <label class="form-label small mb-1" for="fl-type">類型</label>
               <MultiSelectFilter id="fl-type" v-model="flSelectedTypes" :options="vehicleFacets.types"
@@ -582,6 +581,7 @@
                 aria-label="玩家暱稱" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="onFlPlayerNicknameSelect" />
             </div>
+            </SfFilterSheet>
           </div>
         </div>
       </div>
@@ -631,7 +631,7 @@
                 <span class="sf-tree-meta">配件網址 {{ h.loadout_links?.length || 0 }}</span>
               </button>
               <div v-if="openHolderPlayers.has(`${group._id}|${i}`)" class="sf-tree-level">
-                <VehicleLoadoutLinks :links="h.loadout_links" button-class="btn-sf-link" hide-label />
+                <VehicleLoadoutLinks :links="h.loadout_links" button-class="btn-info" hide-label />
               </div>
             </div>
           </div>
@@ -643,15 +643,12 @@
          舊網址 ?tab=warehouse&sub=history 直接展開）══════════ -->
     <div v-show="activeTab === 'warehouse' && historyOpen" class="sf-drawer">
       <h3 class="sf-drawer__title"><i class="bi bi-clock-history me-1"></i>庫存紀錄</h3>
-      <div v-if="loadingHistory" class="text-muted small">載入中…</div>
-      <div v-else-if="!history.length" class="text-muted small">目前沒有任何紀錄。</div>
-      <div v-else-if="!filteredHistory.length" class="text-muted small">
-        沒有符合篩選條件的紀錄。
-      </div>
-      <div v-else class="card scifi-card">
+      <SfState :loading="loadingHistory" :empty="!filteredHistory.length"
+        :empty-text="history.length ? '沒有符合篩選條件的紀錄。' : '目前沒有任何紀錄。'">
+      <div class="card scifi-card">
       <div class="card-body p-0">
       <div style="overflow-x: auto">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 sf-stack history-stack">
         <thead class="table-light">
           <tr>
             <SortTh :sort="historySort" field="ts" class="ps-3">時間</SortTh>
@@ -664,35 +661,32 @@
         </thead>
         <tbody>
           <tr v-for="(row, i) in historySort.sorted.value" :key="i">
-            <td class="ps-3 text-muted text-nowrap">{{ formatTs(row.ts) }}</td>
-            <td>
+            <td class="ps-3 text-muted text-nowrap" data-label="時間">{{ formatTs(row.ts) }}</td>
+            <td data-label="動作">
               <span v-if="row.delta > 0" class="badge text-bg-success">增加</span>
               <span v-else class="badge text-bg-danger">減少</span>
             </td>
-            <td>
+            <td class="sf-stack__title">
               <span class="fw-semibold">{{ row.item_name_zh || row.item_name }}</span>
               <span v-if="row.item_name_zh" class="small text-muted ms-1">{{ row.item_name }}</span>
             </td>
-            <td>{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
-            <td class="text-end">{{ row.delta > 0 ? '+' : '' }}{{ row.delta }}</td>
-            <td class="text-muted sf-wrap pe-3">{{ row.note || '—' }}</td>
+            <td data-label="地點">{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
+            <td class="text-end" data-label="數量">{{ row.delta > 0 ? '+' : '' }}{{ row.delta }}</td>
+            <td class="text-muted sf-wrap pe-3" data-label="備註">{{ row.note || '—' }}</td>
           </tr>
         </tbody>
       </table>
       </div>
       </div>
       </div>
+      </SfState>
     </div>
 
     <!-- ══════════ 倉庫 › 物品庫存 ══════════ -->
     <div v-show="activeTab === 'warehouse'" role="tabpanel"
          id="panel-warehouse" :aria-labelledby="'tab-warehouse'">
-      <div v-if="loadingInventory" class="text-muted small">載入中…</div>
-      <div v-else-if="!myInventory.length" class="text-muted small">目前沒有登記任何物品。</div>
-      <div v-else-if="!filteredInventory.length" class="text-muted small">
-        沒有符合篩選條件的物品。
-      </div>
-      <template v-else>
+      <SfState :loading="loadingInventory" :empty="!filteredInventory.length"
+        :empty-text="myInventory.length ? '沒有符合篩選條件的物品。' : '目前沒有登記任何物品。'">
       <SortSelect v-if="isPhone" class="mb-2" :sort="inventorySort" :options="INVENTORY_SORT_OPTIONS" />
       <div class="card scifi-card">
       <div class="card-body p-0">
@@ -727,7 +721,7 @@
       </div>
       </div>
       </div>
-      </template>
+      </SfState>
     </div>
 
     <!-- ══════════ 藍圖 › 工具列（同倉庫：開關＋重新整理放最上面）══════════ -->
@@ -806,11 +800,9 @@
         <div v-if="blueprintSuccess" class="alert alert-success py-2">{{ blueprintSuccess }}</div>
       </Transition>
 
-      <div v-if="loadingBlueprints" class="text-muted small">載入中…</div>
-      <div v-else-if="!visibleBlueprints.length" class="text-muted small">目前沒有登記任何藍圖。</div>
-      <div v-else-if="!filteredBlueprints.length" class="text-muted small">沒有符合篩選條件的藍圖。</div>
       <!-- 列表外觀：卡片＋一般字級的 hover 表格；手機上每列變卡片（sf-stack） -->
-      <template v-else>
+      <SfState :loading="loadingBlueprints" :empty="!filteredBlueprints.length"
+        :empty-text="visibleBlueprints.length ? '沒有符合篩選條件的藍圖。' : '目前沒有登記任何藍圖。'">
       <SortSelect v-if="isPhone" class="mb-2" :sort="myBpSort" :options="MY_BP_SORT_OPTIONS" />
       <div class="card scifi-card">
       <div class="card-body p-0">
@@ -830,7 +822,7 @@
           <template v-for="bp in myBpSort.sorted.value" :key="bp._id">
           <tr>
             <td class="ps-3 sf-stack__title">
-              <button v-if="bp.blueprint_uuid && bp.master?.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start fw-semibold"
+              <button v-if="bp.blueprint_uuid && bp.master?.mission_count" type="button" class="btn btn-sm btn-info px-2 text-start fw-semibold"
                 @click="openBpMissions({ uuid: bp.blueprint_uuid, name: bp.name, name_zh: bp.master.name_zh, output_type: bp.master.output_type })">
                 {{ bp.master?.name_zh || bp.name }}
               </button>
@@ -855,7 +847,16 @@
                 @click="qualityFor = qualityFor === bp._id ? null : bp._id">
                 <i class="bi me-1" :class="qualityFor === bp._id ? 'bi-chevron-up' : 'bi-sliders'"></i>品質試算
               </button>
-              <button class="btn btn-sm btn-danger" @click="removeBlueprint(bp)">刪除</button>
+              <!-- 刪除先確認（同一格換成「確定刪除？ 刪除／取消」），送出中停用 -->
+              <template v-if="confirmDeleteKey === `bp:${bp._id}`">
+                <span class="me-2">確定刪除？</span>
+                <button class="btn btn-sm btn-danger me-2" :disabled="deletingKey === `bp:${bp._id}`"
+                  :aria-label="`確定刪除 ${bp.master?.name_zh || bp.name}`" @click="removeBlueprint(bp)">
+                  <span v-if="deletingKey === `bp:${bp._id}`" class="spinner-border spinner-border-sm me-1"></span>刪除
+                </button>
+                <button class="btn btn-sm btn-secondary" :disabled="deletingKey === `bp:${bp._id}`" @click="confirmDeleteKey = ''">取消</button>
+              </template>
+              <button v-else class="btn btn-sm btn-danger" @click="confirmDeleteKey = `bp:${bp._id}`">刪除</button>
             </td>
           </tr>
           <tr v-if="qualityFor === bp._id" class="sf-stack__detail">
@@ -888,7 +889,7 @@
       </div>
       </div>
       </div>
-      </template>
+      </SfState>
     </div>
 
     <!-- ══════════ 任務（唯讀任務資料庫；藍圖欄標出自己已登記幾張，見 components/MissionBrowser.vue）══════════ -->
@@ -1083,8 +1084,18 @@
                 :aria-expanded="openMyFleet.has(row._id) ? 'true' : 'false'" @click="toggleMyFleet(row._id)">
                 <i class="bi me-1" :class="openMyFleet.has(row._id) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
               </button>
-              <button type="button" class="btn btn-sm btn-danger"
-                :aria-label="`刪除 ${row.vehicle?.name_zh || row.name}（全部 ${row.quantity} 艘）`" @click="removeFleet(row)">刪除</button>
+              <template v-if="confirmDeleteKey === `fleet:${row._id}`">
+                <span class="me-2">確定刪除全部 {{ row.quantity }} 艘？</span>
+                <button type="button" class="btn btn-sm btn-danger me-2" :disabled="deletingKey === `fleet:${row._id}`"
+                  :aria-label="`確定刪除 ${row.vehicle?.name_zh || row.name}（全部 ${row.quantity} 艘）`" @click="removeFleet(row)">
+                  <span v-if="deletingKey === `fleet:${row._id}`" class="spinner-border spinner-border-sm me-1"></span>刪除
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" :disabled="deletingKey === `fleet:${row._id}`"
+                  @click="confirmDeleteKey = ''">取消</button>
+              </template>
+              <button v-else type="button" class="btn btn-sm btn-danger"
+                :aria-label="`刪除 ${row.vehicle?.name_zh || row.name}（全部 ${row.quantity} 艘）`"
+                @click="confirmDeleteKey = `fleet:${row._id}`">刪除</button>
             </td>
           </tr>
           <tr v-if="openMyFleet.has(row._id)" class="sf-stack__detail">
@@ -1130,7 +1141,7 @@
                   <button type="button" class="btn btn-sm btn-primary text-nowrap" :disabled="savingFleetId === row._id"
                     @click="saveUnitNameFromInput(row, n)">設置識別名稱</button>
                   <VehicleLoadoutLinks v-if="loadoutEditId !== `${row._id}:${n}` && row.unit_loadouts?.[n - 1]?.length"
-                    :links="row.unit_loadouts[n - 1]" button-class="btn-sf-link" hide-label />
+                    :links="row.unit_loadouts[n - 1]" button-class="btn-info" hide-label />
                   <span class="ms-auto text-muted" title="識別名稱只有自己看得到"><i class="bi bi-lock"></i></span>
                   <!-- 設置按鈕放最右、用綠色，跟左邊已設好的網址按鈕（主題色）區分 -->
                   <button type="button" class="btn btn-sm btn-success text-nowrap"
@@ -1139,17 +1150,27 @@
                     <i class="bi me-1" :class="loadoutEditId === `${row._id}:${n}` ? 'bi-x-lg' : 'bi-gear'"></i>設置配件網址
                   </button>
                   <!-- 好幾艘時可以只刪這一艘（只剩 1 艘時用船名右邊的刪除） -->
-                  <button v-if="row.quantity > 1" type="button" class="btn btn-sm btn-danger text-nowrap"
-                    :aria-label="`刪除第 ${n} 艘`" :disabled="savingFleetId === row._id" @click="removeFleetUnit(row, n)">
+                  <template v-if="row.quantity > 1 && confirmDeleteKey === `unit:${row._id}:${n}`">
+                    <span class="text-nowrap">確定刪除第 {{ n }} 艘？</span>
+                    <button type="button" class="btn btn-sm btn-danger text-nowrap" :aria-label="`確定刪除第 ${n} 艘`"
+                      :disabled="savingFleetId === row._id || deletingKey === `unit:${row._id}:${n}`" @click="removeFleetUnit(row, n)">
+                      <span v-if="deletingKey === `unit:${row._id}:${n}`" class="spinner-border spinner-border-sm me-1"></span>刪除
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary text-nowrap"
+                      :disabled="deletingKey === `unit:${row._id}:${n}`" @click="confirmDeleteKey = ''">取消</button>
+                  </template>
+                  <button v-else-if="row.quantity > 1" type="button" class="btn btn-sm btn-danger text-nowrap"
+                    :aria-label="`刪除第 ${n} 艘`" :disabled="savingFleetId === row._id"
+                    @click="confirmDeleteKey = `unit:${row._id}:${n}`">
                     <i class="bi bi-trash"></i>
                   </button>
                 </div>
                 <div v-if="loadoutEditId === `${row._id}:${n}`" class="sf-tree-leaf d-block">
-                  <div class="mb-1">第 {{ n }} 艘的配件網址（其他玩家查詢船艦時看得到）</div>
-                  <div v-for="(link, i) in loadoutDraft" :key="i" class="d-flex gap-2 mb-1">
-                    <input v-model="link.label" type="text" class="form-control form-control-sm" style="max-width: 10rem"
+                  <div class="mb-1">第 {{ n }} 艘的配件網址</div>
+                  <div v-for="(link, i) in loadoutDraft" :key="i" class="d-flex flex-wrap gap-2 mb-1">
+                    <input v-model="link.label" type="text" class="form-control form-control-sm loadout-label-input"
                       placeholder="標籤（選填）" maxlength="50" :aria-label="`第 ${i + 1} 條標籤`">
-                    <input v-model="link.url" type="text" class="form-control form-control-sm"
+                    <input v-model="link.url" type="text" class="form-control form-control-sm loadout-url-input"
                       placeholder="abcd1234 或 https://erkul.games/s/abcd1234" :aria-label="`第 ${i + 1} 條配件網址`">
                     <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除第 ${i + 1} 條`"
                       @click="loadoutDraft.splice(i, 1)"><i class="bi bi-x-lg"></i></button>
@@ -1200,10 +1221,9 @@
 
     <!-- ══════════ 工具網站（後台維護的外部連結） ══════════ -->
     <div v-show="activeTab === 'tools'" role="tabpanel" id="panel-tools" :aria-labelledby="'tab-tools'">
-      <div v-if="loadingToolLinks && !toolLinks.length" class="text-muted small">載入中…</div>
-      <div v-else-if="toolLinksError" class="text-warning small">{{ toolLinksError }}</div>
-      <div v-else-if="!toolLinks.length" class="text-muted small">目前沒有工具網站。</div>
-      <div v-else>
+      <SfState :loading="loadingToolLinks && !toolLinks.length" :error="toolLinksError" :empty="!toolLinks.length"
+        empty-text="目前沒有工具網站。" @retry="loadToolLinks">
+      <div>
         <!-- 搜尋：標題、網址、說明、標籤；標籤可以多選 -->
         <div class="sf-search sf-search--inline d-flex flex-wrap align-items-center gap-2 mb-2">
           <input v-model="toolQuery" type="search" class="form-control form-control-sm" style="max-width: 18rem"
@@ -1240,6 +1260,7 @@
           </div>
         </div>
       </div>
+      </SfState>
     </div>
 
     <div v-show="activeTab === 'profile'" role="tabpanel" id="panel-profile" :aria-labelledby="'tab-profile'">
@@ -1253,13 +1274,12 @@
       <div v-if="player" class="card scifi-card">
         <div class="card-body">
           <div class="mb-3">
-            <label class="form-label small fw-semibold">遊戲ID（Star Citizen ID）</label>
-            <FieldHint text="遊戲ID 不可自行更改，需要換的話請聯絡管理員。它同時是個人庫存與 Discord 綁定用的鍵值，改了會對不起來。" />
-            <input :value="player.star_citizen_id" type="text" class="form-control" disabled>
+            <label class="form-label small fw-semibold" for="profile-scid">遊戲ID（Star Citizen ID）</label>
+            <input id="profile-scid" :value="player.star_citizen_id" type="text" class="form-control" disabled>
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">暱稱</label>
-            <input v-model="profileForm.nickname" type="text" class="form-control">
+            <label class="form-label small fw-semibold" for="profile-nickname">暱稱</label>
+            <input id="profile-nickname" v-model="profileForm.nickname" type="text" class="form-control">
           </div>
           <!-- Discord 兩個欄位放在同一張卡裡，公開勾選就在下面 ——
                勾選管的是這兩個欄位，分開放會看不出關聯。 -->
@@ -1267,12 +1287,12 @@
             <div class="card-body py-3">
               <div class="row g-2">
                 <div class="col-12 col-md-6">
-                  <label class="form-label small fw-semibold mb-1">Discord 名稱</label>
-                  <input v-model="profileForm.discord_name" type="text" class="form-control form-control-sm">
+                  <label class="form-label small fw-semibold mb-1" for="profile-discord-name">Discord 名稱</label>
+                  <input id="profile-discord-name" v-model="profileForm.discord_name" type="text" class="form-control form-control-sm">
                 </div>
                 <div class="col-12 col-md-6">
-                  <label class="form-label small fw-semibold mb-1">Discord ID</label>
-                  <input v-model="profileForm.discord_id" type="text" class="form-control form-control-sm">
+                  <label class="form-label small fw-semibold mb-1" for="profile-discord-id">Discord ID</label>
+                  <input id="profile-discord-id" v-model="profileForm.discord_id" type="text" class="form-control form-control-sm">
                 </div>
               </div>
 
@@ -1281,26 +1301,15 @@
                   v-model="profileForm.discord_public">
                 <label class="form-check-label small" for="discord-public">
                   公開給其他玩家
-                  <FieldHint text="勾選後，別人在「查詢」的結果裡看到你時會一併看到你的 Discord，方便直接找你詢問。不勾就完全不顯示（預設不公開）。" />
                 </label>
-              </div>
-              <div class="form-text py-0">
-                <template v-if="profileForm.discord_public">
-                  <i class="bi bi-eye text-warning"></i>
-                  其他玩家查到你持有的物品或藍圖時，會看到你的 Discord。
-                </template>
-                <template v-else>
-                  <i class="bi bi-eye-slash"></i>
-                  目前不公開，只有你和管理員看得到。
-                </template>
               </div>
             </div>
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">備註</label>
-            <textarea v-model="profileForm.notes" class="form-control" rows="2"></textarea>
+            <label class="form-label small fw-semibold" for="profile-notes">備註</label>
+            <textarea id="profile-notes" v-model="profileForm.notes" class="form-control" rows="2"></textarea>
           </div>
-          <button class="btn btn-scifi" :disabled="savingProfile" @click="saveProfile">
+          <button class="btn btn-primary" :disabled="savingProfile" @click="saveProfile">
             <span v-if="savingProfile" class="spinner-border spinner-border-sm me-1"></span>
             儲存
           </button>
@@ -1314,7 +1323,7 @@
         <form class="card-body" autocomplete="on" @submit.prevent="changePassword">
           <input type="text" name="username" autocomplete="username" :value="player.star_citizen_id"
             readonly hidden aria-hidden="true" tabindex="-1">
-          <h6 class="fw-semibold mb-3"><i class="bi bi-key me-1"></i>更改密碼</h6>
+          <h3 class="sf-drawer__title"><i class="bi bi-key me-1"></i>更改密碼</h3>
           <Transition name="alert-slide">
             <div v-if="pwError" class="alert alert-danger py-2">{{ pwError }}</div>
           </Transition>
@@ -1323,21 +1332,21 @@
           </Transition>
 
           <div class="mb-3">
-            <label class="form-label small fw-semibold">目前密碼</label>
-            <input v-model="pwForm.current_password" type="password" class="form-control"
+            <label class="form-label small fw-semibold" for="pw-current">目前密碼</label>
+            <input id="pw-current" v-model="pwForm.current_password" type="password" class="form-control"
               autocomplete="current-password">
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">新密碼</label>
-            <input v-model="pwForm.new_password" type="password" class="form-control" minlength="6"
+            <label class="form-label small fw-semibold" for="pw-new">新密碼</label>
+            <input id="pw-new" v-model="pwForm.new_password" type="password" class="form-control" minlength="6"
               placeholder="至少 6 個字元" autocomplete="new-password">
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">確認新密碼</label>
-            <input v-model="pwForm.confirm_password" type="password" class="form-control" minlength="6"
+            <label class="form-label small fw-semibold" for="pw-confirm">確認新密碼</label>
+            <input id="pw-confirm" v-model="pwForm.confirm_password" type="password" class="form-control" minlength="6"
               placeholder="再輸入一次新密碼" autocomplete="new-password">
           </div>
-          <button type="submit" class="btn btn-scifi" :disabled="changingPassword">
+          <button type="submit" class="btn btn-primary" :disabled="changingPassword">
             <span v-if="changingPassword" class="spinner-border spinner-border-sm me-1"></span>
             更改密碼
           </button>
@@ -1348,11 +1357,7 @@
            所以「證明」這一步只能放在需要密碼登入的這一頁。 -->
       <div v-if="player" class="card scifi-card mt-3">
         <div class="card-body">
-          <h6 class="fw-semibold mb-3"><i class="bi bi-discord me-1"></i>Discord 綁定</h6>
-          <p class="small mb-3" style="color: var(--sf-text-muted)">
-            按下按鈕產生一組 8 碼，10 分鐘內到 Discord 輸入
-            <code>/bind</code> 完成綁定。綁定後才能用 Discord 指令操作自己的個人庫。
-          </p>
+          <h3 class="sf-drawer__title"><i class="bi bi-discord me-1"></i>Discord 綁定</h3>
 
           <Transition name="alert-slide">
             <div v-if="bindError" class="alert alert-danger py-2">{{ bindError }}</div>
@@ -1360,18 +1365,16 @@
 
           <div v-if="bindCode" class="mb-3">
             <div class="p-3 rounded" style="background: var(--sf-panel-2, rgba(255,255,255,.06))">
-              <div class="small mb-1" style="color: var(--sf-text-muted)">在 Discord 貼上這一行：</div>
               <code class="d-block" style="user-select: all; word-break: break-all">
                 /bind handle:{{ player.star_citizen_id }} code:{{ bindCode }}
               </code>
             </div>
             <div class="small mt-2" style="color: var(--sf-text-muted)">
-              有效期限至 {{ fmtTime(bindCodeExpiresAt) }}（過期就再產生一組）。
-              這組碼等同一次性密碼，不要貼在公開頻道以外的地方給別人。
+              有效期限至 {{ fmtTime(bindCodeExpiresAt) }}
             </div>
           </div>
 
-          <button class="btn btn-scifi" :disabled="issuingCode" @click="issueDiscordCode">
+          <button class="btn btn-primary" :disabled="issuingCode" @click="issueDiscordCode">
             <span v-if="issuingCode" class="spinner-border spinner-border-sm me-1"></span>
             {{ bindCode ? '重新產生綁定碼' : '產生 Discord 綁定碼' }}
           </button>
@@ -1395,7 +1398,7 @@
   </nav>
   <template v-if="isPhone && moreOpen">
     <div class="sf-sheet-backdrop" @click="moreOpen = false"></div>
-    <div class="sf-sheet sf-more-list" role="dialog" aria-modal="true" aria-label="更多分頁"
+    <div ref="moreSheetEl" class="sf-sheet sf-more-list" role="dialog" aria-modal="true" tabindex="-1" aria-label="更多分頁"
       style="bottom: calc(64px + env(safe-area-inset-bottom))">
       <div class="sf-sheet__grip"></div>
       <button v-for="tab in moreTabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }"
@@ -1418,6 +1421,8 @@ import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import SortTh from '@/components/SortTh.vue'
 import SortSelect from '@/components/SortSelect.vue'
 import SfFilterSheet from '@/components/SfFilterSheet.vue'
+import SfState from '@/components/SfState.vue'
+import { useSheet } from '@/composables/useSheet'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import SfTreeHead from '@/components/SfTreeHead.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -1527,6 +1532,14 @@ const BOTTOM_TAB_KEYS = ['warehouse', 'blueprints', 'fleet', 'search']
 const bottomTabs = tabs.filter(t => BOTTOM_TAB_KEYS.includes(t.key))
 const moreTabs = tabs.filter(t => !BOTTOM_TAB_KEYS.includes(t.key))
 const moreOpen = ref(false)
+// 「更多」底部面板：Esc 關閉、開啟時焦點移進面板、關閉後回到「更多」按鈕
+const moreSheetEl = ref(null)
+useSheet(moreOpen, moreSheetEl)
+
+// 刪除確認（藍圖／整款船艦／單一艘共用）：confirmDeleteKey＝正在問「確定刪除？」的那一列，
+// deletingKey＝送出中的那一列（按鈕停用＋轉圈）。key：bp:<id>、fleet:<id>、unit:<id>:<第幾艘>
+const confirmDeleteKey = ref('')
+const deletingKey = ref('')
 const moreTabActive = computed(() => !BOTTOM_TAB_KEYS.includes(activeTab.value))
 // 手機的排序下拉選項（表頭在手機上看不到）
 const INVENTORY_SORT_OPTIONS = [{ field: 'item', label: '物品' }, { field: 'location', label: '地點' }, { field: 'quantity', label: '數量' }]
@@ -1688,6 +1701,7 @@ const pwSuccess = ref(false)
 
 async function loadPlayer() {
   loadingPlayer.value = true
+  playerError.value = ''
   const res = await playerAuth.playerFetch('/player/me')
   loadingPlayer.value = false
   if (!res) { playerError.value = '網路錯誤，請稍後再試'; return }
@@ -2462,10 +2476,28 @@ function clearBpFilters() {
 }
 
 async function removeBlueprint(bp) {
+  const key = `bp:${bp._id}`
+  if (deletingKey.value) return
+  deletingKey.value = key
+  blueprintError.value = ''
   const res = await playerAuth.playerFetch(`/player/blueprints/${bp._id}`, { method: 'DELETE' })
-  if (!res) return
-  const data = await res.json().catch(() => null)
-  if (res.ok && data?.success) loadBlueprints()
+  const data = res ? await res.json().catch(() => null) : null
+  deletingKey.value = ''
+  if (res?.ok && data?.success) {
+    if (confirmDeleteKey.value === key) confirmDeleteKey.value = ''
+    await loadBlueprints()
+  } else {
+    blueprintError.value = data?.message || '刪除失敗，請稍後再試'
+  }
+}
+
+// 查詢 › 持有藍圖：手機「篩選」面板裡的條件（名稱以外）
+const bpHolderSheetCount = computed(() => bpSelectedTypes.value.length + (bpPlayerScid.value ? 1 : 0))
+function clearBpHolderSheet() {
+  bpSelectedTypes.value = []
+  bpPlayerIdText.value = ''
+  bpPlayerNicknameText.value = ''
+  bpPlayerScid.value = ''
 }
 
 // ── 查詢 › 持有物品（原「物品庫存」）：物品名稱／類型／地點／玩家id／玩家暱稱，AND 篩選 ──
@@ -2634,6 +2666,19 @@ function onItemsPlayerNicknameSelect(c) {
     itemsPlayerScid.value = ''
     itemsPlayerIdText.value = ''
   }
+}
+
+// 查詢 › 持有物品：手機「篩選」面板裡的條件（名稱以外）
+const itemsSheetCount = computed(() => itemsSelectedTypes.value.length + itemsSelectedSystems.value.length
+  + itemsSelectedPlanets.value.length + itemsSelectedLocations.value.length + (itemsPlayerScid.value ? 1 : 0))
+function clearItemsSheet() {
+  itemsSelectedTypes.value = []
+  itemsSelectedSystems.value = []
+  itemsSelectedPlanets.value = []
+  itemsSelectedLocations.value = []
+  itemsPlayerIdText.value = ''
+  itemsPlayerNicknameText.value = ''
+  itemsPlayerScid.value = ''
 }
 
 function clearItemsFilters() {
@@ -2873,12 +2918,17 @@ async function setFleetQuantity(row, qty, input = null) {
 
 /** 好幾艘時刪掉其中一艘（後面的往前補） */
 async function removeFleetUnit(row, n) {
+  const key = `unit:${row._id}:${n}`
+  if (deletingKey.value) return
+  deletingKey.value = key
   savingFleetId.value = row._id
   const res = await playerAuth.playerFetch(`/player/fleet/${row._id}/units/${n}`, { method: 'DELETE' })
   savingFleetId.value = ''
+  deletingKey.value = ''
   const data = res ? await res.json().catch(() => null) : null
   if (res?.ok && data?.success) {
     loadoutEditId.value = ''
+    if (confirmDeleteKey.value === key) confirmDeleteKey.value = ''
     await loadFleet()
   } else {
     showFleetError(data?.message || '刪除失敗，請稍後再試')
@@ -2973,10 +3023,14 @@ async function onFleetImported() {
 }
 
 async function removeFleet(row) {
+  const key = `fleet:${row._id}`
+  if (deletingKey.value) return
+  deletingKey.value = key
   const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, { method: 'DELETE' })
-  if (!res) return
-  const data = await res.json().catch(() => null)
-  if (res.ok && data?.success) {
+  const data = res ? await res.json().catch(() => null) : null
+  deletingKey.value = ''
+  if (res?.ok && data?.success) {
+    if (confirmDeleteKey.value === key) confirmDeleteKey.value = ''
     await loadFleet()   // 登記船艦資料的「已登記」標記跟著解除
   } else {
     showFleetError(data?.message || '刪除失敗，請稍後再試')
@@ -3096,6 +3150,17 @@ function onFlPlayerNicknameSelect(c) {
   flPlayerIdText.value = c ? c.star_citizen_id : ''
 }
 
+// 查詢 › 持有船艦：手機「篩選」面板裡的條件（名稱以外）
+const flSheetCount = computed(() => flSelectedTypes.value.length + flSelectedSizes.value.length
+  + flSelectedMfrs.value.length + flSelectedRoles.value.length + (flPlayerScid.value ? 1 : 0))
+function clearFlSheet() {
+  flSelectedTypes.value = []
+  flSelectedSizes.value = []
+  flSelectedMfrs.value = []
+  flSelectedRoles.value = []
+  flPlayerIdText.value = ''; flPlayerNicknameText.value = ''; flPlayerScid.value = ''
+}
+
 function clearFleetFilters() {
   flNameText.value = '';  flSelectedVehicleId.value = ''
   flSelectedTypes.value = []
@@ -3152,6 +3217,11 @@ onBeforeUnmount(() => {
 .vehicle-note { white-space: pre-line; }
 
 .tool-link { min-width: 0; }
+/* 配件網址編輯列：窄螢幕折行，網址欄可以縮（不撐破 390px） */
+.loadout-label-input { flex: 1 1 8rem; max-width: 10rem; min-width: 0; width: auto; }
+.loadout-url-input { flex: 1 1 12rem; min-width: 0; width: auto; }
+/* 庫存紀錄在手機卡片裡：物品名稱當標題排最前面 */
+.history-stack :deep(td.sf-stack__title) { order: -1; }
 .my-bp-filter { min-width: 14rem; }
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }

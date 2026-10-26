@@ -56,31 +56,11 @@
             <table class="table table-hover align-middle mb-0">
               <thead class="table-light">
                 <tr>
-                  <th class="ps-3 sortable-th" role="button" tabindex="0"
-                    @click="toggleSort('name')" @keydown.enter="toggleSort('name')">
-                    Blueprint 名稱
-                    <i v-if="sortBy === 'name'" class="bi ms-1"
-                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
-                  <th class="sortable-th" role="button" tabindex="0"
-                    @click="toggleSort('acquisition_method')" @keydown.enter="toggleSort('acquisition_method')">
-                    取得方式
-                    <i v-if="sortBy === 'acquisition_method'" class="bi ms-1"
-                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
-                  <th class="sortable-th" role="button" tabindex="0"
-                    @click="toggleSort('acquisition_location')" @keydown.enter="toggleSort('acquisition_location')">
-                    取得地點
-                    <i v-if="sortBy === 'acquisition_location'" class="bi ms-1"
-                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
+                  <SortTh :sort="sort" field="name" class="ps-3">Blueprint 名稱</SortTh>
+                  <SortTh :sort="sort" field="acquisition_method">取得方式</SortTh>
+                  <SortTh :sort="sort" field="acquisition_location">取得地點</SortTh>
                   <th>取得玩家</th>
-                  <th class="sortable-th" role="button" tabindex="0"
-                    @click="toggleSort('unlock_status')" @keydown.enter="toggleSort('unlock_status')">
-                    狀態
-                    <i v-if="sortBy === 'unlock_status'" class="bi ms-1"
-                      :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
+                  <SortTh :sort="sort" field="unlock_status">狀態</SortTh>
                   <th style="width:140px" class="pe-3">操作</th>
                 </tr>
               </thead>
@@ -113,10 +93,10 @@
                     <td class="small">{{ playerName(bp.player_id) }}</td>
                     <td><StatusBadge :status="bp.unlock_status" /></td>
                     <td class="pe-3">
-                      <button class="btn btn-sm btn-outline-secondary me-1" @click="bpModalRef.open(bp)">
+                      <button class="btn btn-sm btn-outline-secondary me-1" aria-label="編輯" title="編輯" @click="bpModalRef.open(bp)">
                         <i class="bi bi-pencil"></i>
                       </button>
-                      <button class="btn btn-sm btn-outline-danger" @click="handleDelete(bp)">
+                      <button class="btn btn-sm btn-outline-danger" aria-label="刪除" title="刪除" @click="handleDelete(bp)">
                         <i class="bi bi-trash"></i>
                       </button>
                     </td>
@@ -129,17 +109,7 @@
       </div>
 
       <!-- ── 分頁 ────────────────────────────────────────────── -->
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
-        <div class="small text-muted">
-          共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
-        </div>
-        <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
-            @click="reload(Math.max(0, offset - limit))">上一頁</button>
-          <button class="btn btn-outline-secondary" :disabled="offset + limit >= total || loading"
-            @click="reload(offset + limit)">下一頁</button>
-        </div>
-      </div>
+      <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" admin @page="reload" />
 
     </div>
 
@@ -158,6 +128,9 @@ import ConfirmModal          from '@/components/ConfirmModal.vue'
 import MultiSelectFilter     from '@/components/MultiSelectFilter.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import AdminSearchCard       from '@/components/AdminSearchCard.vue'
+import SortTh from '@/components/SortTh.vue'
+import SfPager from '@/components/SfPager.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import AdminSearchField      from '@/components/AdminSearchField.vue'
 
 const playerStore = usePlayerStore()
@@ -205,8 +178,10 @@ const selectedStatuses = ref([])
 const selectedPlayers  = ref([])
 const nameQuery     = ref('')
 const locationQuery = ref('')
-const sortBy  = ref('name')
-const sortDir = ref('asc')
+// 後端排序：點同一欄升冪↔降冪（不取消），換欄從升冪開始，改了就回第一頁重查
+const sort = useTableSort(null, { key: 'name', dir: 'asc', cycle: false, onChange: () => reload(0) })
+const sortBy = sort.sortKey
+const sortDir = sort.sortDir
 
 const hasActiveFilters = computed(() => !!(
   selectedMethods.value.length || selectedStatuses.value.length ||
@@ -219,16 +194,6 @@ function playerName(id) {
 function flash(text, type = 'danger') {
   msg.value = text; msgType.value = type
   setTimeout(() => { msg.value = '' }, 3000)
-}
-
-function toggleSort(field) {
-  if (sortBy.value === field) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortBy.value = field
-    sortDir.value = 'asc'
-  }
-  reload(0)
 }
 
 // 跟 LogsView.vue 同一個理由：明確的 change handler 一次做完
@@ -311,6 +276,4 @@ function escHtml(str) {
 <style scoped>
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
-.sortable-th { cursor: pointer; user-select: none; }
-.sortable-th:hover { color: var(--bs-primary); }
 </style>

@@ -9,10 +9,10 @@
   <div class="row g-3">
     <div class="col-lg-6">
       <div class="mb-2">
-        <span v-for="s in m.star_systems || []" :key="s" class="md-chip">{{ systemLabel(s) }}</span>
-        <span v-if="m.faction_name || m.mission_giver" class="md-chip">{{ factionLabel(m) }}</span>
-        <span v-if="m.reward_scope" class="md-chip">{{ typeLabel(m.reward_scope) }}</span>
-        <span v-if="m.illegal" class="md-chip md-chip--warn">違法</span>
+        <span v-for="s in m.star_systems || []" :key="s" class="sf-chip">{{ systemLabel(s) }}</span>
+        <span v-if="m.faction_name || m.mission_giver" class="sf-chip">{{ factionLabel(m) }}</span>
+        <span v-if="m.reward_scope" class="sf-chip">{{ typeLabel(m.reward_scope) }}</span>
+        <span v-if="m.illegal" class="sf-chip sf-chip--warn">違法</span>
       </div>
       <div v-if="m.description_zh || m.description" class="md-desc">{{ m.description_zh || m.description }}</div>
       <details v-if="m.description_zh && m.description" class="mt-1">
@@ -20,14 +20,14 @@
         <div class="md-sub text-muted md-desc mt-1">{{ m.description }}</div>
       </details>
       <div v-if="missionConditions(m)" class="md-sub text-muted mt-2">{{ missionConditions(m) }}</div>
-      <dl class="md-facts mt-2 mb-0">
+      <dl class="sf-facts md-facts mt-2 mb-0">
         <template v-if="full">
           <dt>報酬</dt>
           <dd class="fw-semibold">{{ rewardLabel(m) }}</dd>
           <dt>聲望異動</dt>
           <dd>
             <div v-for="(r, i) in m.reputation_gained || []" :key="i">
-              <span class="fw-semibold" :class="Number(r.amount) < 0 ? 'md-bad' : 'md-good'">{{ fmtRep(r.amount) }}</span>
+              <span class="fw-semibold" :class="Number(r.amount) < 0 ? 'sf-bad' : 'sf-good'">{{ fmtRep(r.amount) }}</span>
               <span v-if="r.faction" class="text-muted ms-1">{{ factionName(r.faction) }}</span>
             </div>
             <span v-if="!m.reputation_gained?.length" class="text-muted">—</span>
@@ -52,7 +52,7 @@
       <div class="md-sub text-muted mb-1">
         獎勵藍圖<template v-if="pool.length">：{{ pool.length }} 種 · 已登記
           <span class="fw-semibold" :class="registeredCount === pool.length ? 'text-success' : 'md-count'">{{ registeredCount }} / {{ pool.length }}</span></template>
-        <button v-if="fetcher && unregistered.length > 1" type="button" class="btn btn-sm btn-success py-0 ms-2"
+        <button v-if="fetcher && unregistered.length > 1" type="button" class="btn btn-sm btn-success ms-2"
           :disabled="registering" @click="register(unregistered.map(bpUuid))">
           <i class="bi bi-plus-lg me-1"></i>登記全部未登記（{{ unregistered.length }}）
         </button>
@@ -64,11 +64,11 @@
           機率 {{ fmtChance(p.drop_chance) }}
           <span v-if="(p.items || []).length > 1" class="text-muted fw-normal">（{{ p.items.length }} 張抽一張）</span>
         </div>
-        <span v-for="(it, j) in p.items || []" :key="it.blueprint_uuid || j" class="md-chip"
-          :class="isRegistered(it) ? 'md-chip--ok' : 'md-chip--todo'">
+        <span v-for="(it, j) in p.items || []" :key="it.blueprint_uuid || j" class="sf-chip"
+          :class="isRegistered(it) ? 'sf-chip--ok' : 'sf-chip--todo'">
           <i class="bi me-1" :class="isRegistered(it) ? 'bi-check-circle-fill' : 'bi-circle'"></i>{{ it.name_zh || it.name }}
-          <span class="md-chip__state">{{ bpStateLabel(it, registered) }}</span>
-          <button v-if="fetcher && !isRegistered(it)" type="button" class="btn btn-success md-chip__btn"
+          <span class="sf-chip__state">{{ bpStateLabel(it, registered) }}</span>
+          <button v-if="fetcher && !isRegistered(it)" type="button" class="btn btn-sm btn-success sf-chip__btn"
             :disabled="registering" :aria-label="`登記 ${it.name_zh || it.name}`" @click="register([bpUuid(it)])">登記</button>
         </span>
       </div>
@@ -148,19 +148,6 @@ const standing = computed(() => {
 .md-sub { font-size: .9rem; }
 .md-chance { color: var(--sf-accent-2-text, var(--sf-accent-2)); font-weight: 600; }
 .md-count { color: var(--sf-text-strong); }
-.md-good { color: rgb(var(--bs-success-rgb)); }
-.md-bad { color: rgb(var(--bs-danger-rgb)); }
-.md-facts { display: grid; grid-template-columns: auto 1fr; gap: .2rem .75rem; font-size: .95rem; }
-.md-facts dt { color: var(--sf-text-muted); font-weight: 600; }
-.md-facts dd { margin: 0; }
-.md-chip {
-  display: inline-block; font-size: .9rem; margin: 0 .25rem .25rem 0; padding: 0 .5rem;
-  border: 1px solid var(--sf-border-hi); border-radius: 999px; color: var(--sf-text-muted);
-}
-.md-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }
-.md-chip--ok { border-color: rgba(var(--bs-success-rgb), .7); color: rgb(var(--bs-success-rgb)); }
-.md-chip--todo { border-style: dashed; }
-.md-chip__state { margin-left: .35rem; font-size: .9em; opacity: .85; }
-.md-chip__btn { margin-left: .4rem; padding: 0 .4rem; font-size: .85rem; line-height: 1.4; border-radius: 999px; }
+.md-facts { font-size: .95rem; }
 details > summary { cursor: pointer; }
 </style>

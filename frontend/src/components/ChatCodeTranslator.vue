@@ -14,14 +14,14 @@
     <!-- 工具列：兩區的開關＋字典重新整理放最上面（比照倉庫／藍圖／艦隊） -->
     <div class="sf-toolbar">
       <button type="button" class="btn btn-sm" :class="chatOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="chatOpen ? 'true' : 'false'" @click="chatOpen = !chatOpen">
-        <i class="bi me-1" :class="chatOpen ? 'bi-x-lg' : 'bi-chat-dots'"></i>{{ chatOpen ? '收起聊天代碼' : '聊天代碼' }}
+        :aria-expanded="chatOpen ? 'true' : 'false'" :aria-label="chatOpen ? '收起聊天代碼' : '聊天代碼'" @click="chatOpen = !chatOpen">
+        <i class="bi me-1" :class="chatOpen ? 'bi-x-lg' : 'bi-chat-dots'"></i><span class="sf-btn-text">{{ chatOpen ? '收起聊天代碼' : '聊天代碼' }}</span>
       </button>
       <button type="button" class="btn btn-sm" :class="textOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="textOpen ? 'true' : 'false'" @click="textOpen = !textOpen">
-        <i class="bi me-1" :class="textOpen ? 'bi-x-lg' : 'bi-code-square'"></i>{{ textOpen ? '收起遊戲文字代碼' : '遊戲文字代碼' }}
+        :aria-expanded="textOpen ? 'true' : 'false'" :aria-label="textOpen ? '收起遊戲文字代碼' : '遊戲文字代碼'" @click="textOpen = !textOpen">
+        <i class="bi me-1" :class="textOpen ? 'bi-x-lg' : 'bi-code-square'"></i><span class="sf-btn-text">{{ textOpen ? '收起遊戲文字代碼' : '遊戲文字代碼' }}</span>
       </button>
-      <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="load">重新整理字典</button>
+      <button type="button" class="btn btn-sm btn-primary" :disabled="loading" aria-label="重新整理字典" @click="load"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理字典</span></button>
     </div>
 
     <div v-show="chatOpen" class="sf-drawer">
@@ -58,6 +58,7 @@
             <i class="bi me-1" :class="copied ? 'bi-check-lg' : 'bi-clipboard'"></i>{{ copied ? '已複製' : '複製' }}
           </button>
         </div>
+        <div v-if="copyError" class="text-danger small mb-1" role="alert">{{ copyError }}</div>
         <pre class="chat-code-output mb-0">{{ result.output }}</pre>
         <div v-if="result.unknown.length" class="mt-2">
           <span class="chat-code-meta me-1">字典裡沒有：</span>
@@ -83,10 +84,11 @@
       <span v-if="textSearching" class="chat-code-meta">查詢中…</span>
     </div>
     <div v-if="textError" class="alert alert-danger py-2">{{ textError }}</div>
+    <div v-if="textCopyError" class="text-danger small mb-1" role="alert">{{ textCopyError }}</div>
     <div v-else-if="textQuery.trim().length >= 2 && !textSearching && textRows" :class="cardClass">
       <div class="card-body p-0">
         <div style="overflow-x: auto">
-          <table class="table table-hover align-middle mb-0 game-text-table">
+          <table class="table table-hover align-middle mb-0 game-text-table sf-stack">
             <thead class="table-light">
               <tr>
                 <SortTh :sort="textSort" field="key" class="ps-3">代碼</SortTh>
@@ -98,10 +100,10 @@
             <tbody>
               <tr v-if="!textRows.length"><td colspan="4" class="ps-3 text-muted">找不到符合的遊戲文字。</td></tr>
               <tr v-for="r in textSort.sorted.value" :key="r.key">
-                <td class="ps-3 font-monospace game-text-key">{{ r.key }}</td>
-                <td class="fw-semibold">{{ r.zh || '—' }}</td>
-                <td>{{ r.en || '—' }}</td>
-                <td class="pe-3 text-end text-nowrap">
+                <td class="ps-3 font-monospace game-text-key sf-stack__title" data-label="代碼">{{ r.key }}</td>
+                <td class="fw-semibold" data-label="中文">{{ r.zh || '—' }}</td>
+                <td data-label="英文">{{ r.en || '—' }}</td>
+                <td class="pe-3 text-end text-nowrap sf-stack__actions">
                   <button type="button" class="btn btn-sm btn-primary" @click="copyText(r.key, 'k' + r.key)">
                     <i class="bi me-1" :class="copiedKey === 'k' + r.key ? 'bi-check-lg' : 'bi-clipboard'"></i>代碼
                   </button>
@@ -115,7 +117,7 @@
         </div>
       </div>
     </div>
-    <div v-if="textRows && textRows.length >= 50" class="chat-code-meta mt-1">只列前 50 筆，請再輸入完整一點。</div>
+    <div v-if="textRows && textRows.length >= 50" class="chat-code-meta mt-1">只列前 50 筆</div>
     </div>
   </div>
 </template>
@@ -143,6 +145,7 @@ const stale = ref(false)
 const fetchedAt = ref('')
 const input = ref('')
 const copied = ref(false)
+const copyError = ref('')
 
 async function load() {
   loading.value = true
@@ -194,6 +197,7 @@ const textUsedMode = ref('')
 const textSearching = ref(false)
 const textError = ref('')
 const copiedKey = ref('')
+const textCopyError = ref('')   // 複製失敗只顯示一行小字，不蓋掉查詢結果
 let textTimer = null
 let textSeq = 0
 
@@ -234,9 +238,10 @@ async function copyText(text, id) {
   try {
     await navigator.clipboard.writeText(text)
     copiedKey.value = id
+    textCopyError.value = ''
     setTimeout(() => { if (copiedKey.value === id) copiedKey.value = '' }, 1500)
   } catch {
-    textError.value = '無法複製，請手動選取文字'
+    textCopyError.value = '無法複製，請手動選取文字'
   }
 }
 
@@ -244,9 +249,10 @@ async function copy() {
   try {
     await navigator.clipboard.writeText(result.value.output)
     copied.value = true
+    copyError.value = ''
     setTimeout(() => { copied.value = false }, 1500)
   } catch {
-    error.value = '無法複製，請手動選取文字'
+    copyError.value = '無法複製，請手動選取文字'
   }
 }
 </script>

@@ -10,7 +10,12 @@
 <template>
   <div class="bq">
     <div v-if="loading" class="bq-muted py-2">載入品質資料…</div>
-    <div v-else-if="error" class="alert alert-warning py-2 mb-0">{{ error }}</div>
+    <div v-else-if="error" class="alert alert-warning py-2 mb-0 d-flex flex-wrap align-items-center gap-2">
+      <span>{{ error }}</span>
+      <button type="button" class="btn btn-sm btn-primary" @click="load(blueprintUuid)">
+        <i class="bi bi-arrow-clockwise me-1"></i>重試
+      </button>
+    </div>
     <template v-else-if="data">
       <!-- ① 設定：製作數量（1～6，拉條＋輸入）、全部部位一起設定品質 -->
       <div class="bq-card bq-toolbar mb-3">

@@ -18,13 +18,8 @@
   <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
     <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
 
-    <div v-if="loading && !rows.length" class="text-muted small">載入中…</div>
-    <div v-else-if="loadFailed" class="small">
-      <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取船艦資料失敗。</span>
-      <button type="button" class="btn btn-sm btn-primary ms-1" @click="reload(offset)">重新整理</button>
-    </div>
-    <div v-else-if="!rows.length" class="text-muted small">沒有符合條件的船艦。</div>
-    <template v-else>
+    <SfState :loading="loading && !rows.length" :error="loadFailed ? '讀取船艦資料失敗。' : ''" :empty="!rows.length"
+      empty-text="沒有符合條件的船艦。" @retry="reload(offset)">
       <!-- 欄位名稱列：全選本頁＋欄位名稱（船名、尺寸、價格可以排序，後端排序）＋跟「登記」一樣寬的空位 -->
       <div class="vdb-row vdb-headrow" style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 9rem">
         <input class="form-check-input vdb-check" type="checkbox" aria-label="全選本頁"
@@ -76,11 +71,10 @@
           <VehiclePriceDetail :vehicle-uuid="v._id" :fetcher="fetcher" player />
         </div>
       </div>
-      <div class="d-flex align-items-center justify-content-between mt-2">
-        <span class="small text-muted">
-          <template v-if="total === null">第 {{ offset + 1 }}–{{ offset + rows.length }} 筆</template>
-          <template v-else>共 {{ total }} 款 · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</template>
-        </span>
+      <SfPager v-if="total !== null" class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" @page="goPage" />
+      <!-- 總數未知（只打關鍵字時）SfPager 算不出下一頁，用自己的 -->
+      <div v-else class="d-flex align-items-center justify-content-between mt-2">
+        <span class="sf-pager__info vdb-pager-info">第 {{ offset + 1 }}–{{ offset + rows.length }} 筆</span>
         <div class="btn-group">
           <button class="btn btn-sm btn-primary" :disabled="offset === 0 || loading"
             @click="goPage(Math.max(0, offset - limit))">上一頁</button>
@@ -88,7 +82,7 @@
             @click="goPage(offset + limit)">下一頁</button>
         </div>
       </div>
-    </template>
+    </SfState>
 
     <!-- ── 批量登記列（有勾選才出現；勾選跨頁保留）──────────────── -->
     <!-- sf-sticky-bar：手機上固定在畫面底部 -->
@@ -120,6 +114,8 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import SfTreeHead from '@/components/SfTreeHead.vue'
+import SfPager from '@/components/SfPager.vue'
+import SfState from '@/components/SfState.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUsd } from '@/utils/uexCommodity'
@@ -327,5 +323,9 @@ async function goPage(newOffset) {
 .vdb-field__label { color: var(--sf-text-muted); white-space: nowrap; }
 .vdb-field__value { color: var(--sf-text-strong); font-weight: 600; }
 .vdb-note { white-space: pre-line; }
-.vdb-submit { position: sticky; bottom: .5rem; z-index: 10; }
+/* 手機上 .sf-sticky-bar 由 scifi-theme.css 固定在底部，這裡只管桌機／平板 */
+@media (min-width: 768px) {
+  .vdb-submit { position: sticky; bottom: .5rem; z-index: 10; }
+}
+.vdb-pager-info { font-size: .95rem; color: var(--bs-secondary-color); }
 </style>

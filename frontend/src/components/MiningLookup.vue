@@ -59,10 +59,10 @@
         </div>
 
         <div v-if="loadingDeposits" class="mining-echo__panel text-center py-4">
-          <span class="spinner-border spinner-border-sm me-2"></span>載入中...
+          <span class="spinner-border spinner-border-sm me-2"></span>載入中…
         </div>
         <div v-else-if="resonanceInput === ''" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
-          請輸入船艦感測器掃描到的訊號值
+          —
         </div>
         <div v-else-if="!signatureMatches.length" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
           沒有礦床的「單顆訊號值 × 顆數」對得上 {{ resonanceInput }}
@@ -98,12 +98,13 @@
           </div>
 
           <button v-if="signatureMatches.length > 1" type="button"
-            class="mining-echo__diagnostics-toggle" @click="showDiagnostics = !showDiagnostics">
+            class="mining-echo__diagnostics-toggle" :aria-expanded="showDiagnostics ? 'true' : 'false'"
+            :aria-controls="`${mineralListId}-diagnostics`" @click="showDiagnostics = !showDiagnostics">
             RUN FULL DIAGNOSTICS（還有 {{ signatureMatches.length - 1 }} 筆吻合）
             <i class="bi" :class="showDiagnostics ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
           </button>
 
-          <div v-show="showDiagnostics" class="mining-echo__panel mining-echo__panel--table mt-2">
+          <div v-show="showDiagnostics" :id="`${mineralListId}-diagnostics`" class="mining-echo__panel mining-echo__panel--table mt-2">
             <div style="overflow-x:auto">
               <table class="table table-hover align-middle mb-0 mining-echo__table">
                 <thead>
@@ -120,7 +121,7 @@
                   <tr v-for="(m, idx) in matchSort.sorted.value" :key="idx">
                     <td class="ps-3 fw-semibold">{{ depositLabel(m) }}</td>
                     <td>
-                      <span v-if="m.tier" class="mining-echo__tag">{{ m.tier }}</span>
+                      <span v-if="m.tier" class="sf-chip">{{ m.tier }}</span>
                       <span v-else>—</span>
                     </td>
                     <td>{{ m.rock_count }} 顆</td>
@@ -182,11 +183,11 @@
         </div>
 
         <div v-if="loadingDeposits" class="mining-echo__panel text-center py-4">
-          <span class="spinner-border spinner-border-sm me-2"></span>載入中...
+          <span class="spinner-border spinner-border-sm me-2"></span>載入中…
         </div>
-        <!-- 沒有選定也沒有釘選時只顯示提示（跟左側「回波」同樣的空狀態樣式） -->
+        <!-- 沒有選定也沒有釘選時只顯示「—」（跟左側「回波」同樣的空狀態樣式；不放操作說明） -->
         <div v-else-if="!displayGroups.length" class="mining-echo__panel mining-echo__panel--empty text-center py-4">
-          請輸入礦物名稱
+          —
         </div>
         <div v-else class="mining-echo__mineral-list">
           <!-- 釘選的礦物常駐顯示（存在這台瀏覽器），後面接目前選定、還沒釘選的那一種 -->
@@ -199,8 +200,8 @@
               <i v-if="isPinned(g)" class="bi bi-pin-angle-fill me-1 mining-echo__pin-icon" aria-label="已釘選"></i>
               {{ mineralLabel(g) }}
               <!-- UEX 商品縮寫（交易／價格網站用的代碼，例如 QUAN） -->
-              <span v-if="g.uex?.code" class="mining-echo__tag mining-echo__tag--info ms-1" :title="`UEX：${g.uex.name || ''}`">{{ g.uex.code }}</span>
-              <span v-if="c.own[0]?.tier" class="mining-echo__tag ms-1">{{ c.own[0].tier }}</span>
+              <span v-if="g.uex?.code" class="sf-chip sf-chip--accent ms-1" :title="`UEX：${g.uex.name || ''}`">{{ g.uex.code }}</span>
+              <span v-if="c.own[0]?.tier" class="sf-chip ms-1">{{ c.own[0].tier }}</span>
             </h3>
             <button type="button" class="btn btn-sm text-nowrap" :class="isPinned(g) ? 'btn-warning' : 'btn-success'"
               :aria-pressed="isPinned(g) ? 'true' : 'false'" @click="togglePin(g)">
@@ -210,12 +211,11 @@
             <p v-if="c.locations.length" class="mining-echo__hint mb-2">
               可能出現地點：
               <span v-for="loc in c.locations" :key="loc.system + '/' + loc.location_name"
-                class="mining-echo__tag mining-echo__tag--info me-1" :title="loc.system">
+                class="sf-chip sf-chip--accent me-1" :title="loc.system">
                 {{ locationLabel(loc) }}
               </span>
             </p>
             <template v-if="c.own.length">
-              <div class="mining-echo__hint mb-1">一叢礦石可能有 1～10 顆，掃描器讀到的整叢訊號值＝單顆 × 顆數：</div>
               <div v-for="own in c.own" :key="own.signature" class="mb-2">
                 <!-- 極少數礦物（Carinite、Janalite）自己的礦床有兩種單顆值，才另外標出來 -->
                 <div v-if="c.own.length > 1" class="mining-echo__hint mb-1">
@@ -231,18 +231,18 @@
               </div>
             </template>
             <p v-else class="mining-echo__hint mb-0">
-              資料裡沒有這種礦物單獨成礦的紀錄（只以其他礦床的成分出現），沒有它自己的訊號值可以參考。
+              單顆訊號值：—
             </p>
             <!-- 售價（UEX）：原礦與精煉品各自能賣的終端，賣價高的在前、先列 5 筆 -->
             <div v-for="s in c.sell" :key="s.id" class="mt-2">
               <div class="d-flex align-items-center gap-2 mb-1">
-                <span class="mining-echo__hint">售價 · {{ s.label }}<span v-if="s.code" class="mining-echo__tag mining-echo__tag--info ms-1">{{ s.code }}</span>（{{ s.loading ? '載入中' : `${s.rows.length} 個終端` }}）：</span>
-                <button v-if="s.rows.length > SELL_PREVIEW" type="button" class="btn btn-sm btn-info py-0 ms-auto"
+                <span class="mining-echo__hint">售價 · {{ s.label }}<span v-if="s.code" class="sf-chip sf-chip--accent ms-1">{{ s.code }}</span>（{{ s.loading ? '載入中' : `${s.rows.length} 個終端` }}）：</span>
+                <button v-if="s.rows.length > SELL_PREVIEW" type="button" class="btn btn-sm btn-info ms-auto"
                   @click="sellOpen[s.id] = !sellOpen[s.id]">{{ sellOpen[s.id] ? '收起' : '顯示全部' }}</button>
               </div>
               <div v-if="!s.loading && !s.rows.length" class="mining-echo__hint">—</div>
               <div v-else-if="s.rows.length" style="overflow-x:auto">
-                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                <table class="table align-middle mb-0 mining-echo__table">
                   <thead>
                     <tr>
                       <SortTh :sort="sellSort" field="name" class="ps-2">終端</SortTh>
@@ -266,11 +266,11 @@
             <div v-if="c.refinery.length" class="mt-2">
               <div class="d-flex align-items-center gap-2 mb-1">
                 <span class="mining-echo__hint">精煉產量加成（{{ c.refinery.length }} 個精煉站）：</span>
-                <button v-if="c.refinery.length > REFINERY_PREVIEW" type="button" class="btn btn-sm btn-info py-0 ms-auto"
+                <button v-if="c.refinery.length > REFINERY_PREVIEW" type="button" class="btn btn-sm btn-info ms-auto"
                   @click="toggleRefinery(g)">{{ refineryOpen[g.resource_key] ? '收起' : '顯示全部' }}</button>
               </div>
               <div style="overflow-x:auto">
-                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                <table class="table align-middle mb-0 mining-echo__table">
                   <thead>
                     <tr>
                       <SortTh :sort="refinerySort" field="terminal" class="ps-2">精煉站</SortTh>
@@ -287,10 +287,10 @@
                     <tr v-for="y in c.refineryRows" :key="y.terminal + y.commodity">
                       <td class="ps-2">{{ y.terminal }}<span v-if="y.place && y.place !== y.terminal" class="mining-echo__hint ms-1">{{ y.place }}</span></td>
                       <td>{{ y.system || '—' }}</td>
-                      <td class="text-end fw-bold" :class="[y.value > 0 ? 'mining-echo__good' : y.value < 0 ? 'mining-echo__bad' : '', { 'pe-2': !refineryHasTrend && !refineryHasCapacity }]">{{ fmtYield(y.value) }}</td>
+                      <td class="text-end fw-bold" :class="[y.value > 0 ? 'sf-good' : y.value < 0 ? 'sf-bad' : '', { 'pe-2': !refineryHasTrend && !refineryHasCapacity }]">{{ fmtYield(y.value) }}</td>
                       <template v-if="refineryHasTrend">
-                        <td class="text-end" :class="y.week > 0 ? 'mining-echo__good' : y.week < 0 ? 'mining-echo__bad' : ''">{{ fmtYield(y.week) }}</td>
-                        <td class="text-end" :class="[y.month > 0 ? 'mining-echo__good' : y.month < 0 ? 'mining-echo__bad' : '', { 'pe-2': !refineryHasCapacity }]">{{ fmtYield(y.month) }}</td>
+                        <td class="text-end" :class="y.week > 0 ? 'sf-good' : y.week < 0 ? 'sf-bad' : ''">{{ fmtYield(y.week) }}</td>
+                        <td class="text-end" :class="[y.month > 0 ? 'sf-good' : y.month < 0 ? 'sf-bad' : '', { 'pe-2': !refineryHasCapacity }]">{{ fmtYield(y.month) }}</td>
                       </template>
                       <td v-if="refineryHasCapacity" class="pe-2 text-end">{{ y.capacity !== null ? `${Number(y.capacity.toFixed(1)).toLocaleString('en-US')}%` : '—' }}</td>
                     </tr>
@@ -304,7 +304,7 @@
                 精煉方式（{{ c.methodTable.length }}<template v-if="refineryVersion && c.methods.length">，玩家回報 {{ refineryVersion }}</template>）：
               </div>
               <div style="overflow-x:auto">
-                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                <table class="table align-middle mb-0 mining-echo__table">
                   <thead>
                     <tr>
                       <SortTh :sort="methodSort" field="method" class="ps-2">方式</SortTh>
@@ -388,7 +388,7 @@
                   </div>
                   <div class="mining-echo__stat" :class="{ 'mining-echo__stat--accent': pf.better === 'refine' }">
                     <div class="mining-echo__stat-label">預估利潤</div>
-                    <div class="mining-echo__stat-value" :class="pf.better === 'refine' ? 'mining-echo__stat-value--ok' : pf.profit !== null && pf.profit < 0 ? 'mining-echo__bad' : ''">{{ pf.profit !== null ? fmtInt(pf.profit) : '—' }} <small v-if="pf.profit !== null">aUEC</small></div>
+                    <div class="mining-echo__stat-value" :class="pf.better === 'refine' ? 'mining-echo__stat-value--ok' : pf.profit !== null && pf.profit < 0 ? 'sf-bad' : ''">{{ pf.profit !== null ? fmtInt(pf.profit) : '—' }} <small v-if="pf.profit !== null">aUEC</small></div>
                   </div>
                   <div class="mining-echo__stat" :class="{ 'mining-echo__stat--accent': pf.better === 'raw' }">
                     <div class="mining-echo__stat-label">直接賣原礦</div>
@@ -401,11 +401,11 @@
               <div v-if="rv.combos.length" class="mt-3">
                 <div class="d-flex align-items-center gap-2 mb-1">
                   <span class="mining-echo__hint">站點 × 方式組合（{{ rv.combos.length }}）：</span>
-                  <button v-if="rv.combos.length > COMBO_PREVIEW" type="button" class="btn btn-sm btn-info py-0 ms-auto"
+                  <button v-if="rv.combos.length > COMBO_PREVIEW" type="button" class="btn btn-sm btn-info ms-auto"
                     @click="setRefine(rv.base, { open: !rv.open })">{{ rv.open ? '收起' : '顯示全部' }}</button>
                 </div>
                 <div style="overflow-x:auto">
-                  <table class="table table-sm align-middle mb-0 mining-echo__table">
+                  <table class="table align-middle mb-0 mining-echo__table">
                     <thead>
                       <tr>
                         <SortTh :sort="comboSort" field="station" class="ps-2">精煉站</SortTh>
@@ -418,8 +418,11 @@
                     <tbody>
                       <tr v-for="c in rv.comboRows" :key="c.station + '|' + c.method"
                         :class="{ 'mining-echo__row--picked': c.station === rv.station && c.method === rv.method }"
-                        role="button" @click="setRefine(rv.base, { station: c.station, method: c.method })">
-                        <td class="ps-2">{{ c.station || '不指定' }}<span v-if="c.bonus" class="ms-1" :class="c.bonus > 0 ? 'mining-echo__good' : 'mining-echo__bad'">{{ fmtYield(c.bonus) }}</span></td>
+                        role="button" tabindex="0" :aria-pressed="c.station === rv.station && c.method === rv.method ? 'true' : 'false'"
+                        @click="setRefine(rv.base, { station: c.station, method: c.method })"
+                        @keydown.enter.self.prevent="setRefine(rv.base, { station: c.station, method: c.method })"
+                        @keydown.space.self.prevent="setRefine(rv.base, { station: c.station, method: c.method })">
+                        <td class="ps-2">{{ c.station || '不指定' }}<span v-if="c.bonus" class="ms-1" :class="c.bonus > 0 ? 'sf-good' : 'sf-bad'">{{ fmtYield(c.bonus) }}</span></td>
                         <td>{{ c.method }}</td>
                         <td class="text-end fw-bold">{{ fmtScu(c.output) }} SCU</td>
                         <td class="text-end">{{ c.cost !== null ? `${fmtInt(c.cost)} aUEC` : '—' }}</td>
@@ -429,18 +432,15 @@
                   </table>
                 </div>
               </div>
-              <p class="mining-echo__footnote mt-2 mb-0">
-                產出率、成本、時間是玩家回報紀錄的平均<template v-if="refineryVersion">（{{ refineryVersion }}）</template>，站點加成來自 UEX，實際結果會有落差。
-              </p>
               </template>
               <div v-else>
                 <div class="d-flex align-items-center gap-2 mb-1">
                   <span class="mining-echo__hint">推薦組合（{{ rv.ranked.length }}）：</span>
-                  <button v-if="rv.ranked.length > COMBO_PREVIEW" type="button" class="btn btn-sm btn-info py-0 ms-auto"
+                  <button v-if="rv.ranked.length > COMBO_PREVIEW" type="button" class="btn btn-sm btn-info ms-auto"
                     @click="setRefine(rv.base, { open: !rv.open })">{{ rv.open ? '收起' : '顯示全部' }}</button>
                 </div>
                 <div style="overflow-x:auto">
-                  <table class="table table-sm align-middle mb-0 mining-echo__table">
+                  <table class="table align-middle mb-0 mining-echo__table">
                     <thead>
                       <tr>
                         <th class="ps-2 text-end">#</th>
@@ -454,7 +454,7 @@
                     <tbody>
                       <tr v-for="(c, i) in rv.rankedRows" :key="c.station + '|' + c.method">
                         <td class="ps-2 text-end mining-echo__hint">{{ i + 1 }}</td>
-                        <td>{{ c.station || '—' }}<span v-if="c.station" class="ms-1" :class="c.bonus > 0 ? 'mining-echo__good' : c.bonus < 0 ? 'mining-echo__bad' : ''">{{ fmtYield(c.bonus) }}</span></td>
+                        <td>{{ c.station || '—' }}<span v-if="c.station" class="ms-1" :class="c.bonus > 0 ? 'sf-good' : c.bonus < 0 ? 'sf-bad' : ''">{{ fmtYield(c.bonus) }}</span></td>
                         <td>{{ c.method || '—' }}</td>
                         <td class="text-end text-nowrap mining-echo__level">{{ fmtLevel(c.r_yield) }}</td>
                         <td class="text-end text-nowrap mining-echo__level">{{ fmtLevel(c.r_cost) }}</td>
@@ -470,7 +470,7 @@
               <div class="mining-echo__hint mb-1">包含這種礦物的礦床（機率 100%，{{ c.contain.length }}）：</div>
               <div v-if="!c.contain.length" class="mining-echo__hint">—</div>
               <div v-else style="overflow-x:auto">
-                <table class="table table-sm align-middle mb-0 mining-echo__table">
+                <table class="table align-middle mb-0 mining-echo__table">
                   <thead>
                     <tr>
                       <SortTh :sort="containSort" field="deposit" class="ps-2">礦床</SortTh>
@@ -482,7 +482,7 @@
                   <tbody>
                     <tr v-for="d in c.containRows" :key="d.key">
                       <td class="ps-2">{{ depositLabel(d) }}</td>
-                      <td><span v-if="d.tier" class="mining-echo__tag">{{ d.tier }}</span><span v-else>—</span></td>
+                      <td><span v-if="d.tier" class="sf-chip">{{ d.tier }}</span><span v-else>—</span></td>
                       <td class="text-nowrap">{{ fmtRange(d.min_percentage, d.max_percentage) }}</td>
                       <td class="pe-2 text-end">{{ fmtInt(d.signature) }}</td>
                     </tr>
@@ -1158,7 +1158,7 @@ function locationsFor(group) {
   display: flex;
   align-items: center;
   gap: .5rem;
-  font-size: .78rem;
+  font-size: .95rem;
   font-weight: 700;
   letter-spacing: .12em;
   color: var(--me-accent);
@@ -1233,7 +1233,7 @@ function locationsFor(group) {
 .mining-echo__suggest-hint {
   padding: .4rem .6rem;
   color: var(--me-text-dim);
-  font-size: .85em;
+  font-size: .95em;
 }
 
 .mining-echo__panel {
@@ -1253,7 +1253,7 @@ function locationsFor(group) {
   display: inline-flex;
   align-items: center;
   gap: .35rem;
-  font-size: .72rem;
+  font-size: .9rem;
   font-weight: 700;
   letter-spacing: .08em;
   color: var(--me-accent);
@@ -1290,7 +1290,7 @@ function locationsFor(group) {
 }
 .mining-echo__stat--accent { border-color: var(--me-border-hi); }
 .mining-echo__stat-label {
-  font-size: .68rem;
+  font-size: .9rem;
   letter-spacing: .08em;
   color: var(--me-text-dim);
   margin-bottom: .2rem;
@@ -1298,8 +1298,9 @@ function locationsFor(group) {
 .mining-echo__stat-value {
   font-size: 1.35rem;
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
-.mining-echo__stat-value small { font-size: .6em; font-weight: 600; opacity: .75; }
+.mining-echo__stat-value small { font-size: .7em; font-weight: 600; opacity: .75; }
 .mining-echo__stat-value--ok { color: rgb(var(--bs-success-rgb)); }
 .mining-echo__level { color: var(--me-accent); letter-spacing: .05em; }
 
@@ -1309,7 +1310,8 @@ function locationsFor(group) {
   gap: .5rem;
   margin-bottom: .75rem;
 }
-@media (min-width: 400px) {
+/* 手機（< 576px）兩欄，字放大後 5 欄在 390px 會擠出格子 */
+@media (min-width: 576px) {
   .mining-echo__grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 .mining-echo__cell {
@@ -1320,31 +1322,23 @@ function locationsFor(group) {
   text-align: center;
 }
 .mining-echo__cell-mult {
-  position: absolute;
-  font-size: .65rem;
+  font-size: .9rem;
   font-weight: 700;
   color: var(--me-text-dim);
 }
-.mining-echo__cell { position: relative; }
-.mining-echo__cell-mult { top: .3rem; right: .4rem; }
+.mining-echo__cell { min-width: 0; }
 .mining-echo__cell-label {
-  font-size: .6rem;
-  letter-spacing: .06em;
+  font-size: .9rem;
   color: var(--me-text-dim);
-  margin-top: .6rem;
+  overflow-wrap: anywhere;
 }
 .mining-echo__cell-value {
   font-size: 1.05rem;
+  overflow-wrap: anywhere;
   font-weight: 800;
 }
 
-.mining-echo__hint { color: var(--me-text-dim); font-size: .85rem; }
-.mining-echo__footnote {
-  color: var(--me-text-dim);
-  font-size: .78rem;
-  opacity: .85;
-  margin-top: .6rem;
-}
+.mining-echo__hint { color: var(--me-text-dim); font-size: .95rem; }
 
 .mining-echo__diagnostics-toggle {
   width: 100%;
@@ -1352,7 +1346,7 @@ function locationsFor(group) {
   border: 1px dashed var(--me-border);
   border-radius: .4rem;
   color: var(--me-text-dim);
-  font-size: .78rem;
+  font-size: .95rem;
   letter-spacing: .04em;
   padding: .5rem .75rem;
   margin-top: .6rem;
@@ -1363,33 +1357,21 @@ function locationsFor(group) {
 }
 .mining-echo__diagnostics-toggle:hover { color: var(--me-text); border-color: var(--me-border-hi); }
 
-.mining-echo__tag {
-  display: inline-block;
-  font-size: .72rem;
-  background: var(--sf-chip-bg);
-  border: 1px solid var(--me-border);
-  border-radius: .25rem;
-  padding: .05rem .4rem;
-}
-.mining-echo__tag--info { color: var(--me-accent); }
 
 .mining-echo__table thead th {
   color: var(--me-text-dim);
-  font-size: .72rem;
+  font-size: .9rem;
   letter-spacing: .05em;
   border-bottom-color: var(--me-border);
   background: transparent;
 }
 .mining-echo__table tbody td {
   border-color: var(--me-border);
-  font-size: .85rem;
 }
 .mining-echo__table tbody tr:hover { background: rgba(var(--sf-accent-rgb), .06); }
 .mining-echo__part { padding-left: .75rem; }
 .mining-echo__panel--pinned { border-color: var(--me-border-hi); }
 .mining-echo__pin-icon { color: var(--me-accent); }
-.mining-echo__good { color: var(--bs-success) !important; }
-.mining-echo__bad { color: var(--bs-danger) !important; }
 .mining-echo__qty { width: 7rem; }
 .mining-echo__row--picked td { background: rgba(var(--sf-accent-rgb), .12); }
 .mining-echo__table tbody tr[role="button"] { cursor: pointer; }

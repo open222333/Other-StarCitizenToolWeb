@@ -196,6 +196,7 @@
         </div>
       </div>
     </div>
+    <ConfirmModal ref="confirmModalRef" />
   </div>
 </template>
 
@@ -206,6 +207,7 @@ import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import SortTh from '@/components/SortTh.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
 
@@ -217,6 +219,7 @@ const loading = ref(false)
 const saving  = ref(false)
 const msg     = ref('')
 const msgType = ref('success')
+const confirmModalRef = ref(null)
 const editingId = ref('')
 const form = reactive({ title: '', url: '', description: '', sort_order: 0, tags: '' })
 // 標籤順序（後端 /links/ 一起回傳，存在 mongo 的 tool_link_tags）
@@ -358,7 +361,7 @@ function onPaste() {
 
 async function doImport() {
   if (!importData.value || importing.value) return
-  if (importReplace.value && !window.confirm('取代現有清單：檔案裡沒有的工具網站會被刪除，確定要匯入？')) return
+  if (importReplace.value && !(await confirmModalRef.value?.confirm('取代現有清單：檔案裡沒有的工具網站會被刪除，確定要匯入？', { title: '確認匯入', okText: '匯入' }))) return
   importing.value = true
   try {
     const res = await toolLinkApi.importAll({ data: importData.value, replace: importReplace.value })
@@ -439,8 +442,12 @@ async function submit() {
   await load()
 }
 
+function escHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
 async function remove(link) {
-  if (!window.confirm(`確定要刪除「${link.title}」？`)) return
+  if (!(await confirmModalRef.value?.confirm(`確定要刪除 <strong>${escHtml(link.title)}</strong>？`))) return
   const res = await toolLinkApi.remove(link._id)
   const data = await readJson(res)
   if (!res?.ok || !data?.success) {

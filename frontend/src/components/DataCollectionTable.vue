@@ -19,9 +19,12 @@
       <template #summary>共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span></template>
     </AdminSearchCard>
 
-    <div v-if="error" class="alert alert-warning py-2">{{ error }}</div>
+    <div v-if="error && !loading" class="alert alert-danger py-2 d-flex flex-wrap align-items-center gap-2" role="alert">
+      <span>{{ error }}</span>
+      <button type="button" class="btn btn-sm btn-primary" @click="reload(offset)"><i class="bi bi-arrow-clockwise me-1"></i>重試</button>
+    </div>
 
-    <div class="card shadow-sm border-0">
+    <div v-else class="card shadow-sm border-0">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
           <table class="table table-hover table-sm align-middle mb-0 small dct">

@@ -56,36 +56,11 @@
             <thead class="table-light">
               <tr>
                 <th class="ps-3">歸屬</th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('location')" @keydown.enter="toggleSort('location')">
-                  位置
-                  <i v-if="sortBy === 'location'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('container')" @keydown.enter="toggleSort('container')">
-                  容器
-                  <i v-if="sortBy === 'container'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('item_name')" @keydown.enter="toggleSort('item_name')">
-                  物品
-                  <i v-if="sortBy === 'item_name'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('quantity')" @keydown.enter="toggleSort('quantity')">
-                  數量
-                  <i v-if="sortBy === 'quantity'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('total_scu')" @keydown.enter="toggleSort('total_scu')">
-                  SCU
-                  <i v-if="sortBy === 'total_scu'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
+                <SortTh :sort="sort" field="location">位置</SortTh>
+                <SortTh :sort="sort" field="container">容器</SortTh>
+                <SortTh :sort="sort" field="item_name">物品</SortTh>
+                <SortTh :sort="sort" field="quantity">數量</SortTh>
+                <SortTh :sort="sort" field="total_scu">SCU</SortTh>
                 <th style="width:100px" class="pe-3" v-if="canWrite">操作</th>
               </tr>
             </thead>
@@ -116,7 +91,7 @@
                   <td class="small">{{ row.quantity }}</td>
                   <td class="small text-muted">{{ row.total_scu }}</td>
                   <td class="pe-3" v-if="canWrite">
-                    <button class="btn btn-sm btn-outline-secondary" @click="openAdjustForRow(row)">
+                    <button class="btn btn-sm btn-outline-secondary" aria-label="入庫／出庫" title="入庫／出庫" @click="openAdjustForRow(row)">
                       <i class="bi bi-sliders"></i>
                     </button>
                   </td>
@@ -129,17 +104,7 @@
     </div>
 
     <!-- ── 分頁 ────────────────────────────────────────────── -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
-      <div class="small text-muted">
-        共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
-      </div>
-      <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
-          @click="reload(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-outline-secondary" :disabled="offset + limit >= total || loading"
-          @click="reload(offset + limit)">下一頁</button>
-      </div>
-    </div>
+    <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" admin @page="reload" />
 
     <!-- ── 入庫／出庫 調整 Modal ── -->
     <div class="modal fade" ref="adjustModalEl" tabindex="-1">
@@ -150,7 +115,7 @@
               <i :class="`bi ${adjustMode === 'add' ? 'bi-plus-lg text-success' : 'bi-dash-lg text-danger'} me-1`"></i>
               {{ adjustMode === 'add' ? '入庫' : '出庫' }}
             </h5>
-            <button type="button" class="btn-close" @click="closeAdjust"></button>
+            <button type="button" class="btn-close" aria-label="關閉" @click="closeAdjust"></button>
           </div>
           <div class="modal-body">
             <div v-if="adjustError" class="alert alert-danger py-2 small">{{ adjustError }}</div>
@@ -217,6 +182,9 @@ import { loadStorageLocations, translate } from '@/utils/translations'
 import SearchBox          from '@/components/SearchBox.vue'
 import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import SortTh from '@/components/SortTh.vue'
+import SfPager from '@/components/SfPager.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 
 const auth = useAuthStore()
@@ -253,8 +221,10 @@ const locationLabel = (loc) => {
 }
 const containerQuery    = ref('')
 const nameQuery         = ref('')
-const sortBy  = ref('item_name')
-const sortDir = ref('asc')
+// 後端排序：點同一欄升冪↔降冪（不取消），換欄從升冪開始，改了就回第一頁重查
+const sort = useTableSort(null, { key: 'item_name', dir: 'asc', cycle: false, onChange: () => reload(0) })
+const sortBy = sort.sortKey
+const sortDir = sort.sortDir
 
 const hasActiveFilters = computed(() => !!(
   filters.owner_type !== 'guild' || filters.player.trim()
@@ -265,16 +235,6 @@ const msg = ref(''); const msgType = ref('success')
 function flash(text, type = 'danger') {
   msg.value = text; msgType.value = type
   setTimeout(() => { msg.value = '' }, 3000)
-}
-
-function toggleSort(field) {
-  if (sortBy.value === field) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortBy.value = field
-    sortDir.value = 'asc'
-  }
-  reload(0)
 }
 
 function onLocationsChange(values) {
@@ -441,6 +401,4 @@ onMounted(async () => {
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
 
-.sortable-th { cursor: pointer; user-select: none; }
-.sortable-th:hover { color: var(--bs-primary); }
 </style>

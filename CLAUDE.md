@@ -17,7 +17,7 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
 - 只保留必要的狀態訊息（載入中、讀取失敗、查無結果、送出結果）與欄位標籤，而且要短。
 - 程式碼裡的註解不受此限（那是給維護者看的，不是畫面文字）。
 - **玩家頁面不要用超連結樣式，一律用按鈕**：重新整理、刪除、清除、重試、展開這類操作用
-  `<button class="btn btn-sm btn-outline-…">`（不要 `btn-link`、不要虛線底線的文字連結）；
+  `<button class="btn btn-sm btn-primary">`（依操作換成下面的有底色 class；不要 `btn-link`、不要虛線底線的文字連結）；
   可點的名稱（例如藍圖名稱開解鎖任務）也做成按鈕；要開新頁的外部網址、換頁用
   `<a>`／`<RouterLink>` 但加上 `btn` 樣式，看起來是按鈕。
   按鈕一律用有底色的 Bootstrap class（不要 outline），依操作種類選：重新整理／重試／換頁／
@@ -57,7 +57,19 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
   名稱欄 `.sf-stack__title`、按鈕欄 `.sf-stack__actions`、勾選欄 `.sf-stack__check`，列內展開的 tr 加 `.sf-stack__detail`
   （手機變底部面板，裡面放 `.sf-stack__sheet-head` 關閉列）；手機另放 `SortSelect` 排序下拉。次要欄位用
   `d-none d-md-table-cell`／`d-lg-table-cell` 在平板藏起來（手機卡片照樣顯示）。搜尋卡名稱以外的條件包 `SfFilterSheet`
-  （手機收進「篩選」底部面板）。工具列按鈕文字包 `.sf-btn-text`、按鈕加 `aria-label`。批量操作列加 `.sf-sticky-bar`。
+  （手機收進「篩選」底部面板）。工具列按鈕文字包 `.sf-btn-text`、按鈕加 `aria-label`。批量操作列加 `.sf-sticky-bar`
+  （手機上由 `scifi-theme.css` 固定在底部；元件不要再對它設 `position`／`bottom`／`z-index`）。
+  自己做的底部面板（`.sf-sheet`，例如「更多」）用 `composables/useSheet.js` 的 `useSheet(openRef, sheetElRef)`
+  （Esc 關閉、開啟時焦點移進面板、關閉後回到按鈕；面板加 `role="dialog" aria-modal="true" tabindex="-1"`）。
+- **玩家頁共用元件／class**（樣式在 `scifi-theme.css`，不要各頁另寫）：
+  - 狀態：`SfState`（`loading`／`error`／`empty`／`emptyText`／`loadingText`，`@retry`）——文字一律「載入中…」「重試」。
+  - 分頁：`SfPager`（`total`／`offset`／`limit`／`loading`，`@page(newOffset)`；後台頁加 `admin` 變 outline 樣式）。
+  - 標籤膠囊 `.sf-chip`（`--warn` 紅、`--ok` 綠、`--todo` 虛線、`--accent` 強調色；裡面的小字 `.sf-chip__state`、
+    小按鈕 `btn btn-sm btn-* sf-chip__btn`）；正負數值文字 `.sf-good`／`.sf-bad`；「標籤：值」清單 `<dl class="sf-facts">`。
+  - 自訂下拉／浮出面板用 `.sf-popover`（項目 `.sf-popover__item`，作用中加 `.is-active`）。會同時用在後台的共用元件
+    （AutocompleteField、MultiSelectFilter、FieldHint）底色／邊框／文字改用 `--bs-body-bg`／`--bs-border-color`／
+    `--bs-body-color`（`.scifi-page` 已對到 `--sf-*`），hover／陰影用 `var(--sf-popover-hover, …)`／`var(--sf-popover-shadow, …)`
+    帶後台 fallback；不要用 `--sf-*` 直接當後台 fallback（`--sf-*` 掛在 `:root`，後台也會讀到深色值）。
 - **地點搜尋一律是「星系／行星／地點」三段**（`utils/locationArea.js`、`components/LocationAreaFilter.vue`；
   星系／行星查地點資料庫，後端 `Starmap.names_in`；UEX 終端用 `terminal.planet／place`）。
 - **玩家頁「艦隊」只有一頁**：我的艦隊是表格（跟倉庫、藍圖一致，「詳細」展開船艦資訊與每一艘），每艘可填只有本人看得到的

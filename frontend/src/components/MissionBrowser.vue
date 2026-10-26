@@ -31,13 +31,13 @@
             <tbody>
               <tr v-if="loading && !rows.length">
                 <td colspan="8" class="text-center py-4 text-muted">
-                  <span class="spinner-border spinner-border-sm me-2"></span>載入中...
+                  <span class="spinner-border spinner-border-sm me-2"></span>載入中…
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
                 <td colspan="8" class="text-center py-4">
                   <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取任務資料失敗。</span>
-                  <button class="btn btn-sm btn-primary ms-1" @click="reload(offset)">重試</button>
+                  <button type="button" class="btn btn-sm btn-primary ms-1" @click="reload(offset)"><i class="bi bi-arrow-clockwise me-1"></i>重試</button>
                 </td>
               </tr>
               <tr v-else-if="!rows.length">
@@ -46,12 +46,12 @@
               <template v-else>
                 <template v-for="{ m, poolSize, regCount } in rowViews" :key="m._id">
                   <tr class="ms-row" role="button" tabindex="0" :aria-expanded="expandedId === m._id ? 'true' : 'false'"
-                    @click="toggle(m)" @keydown.enter.self="toggle(m)">
+                    @click="toggle(m)" @keydown.enter.self="toggle(m)" @keydown.space.self.prevent="toggle(m)">
                     <td class="ps-3 sf-stack__title">
                       <i class="bi me-1 small text-muted" :class="expandedId === m._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                       <span class="fw-semibold">{{ m.title_zh || m.title }}</span>
                       <span v-if="m.title_zh" class="small text-muted ms-1">{{ m.title }}</span>
-                      <span v-if="m.illegal" class="ms-chip ms-chip--warn ms-1">違法</span>
+                      <span v-if="m.illegal" class="sf-chip sf-chip--warn ms-1">違法</span>
                     </td>
                     <td data-label="類型">{{ m.reward_scope ? typeLabel(m.reward_scope) : '—' }}</td>
                     <td class="d-none d-md-table-cell" data-label="勢力">{{ factionLabel(m) }}</td>
@@ -59,7 +59,7 @@
                     <td class="text-end text-nowrap" data-label="報酬">{{ rewardLabel(m) }}</td>
                     <td class="text-end" data-label="聲望">
                       <div v-for="(r, i) in m.reputation_gained || []" :key="i" class="text-nowrap">
-                        <span class="fw-semibold" :class="Number(r.amount) < 0 ? 'ms-bad' : 'ms-good'">{{ fmtRep(r.amount) }}</span>
+                        <span class="fw-semibold" :class="Number(r.amount) < 0 ? 'sf-bad' : 'sf-good'">{{ fmtRep(r.amount) }}</span>
                         <span v-if="r.faction" class="small text-muted ms-1">{{ factionName(r.faction) }}</span>
                       </div>
                       <span v-if="!m.reputation_gained?.length" class="text-muted">—</span>
@@ -90,15 +90,7 @@
       </div>
     </div>
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
-      <div class="small text-muted">
-        共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-sm btn-primary" :disabled="offset === 0 || loading" @click="goPage(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-sm btn-primary" :disabled="offset + limit >= total || loading" @click="goPage(offset + limit)">下一頁</button>
-      </div>
-    </div>
+    <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" @page="goPage" />
   </div>
 </template>
 
@@ -106,6 +98,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import SortSelect from '@/components/SortSelect.vue'
 import SortTh from '@/components/SortTh.vue'
+import SfPager from '@/components/SfPager.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
 import { factionLabel, fmtCooldown, fmtRep, rewardLabel } from '@/utils/mission'
@@ -237,11 +230,4 @@ defineExpose({ reload: () => reload(offset.value) })
 .ms-row { cursor: pointer; }
 .ms-detail { background: var(--sf-inset); }
 .ms-count { color: var(--sf-text-strong); }
-.ms-good { color: rgb(var(--bs-success-rgb)); }
-.ms-bad { color: rgb(var(--bs-danger-rgb)); }
-.ms-chip {
-  display: inline-block; font-size: .9rem; margin: 0 .25rem .25rem 0; padding: 0 .5rem;
-  border: 1px solid var(--sf-border-hi); border-radius: 999px; color: var(--sf-text-muted);
-}
-.ms-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }
 </style>

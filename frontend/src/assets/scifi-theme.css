@@ -618,8 +618,8 @@
 .sf-tree-head__btn:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
 .sf-tree-head__icon { font-size: .85em; margin-left: .2rem; }
 .sf-tree-head__icon--idle { opacity: .4; }
-@media (max-width: 575.98px) {
-  /* 手機上只留第一欄（名稱）跟最後一欄，其他欄位藏起來，列內容照樣顯示在展開區 */
+@media (max-width: 767.98px) {
+  /* 手機（< 768，跟 useBreakpoint 的 isPhone 同一個斷點）上只留第一欄（名稱）跟最後一欄，其他欄位藏起來，列內容照樣顯示在展開區 */
   .sf-tree-row--cols, .sf-tree-head { grid-template-columns: var(--sf-tree-cols-sm, minmax(0, 1fr) auto); }
   .sf-tree-row--cols > .sf-tree-cell--opt, .sf-tree-head > .sf-tree-cell--opt { display: none; }
 }
@@ -830,6 +830,7 @@
   background: var(--sf-panel); border-top: 1px solid var(--sf-border-hi); border-radius: 16px 16px 0 0;
   padding: 6px 16px calc(16px + env(safe-area-inset-bottom));
 }
+.scifi-page .sf-sheet:focus { outline: none; }   /* useSheet 開啟時沒有可聚焦元素會把焦點放在面板本身 */
 .scifi-page .sf-sheet__grip { width: 44px; height: 5px; border-radius: 3px; background: var(--sf-border-hi); margin: 4px auto 12px; }
 .scifi-page .sf-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .75rem; }
 .scifi-page .sf-sheet__title { font-size: 1.15rem; font-weight: 700; color: var(--sf-text-strong); margin: 0; }
@@ -902,16 +903,20 @@
   }
   .scifi-page table.sf-stack tr.sf-stack__detail > td { display: block; border: 0; padding: .75rem 1rem 1rem !important; background: none; }
 
-  /* 手機固定在底部的操作列；有底部導覽列時疊在它上面 */
+  /* 手機固定在底部的操作列；有底部導覽列時疊在它上面。
+   * 定位相關屬性加 !important（只在手機寬度內）：元件的 scoped 樣式（例如 .bp-submit
+   * { position: sticky; bottom: .5rem }）跟這條的權重一樣，載入順序一換就會蓋掉 fixed。
+   * 元件不要自己對 .sf-sticky-bar 設 position／bottom／z-index。 */
   .scifi-page .sf-sticky-bar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1050; margin: 0 !important;
+    position: fixed !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+    z-index: 1050 !important; margin: 0 !important;
     display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
     padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom));
     background: rgba(var(--sf-topbar-rgb, 10, 14, 23), .98); border-top: 1px solid var(--sf-border-hi);
   }
   .scifi-page .sf-sticky-bar > .card-body { padding: 0; width: 100%; }
   .scifi-page:has(.sf-sticky-bar) { padding-bottom: calc(160px + env(safe-area-inset-bottom)); }
-  .scifi-page.has-bottom-nav .sf-sticky-bar { bottom: calc(64px + env(safe-area-inset-bottom)); padding-bottom: .75rem; }
+  .scifi-page.has-bottom-nav .sf-sticky-bar { bottom: calc(64px + env(safe-area-inset-bottom)) !important; padding-bottom: .75rem; }
 }
 @media (min-width: 768px) {
   .scifi-page .sf-stack__sheet-head { display: none !important; }
@@ -944,3 +949,62 @@
 /* 換頁後捲回列表頂端時（utils/scrollAnchor.js），留出固定頂端列＋分頁列的高度 */
 .sf-scroll-anchor { scroll-margin-top: calc(var(--sf-topbar-h, 53px) + var(--sf-tabs-h, 53px) + .75rem); }
 .sf-list-loading { opacity: .6; transition: opacity .15s; }
+
+/* ── 共用小元件（玩家頁；說明見 CLAUDE.md「UI 規則」）──────────────────────────────
+ * .sf-chip            標籤膠囊（狀態、條件、已選項目）；--warn 紅、--ok 綠、--todo 虛線（待辦）、--accent 強調色
+ *   .sf-chip__state   膠囊裡的小字狀態
+ *   .sf-chip__btn     膠囊裡的小按鈕（搭配 btn btn-sm btn-*，有底色）
+ * .sf-good／.sf-bad   正／負數值的文字色（亮底模式自動換深一階的綠／紅）
+ * .sf-facts           <dl> 的「標籤：值」兩欄格線
+ * .sf-popover         自訂下拉／浮出面板（AutocompleteField、MultiSelectFilter、FieldHint 用同一組變數） */
+.scifi-page .sf-chip {
+  display: inline-block; margin: 0 .35rem .35rem 0; padding: .2rem .65rem;
+  font-size: .9rem; line-height: 1.4; color: var(--sf-text-muted);
+  background: var(--sf-chip-bg); border: 1px solid var(--sf-border-hi); border-radius: 999px;
+  vertical-align: middle;
+}
+.scifi-page .sf-chip--warn {
+  color: rgb(var(--bs-danger-rgb)); border-color: rgba(var(--bs-danger-rgb), .55); background: rgba(var(--bs-danger-rgb), .1);
+}
+.scifi-page .sf-chip--ok {
+  color: rgb(var(--bs-success-rgb)); border-color: rgba(var(--bs-success-rgb), .55); background: rgba(var(--bs-success-rgb), .1);
+}
+.scifi-page .sf-chip--todo { border-style: dashed; background: transparent; }
+.scifi-page .sf-chip--accent {
+  color: var(--sf-accent-text, var(--sf-accent)); border-color: rgba(var(--sf-accent-rgb), .55); background: rgba(var(--sf-accent-rgb), .1);
+}
+.scifi-page .sf-chip__state { margin-left: .3rem; font-size: .85em; opacity: .85; }
+.scifi-page .sf-chip .sf-chip__btn {
+  margin: -.1rem -.35rem -.1rem .4rem; padding: 0 .5rem; min-height: 28px;
+  font-size: .85em; line-height: 1.2; border-radius: 999px; vertical-align: middle;
+}
+@media (pointer: coarse) {
+  .scifi-page .sf-chip .sf-chip__btn { min-height: 2rem; padding-top: 0; padding-bottom: 0; }
+}
+
+.scifi-page .sf-good { color: rgb(var(--bs-success-rgb)); }
+.scifi-page .sf-bad { color: rgb(var(--bs-danger-rgb)); }
+
+.scifi-page .sf-facts { display: grid; grid-template-columns: auto 1fr; gap: .25rem .75rem; margin: 0; }
+.scifi-page .sf-facts > dt { font-weight: 600; color: var(--sf-text-muted); }
+.scifi-page .sf-facts > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* 浮出面板的 hover／作用中底色與陰影做成變數：共用元件（也用在後台）的 scoped 樣式寫
+ * var(--sf-popover-hover, <後台 fallback>)，在 .scifi-page 裡就自動吃到主題色，不用比權重。 */
+.scifi-page {
+  --sf-popover-hover:  var(--sf-hover-bg);
+  --sf-popover-active: rgba(var(--sf-accent-rgb), .16);
+  --sf-popover-shadow: 0 .5rem 1.25rem var(--sf-shadow);
+}
+.scifi-page .sf-popover {
+  padding: .3rem; color: var(--sf-text);
+  background: var(--sf-panel); border: 1px solid var(--sf-border-hi); border-radius: .4rem;
+  box-shadow: var(--sf-popover-shadow);
+}
+.scifi-page .sf-popover .sf-popover__item {
+  display: block; width: 100%; padding: .35rem .55rem; border: 0; border-radius: .25rem;
+  background: none; color: inherit; text-align: left; cursor: pointer;
+}
+.scifi-page .sf-popover .sf-popover__item:hover { background: var(--sf-popover-hover); }
+.scifi-page .sf-popover .sf-popover__item.is-active,
+.scifi-page .sf-popover .sf-popover__item[aria-selected='true'] { background: var(--sf-popover-active); color: var(--sf-text-strong); }

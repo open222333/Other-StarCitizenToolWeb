@@ -41,11 +41,7 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3 sortable-th" role="button" tabindex="0"
-                  @click="toggleSort" @keydown.enter="toggleSort">
-                  時間
-                  <i class="bi ms-1" :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
+                <SortTh :sort="sort" field="time" class="ps-3">時間</SortTh>
                 <th>操作者</th>
                 <th>動作</th>
                 <th>詳細</th>
@@ -91,17 +87,7 @@
     </div>
 
     <!-- ── 分頁 ────────────────────────────────────────────── -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
-      <div class="small text-muted">
-        共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
-      </div>
-      <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-secondary" :disabled="offset === 0 || loading"
-          @click="reload(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn btn-outline-secondary" :disabled="offset + limit >= total || loading"
-          @click="reload(offset + limit)">下一頁</button>
-      </div>
-    </div>
+    <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" admin @page="reload" />
   </div>
 </template>
 
@@ -111,6 +97,9 @@ import { logApi } from '@/api'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import SortTh from '@/components/SortTh.vue'
+import SfPager from '@/components/SfPager.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const logs       = ref([])
 const total       = ref(0)
@@ -128,7 +117,9 @@ const selectedActions   = ref([])
 const selectedResults   = ref([])
 const since = ref('')
 const until = ref('')
-const sortDir = ref('desc')
+// 只有「時間」一欄可排（後端只吃 sort_dir）：降冪↔升冪，改了就回第一頁重查
+const sort = useTableSort(null, { key: 'time', dir: 'desc', cycle: false, onChange: () => reload(0) })
+const sortDir = sort.sortDir
 
 const sinceId = 'log-since'
 const untilId = 'log-until'
@@ -146,11 +137,6 @@ function toUtcIso(localValue) {
   if (!localValue) return ''
   const d = new Date(localValue)
   return isNaN(d) ? '' : d.toISOString()
-}
-
-function toggleSort() {
-  sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  reload(0)
 }
 
 // 這三個都是「選項變了就重新查」，不用 v-model + watch —— 用明確的
@@ -215,6 +201,4 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.sortable-th { cursor: pointer; user-select: none; }
-.sortable-th:hover { color: var(--bs-primary); }
 </style>

@@ -7,7 +7,8 @@
 <template>
   <div class="sf-picker" ref="rootEl">
     <button
-      class="btn btn-sm btn-scifi-outline"
+      class="btn btn-sm"
+      :class="open ? 'btn-primary' : 'btn-info'"
       :aria-expanded="open"
       aria-label="配色設定"
       title="配色設定"
@@ -80,12 +81,14 @@
       <div class="btn-group btn-group-sm w-100 mb-3">
         <button
           class="btn"
-          :class="theme.density === 'comfortable' ? 'btn-scifi' : 'btn-scifi-outline'"
+          :class="theme.density === 'comfortable' ? 'btn-primary' : 'btn-info'"
+          :aria-pressed="theme.density === 'comfortable' ? 'true' : 'false'"
           @click="theme.setDensity('comfortable')"
         >寬鬆</button>
         <button
           class="btn"
-          :class="theme.density === 'compact' ? 'btn-scifi' : 'btn-scifi-outline'"
+          :class="theme.density === 'compact' ? 'btn-primary' : 'btn-info'"
+          :aria-pressed="theme.density === 'compact' ? 'true' : 'false'"
           @click="theme.setDensity('compact')"
         >緊湊</button>
       </div>
@@ -152,7 +155,7 @@ onBeforeUnmount(() => {
 }
 
 .sf-label {
-  font-size: .7rem;
+  font-size: .9rem;
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--sf-text-dim);
@@ -209,7 +212,7 @@ onBeforeUnmount(() => {
   border: 1px solid transparent;
   border-radius: 6px;
   color: var(--sf-text);
-  font-size: .85rem;
+  font-size: .95rem;
   cursor: pointer;
   text-align: left;
 }
@@ -232,7 +235,7 @@ onBeforeUnmount(() => {
 .sf-bg-name { white-space: nowrap; }
 
 .sf-group {
-  font-size: .68rem;
+  font-size: .9rem;
   letter-spacing: .06em;
   color: var(--sf-text-dim);
   margin: .35rem 0 .15rem;

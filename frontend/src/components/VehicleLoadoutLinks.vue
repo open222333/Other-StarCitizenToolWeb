@@ -8,7 +8,7 @@
     :class="{ small: !buttonClass }">
     <span v-if="!hideLabel"><i class="bi bi-wrench-adjustable me-1" aria-hidden="true"></i>配件網址：</span>
     <a v-for="(link, i) in links" :key="link.url" :href="link.url" target="_blank" rel="noopener noreferrer"
-      class="btn btn-sm" :class="buttonClass || 'btn-primary py-0 px-2'"
+      class="btn btn-sm" :class="buttonClass || 'btn-primary px-2'"
       :title="`${link.url}${link.added_at ? `（${fmtDate(link.added_at)} 加入）` : ''}`">
       <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>{{ linkLabel(link, i) }}
     </a>
@@ -18,7 +18,7 @@
 <script setup>
 defineProps({
   links: { type: Array, default: () => [] },
-  // 按鈕樣式（預設實心藍）；蜂巢式下拉最內層傳主題色的 btn-sf-link
+  // 按鈕樣式（預設實心藍）；玩家頁傳 btn-info（查看類按鈕，見 CLAUDE.md）
   buttonClass: { type: String, default: '' },
   hideLabel: { type: Boolean, default: false },
 })

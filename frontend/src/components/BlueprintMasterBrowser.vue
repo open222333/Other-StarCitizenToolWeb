@@ -101,13 +101,13 @@
             <tbody>
               <tr v-if="loading && !rows.length">
                 <td :colspan="colspan" class="text-center py-4 text-muted">
-                  <span class="spinner-border spinner-border-sm me-2"></span>載入中...
+                  <span class="spinner-border spinner-border-sm me-2"></span>載入中…
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
                 <td :colspan="colspan" class="text-center py-4">
                   <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取藍圖資料失敗。</span>
-                  <button class="btn btn-sm ms-1" :class="player ? 'btn-primary' : 'btn-outline-secondary'" @click="reload(offset)">重試</button>
+                  <button type="button" class="btn btn-sm ms-1" :class="player ? 'btn-primary' : 'btn-outline-secondary'" @click="reload(offset)"><i class="bi bi-arrow-clockwise me-1"></i>重試</button>
                 </td>
               </tr>
               <tr v-else-if="!rows.length">
@@ -118,17 +118,21 @@
               <template v-else>
                 <template v-for="bp in rows" :key="bp._id">
                   <tr class="bp-row" :class="{ 'bp-registered': registerable && isRegistered(bp) }"
-                    role="button" tabindex="0" :aria-expanded="expandedId === bp._id ? 'true' : 'false'"
-                    @click="toggle(bp)" @keydown.enter.self="toggle(bp)">
+                    @click="toggle(bp)">
                     <td v-if="registerable" class="ps-3 sf-stack__check" @click.stop>
                       <input class="form-check-input" type="checkbox" :checked="selected.has(bp._id)"
                         :disabled="isRegistered(bp)" :aria-label="`勾選 ${bp.name_zh || bp.name}`"
                         @change="toggleOne(bp._id, $event.target.checked)">
                     </td>
                     <td class="sf-stack__title" :class="{ 'ps-3': !registerable }">
-                      <i class="bi me-1 small text-muted" :class="expandedId === bp._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+                      <!-- 展開配方明細的開關（列本身只留滑鼠點擊，鍵盤／報讀走這顆按鈕） -->
+                      <button type="button" class="btn btn-sm px-2 me-1 bp-toggle" :class="player ? 'btn-secondary' : 'btn-outline-secondary'"
+                        :aria-expanded="expandedId === bp._id ? 'true' : 'false'" :aria-label="`配方明細 ${bp.name_zh || bp.name}`"
+                        @click.stop="toggle(bp)">
+                        <i class="bi" :class="expandedId === bp._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+                      </button>
                       <template v-if="player">
-                        <button v-if="bp.mission_count" type="button" class="btn btn-sm btn-info py-0 px-2 text-start fw-semibold"
+                        <button v-if="bp.mission_count" type="button" class="btn btn-sm btn-info px-2 text-start fw-semibold"
                           @click.stop="openMissions(bp)">{{ bp.name_zh || bp.name }}</button>
                         <span v-else class="fw-semibold">{{ bp.name_zh || bp.name }}</span>
                         <span v-if="bp.name_zh" class="small text-muted ms-1">{{ bp.name }}</span>
@@ -179,15 +183,20 @@
                     </td>
                   </tr>
                   <tr v-if="expandedId === bp._id" class="bp-detail sf-stack__detail">
-                    <td :colspan="colspan" class="ps-5 pe-3 py-2 small">
+                    <td :colspan="colspan" class="ps-5 pe-3 py-2" :class="{ small: !player }">
                       <div v-if="player" class="sf-sheet__head sf-stack__sheet-head">
                         <h3 class="sf-sheet__title">{{ bp.name_zh || bp.name }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="expandedId = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
                       <div v-if="detailLoading" class="text-muted">
-                        <span class="spinner-border spinner-border-sm me-2"></span>載入中...
+                        <span class="spinner-border spinner-border-sm me-2"></span>載入中…
                       </div>
-                      <div v-else-if="!detail" class="text-warning">讀取配方失敗。</div>
+                      <div v-else-if="!detail">
+                        <span class="text-warning">讀取配方失敗。</span>
+                        <button type="button" class="btn btn-sm ms-1" :class="player ? 'btn-primary' : 'btn-outline-secondary'" @click="loadDetail(bp)">
+                          <i class="bi bi-arrow-clockwise me-1"></i>重試
+                        </button>
+                      </div>
                       <div v-else class="row g-3">
                         <div class="col-md-4">
                           <div class="fw-semibold mb-1">材料</div>
@@ -209,14 +218,14 @@
                           <div class="fw-semibold mb-1">解鎖任務</div>
                           <div v-if="!detailMissions.length" class="text-muted">—</div>
                           <div v-for="m in detailMissions" :key="m._id">
-                            <button v-if="player" type="button" class="btn btn-sm btn-info py-0 px-2 text-start" @click="openMissions(bp)">
+                            <button v-if="player" type="button" class="btn btn-sm btn-info px-2 text-start" @click="openMissions(bp)">
                               {{ zhPair(m.title, m.title_zh) }}
                             </button>
                             <RouterLink v-else :to="{ path: adminPath('/missions'), query: { id: m._id } }">{{ zhPair(m.title, m.title_zh) }}</RouterLink>
                             <span class="text-muted">
                               · {{ factionLabel(m) }}
-                              <template v-if="m.star_systems?.length"> · {{ m.star_systems.join('、') }}</template>
-                              <template v-if="m.reward_scope"> · {{ m.reward_scope }}</template>
+                              <template v-if="m.star_systems?.length"> · {{ m.star_systems.map(systemLabel).join('、') }}</template>
+                              <template v-if="m.reward_scope"> · {{ typeLabel(m.reward_scope) }}</template>
                               <template v-if="m.chance !== null && m.chance !== undefined"> · 機率 {{ fmtChance(m.chance) }}</template>
                             </span>
                           </div>
@@ -237,17 +246,7 @@
       </div>
     </div>
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
-      <div class="small text-muted">
-        共 {{ total }} 筆<span v-if="total"> · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
-      </div>
-      <div class="btn-group btn-group-sm">
-        <button class="btn" :class="player ? 'btn-primary' : 'btn-outline-secondary'"
-          :disabled="offset === 0 || loading" @click="goPage(Math.max(0, offset - limit))">上一頁</button>
-        <button class="btn" :class="player ? 'btn-primary' : 'btn-outline-secondary'"
-          :disabled="offset + limit >= total || loading" @click="goPage(offset + limit)">下一頁</button>
-      </div>
-    </div>
+    <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" :admin="!player" @page="goPage" />
 
     <!-- ── 批量登記列（有勾選才出現；勾選跨頁保留）──────────────── -->
     <!-- sf-sticky-bar：手機上固定在畫面底部 -->
@@ -285,6 +284,8 @@ import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SortTh from '@/components/SortTh.vue'
+import SfPager from '@/components/SfPager.vue'
+import { loadTranslations, translate } from '@/utils/translations'
 import { useTableSort } from '@/composables/useTableSort'
 import { adminPath } from '@/router'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
@@ -497,6 +498,10 @@ async function toggle(bp) {
     return
   }
   expandedId.value = bp._id
+  await loadDetail(bp)
+}
+
+async function loadDetail(bp) {
   detail.value = null
   detailMissions.value = []
   detailLoading.value = true
@@ -509,7 +514,13 @@ async function toggle(bp) {
   detailMissions.value = mbody?.success ? (mbody.data || []) : []
   detailLoading.value = false
   if (detail.value) loadMaterialZh(detail.value)
+  // 解鎖任務的星系、類型中文（同 MissionDetail）
+  loadTranslations('location', detailMissions.value.flatMap(m => m.star_systems || []))
+  loadTranslations('mission_type', detailMissions.value.map(m => m.reward_scope).filter(Boolean))
 }
+
+function typeLabel(s) { return translate('mission_type', s) || s }
+function systemLabel(s) { return translate('location', s) || s }
 
 function openMissions(bp) {
   missionsRef.value?.open({ uuid: bp._id, name: bp.name, name_zh: bp.name_zh, output_type: bp.output_type })
@@ -564,6 +575,10 @@ async function goPage(newOffset) {
 <style scoped>
 .bp-row { cursor: pointer; }
 .bp-detail > td { background: var(--bs-tertiary-bg); }
+.scifi-page .bp-detail > td { background: var(--sf-inset); }
 .bp-registered > td { opacity: .6; }
-.bp-submit { position: sticky; bottom: .5rem; z-index: 10; }
+/* 手機上 .sf-sticky-bar 由 scifi-theme.css 固定在底部，這裡只管桌機／平板 */
+@media (min-width: 768px) {
+  .bp-submit { position: sticky; bottom: .5rem; z-index: 10; }
+}
 </style>

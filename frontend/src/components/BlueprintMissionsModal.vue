@@ -17,16 +17,14 @@
           <div class="fw-semibold text-truncate">{{ title }}</div>
           <div class="small text-muted text-truncate">{{ subtitle }}</div>
         </div>
-        <button type="button" class="btn btn-sm bpm-close" aria-label="關閉" @click="close">
+        <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="close">
           <i class="bi bi-x-lg"></i>
         </button>
       </div>
       <div class="bpm-body">
         <div class="small text-muted mb-2">解鎖任務</div>
-        <div v-if="loading" class="text-muted small">載入中…</div>
-        <div v-else-if="failed" class="text-warning small">讀取失敗。</div>
-        <div v-else-if="!missions.length" class="text-muted small">沒有任務資料。</div>
-        <template v-else>
+        <SfState :loading="loading" :error="failed ? '讀取失敗。' : ''" :empty="!missions.length" empty-text="沒有任務資料。"
+          @retry="fetchMissions">
         <div v-for="m in missions" :key="m._id" class="bpm-mission">
           <div class="d-flex justify-content-between flex-wrap gap-1">
             <div class="fw-semibold">
@@ -40,12 +38,12 @@
             </div>
           </div>
           <div class="mt-1">
-            <span v-for="s in m.star_systems || []" :key="s" class="bpm-chip">{{ s }}</span>
-            <span v-if="m.faction_name || m.mission_giver" class="bpm-chip">{{ factionLabel(m) }}</span>
-            <span v-if="m.reward_scope" class="bpm-chip">{{ m.reward_scope }}</span>
-            <span v-if="m.shareable" class="bpm-chip">可分享</span>
-            <span v-if="m.once_only" class="bpm-chip">只能接一次</span>
-            <span v-if="m.illegal" class="bpm-chip bpm-chip--warn">違法</span>
+            <span v-for="s in m.star_systems || []" :key="s" class="sf-chip">{{ systemLabel(s) }}</span>
+            <span v-if="m.faction_name || m.mission_giver" class="sf-chip">{{ factionLabel(m) }}</span>
+            <span v-if="m.reward_scope" class="sf-chip">{{ typeLabel(m.reward_scope) }}</span>
+            <span v-if="m.shareable" class="sf-chip">可分享</span>
+            <span v-if="m.once_only" class="sf-chip">只能接一次</span>
+            <span v-if="m.illegal" class="sf-chip sf-chip--warn">違法</span>
           </div>
           <div v-if="infoLine(m)" class="small mt-2">{{ infoLine(m) }}</div>
           <!-- 這個任務會給的所有藍圖（所有獎勵池合起來）：玩家頁標出哪些已登記（含預設可用）、哪些還沒，例如 1 / 10 -->
@@ -54,10 +52,10 @@
               任務藍圖 {{ m.pool_blueprints.length }} 種<template v-if="registered"> · 已登記
                 <span class="fw-semibold" :class="poolRegisteredCount(m) === m.pool_blueprints.length ? 'text-success' : 'bpm-count'">{{ poolRegisteredCount(m) }} / {{ m.pool_blueprints.length }}</span></template>
             </div>
-            <span v-for="b in m.pool_blueprints" :key="b.uuid" class="bpm-chip"
-              :class="[registered ? (isRegistered(b) ? 'bpm-chip--ok' : 'bpm-chip--todo') : '', { 'bpm-chip--current': b.uuid === blueprint?.uuid }]">
+            <span v-for="b in m.pool_blueprints" :key="b.uuid" class="sf-chip"
+              :class="[registered ? (isRegistered(b) ? 'sf-chip--ok' : 'sf-chip--todo') : '', { 'bpm-current': b.uuid === blueprint?.uuid }]">
               <i v-if="registered" class="bi me-1" :class="isRegistered(b) ? 'bi-check-circle-fill' : 'bi-circle'"></i>{{ b.name_zh || b.name }}
-              <span v-if="registered" class="bpm-chip__state">{{ bpStateLabel(b, registered) }}</span>
+              <span v-if="registered" class="sf-chip__state">{{ bpStateLabel(b, registered) }}</span>
             </span>
           </div>
           <details v-if="m.description_zh || m.description" class="mt-2">
@@ -65,7 +63,7 @@
             <div class="small mt-1 text-muted bpm-desc">{{ m.description_zh || m.description }}</div>
           </details>
         </div>
-        </template>
+        </SfState>
       </div>
     </div>
   </div>
@@ -76,6 +74,8 @@ import { computed, nextTick, ref } from 'vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import { factionLabel, fmtChance, reputationLabel, rewardLabel } from '@/utils/mission'
 import { bpStateLabel, isBpRegistered, registeredInPool } from '@/utils/missionBlueprints'
+import { loadTranslations, translate } from '@/utils/translations'
+import SfState from '@/components/SfState.vue'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁用 playerFetch），回傳 Response 或 null */
@@ -109,6 +109,12 @@ async function open(bp) {
   if (!bp?.uuid) return
   blueprint.value = bp
   visible.value = true
+  await fetchMissions()
+}
+
+async function fetchMissions() {
+  const bp = blueprint.value
+  if (!bp?.uuid) return
   missions.value = []
   failed.value = false
   loading.value = true
@@ -118,10 +124,17 @@ async function open(bp) {
   const res = await props.fetcher(`/mission/for-blueprint/${encodeURIComponent(bp.uuid)}`)
   const body = res?.ok ? await res.json().catch(() => null) : null
   if (seq !== requestSeq) return   // 載入途中已經關掉或換了別張
-  if (body?.success) missions.value = body.data || []
-  else failed.value = true
+  if (body?.success) {
+    missions.value = body.data || []
+    // 星系、類型的中文從翻譯資料庫查（同 MissionDetail），查不到顯示英文
+    loadTranslations('location', missions.value.flatMap(m => m.star_systems || []))
+    loadTranslations('mission_type', missions.value.map(m => m.reward_scope).filter(Boolean))
+  } else failed.value = true
   loading.value = false
 }
+
+function typeLabel(s) { return translate('mission_type', s) || s }
+function systemLabel(s) { return translate('location', s) || s }
 
 function infoLine(m) {
   const parts = []
@@ -153,24 +166,14 @@ defineExpose({ open, close })
   padding: .8rem 1rem; border-bottom: 1px solid var(--sf-border);
 }
 .min-w-0 { min-width: 0; }
-.bpm-close { color: var(--sf-text-muted); border: 0; }
-.bpm-close:hover { color: var(--sf-text-strong); }
 .bpm-body { padding: 1rem; max-height: calc(100dvh - 10rem); overflow-y: auto; }
 .bpm-mission {
   border: 1px solid var(--sf-border); border-radius: 8px;
   padding: .6rem .75rem; margin-bottom: .6rem; background: var(--sf-inset);
 }
 .bpm-chance { color: var(--sf-accent-2-text, var(--sf-accent-2)); font-weight: 600; }
-.bpm-chip {
-  display: inline-block; font-size: .72rem; margin: 0 .25rem .2rem 0; padding: 0 .5rem;
-  border: 1px solid var(--sf-border-hi); border-radius: 999px; color: var(--sf-text-muted);
-}
-.bpm-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }
 .bpm-desc { white-space: pre-line; }
 details > summary { cursor: pointer; }
-.bpm-chip--ok { border-color: rgba(var(--bs-success-rgb), .7); color: rgb(var(--bs-success-rgb)); }
-.bpm-chip--todo { border-style: dashed; color: var(--sf-text-muted); }
-.bpm-chip--current { box-shadow: 0 0 0 1px var(--sf-accent) inset; font-weight: 700; }
-.bpm-chip__state { margin-left: .35rem; font-size: .78em; opacity: .85; }
+.bpm-current { box-shadow: 0 0 0 1px var(--sf-accent) inset; font-weight: 700; }
 .bpm-count { color: var(--sf-text-strong); }
 </style>

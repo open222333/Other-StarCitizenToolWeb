@@ -34,30 +34,10 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3 sortable-th" role="button" tabindex="0"
-                  @click="toggleUserSort('username')" @keydown.enter="toggleUserSort('username')">
-                  帳號
-                  <i v-if="userSortBy === 'username'" class="bi ms-1"
-                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleUserSort('role')" @keydown.enter="toggleUserSort('role')">
-                  角色
-                  <i v-if="userSortBy === 'role'" class="bi ms-1"
-                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleUserSort('template')" @keydown.enter="toggleUserSort('template')">
-                  模板
-                  <i v-if="userSortBy === 'template'" class="bi ms-1"
-                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th" role="button" tabindex="0"
-                  @click="toggleUserSort('created_at')" @keydown.enter="toggleUserSort('created_at')">
-                  建立時間
-                  <i v-if="userSortBy === 'created_at'" class="bi ms-1"
-                    :class="userSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
+                <SortTh :sort="userSort" field="username" class="ps-3">帳號</SortTh>
+                <SortTh :sort="userSort" field="role">角色</SortTh>
+                <SortTh :sort="userSort" field="template">模板</SortTh>
+                <SortTh :sort="userSort" field="created_at">建立時間</SortTh>
                 <th style="width:180px" class="pe-3">操作</th>
               </tr>
             </thead>
@@ -96,7 +76,7 @@
                       @click="userModalRef.open(u)">
                       <i class="bi bi-pencil"></i> 編輯
                     </button>
-                    <button class="btn btn-sm btn-outline-danger"
+                    <button class="btn btn-sm btn-outline-danger" aria-label="刪除"
                       :disabled="u.username === 'admin' || u.username === auth.username"
                       :title="u.username === 'admin' ? '系統保護帳號不可刪除'
                              : u.username === auth.username ? '不可刪除自己' : ''"
@@ -118,7 +98,6 @@
       <h6 class="mb-0 fw-bold section-toggle" @click="tmplOpen = !tmplOpen">
         <i class="bi me-1 toggle-icon" :class="tmplOpen ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
         <i class="bi bi-person-badge me-1 text-secondary"></i>使用者模板
-        <FieldHint text="模板決定使用者的角色。系統模板為系統預設，不可刪除。修改模板角色時，持有該模板的所有使用者角色將自動同步。" />
       </h6>
       <button v-show="tmplOpen" class="btn btn-outline-secondary btn-sm"
         @click="templateModalRef.open()">
@@ -147,30 +126,10 @@
             <table class="table table-hover align-middle mb-0">
               <thead class="table-light">
                 <tr>
-                  <th class="ps-3 sortable-th" role="button" tabindex="0"
-                    @click="toggleTmplSort('name')" @keydown.enter="toggleTmplSort('name')">
-                    模板名稱
-                    <i v-if="tmplSortBy === 'name'" class="bi ms-1"
-                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
-                  <th class="sortable-th" role="button" tabindex="0"
-                    @click="toggleTmplSort('role')" @keydown.enter="toggleTmplSort('role')">
-                    角色
-                    <i v-if="tmplSortBy === 'role'" class="bi ms-1"
-                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
-                  <th class="sortable-th" role="button" tabindex="0"
-                    @click="toggleTmplSort('description')" @keydown.enter="toggleTmplSort('description')">
-                    說明
-                    <i v-if="tmplSortBy === 'description'" class="bi ms-1"
-                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
-                  <th class="sortable-th" role="button" tabindex="0"
-                    @click="toggleTmplSort('created_at')" @keydown.enter="toggleTmplSort('created_at')">
-                    建立時間
-                    <i v-if="tmplSortBy === 'created_at'" class="bi ms-1"
-                      :class="tmplSortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                  </th>
+                  <SortTh :sort="tmplSort" field="name" class="ps-3">模板名稱</SortTh>
+                  <SortTh :sort="tmplSort" field="role">角色</SortTh>
+                  <SortTh :sort="tmplSort" field="description">說明</SortTh>
+                  <SortTh :sort="tmplSort" field="created_at">建立時間</SortTh>
                   <th style="width:180px" class="pe-3">操作</th>
                 </tr>
               </thead>
@@ -203,7 +162,7 @@
                         @click="templateModalRef.open(t)">
                         <i class="bi bi-pencil"></i> 編輯
                       </button>
-                      <button class="btn btn-sm btn-outline-danger"
+                      <button class="btn btn-sm btn-outline-danger" aria-label="刪除"
                         :disabled="t.is_system"
                         :title="t.is_system ? '系統預設模板不可刪除' : ''"
                         @click="handleDeleteTemplate(t)">
@@ -235,9 +194,10 @@ import UserModal        from '@/components/UserModal.vue'
 import TemplateModal    from '@/components/TemplateModal.vue'
 import ConfirmModal     from '@/components/ConfirmModal.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
-import FieldHint         from '@/components/FieldHint.vue'
 import AdminSearchCard   from '@/components/AdminSearchCard.vue'
 import AdminSearchField  from '@/components/AdminSearchField.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const auth = useAuthStore()
 
@@ -281,8 +241,10 @@ const fmtDate = (d) => d ? new Date(d).toLocaleString('zh-TW') : '—'
 const usernameQuery    = ref('')
 const selectedRoles    = ref([])
 const selectedTemplates = ref([])   // '' 代表「未指定模板」
-const userSortBy  = ref('username')
-const userSortDir = ref('asc')
+// 前端排序（比較規則在下面的 computed）：useTableSort 只記排序狀態，點同一欄升冪↔降冪
+const userSort = useTableSort(null, { key: 'username', dir: 'asc', cycle: false })
+const userSortBy = userSort.sortKey
+const userSortDir = userSort.sortDir
 
 // 模板下拉多一個「未指定模板」的假選項，讓「模板」欄也符合「每個顯示欄位都能篩」。
 const templateFilterOptions = computed(() => [
@@ -297,15 +259,6 @@ function resetUserFilters() {
   usernameQuery.value = ''
   selectedRoles.value = []
   selectedTemplates.value = []
-}
-
-function toggleUserSort(field) {
-  if (userSortBy.value === field) {
-    userSortDir.value = userSortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    userSortBy.value = field
-    userSortDir.value = 'asc'
-  }
 }
 
 function _cmp(av, bv, dir) {
@@ -345,8 +298,10 @@ const filteredUsers = computed(() => {
 // ── 使用者模板：同一套邏輯 ─────────────────────────────────────────
 const tmplQuery         = ref('')
 const selectedTmplRoles = ref([])
-const tmplSortBy  = ref('name')
-const tmplSortDir = ref('asc')
+// 前端排序（比較規則在下面的 computed）：useTableSort 只記排序狀態，點同一欄升冪↔降冪
+const tmplSort = useTableSort(null, { key: 'name', dir: 'asc', cycle: false })
+const tmplSortBy = tmplSort.sortKey
+const tmplSortDir = tmplSort.sortDir
 
 const hasActiveTmplFilters = computed(() =>
   !!(tmplQuery.value.trim() || selectedTmplRoles.value.length))
@@ -354,15 +309,6 @@ const hasActiveTmplFilters = computed(() =>
 function resetTmplFilters() {
   tmplQuery.value = ''
   selectedTmplRoles.value = []
-}
-
-function toggleTmplSort(field) {
-  if (tmplSortBy.value === field) {
-    tmplSortDir.value = tmplSortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    tmplSortBy.value = field
-    tmplSortDir.value = 'asc'
-  }
 }
 
 const filteredTemplates = computed(() => {
@@ -450,8 +396,6 @@ onMounted(loadAll)
 .section-toggle { cursor: pointer; user-select: none; }
 .toggle-icon    { transition: transform .2s; display: inline-block; }
 
-.sortable-th { cursor: pointer; user-select: none; }
-.sortable-th:hover { color: var(--bs-primary); }
 
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }

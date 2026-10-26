@@ -52,7 +52,12 @@
       </div>
     </div>
 
-    <div v-if="loadError" class="alert alert-warning py-2">{{ loadError }}</div>
+    <div v-if="loadError" class="alert alert-warning py-2 d-flex flex-wrap align-items-center gap-2">
+      <span>{{ loadError }}</span>
+      <button v-if="lastBlueprint" type="button" class="btn btn-sm btn-primary" @click="selectBlueprint(lastBlueprint)">
+        <i class="bi bi-arrow-clockwise me-1"></i>重試
+      </button>
+    </div>
 
     <div v-if="loadingRecipe" class="text-center hint py-4">
       <span class="spinner-border spinner-border-sm me-2"></span>載入配方…
@@ -64,10 +69,10 @@
         <div class="card-body">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
             <div>
-              <h6 class="fw-bold mb-1">
+              <h4 class="h6 fw-bold mb-1">
                 {{ recipe.name_zh || recipe.name }}
                 <span v-if="recipe.name_zh" class="small hint">{{ recipe.name }}</span>
-              </h6>
+              </h4>
               <div class="small hint">
                 <span v-if="recipe.output_type">{{ blueprintTypeLabel(recipe.output_type) }}</span>
                 <span v-if="recipe.craft_time_label"> · 單個製造時間 {{ recipe.craft_time_label }}</span>
@@ -98,7 +103,7 @@
         <div :class="cardClass">
           <div class="card-body p-0">
             <div style="overflow-x: auto">
-              <table class="table table-hover align-middle mb-0">
+              <table class="table table-hover align-middle mb-0 sf-stack">
                 <thead class="table-light">
                   <tr>
                     <SortTh :sort="matSort" field="material" class="ps-3">材料</SortTh>
@@ -109,18 +114,18 @@
                 </thead>
                 <tbody>
                   <tr v-for="row in matSort.sorted.value" :key="row.key">
-                    <td class="ps-3">
+                    <td class="ps-3 sf-stack__title">
                       <span class="fw-semibold">{{ materialLabel(row) }}</span>
                     </td>
-                    <td class="text-end">
+                    <td class="text-end" data-label="每個需要">
                       <template v-if="row.need">{{ qtyLabel(row.need, row.unit) }}</template>
                       <span v-else class="hint" title="主檔沒有這項的數量">未知</span>
                     </td>
-                    <td class="text-end fw-semibold">
+                    <td class="text-end fw-semibold" :data-label="`做 ${count} 個需要`">
                       <template v-if="row.need">{{ qtyLabel(row.need * count, row.unit) }}</template>
                       <span v-else class="hint">—</span>
                     </td>
-                    <td class="pe-3 text-end">
+                    <td class="pe-3 text-end sf-stack__actions">
                       <a v-if="materialDatahubUrl(row)" class="btn btn-sm btn-primary"
                         :href="materialDatahubUrl(row)" target="_blank" rel="noopener noreferrer"
                         :aria-label="`${row.name} 在 sc-datahub 的頁面`">
@@ -187,6 +192,8 @@ const highlighted = ref(-1)
 const recipe = ref(null)
 const loadingRecipe = ref(false)
 const loadError = ref('')
+/** 最後一次選的藍圖（讀取失敗時「重試」用） */
+const lastBlueprint = ref(null)
 
 const target = ref(1)
 
@@ -281,6 +288,7 @@ let recipeSeq = 0
 
 async function selectBlueprint(bp) {
   if (!bp) return
+  lastBlueprint.value = bp
   currentId.value = bp._id || ''
   const mine = ++recipeSeq
   showResults.value = false

@@ -101,45 +101,15 @@
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th class="ps-3 sortable-th" role="button" tabindex="0"
-                  @click="toggleSort('name')" @keydown.enter="toggleSort('name')">
-                  名稱
-                  <i v-if="sortBy === 'name'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
+                <SortTh :sort="sort" field="name" class="ps-3">名稱</SortTh>
                 <th>製造商</th>
                 <th>Career</th>
                 <th>Role</th>
-                <th class="sortable-th text-end" role="button" tabindex="0"
-                  @click="toggleSort('size_class')" @keydown.enter="toggleSort('size_class')">
-                  尺寸
-                  <i v-if="sortBy === 'size_class'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th text-end" role="button" tabindex="0"
-                  @click="toggleSort('crew_max')" @keydown.enter="toggleSort('crew_max')">
-                  載員
-                  <i v-if="sortBy === 'crew_max'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th text-end" role="button" tabindex="0"
-                  @click="toggleSort('cargo_capacity_scu')" @keydown.enter="toggleSort('cargo_capacity_scu')">
-                  貨艙 (SCU)
-                  <i v-if="sortBy === 'cargo_capacity_scu'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th text-end" role="button" tabindex="0"
-                  @click="toggleSort('mass_hull')" @keydown.enter="toggleSort('mass_hull')">
-                  質量 (kg)
-                  <i v-if="sortBy === 'mass_hull'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
-                <th class="sortable-th text-end" role="button" tabindex="0"
-                  @click="toggleSort('msrp')" @keydown.enter="toggleSort('msrp')">
-                  建議售價 (USD)
-                  <i v-if="sortBy === 'msrp'" class="bi ms-1"
-                    :class="sortDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down'"></i>
-                </th>
+                <SortTh :sort="sort" field="size_class" class="text-end">尺寸</SortTh>
+                <SortTh :sort="sort" field="crew_max" class="text-end">載員</SortTh>
+                <SortTh :sort="sort" field="cargo_capacity_scu" class="text-end">貨艙 (SCU)</SortTh>
+                <SortTh :sort="sort" field="mass_hull" class="text-end">質量 (kg)</SortTh>
+                <SortTh :sort="sort" field="msrp" class="text-end">建議售價 (USD)</SortTh>
                 <th class="text-end text-nowrap">遊戲內購買</th>
                 <th class="text-end text-nowrap">租船</th>
                 <th class="text-nowrap">玩家頁面</th>
@@ -258,6 +228,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import FleetOwnersBrowser from '@/components/FleetOwnersBrowser.vue'
@@ -285,8 +257,10 @@ const selectedSizeClasses   = ref([])
 // 取得方式：只看可用遊戲幣購買／可租船（UEX 價格，多選取聯集）
 const selectedAcquire       = ref([])
 const nameQuery = ref('')
-const sortBy  = ref('name')
-const sortDir = ref('asc')
+// 後端排序：點同一欄升冪↔降冪（不取消），換欄從升冪開始，改了就回第一頁重查
+const sort = useTableSort(null, { key: 'name', dir: 'asc', cycle: false, onChange: () => reload(0) })
+const sortBy = sort.sortKey
+const sortDir = sort.sortDir
 const playerVisible = ref('')
 // 分頁：艦船資料庫／玩家擁有艦船（components/FleetOwnersBrowser.vue）／購買價格／租船價格
 const tab = ref('master')
@@ -347,16 +321,6 @@ function crewLabel(v) {
 function fmtNum(v) {
   if (v === null || v === undefined) return '—'
   return Math.round(v).toLocaleString('en-US')
-}
-
-function toggleSort(field) {
-  if (sortBy.value === field) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortBy.value = field
-    sortDir.value = 'asc'
-  }
-  reload(0)
 }
 
 // 跟 BlueprintListView.vue 同一個理由：明確的 change handler 一次做完
@@ -433,8 +397,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.sortable-th { cursor: pointer; user-select: none; }
-.sortable-th:hover { color: var(--bs-primary); }
 .note-cell { max-width: 16rem; }
 .note-text { display: inline-block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; vertical-align: bottom; }

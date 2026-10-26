@@ -9,7 +9,7 @@
 
         <div class="modal-header">
           <h5 class="modal-title">{{ editId ? '編輯藍圖' : '新增藍圖' }}</h5>
-          <button type="button" class="btn-close" @click="hide"></button>
+          <button type="button" class="btn-close" aria-label="關閉" @click="hide"></button>
         </div>
 
         <div class="modal-body">

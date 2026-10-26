@@ -12,13 +12,8 @@
 <template>
   <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
   <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
-    <div v-if="loading && !rows.length" class="text-muted small">載入中…</div>
-    <div v-else-if="loadFailed" class="small">
-      <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取物品資料失敗。</span>
-      <button type="button" class="btn btn-sm btn-primary ms-1" @click="reload(offset)">重新整理</button>
-    </div>
-    <div v-else-if="!rows.length" class="text-muted small">沒有符合條件的物品。</div>
-    <template v-else>
+    <SfState :loading="loading && !rows.length" :error="loadFailed ? '讀取物品資料失敗。' : ''" :empty="!rows.length"
+      empty-text="沒有符合條件的物品。" @retry="reload(offset)">
       <!-- 欄位名稱＋排序（後端排序）；拆解回收欄只有用「拆解材料」或「只看可拆解」篩選時才出現，
            依所選材料的回收量（SCU 加總）排序 -->
       <div class="idb-list" :style="{ '--sf-tree-cols': gridCols }">
@@ -52,22 +47,16 @@
         </div>
       </div>
       </div>
-      <div class="d-flex align-items-center justify-content-between mt-2">
-        <span class="small text-muted">共 {{ total }} 種 · 第 {{ offset + 1 }}–{{ Math.min(offset + limit, total) }} 筆</span>
-        <div class="btn-group">
-          <button class="btn btn-sm btn-primary" :disabled="offset === 0 || loading"
-            @click="goPage(Math.max(0, offset - limit))">上一頁</button>
-          <button class="btn btn-sm btn-primary" :disabled="offset + limit >= total || loading"
-            @click="goPage(offset + limit)">下一頁</button>
-        </div>
-      </div>
-    </template>
+      <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" @page="goPage" />
+    </SfState>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import SfTreeHead from '@/components/SfTreeHead.vue'
+import SfPager from '@/components/SfPager.vue'
+import SfState from '@/components/SfState.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import ItemDetail from '@/components/ItemDetail.vue'

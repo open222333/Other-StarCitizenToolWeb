@@ -14,7 +14,6 @@
         <button type="button" class="btn btn-primary" :disabled="busy" @click="fileInput?.click()">
           <i class="bi bi-filetype-json me-1"></i>選擇 JSON 檔
         </button>
-        <FieldHint text="在 RSI 網站的機庫頁用 HangarXPLOR 擴充功能「Download JSON」下載 shiplist.json；也可以把檔案直接拖進這個區塊。" />
         <span v-if="fileName" class="fleet-import-meta"><i class="bi bi-file-earmark me-1"></i>{{ fileName }}</span>
         <!-- 匯出 JSON 用的擴充功能（Chrome 線上應用程式商店）；玩家頁開外部網址一律用 btn-primary 按鈕 -->
         <a class="btn btn-primary ms-auto" :href="HANGAR_XPLOR_URL" target="_blank" rel="noopener noreferrer">
@@ -34,7 +33,7 @@
         <div v-if="preview.rows.length" class="card scifi-card mb-2">
           <div class="card-body p-0">
             <div style="overflow-x: auto">
-              <table class="table table-hover align-middle mb-0">
+              <table class="table table-hover align-middle mb-0 sf-stack">
                 <thead class="table-light">
                   <tr>
                     <SortTh :sort="previewSort" field="name" class="ps-3">載具</SortTh>
@@ -46,16 +45,16 @@
                 </thead>
                 <tbody>
                   <tr v-for="r in previewSort.sorted.value" :key="r.vehicle_uuid">
-                    <td class="ps-3">
+                    <td class="ps-3 sf-stack__title">
                       <span class="fw-semibold">{{ r.name_zh || r.name }}</span>
                       <span v-if="r.name_zh" class="small text-muted ms-1">{{ r.name }}</span>
                     </td>
-                    <td class="text-end">{{ r.count }}</td>
-                    <td class="text-end">{{ r.existing_quantity || '—' }}</td>
-                    <td class="text-end">
+                    <td class="text-end" data-label="船單">{{ r.count }}</td>
+                    <td class="text-end" data-label="現有">{{ r.existing_quantity || '—' }}</td>
+                    <td class="text-end" data-label="匯入後">
                       <span :class="{ 'fleet-import-changed': r.new_quantity !== r.existing_quantity }">{{ r.new_quantity }}</span>
                     </td>
-                    <td class="pe-3">
+                    <td class="pe-3" data-label="自訂名稱">
                       <span v-for="n in r.nicknames" :key="n" class="sf-tree-chip me-1">{{ n }}</span>
                       <span v-if="!r.nicknames.length" class="text-muted">—</span>
                     </td>
@@ -72,7 +71,7 @@
           </span>
         </div>
         <div class="d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-success" :disabled="busy || !preview.rows.length" @click="confirm">
+          <button type="button" class="btn btn-primary" :disabled="busy || !preview.rows.length" @click="confirm">
             <i class="bi bi-check-lg me-1"></i>確認匯入
           </button>
           <button type="button" class="btn btn-secondary" :disabled="busy" @click="reset">取消</button>
@@ -84,7 +83,6 @@
 
 <script setup>
 import { computed, ref, shallowRef } from 'vue'
-import FieldHint from '@/components/FieldHint.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 

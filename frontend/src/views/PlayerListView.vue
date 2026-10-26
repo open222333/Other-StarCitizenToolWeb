@@ -74,7 +74,7 @@
                       <button class="btn btn-sm btn-outline-secondary me-1" @click="playerModalRef.open(p)">
                         <i class="bi bi-pencil"></i> 編輯
                       </button>
-                      <button class="btn btn-sm btn-outline-danger" @click="handleDelete(p)">
+                      <button class="btn btn-sm btn-outline-danger" aria-label="刪除" @click="handleDelete(p)">
                         <i class="bi bi-trash"></i>
                       </button>
                     </template>

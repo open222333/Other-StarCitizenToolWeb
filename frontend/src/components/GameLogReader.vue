@@ -24,29 +24,28 @@
     @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
     <!-- 工具列：功能按鈕放最上面（比照倉庫／藍圖／艦隊） -->
     <div class="sf-toolbar align-items-center">
-      <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="fileInput?.click()">
-        <i class="bi bi-file-earmark-text me-1"></i>選擇 Game.log
+      <button type="button" class="btn btn-sm btn-primary" :disabled="loading" aria-label="選擇 Game.log" @click="fileInput?.click()">
+        <i class="bi bi-file-earmark-text me-1"></i><span class="sf-btn-text">選擇 Game.log</span>
       </button>
       <template v-if="supportsPicker && !handle">
-        <button type="button" class="btn btn-sm btn-success" :disabled="loading" @click="pickWatchFile">
-          <i class="bi bi-broadcast me-1"></i>選擇並監看
+        <button type="button" class="btn btn-sm btn-success" :disabled="loading" aria-label="選擇並監看" @click="pickWatchFile">
+          <i class="bi bi-broadcast me-1"></i><span class="sf-btn-text">選擇並監看</span>
         </button>
       </template>
       <template v-if="handle">
-        <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="reload">
-          <i class="bi bi-arrow-clockwise me-1"></i>重新讀取
+        <button type="button" class="btn btn-sm btn-primary" :disabled="loading" aria-label="重新讀取" @click="reload">
+          <i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新讀取</span>
         </button>
         <button type="button" class="btn btn-sm" :class="watching ? 'btn-secondary' : 'btn-success'"
-          :disabled="loading" :aria-pressed="watching ? 'true' : 'false'" @click="toggleWatch">
-          <i class="bi me-1" :class="watching ? 'bi-pause-fill' : 'bi-broadcast'"></i>{{ watching ? '停止監看' : '持續監看' }}
+          :disabled="loading" :aria-pressed="watching ? 'true' : 'false'" :aria-label="watching ? '停止監看' : '持續監看'" @click="toggleWatch">
+          <i class="bi me-1" :class="watching ? 'bi-pause-fill' : 'bi-broadcast'"></i><span class="sf-btn-text">{{ watching ? '停止監看' : '持續監看' }}</span>
         </button>
       </template>
       <button type="button" class="btn btn-sm" :class="pasteOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="pasteOpen ? 'true' : 'false'" @click="pasteOpen = !pasteOpen">
-        <i class="bi me-1" :class="pasteOpen ? 'bi-x-lg' : 'bi-clipboard'"></i>{{ pasteOpen ? '收起貼上' : '貼上文字' }}
+        :aria-expanded="pasteOpen ? 'true' : 'false'" :aria-label="pasteOpen ? '收起貼上' : '貼上文字'" @click="pasteOpen = !pasteOpen">
+        <i class="bi me-1" :class="pasteOpen ? 'bi-x-lg' : 'bi-clipboard'"></i><span class="sf-btn-text">{{ pasteOpen ? '收起貼上' : '貼上文字' }}</span>
       </button>
-      <button v-if="fileName" type="button" class="btn btn-sm btn-warning" :disabled="loading" @click="clearAll">清除</button>
-      <FieldHint :text="`Game.log 在遊戲安裝資料夾裡，例如 ${DEFAULT_PATH}；也可以把檔案直接拖進來。「選擇並監看」（Chrome／Edge）會在遊戲進行中自動更新，但遊戲裝在 C:\\Program Files 這類系統資料夾時會被瀏覽器擋下，請改用「選擇 Game.log」或拖放。`" />
+      <button v-if="fileName" type="button" class="btn btn-sm btn-warning" :disabled="loading" aria-label="清除" @click="clearAll"><i class="bi bi-eraser me-1"></i><span class="sf-btn-text">清除</span></button>
       <input ref="fileInput" type="file" accept=".log,.txt,text/plain" class="d-none" @change="onInputFile">
     </div>
 
@@ -87,7 +86,7 @@
       <!-- 本次遊玩回顧 -->
       <div :class="[cardClass, 'mb-3']">
         <div class="card-body">
-          <h3 class="h6 fw-bold mb-2"><i class="bi bi-journal-text me-1"></i>本次遊玩回顧</h3>
+          <h3 class="sf-drawer__title"><i class="bi bi-journal-text me-1"></i>本次遊玩回顧</h3>
           <ul v-if="summary.length" class="mb-0 gamelog-summary">
             <li v-for="(s, i) in summary" :key="i">{{ s }}</li>
           </ul>
@@ -130,7 +129,7 @@
                           <span class="me-1">{{ r.ev.icon }}</span>{{ r.ev.text }}
                           <span v-if="r.count > 1" class="sf-tree-chip ms-1">連續 {{ r.count }} 次</span>
                         </span>
-                        <button v-if="r.ev.line" type="button" class="btn btn-sm btn-info py-0"
+                        <button v-if="r.ev.line" type="button" class="btn btn-sm btn-info"
                           :aria-expanded="openLine === r.ev ? 'true' : 'false'" @click="openLine = openLine === r.ev ? null : r.ev">
                           {{ openLine === r.ev ? '收起原文' : '原始紀錄' }}
                         </button>
@@ -160,7 +159,6 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
-import FieldHint from '@/components/FieldHint.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { CATEGORY_LABELS, GameLogParser, casualDate, casualTime, summaryLines, timeline } from '@/utils/gameLog'
@@ -171,7 +169,6 @@ const props = defineProps({
   playerName: { type: String, default: '' },
 })
 
-const DEFAULT_PATH = 'C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE\\Game.log'
 const WATCH_MS = 2000
 const PAGE = 200
 

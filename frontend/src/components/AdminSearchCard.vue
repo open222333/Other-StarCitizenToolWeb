@@ -36,5 +36,5 @@ defineEmits(['clear'])
 </script>
 
 <style scoped>
-.admin-search :deep(.form-label) { font-size: .8rem; }
+.admin-search :deep(.form-label) { font-size: .875rem; }
 </style>

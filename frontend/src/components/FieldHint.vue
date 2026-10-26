@@ -49,10 +49,10 @@ const shown   = computed(() => hovered.value || pinned.value)
   width: 1.15em;
   height: 1.15em;
   padding: 0;
-  border: 1px solid var(--sf-border, rgba(255, 255, 255, .3));
+  border: 1px solid var(--bs-border-color);
   border-radius: 50%;
   background: transparent;
-  color: var(--sf-text-muted, #b6c4d6);
+  color: var(--bs-secondary-color);
   font-size: .82em;
   line-height: 1;
   cursor: help;
@@ -64,8 +64,8 @@ const shown   = computed(() => hovered.value || pinned.value)
 
 .field-hint__btn:hover,
 .field-hint__btn:focus-visible {
-  border-color: var(--sf-accent, #3ea6ff);
-  color: var(--sf-accent, #3ea6ff);
+  border-color: var(--bs-link-color);
+  color: var(--bs-link-color);
   outline: none;
 }
 
@@ -83,11 +83,14 @@ const shown   = computed(() => hovered.value || pinned.value)
   min-width: 12rem;
   max-width: min(22rem, 70vw);
   padding: .4rem .55rem;
-  border: 1px solid var(--sf-border, rgba(255, 255, 255, .25));
+  /* 底色／邊框／文字用 Bootstrap 變數：.scifi-page 已把它們對到 --sf-*（亮底、深底都跟著換），
+     後台頁照 Bootstrap 主題。--sf-* 是掛在 :root 的，後台也讀得到深色值，所以不能直接用 --sf-panel。
+     陰影／hover 色由 scifi-theme.css 在 .scifi-page 內定義 --sf-popover-*，後台用 fallback。 */
+  border: 1px solid var(--bs-border-color);
   border-radius: .35rem;
-  background: var(--sf-surface-2, #16202e);
-  color: var(--sf-text, #e6edf5);
-  box-shadow: 0 .4rem 1rem rgba(0, 0, 0, .45);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  box-shadow: var(--sf-popover-shadow, 0 .4rem 1rem rgba(0, 0, 0, .18));
   font-size: .8rem;
   font-weight: 400;
   line-height: 1.45;

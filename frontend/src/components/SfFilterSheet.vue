@@ -13,7 +13,7 @@
       </button>
     </div>
     <div v-show="open" class="sf-sheet-backdrop" @click="open = false"></div>
-    <div v-show="open" class="sf-sheet" role="dialog" aria-modal="true" :aria-label="title">
+    <div v-show="open" ref="sheetEl" class="sf-sheet" role="dialog" aria-modal="true" tabindex="-1" :aria-label="title">
       <div class="sf-sheet__grip"></div>
       <div class="sf-sheet__head">
         <h3 class="sf-sheet__title">{{ title }}</h3>
@@ -32,8 +32,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { useSheet } from '@/composables/useSheet'
 
 defineProps({
   // 已套用的條件數（按鈕上的數字；0 時「清除篩選」停用）
@@ -46,4 +47,9 @@ defineEmits(['clear'])
 
 const { isPhone } = useBreakpoint()
 const open = ref(false)
+const sheetEl = ref(null)
+// Esc 關閉、開啟時焦點移進面板、關閉後焦點回到「篩選」按鈕
+useSheet(open, sheetEl)
+// 轉成電腦／平板寬度時面板已不存在，順手關掉（不然轉回手機會自己跳出來）
+watch(isPhone, (v) => { if (!v) open.value = false })
 </script>

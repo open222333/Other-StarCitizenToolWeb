@@ -7,21 +7,23 @@
 -->
 <template>
   <div>
-    <div class="row g-2 align-items-end mb-3">
-      <div class="col-12 col-md-6">
-        <label class="form-label small fw-semibold mb-1" for="fr-faction">勢力</label>
-        <AutocompleteField id="fr-faction" v-model="factionQuery" :search="searchFactions" :get-label="factionName"
-          :get-meta="f => `${f.mission_count} 個任務`" :min-chars="0" :debounce-ms="0"
-          aria-label="勢力" placeholder="輸入勢力名稱（中英文皆可）" @select="f => { factionId = f?._id || '' }" />
+    <div class="card scifi-card sf-search mb-3">
+      <div class="card-body py-3">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-6">
+            <label class="form-label small fw-semibold mb-1" for="fr-faction">勢力</label>
+            <AutocompleteField id="fr-faction" v-model="factionQuery" :search="searchFactions" :get-label="factionName"
+              :get-meta="f => `${f.mission_count} 個任務`" :min-chars="0" :debounce-ms="0"
+              aria-label="勢力" placeholder="輸入勢力名稱（中英文皆可）" @select="f => { factionId = f?._id || '' }" />
+          </div>
+        </div>
       </div>
     </div>
 
-    <div v-if="!factionId" class="text-muted small">—</div>
-    <div v-else-if="loading" class="text-muted small">載入中…</div>
-    <div v-else-if="failed" class="text-warning small">讀取失敗。</div>
-    <template v-else-if="data">
+    <SfState :loading="loading" :error="failed ? '讀取失敗。' : ''" :empty="!factionId || !data" empty-text="—"
+      @retry="loadFaction(factionId)">
       <div v-for="g in groups" :key="g.key" class="card scifi-card mb-2">
-        <div class="card-body py-2">
+        <div class="card-body py-2 ps-3 pe-3">
           <button type="button" class="fr-head p-0 text-start w-100" :aria-expanded="isOpen(g.key) ? 'true' : 'false'"
             @click="toggle(g.key)">
             <i class="bi me-1" :class="isOpen(g.key) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
@@ -29,35 +31,36 @@
             <span v-if="g.threshold !== null && g.threshold !== undefined" class="fr-threshold ms-2">{{ fmtInt(g.threshold) }} 聲望</span>
             <span class="small text-muted ms-2">{{ g.missions.length }} 個任務</span>
           </button>
-          <div v-if="isOpen(g.key)" class="mt-2">
-            <div v-if="!g.missions.length" class="small text-muted">—</div>
+        </div>
+        <div v-if="isOpen(g.key)" class="card-body p-0 border-top">
+            <div v-if="!g.missions.length" class="text-muted ps-3 pe-3 py-2">—</div>
             <div v-else style="overflow-x:auto">
               <table class="table table-hover align-middle mb-0 sf-stack">
                 <thead class="table-light">
                   <tr>
-                    <th class="ps-2">任務</th>
+                    <th class="ps-3">任務</th>
                     <th>類型</th>
                     <th class="d-none d-md-table-cell">星系</th>
                     <th class="text-end">報酬</th>
-                    <th class="text-end pe-2">藍圖</th>
+                    <th class="text-end pe-3">藍圖</th>
                   </tr>
                 </thead>
                 <tbody>
                   <template v-for="m in g.missions" :key="m._id">
                   <template v-for="bp in [bpCounts.get(m)]" :key="m._id">
                   <tr class="fr-row" role="button" tabindex="0" :aria-expanded="openMission === m._id ? 'true' : 'false'"
-                    @click="openMission = openMission === m._id ? '' : m._id" @keydown.enter.self="openMission = openMission === m._id ? '' : m._id">
-                    <td class="ps-2 sf-stack__title">
+                    @click="openMission = openMission === m._id ? '' : m._id" @keydown.enter.self="openMission = openMission === m._id ? '' : m._id" @keydown.space.self.prevent="openMission = openMission === m._id ? '' : m._id">
+                    <td class="ps-3 sf-stack__title">
                       <i class="bi me-1 small text-muted" :class="openMission === m._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                       <span class="fw-semibold">{{ m.title_zh || m.title }}</span>
                       <span v-if="m.title_zh" class="small text-muted ms-1">{{ m.title }}</span>
-                      <span v-if="m.illegal" class="fr-chip fr-chip--warn ms-1">違法</span>
-                      <span v-if="g.key === 'unmatched' && m.min_standing_name" class="fr-chip ms-1">{{ m.min_standing_name }}</span>
+                      <span v-if="m.illegal" class="sf-chip sf-chip--warn ms-1">違法</span>
+                      <span v-if="g.key === 'unmatched' && m.min_standing_name" class="sf-chip ms-1">{{ m.min_standing_name }}</span>
                     </td>
                     <td data-label="類型">{{ m.reward_scope ? typeLabel(m.reward_scope) : '—' }}</td>
                     <td class="d-none d-md-table-cell" data-label="星系">{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</td>
                     <td class="text-end text-nowrap" data-label="報酬">{{ rewardLabel(m) }}</td>
-                    <td class="text-end text-nowrap pe-2" data-label="藍圖">
+                    <td class="text-end text-nowrap pe-3" data-label="藍圖">
                       <span v-if="bp.poolSize" class="fw-semibold"
                         :class="bp.regCount === bp.poolSize ? 'text-success' : 'fr-count'">{{ bp.regCount }} / {{ bp.poolSize }}</span>
                       <span v-else class="text-muted">—</span>
@@ -77,10 +80,9 @@
                 </tbody>
               </table>
             </div>
-          </div>
         </div>
       </div>
-    </template>
+    </SfState>
   </div>
 </template>
 
@@ -88,6 +90,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MissionDetail from '@/components/MissionDetail.vue'
+import SfState from '@/components/SfState.vue'
 import { missionPool, registeredInPool } from '@/utils/missionBlueprints'
 import { fmtInt, rewardLabel } from '@/utils/mission'
 import { loadTranslations, translate } from '@/utils/translations'
@@ -190,9 +193,4 @@ watch(() => props.active, async (v) => {
 .fr-count { color: var(--sf-text-strong); }
 .fr-row { cursor: pointer; }
 .fr-detail { background: var(--sf-inset); }
-.fr-chip {
-  display: inline-block; font-size: .9rem; padding: 0 .45rem;
-  border: 1px solid var(--sf-border-hi); border-radius: 999px; color: var(--sf-text-muted);
-}
-.fr-chip--warn { border-color: rgba(var(--bs-danger-rgb), .6); color: rgb(var(--bs-danger-rgb)); }
 </style>

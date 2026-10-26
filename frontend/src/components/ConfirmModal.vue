@@ -2,6 +2,7 @@
   使用方式（父元件）：
     const confirmRef = ref(null)
     const ok = await confirmRef.value.confirm('確定要刪除 <strong>xxx</strong>？')
+    // 不是刪除的確認可以換標題／按鈕：confirm(msg, { title: '確認匯入', okText: '匯入' })
     if (ok) { ... }
 -->
 <template>
@@ -11,9 +12,9 @@
 
         <div class="modal-header border-0 pb-0">
           <h5 class="modal-title text-danger">
-            <i class="bi bi-exclamation-triangle me-1"></i>確認刪除
+            <i class="bi bi-exclamation-triangle me-1"></i>{{ title }}
           </h5>
-          <button type="button" class="btn-close" @click="resolve(false)"></button>
+          <button type="button" class="btn-close" aria-label="關閉" @click="resolve(false)"></button>
         </div>
 
         <!-- v-html 可渲染 <strong> 等標記；呼叫端應自行 escHtml 使用者輸入 -->
@@ -24,7 +25,7 @@
             取消
           </button>
           <button type="button" class="btn btn-danger btn-sm" @click="resolve(true)">
-            刪除
+            {{ okText }}
           </button>
         </div>
 
@@ -39,6 +40,8 @@ import { Modal } from 'bootstrap'
 
 const modalEl = ref(null)
 const message = ref('')
+const title = ref('確認刪除')
+const okText = ref('刪除')
 let   bsModal = null
 let   _res    = null   // Promise resolver
 
@@ -51,8 +54,10 @@ onMounted(() => {
 })
 
 /** 顯示確認視窗，回傳 Promise<boolean> */
-function confirm(msg) {
+function confirm(msg, opts = {}) {
   message.value = msg
+  title.value = opts.title || '確認刪除'
+  okText.value = opts.okText || '刪除'
   bsModal.show()
   return new Promise((res) => { _res = res })
 }

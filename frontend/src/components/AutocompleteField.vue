@@ -24,8 +24,8 @@
         :aria-controls="listId" :aria-activedescendant="activeOptionId"
         :aria-label="ariaLabel" :placeholder="placeholder" autocomplete="off"
         @input="onInput($event.target.value)" @focus="onFocus" @keydown="onKeydown" @blur="onBlur">
-      <button v-if="modelValue" type="button" class="btn btn-sm btn-outline-secondary"
-        :aria-label="`清除${ariaLabel}`" @mousedown.prevent="clear">×</button>
+      <button v-if="modelValue" type="button" class="btn btn-sm btn-warning"
+        :aria-label="`清除${ariaLabel}`" @mousedown.prevent="clear"><i class="bi bi-x-lg"></i></button>
     </div>
     <ul v-if="showResults" :id="listId" role="listbox" class="autocomplete-field__list">
       <li v-if="searching" class="autocomplete-field__hint">搜尋中…</li>
@@ -109,7 +109,12 @@ function onFocus() {
 }
 
 function onKeydown(event) {
-  if (event.key === 'Escape') { showResults.value = false; return }
+  if (event.key === 'Escape') {
+    // 有開著候選清單時只關清單，並標記已處理，外層的底部面板（useSheet）就不會跟著關
+    if (showResults.value) event.preventDefault()
+    showResults.value = false
+    return
+  }
   if (!showResults.value || !results.value.length) return
   if (event.key === 'ArrowDown') {
     event.preventDefault()
@@ -168,13 +173,14 @@ onBeforeUnmount(() => { document.removeEventListener('click', onDocClick); clear
   margin: 0;
   padding: .3rem;
   list-style: none;
-  /* 這個元件只會用在玩家頁（深色 scifi 主題），照 MultiSelectFilter.vue
-     的理由給深色 fallback，不能讓面板背景跟繼承文字色一樣暗（幾乎看不見）。 */
-  border: 1px solid var(--sf-border, rgba(255, 255, 255, .25));
+  /* 底色／邊框／文字用 Bootstrap 變數：.scifi-page 已把它們對到 --sf-*（亮底、深底都跟著換），
+     後台頁照 Bootstrap 主題。--sf-* 是掛在 :root 的，後台也讀得到深色值，所以不能直接用 --sf-panel。
+     陰影／hover 色由 scifi-theme.css 在 .scifi-page 內定義 --sf-popover-*，後台用 fallback。 */
+  border: 1px solid var(--bs-border-color);
   border-radius: .35rem;
-  background: var(--sf-surface-2, #16202e);
-  color: var(--sf-text, #e6edf5);
-  box-shadow: 0 .4rem 1rem rgba(0, 0, 0, .45);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  box-shadow: var(--sf-popover-shadow, 0 .4rem 1rem rgba(0, 0, 0, .18));
 }
 .autocomplete-field__item {
   padding: .3rem .5rem;
@@ -184,8 +190,8 @@ onBeforeUnmount(() => { document.removeEventListener('click', onDocClick); clear
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.autocomplete-field__item:hover,
-.autocomplete-field__item.is-active { background: rgba(127, 127, 127, .18); }
+.autocomplete-field__item:hover { background: var(--sf-popover-hover, var(--bs-tertiary-bg)); }
+.autocomplete-field__item.is-active { background: var(--sf-popover-active, rgba(var(--bs-primary-rgb), .14)); }
 .autocomplete-field__hint {
   padding: .3rem .5rem;
   opacity: .65;
