@@ -41,6 +41,46 @@ export function fmtUsd(value) {
   return `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 }
 
+/** 每 1 美金換多少遊戲幣：遊戲內最低購買價（aUEC）÷ 官網售價（美金）；任一邊沒有回 null */
+export function auecPerUsd(v) {
+  const auec = Number(v?.uex_price?.buy_min)
+  const usd = Number(v?.msrp)
+  return auec > 0 && usd > 0 ? auec / usd : null
+}
+
+export function fmtAuecPerUsd(value) {
+  return value ? `${Math.round(value).toLocaleString('en-US')} aUEC/$` : '—'
+}
+
+/** 艦隊共用搜尋的價格／貨艙範圍 → /item/vehicles 的查詢參數（空字串＝不限） */
+export function vehicleRangeParams(f) {
+  const out = {}
+  const prefix = ['auec', 'rent'].includes(f?.priceCurrency) ? f.priceCurrency : 'usd'
+  if (f?.priceMin !== '' && f?.priceMin != null) out[`${prefix}_min`] = f.priceMin
+  if (f?.priceMax !== '' && f?.priceMax != null) out[`${prefix}_max`] = f.priceMax
+  if (f?.scuMin !== '' && f?.scuMin != null) out.scu_min = f.scuMin
+  if (f?.scuMax !== '' && f?.scuMax != null) out.scu_max = f.scuMax
+  return out
+}
+
+/** 同上的條件在前端篩一筆載具（我的艦隊） */
+export function vehicleInRanges(v, f) {
+  const num = x => (x === '' || x == null ? null : Number(x))
+  const within = (value, low, high) => (low === null || (value != null && value >= low))
+    && (high === null || (value != null && value <= high))
+  const pMin = num(f?.priceMin), pMax = num(f?.priceMax)
+  if (pMin !== null || pMax !== null) {
+    const price = f?.priceCurrency === 'auec' ? (v?.uex_price?.buy_min || null)
+      : f?.priceCurrency === 'rent' ? (v?.uex_price?.rent_min || null) : (v?.msrp || null)
+    if (!within(price, pMin, pMax)) return false
+  }
+  const sMin = num(f?.scuMin), sMax = num(f?.scuMax)
+  if (sMin !== null || sMax !== null) {
+    if (!within(v?.cargo_capacity_scu ?? 0, sMin, sMax)) return false
+  }
+  return true
+}
+
 /** UEX 的時間是 unix 秒數 */
 export function fmtUexTime(value) {
   const n = Number(value)

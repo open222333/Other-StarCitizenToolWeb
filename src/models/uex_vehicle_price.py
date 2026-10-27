@@ -113,6 +113,18 @@ def vehicle_ids_with(acquire) -> set:
     return {uuid for uuid, s in summary_map().items() if any(s.get(f) for f in fields)}
 
 
+def vehicle_ids_in_buy_range(low=None, high=None, field: str = 'buy_min') -> set:
+    """遊戲內最低購買價（field='buy_min'）或最低租船價（'rent_min'）落在範圍內的 vehicle uuid
+    （沒有這種價格的不算）。"""
+    out = set()
+    for uuid, s in summary_map().items():
+        price = s.get(field)
+        if not price or (low is not None and price < low) or (high is not None and price > high):
+            continue
+        out.add(uuid)
+    return out
+
+
 def attach_summaries(rows: list, key: str = '_id', target: Optional[str] = None) -> list:
     """把 summary_map 的結果掛到每一列的 `uex_price`（沒有價格就是 None）。
 

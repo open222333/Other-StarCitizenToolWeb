@@ -411,8 +411,17 @@ class VehicleMaster(_MasterBase):
     @classmethod
     def _build_query(cls, *, careers=None, roles=None, manufacturer_codes=None,
                       size_classes=None, query: str = '', types=None,
-                      visible_only: bool = False, visibility=None, ids=None) -> dict:
+                      visible_only: bool = False, visibility=None, ids=None, ranges=None) -> dict:
         filt: dict = {'is_current': True}
+        # 數值範圍（官網售價 msrp、貨艙 cargo_capacity_scu）：{欄位: (下限, 上限)}，None 表示不限
+        for field, (low, high) in (ranges or {}).items():
+            cond = {}
+            if low is not None:
+                cond['$gte'] = low
+            if high is not None:
+                cond['$lte'] = high
+            if cond:
+                filt[field] = cond
         add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
         # 類型（太空船／地面載具／懸浮載具）：玩家頁「艦隊」「查詢 › 持有船艦」用，
         # 多選時是 OR（選了太空船＋地面載具就兩種都要）
@@ -458,11 +467,11 @@ class VehicleMaster(_MasterBase):
     def list_all(cls, limit: int = 50, offset: int = 0, careers=None, roles=None,
                  manufacturer_codes=None, size_classes=None, query: str = '',
                  sort_by: str = 'name', sort_dir: int = 1, types=None,
-                 visible_only: bool = False, visibility=None, ids=None) -> tuple:
+                 visible_only: bool = False, visibility=None, ids=None, ranges=None) -> tuple:
         filt = cls._build_query(careers=careers, roles=roles,
                                  manufacturer_codes=manufacturer_codes,
                                  size_classes=size_classes, query=query, types=types,
-                                 visible_only=visible_only, visibility=visibility, ids=ids)
+                                 visible_only=visible_only, visibility=visibility, ids=ids, ranges=ranges)
         sort_field = sort_by if sort_by in cls.SORTABLE_FIELDS else 'name'
         total = cls._col().count_documents(filt)
         rows = list(cls._col().find(filt, cls.PROJECTION)

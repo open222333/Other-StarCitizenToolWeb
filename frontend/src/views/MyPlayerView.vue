@@ -1031,6 +1031,32 @@
                 <MultiSelectFilter id="myfleet-role" v-model="myFleetRoles" :options="myFleetRoleOptions"
                   label="角色" placeholder="全部" block searchable />
               </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small mb-1" for="myfleet-price-min">價格</label>
+                <div class="input-group input-group-sm">
+                  <select v-model="myFleetRange.priceCurrency" class="form-select form-select-sm fleet-range-currency" aria-label="價格幣別">
+                    <option value="usd">美金</option>
+                    <option value="auec">遊戲幣</option>
+                    <option value="rent">租用</option>
+                  </select>
+                  <input id="myfleet-price-min" v-model.lazy="myFleetRange.priceMin" type="number" min="0" class="form-control"
+                    placeholder="最低" aria-label="最低價格">
+                  <span class="input-group-text">–</span>
+                  <input v-model.lazy="myFleetRange.priceMax" type="number" min="0" class="form-control"
+                    placeholder="最高" aria-label="最高價格">
+                </div>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small mb-1" for="myfleet-scu-min">貨物量</label>
+                <div class="input-group input-group-sm">
+                  <input id="myfleet-scu-min" v-model.lazy="myFleetRange.scuMin" type="number" min="0" class="form-control"
+                    placeholder="最少" aria-label="最少貨物量">
+                  <span class="input-group-text">–</span>
+                  <input v-model.lazy="myFleetRange.scuMax" type="number" min="0" class="form-control"
+                    placeholder="最多" aria-label="最多貨物量">
+                  <span class="input-group-text">SCU</span>
+                </div>
+              </div>
             </SfFilterSheet>
           </div>
           <div v-if="fleet.length || myFleetHasFilter" class="d-flex flex-wrap align-items-center gap-2 mt-2">
@@ -1076,6 +1102,10 @@
             <SortTh :sort="myFleetSort" field="manufacturer" class="d-none d-lg-table-cell">廠商</SortTh>
             <SortTh :sort="myFleetSort" field="role" class="d-none d-lg-table-cell">角色</SortTh>
             <SortTh :sort="myFleetSort" field="cargo" class="text-end">載貨</SortTh>
+            <SortTh :sort="myFleetSort" field="usd" class="text-end">美金</SortTh>
+            <SortTh :sort="myFleetSort" field="auec" class="text-end">遊戲幣</SortTh>
+            <SortTh :sort="myFleetSort" field="rent" class="text-end">租用</SortTh>
+            <SortTh :sort="myFleetSort" field="ratio" class="text-end">aUEC／美金</SortTh>
             <SortTh :sort="myFleetSort" field="loadouts" class="text-end d-none d-lg-table-cell">配件網址</SortTh>
             <SortTh :sort="myFleetSort" field="quantity" class="text-end">數量</SortTh>
             <th class="pe-3"></th>
@@ -1097,6 +1127,10 @@
             <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="角色">{{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) || '—' }}</td>
             <td class="text-end text-nowrap" data-label="載貨">{{ scuLabel(row.vehicle?.cargo_capacity_scu) }}</td>
+            <td class="text-end text-nowrap" data-label="美金">{{ fmtUsd(row.vehicle?.msrp) }}</td>
+            <td class="text-end text-nowrap" data-label="遊戲幣">{{ fmtAuec(row.vehicle?.uex_price?.buy_min) }}</td>
+            <td class="text-end text-nowrap" data-label="租用">{{ fmtAuec(row.vehicle?.uex_price?.rent_min) }}</td>
+            <td class="text-end text-nowrap" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(row.vehicle)) }}</td>
             <td class="text-end d-none d-lg-table-cell" data-label="配件網址">{{ row.loadout_links?.length || '—' }}</td>
             <td class="text-end" data-label="數量">{{ row.quantity }}</td>
             <td class="text-end text-nowrap pe-3 sf-stack__actions">
@@ -1119,8 +1153,8 @@
             </td>
           </tr>
           <tr v-if="openMyFleet.has(row._id)" class="sf-stack__detail">
-            <!-- colspan 要跟 thead 的欄數一致（9）；手機上這一列變成底部面板 -->
-            <td colspan="9" class="myfleet-detail">
+            <!-- colspan 要跟 thead 的欄數一致（13）；手機上這一列變成底部面板 -->
+            <td colspan="13" class="myfleet-detail">
                 <div class="sf-sheet__head sf-stack__sheet-head">
                   <h3 class="sf-sheet__title">{{ row.vehicle?.name_zh || row.name }}</h3>
                   <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleMyFleet(row._id)"><i class="bi bi-x-lg"></i></button>
@@ -1480,7 +1514,7 @@ import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
 import ItemDataBrowser from '@/components/ItemDataBrowser.vue'
 import { itemTypeOption, loadItemTypeZh } from '@/utils/itemType'
 import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
-import { fmtAuec, fmtUsd, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
+import { auecPerUsd, fmtAuec, fmtAuecPerUsd, fmtUsd, vehicleInRanges, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
 import RoutePlanner from '@/components/RoutePlanner.vue'
@@ -1659,7 +1693,7 @@ const INVENTORY_SORT_OPTIONS = [{ field: 'item', label: '物品' }, { field: 'lo
 const MY_BP_SORT_OPTIONS = [{ field: 'name', label: '名稱' }, { field: 'type', label: '類型' },
   { field: 'craft_time', label: '製作時間' }, { field: 'ingredients', label: '材料' }]
 const MY_FLEET_SORT_OPTIONS = [{ field: 'name', label: '船艦' }, { field: 'type', label: '類型' }, { field: 'size', label: '尺寸' },
-  { field: 'manufacturer', label: '廠商' }, { field: 'role', label: '角色' }, { field: 'cargo', label: '載貨' }, { field: 'quantity', label: '數量' }]
+  { field: 'manufacturer', label: '廠商' }, { field: 'role', label: '角色' }, { field: 'cargo', label: '載貨' }, { field: 'usd', label: '美金' }, { field: 'auec', label: '遊戲幣' }, { field: 'rent', label: '租用' }, { field: 'ratio', label: 'aUEC／美金' }, { field: 'quantity', label: '數量' }]
 
 /** 某個主分頁的下層分頁清單（沒有就回空陣列）。 */
 function subTabsOf(key) {
@@ -2914,14 +2948,19 @@ const myFleetTypes = ref([])
 const myFleetSizes = ref([])
 const myFleetMfrs  = ref([])
 const myFleetRoles = ref([])
+// 價格（美金或遊戲幣）、貨物量（SCU）範圍；空字串＝不限
+const myFleetRange = reactive({ priceCurrency: 'usd', priceMin: '', priceMax: '', scuMin: '', scuMax: '' })
+const fleetRangeCount = computed(() => ((myFleetRange.priceMin !== '' || myFleetRange.priceMax !== '') ? 1 : 0)
+  + ((myFleetRange.scuMin !== '' || myFleetRange.scuMax !== '') ? 1 : 0))
 const fleetSheetCount = computed(() => myFleetAcquire.value.length + myFleetTypes.value.length
-  + myFleetSizes.value.length + myFleetMfrs.value.length + myFleetRoles.value.length)
+  + myFleetSizes.value.length + myFleetMfrs.value.length + myFleetRoles.value.length + fleetRangeCount.value)
 const myFleetHasFilter = computed(() => !!(myFleetQuery.value.trim() || myFleetAcquire.value.length
   || myFleetTypes.value.length
-  || myFleetSizes.value.length || myFleetMfrs.value.length || myFleetRoles.value.length))
+  || myFleetSizes.value.length || myFleetMfrs.value.length || myFleetRoles.value.length || fleetRangeCount.value))
 const fleetFilters = computed(() => ({
   q: myFleetQuery.value.trim(), types: myFleetTypes.value, sizes: myFleetSizes.value,
   manufacturers: myFleetMfrs.value, roles: myFleetRoles.value, acquire: myFleetAcquire.value,
+  ...myFleetRange,
 }))
 
 function fleetOptions(pick, label, sortKey = o => o.label, base = []) {
@@ -2961,6 +3000,7 @@ const filteredFleet = computed(() => {
       .some(t => (t || '').toLowerCase().includes(q))) return false
     if (myFleetAcquire.value.length && !myFleetAcquire.value.some(a =>
       (a === 'buy' && v.uex_price?.buy_min) || (a === 'rent' && v.uex_price?.rent_min))) return false
+    if (!vehicleInRanges(v, myFleetRange)) return false
     return match(myFleetTypes.value, v.vehicle_type)
       && match(myFleetSizes.value, v.size_class === null || v.size_class === undefined ? '' : String(v.size_class))
       && match(myFleetMfrs.value, v.manufacturer_code)
@@ -2974,6 +3014,10 @@ const myFleetSort = useTableSort(filteredFleet, { accessors: {
   role: r => vehicleRoleLabel(r.vehicle?.role, r.vehicle?.role_zh) || null,
   loadouts: r => r.loadout_links?.length || 0,
   cargo: r => r.vehicle?.cargo_capacity_scu || 0,
+  usd: r => r.vehicle?.msrp || null,
+  auec: r => r.vehicle?.uex_price?.buy_min || null,
+  rent: r => r.vehicle?.uex_price?.rent_min || null,
+  ratio: r => auecPerUsd(r.vehicle),
 } })
 const filteredFleetShipCount = computed(() =>
   filteredFleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
@@ -2987,6 +3031,7 @@ function clearMyFleetFilters() {
   myFleetSizes.value = []
   myFleetMfrs.value = []
   myFleetRoles.value = []
+  Object.assign(myFleetRange, { priceMin: '', priceMax: '', scuMin: '', scuMax: '' })
 }
 
 function showFleetError(text) {
@@ -3075,6 +3120,7 @@ function fleetInfoFields(v) {
     { label: '載貨', value: scuLabel(v.cargo_capacity_scu) },
     { label: '官網售價', value: fmtUsd(v.msrp) },
     { label: '遊戲內購買', value: p.buy_min ? `${fmtAuec(p.buy_min)} 起` : '—' },
+    { label: 'aUEC／美金', value: fmtAuecPerUsd(auecPerUsd(v)) },
     { label: '租船', value: p.rent_min ? `${fmtAuec(p.rent_min)} 起` : '—' },
   ]
 }
@@ -3369,6 +3415,7 @@ onBeforeUnmount(() => {
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
 .nav-tabs .nav-link { cursor: pointer; }
+.fleet-range-currency { flex: 0 0 6.5rem; }
 .scu-sm { display: none; }
 @media (max-width: 767.98px) { .scu-sm { display: inline-block; } }
 .tab-prefs { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .5rem 1rem; }

@@ -114,3 +114,42 @@ def test_acquire_filter(client, auth_headers, app):
     assert ids('acquire=buy&acquire=rent') == ['uuid-aurora', 'uuid-cutlass'], '多選取聯集'
     assert ids('acquire=rent&q=aurora') == ['uuid-aurora'], '跟關鍵字一起用'
     assert len(ids('acquire=bogus')) == 3, '不認得的值當作沒帶'
+
+
+def test_price_and_cargo_range_filters(client, auth_headers, app):
+    db = get_db()
+    _seed(db)
+    db['vehicle_master'].update_one({'_id': 'uuid-cutlass'}, {'$set': {'cargo_capacity_scu': 46}})
+    db['vehicle_master'].update_one({'_id': 'uuid-aurora'}, {'$set': {'cargo_capacity_scu': 3, 'msrp': 25}})
+
+    def ids(qs):
+        body = client.get(f'/item/vehicles?limit=10&{qs}', headers=auth_headers).get_json()
+        return {r['_id'] for r in body['data']}
+
+    assert ids('usd_min=100') == {'uuid-cutlass'}
+    assert ids('usd_max=50') == {'uuid-aurora'}
+    assert ids('auec_max=2000000') == {'uuid-cutlass'}, '沒有遊戲內售價的不列'
+    assert ids('auec_min=2000000') == set()
+    assert ids('scu_min=10') == {'uuid-cutlass'}
+    assert ids('scu_max=10&usd_min=1') == {'uuid-aurora'}
+    assert ids('acquire=rent&auec_max=3000000') == {'uuid-cutlass'}
+    assert ids('usd_min=abc') == {'uuid-cutlass', 'uuid-aurora', 'uuid-nox'}, '格式錯誤的參數忽略'
+
+
+def test_price_sorts_and_rent_range(client, auth_headers, app):
+    db = get_db()
+    _seed(db)
+    db['vehicle_master'].update_one({'_id': 'uuid-aurora'}, {'$set': {'msrp': 25}})
+
+    def order(qs):
+        body = client.get(f'/item/vehicles?limit=10&with_prices=1&{qs}', headers=auth_headers).get_json()
+        return [r['_id'] for r in body['data']], body['total']
+
+    assert order('sort_by=auec')[0] == ['uuid-cutlass', 'uuid-aurora', 'uuid-nox'], '沒有價格的排最後'
+    assert order('sort_by=rent&sort_dir=desc')[0][:2] == ['uuid-cutlass', 'uuid-aurora']
+    assert order('sort_by=msrp&sort_dir=desc')[0] == ['uuid-cutlass', 'uuid-aurora', 'uuid-nox']
+    assert order('sort_by=msrp')[0] == ['uuid-aurora', 'uuid-cutlass', 'uuid-nox'], '升冪時沒有價格的也排最後'
+    assert order('sort_by=auec_per_usd')[0][0] == 'uuid-cutlass'
+    ids, total = order('sort_by=auec&limit=1&offset=1')
+    assert total == 3
+    assert order('rent_max=20000')[0] == ['uuid-aurora']

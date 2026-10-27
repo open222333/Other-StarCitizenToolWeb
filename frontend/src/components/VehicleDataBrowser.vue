@@ -21,7 +21,7 @@
     <SfState :loading="loading && !rows.length" :error="loadFailed ? '讀取船艦資料失敗。' : ''" :empty="!rows.length"
       empty-text="沒有符合條件的船艦。" @retry="reload(offset)">
       <!-- 欄位名稱列：全選本頁＋欄位名稱（船名、尺寸、價格可以排序，後端排序）＋跟「登記」一樣寬的空位 -->
-      <div class="vdb-row vdb-headrow" style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 6.5rem 9rem">
+      <div class="vdb-row vdb-headrow" style="--sf-tree-cols: minmax(0, 1fr) 5rem 4.5rem 7rem 7rem 6rem 5.5rem 7.5rem 6.5rem 6.5rem">
         <input class="form-check-input vdb-check" type="checkbox" aria-label="全選本頁"
           :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
           :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
@@ -36,7 +36,7 @@
             :disabled="isRegistered(v)" :aria-label="`勾選 ${v.name_zh || v.name}`"
             @change="toggleOne(v._id, $event.target.checked)">
           <button type="button" class="sf-tree-row sf-tree-row--ship sf-tree-row--cols vdb-main"
-            style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 6.5rem 9rem"
+            style="--sf-tree-cols: minmax(0, 1fr) 5rem 4.5rem 7rem 7rem 6rem 5.5rem 7.5rem 6.5rem 6.5rem"
             :aria-expanded="openId === v._id ? 'true' : 'false'" @click="openId = openId === v._id ? '' : v._id">
             <span class="sf-tree-cell sf-tree-cell--main">
               <i class="bi" :class="openId === v._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
@@ -45,17 +45,21 @@
               <span v-if="v.system_note" class="sf-tree-chip" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
               <!-- 手機上載貨欄藏起來，改在船名旁邊顯示 -->
               <span v-if="v.cargo_capacity_scu" class="sf-tree-chip vdb-scu-sm">{{ fmtNum(v.cargo_capacity_scu) }} SCU</span>
+              <span v-if="v.msrp" class="sf-tree-chip vdb-scu-sm">{{ fmtUsd(v.msrp) }}</span>
+              <span v-if="v.uex_price?.buy_min" class="sf-tree-chip vdb-scu-sm">{{ fmtAuec(v.uex_price.buy_min) }}</span>
+              <span v-if="v.uex_price?.rent_min" class="sf-tree-chip vdb-scu-sm">租 {{ fmtAuec(v.uex_price.rent_min) }}</span>
+              <span v-if="auecPerUsd(v)" class="sf-tree-chip vdb-scu-sm">{{ fmtAuecPerUsd(auecPerUsd(v)) }}</span>
             </span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleSizeLabel(v.size_class) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleRoleLabel(v.role, v.role_zh) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ v.cargo_capacity_scu ? `${fmtNum(v.cargo_capacity_scu)} SCU` : '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--end">
-              <template v-if="v.msrp">{{ fmtUsd(v.msrp) }}</template>
-              <div v-if="v.uex_price?.buy_min" class="text-muted">{{ fmtAuec(v.uex_price.buy_min) }} 起</div>
-              <template v-if="!v.msrp && !v.uex_price?.buy_min">—</template>
-            </span>
+            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ fmtUsd(v.msrp) }}</span>
+            <!-- 欄寬有限：欄位裡只放數字，單位在欄名 -->
+            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ v.uex_price?.buy_min ? fmtNum(v.uex_price.buy_min) : '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ v.uex_price?.rent_min ? fmtNum(v.uex_price.rent_min) : '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ auecPerUsd(v) ? fmtNum(auecPerUsd(v)) : '—' }}</span>
           </button>
           <span v-if="isRegistered(v)" class="sf-tree-chip vdb-action">已登記</span>
           <button v-else type="button" class="btn btn-sm btn-success vdb-action"
@@ -121,7 +125,7 @@ import SfPager from '@/components/SfPager.vue'
 import SfState from '@/components/SfState.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { fmtAuec, fmtUsd } from '@/utils/uexCommodity'
+import { fmtAuec, fmtUsd, auecPerUsd, fmtAuecPerUsd, vehicleRangeParams } from '@/utils/uexCommodity'
 import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
 const props = defineProps({
@@ -237,11 +241,12 @@ function infoFields(v) {
     { label: '質量', value: v.mass_hull ? `${fmtNum(v.mass_hull)} kg` : '—' },
     { label: '官網售價', value: fmtUsd(v.msrp) },
     { label: '遊戲內購買', value: p.buy_min ? `${fmtAuec(p.buy_min)} 起（${p.buy_count} 處）` : '—' },
+    { label: 'aUEC／美金', value: fmtAuecPerUsd(auecPerUsd(v)) },
     { label: '租船', value: p.rent_min ? `${fmtAuec(p.rent_min)} 起（${p.rent_count} 處）` : '—' },
   ]
 }
 
-// 欄位名稱＋排序（後端：/item/vehicles 的 sort_by 只支援船名、尺寸、官網售價）
+// 欄位名稱＋排序（後端 /item/vehicles 的 sort_by：船名、尺寸、貨艙、美金、遊戲幣、租用、aUEC／美金）
 const COLUMNS = [
   { label: '船艦', field: 'name' },
   { label: '類型', opt: true },
@@ -249,7 +254,10 @@ const COLUMNS = [
   { label: '廠商', opt: true },
   { label: '角色', opt: true },
   { label: '載貨', field: 'cargo_capacity_scu', end: true, opt: true },
-  { label: '價格', field: 'msrp', end: true },
+  { label: '美金', field: 'msrp', end: true, opt: true },
+  { label: '遊戲幣 aUEC', field: 'auec', end: true, opt: true },
+  { label: '租用 aUEC', field: 'rent', end: true, opt: true },
+  { label: 'aUEC／美金', field: 'auec_per_usd', end: true, opt: true },
 ]
 const sort = useTableSort(null, { onChange: () => reload(0) })
 
@@ -267,6 +275,7 @@ async function reload(nextOffset = 0) {
   ;(f.manufacturers || []).forEach(v => params.append('manufacturer_code', v))
   ;(f.roles || []).forEach(v => params.append('role', v))
   ;(f.acquire || []).forEach(v => params.append('acquire', v))
+  for (const [k, v] of Object.entries(vehicleRangeParams(f))) params.set(k, v)
   for (const [k, v] of Object.entries(sort.params.value)) params.set(k, v)
   const res = await props.fetcher(`/item/vehicles?${params.toString()}`)
   const data = res ? await res.json().catch(() => null) : null

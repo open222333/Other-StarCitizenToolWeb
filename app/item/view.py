@@ -262,6 +262,42 @@ def get_item_prices(item_id):
                     'source': rows[0]['source'] if rows else None})
 
 
+def _num_arg(name):
+    """數字查詢參數（範圍篩選用）；沒帶或格式不對回 None（不篩）。"""
+    try:
+        value = float(request.args.get(name, ''))
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def _vehicle_id_limits(acquire, auec_range, rent_range=(None, None)):
+    """「取得方式」與「遊戲幣購買價／租船價範圍」要用 UEX 價格表先算出符合的 vehicle uuid（都有就取交集）；都沒有回 None。"""
+    ids = uex_vehicle_price.vehicle_ids_with(acquire) if acquire else None
+    for field, (low, high) in (('buy_min', auec_range), ('rent_min', rent_range)):
+        if low is None and high is None:
+            continue
+        in_range = uex_vehicle_price.vehicle_ids_in_buy_range(low, high, field=field)
+        ids = in_range if ids is None else ids & in_range
+    return ids
+
+
+#: 要在 Python 裡排序的欄位（價格掛在 UEX 價格表、或是算出來的）：sort_by → 取值函式。
+#: 載具只有三百多筆，整份撈出來排完再分頁；沒有值的一律排最後（不管升冪降冪）。
+def _auec_per_usd(row):
+    buy = (row.get('uex_price') or {}).get('buy_min')
+    usd = row.get('msrp')
+    return buy / usd if buy and usd else None
+
+
+PRICE_SORTS = {
+    'msrp': lambda r: r.get('msrp') or None,
+    'auec': lambda r: (r.get('uex_price') or {}).get('buy_min'),
+    'rent': lambda r: (r.get('uex_price') or {}).get('rent_min'),
+    'auec_per_usd': _auec_per_usd,
+}
+
+
 @app_item.route('/vehicles', methods=['GET'])
 @jwt_required()
 def list_vehicles():
@@ -290,6 +326,14 @@ def list_vehicles():
       - {in: query, name: sort_dir,           type: string, description: "asc（預設）／desc"}
       - {in: query, name: acquire,            type: array, items: {type: string}, description: "取得方式：buy（可用遊戲幣購買）／rent（可租船），可重複帶多個（取聯集），資料來自 UEX"}
       - {in: query, name: with_prices,        type: integer, description: "1 = 每筆附 uex_price（遊戲內最低購買價／租船價與地點數，見 src/models/uex_vehicle_price.py）"}
+      - {in: query, name: usd_min,  type: number, description: "官網售價（美金）下限"}
+      - {in: query, name: usd_max,  type: number, description: "官網售價（美金）上限"}
+      - {in: query, name: auec_min, type: number, description: "遊戲內最低購買價（aUEC）下限；沒有遊戲內售價的不列"}
+      - {in: query, name: auec_max, type: number, description: "遊戲內最低購買價（aUEC）上限"}
+      - {in: query, name: rent_min, type: number, description: "遊戲內最低租船價（aUEC）下限；不能租的不列"}
+      - {in: query, name: rent_max, type: number, description: "遊戲內最低租船價（aUEC）上限"}
+      - {in: query, name: scu_min,  type: number, description: "貨艙（SCU）下限"}
+      - {in: query, name: scu_max,  type: number, description: "貨艙（SCU）上限"}
       - {in: query, name: limit,              type: integer, default: 50}
       - {in: query, name: offset,             type: integer, default: 0}
     responses:
@@ -306,11 +350,18 @@ def list_vehicles():
     acquire = [a for a in request.args.getlist('acquire') if a in uex_vehicle_price.ACQUIRE_FIELDS]
     sort_by = request.args.get('sort_by', 'name')
     sort_dir = -1 if request.args.get('sort_dir') == 'desc' else 1
+    # 價格（usd＝官網 msrp、auec＝遊戲內最低購買價）與貨艙（SCU）範圍
+    usd_range = (_num_arg('usd_min'), _num_arg('usd_max'))
+    auec_range = (_num_arg('auec_min'), _num_arg('auec_max'))
+    rent_range = (_num_arg('rent_min'), _num_arg('rent_max'))
+    scu_range = (_num_arg('scu_min'), _num_arg('scu_max'))
+    ranges = {'msrp': usd_range, 'cargo_capacity_scu': scu_range}
+    has_ranges = any(v is not None for v in (*usd_range, *auec_range, *rent_range, *scu_range))
 
     hide = not viewer_sees_hidden()
     visibility = None if hide else visibility_arg(request.args)
     has_filters = bool(careers or roles or manufacturer_codes or size_classes or types
-                       or visibility is not None or acquire or request.args.get('sort_by'))
+                       or visibility is not None or acquire or has_ranges or request.args.get('sort_by'))
 
     if query and not has_filters:
         # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
@@ -320,17 +371,30 @@ def list_vehicles():
         #    帶了其他篩選條件時 search() 沒辦法一起套用，改走 list_all()。
         rows = VehicleMaster.with_type(VehicleMaster.search(query, limit=limit, visible_only=hide))
         total = None
+    elif sort_by in PRICE_SORTS:
+        all_rows, total = VehicleMaster.list_all(
+            limit=0, offset=0, careers=careers, roles=roles,
+            manufacturer_codes=manufacturer_codes, size_classes=size_classes,
+            query=query, sort_by='name', sort_dir=1, types=types,
+            visible_only=hide, visibility=visibility, ranges=ranges,
+            ids=_vehicle_id_limits(acquire, auec_range, rent_range))
+        uex_vehicle_price.attach_summaries(all_rows)
+        key = PRICE_SORTS[sort_by]
+        with_value = [r for r in all_rows if key(r) is not None]
+        without = [r for r in all_rows if key(r) is None]
+        with_value.sort(key=key, reverse=sort_dir == -1)
+        rows = (with_value + without)[offset:offset + limit]
     else:
         rows, total = VehicleMaster.list_all(
             limit=limit, offset=offset, careers=careers, roles=roles,
             manufacturer_codes=manufacturer_codes, size_classes=size_classes,
             query=query, sort_by=sort_by, sort_dir=sort_dir, types=types,
-            visible_only=hide, visibility=visibility,
-            ids=uex_vehicle_price.vehicle_ids_with(acquire) if acquire else None)
+            visible_only=hide, visibility=visibility, ranges=ranges,
+            ids=_vehicle_id_limits(acquire, auec_range, rent_range))
 
     for row in rows:
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
-    if request.args.get('with_prices') == '1':
+    if request.args.get('with_prices') == '1' and not any('uex_price' in r for r in rows):
         uex_vehicle_price.attach_summaries(rows)
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset})
