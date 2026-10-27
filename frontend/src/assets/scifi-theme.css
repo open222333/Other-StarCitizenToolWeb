@@ -945,13 +945,8 @@ html:has(.scifi-page) { color-scheme: dark; }
 }
 
 /* ── 按按鈕在列表上方展開的區塊（倉庫的新增／異動／紀錄、藍圖的登記藍圖資料、艦隊的登記船艦資料／匯入）──
- * 加淡淡的強調色底＋邊框（左邊加粗），跟下面的主列表分得出來。 */
+ * 展開時原本的列表會隱藏（同一頁一次只開一個），所以不另外加框，直接接在搜尋卡下面，只留標題。 */
 .scifi-page .sf-drawer {
-  background: rgba(var(--sf-accent-rgb), .06);
-  border: 1px solid rgba(var(--sf-accent-rgb), .45);
-  border-left: 4px solid var(--sf-accent);
-  border-radius: 10px;
-  padding: .9rem 1rem .5rem;
   margin-bottom: 1.25rem;
 }
 .scifi-page .sf-drawer__title {
