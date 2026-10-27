@@ -509,6 +509,55 @@ class Starmap:
         return len(ops)
 
     @classmethod
+    def apply_positions(cls, payload: dict) -> int:
+        """把 starmap_positions.json 的絕對座標（公尺，星系座標系，星體自轉角度 0）寫進
+        pos {x, y, z}；同一個 UUID 出現好幾次（小行星群、任務點的多個實例）時另外存
+        positions[]。connections（星系間跳躍點）存成兩端各自的 jump_links（雙向）。
+        這次沒出現的地點清掉 pos。回傳有變動的筆數。"""
+        entities = [e for e in (payload or {}).get('entities') or []
+                    if isinstance(e, dict) and e.get('uuid')
+                    and all(isinstance(e.get(k), (int, float)) for k in ('x', 'y', 'z'))]
+        if not entities:
+            raise ValueError('starmap_positions.json 沒有座標資料')
+        grouped: dict = {}
+        for e in entities:
+            grouped.setdefault(e['uuid'], []).append(e)
+        links: dict = {}
+        for c in (payload or {}).get('connections') or []:
+            a, b = c.get('entry_uuid'), c.get('exit_uuid')
+            if not a or not b:
+                continue
+            links.setdefault(a, []).append({'to': b, 'to_system': c.get('exit_system'),
+                                            'fuel_cost': c.get('fuel_cost')})
+            links.setdefault(b, []).append({'to': a, 'to_system': c.get('entry_system'),
+                                            'fuel_cost': c.get('fuel_cost')})
+
+        def point(e):
+            return {'x': float(e['x']), 'y': float(e['y']), 'z': float(e['z'])}
+
+        ops = []
+        fields = {'pos': 1, 'positions': 1, 'qt_valid': 1, 'pos_system': 1, 'jump_links': 1}
+        for row in cls._col().find({}, fields):
+            items = grouped.get(row['_id'])
+            if items:
+                main = next((e for e in items if not e.get('hidden')), items[0])
+                new = {
+                    'pos': point(main),
+                    'positions': [point(e) for e in items[:50]] if len(items) > 1 else None,
+                    'qt_valid': bool(main.get('qt_valid')),
+                    'pos_system': main.get('system'),
+                    'jump_links': links.get(row['_id']) or None,
+                }
+            else:
+                new = {'pos': None, 'positions': None, 'qt_valid': None, 'pos_system': None,
+                       'jump_links': None}
+            if any(row.get(k) != v for k, v in new.items()):
+                ops.append(UpdateOne({'_id': row['_id']}, {'$set': new}))
+        for i in range(0, len(ops), 1000):
+            cls._col().bulk_write(ops[i:i + 1000], ordered=False)
+        return len(ops)
+
+    @classmethod
     def refresh_translations(cls) -> int:
         """用存著的英文重新比對中文（翻譯同步完會自動跑），回傳有變動的筆數。"""
         from src.sc_zh import (amenity_zh, jurisdiction_zh, starmap_description_zh,

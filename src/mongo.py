@@ -183,6 +183,7 @@ def ensure_indexes():
                                        ('path_sort', ASCENDING)])
     db['starmap_master'].create_index('parent_uuid')
     db['starmap_master'].create_index('type')
+    db['ship_nav_master'].create_index('name_lower')
     for name in ('item_master_versions', 'vehicle_master_versions',
                  'commodity_master_versions', 'blueprint_master_versions',
                  'mission_master_versions'):

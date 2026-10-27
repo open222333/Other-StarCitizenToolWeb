@@ -6,13 +6,14 @@
 """
 
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from src.limiter import limiter
 from src.models.log import Log
 from src.models.sorting import sort_args
 from src.models.starmap import FEATURE_KEYS, MAX_LIMIT, Starmap
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, visibility_arg
+from src.models import nav
+from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg
 
 app_starmap = Blueprint('app_starmap', __name__)
 
@@ -109,6 +110,90 @@ def home_locations():
         description: 成功，data 是 [{id, name, name_zh, type, type_zh, system, system_zh, planet, planet_zh, parent, parent_zh}]
     """
     return jsonify({'success': True, 'data': Starmap.home_locations()})
+
+
+@app_starmap.route('/nav/places', methods=['GET'])
+@jwt_required()
+def nav_places():
+    """航線規劃可選的地點（有座標、有名稱，玩家看不到後台設為不顯示的）。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功，data 是 [{id, name, name_zh, type, type_zh, system, system_zh, path_zh, surface}]
+    """
+    return jsonify({'success': True, 'data': nav.places(visible_only=not viewer_sees_hidden())})
+
+
+@app_starmap.route('/nav/ships', methods=['GET'])
+@jwt_required()
+def nav_ships():
+    """有量子引擎的太空船（量子速度、啟動時間、油箱、可達距離、貨艙）。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': nav.ships()})
+
+
+@app_starmap.route('/nav/route', methods=['POST'])
+@jwt_required()
+@limiter.limit('30 per minute')
+def nav_route():
+    """規劃量子航線（最快／最省油／最順路三種方案），見 src/models/nav.py。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            start: {type: string, description: "起點地點 id"}
+            waypoints: {type: array, items: {type: string}, description: "途經站點 id"}
+            cargo: {type: array, items: {type: object}, description: "[{pickup, dropoff, scu}]"}
+            end_mode: {type: string, description: "none／start（回到起點）／fixed"}
+            end: {type: string, description: "end_mode=fixed 時的終點 id"}
+            auto_order: {type: boolean, description: "true = 自動排序站點"}
+            ship: {type: string, description: "船的 UUID（ship_nav_master）"}
+            external_cargo: {type: boolean, description: "外掛貨櫃；不帶 = 依船自動判斷"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 參數錯誤或排不出路線
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({'success': False, 'message': '格式錯誤'}), 400
+    waypoints = body.get('waypoints') or []
+    cargo = body.get('cargo') or []
+    if not isinstance(waypoints, list) or not isinstance(cargo, list):
+        return jsonify({'success': False, 'message': '格式錯誤'}), 400
+    external = body.get('external_cargo')
+    try:
+        data = nav.plan_route(
+            start_id=str(body.get('start') or ''),
+            waypoints=[str(w) for w in waypoints],
+            cargo=cargo,
+            end_mode=body.get('end_mode') if body.get('end_mode') in ('none', 'start', 'fixed') else 'none',
+            end_id=str(body.get('end') or ''),
+            auto_order=body.get('auto_order', True) is not False,
+            ship_id=str(body.get('ship') or ''),
+            external_cargo=external if isinstance(external, bool) else None,
+            visible_only=not viewer_sees_hidden(),
+        )
+    except nav.RouteError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    return jsonify({'success': True, 'data': data})
 
 
 @app_starmap.route('/facets', methods=['GET'])

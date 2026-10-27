@@ -1155,10 +1155,50 @@ def map_starmap(doc: dict) -> Optional[dict]:
         'nav_icon': doc.get('NavIcon'),
         'size': doc.get('Size'),
         'arrival_radius': quantum.get('ArrivalRadius'),
+        # 量子航行的阻擋半徑（公尺）：航線規劃判斷直線航段會不會被這顆星體擋住（src/models/nav.py）
+        'obstruction_radius': quantum.get('ObstructionRadius'),
         'hide_in_starmap': bool(doc.get('HideInStarmap')),
         'is_scannable': bool(doc.get('IsScannable')),
         'raw': doc,
     }
+
+
+def map_ship_nav(doc: dict) -> Optional[dict]:
+    """艦船的量子航行參數（scunpacked-data ships.json，預設配備的量子引擎），航線規劃用。
+
+    只留有量子引擎的太空船；不存 raw（整份 ships.json 四十多 MB）。
+    油耗：ships.json 的 Range 就是「滿油可跑的距離」，所以每公尺耗油＝FuelCapacity / Range。
+    """
+    qt = doc.get('QuantumTravel') if isinstance(doc.get('QuantumTravel'), dict) else {}
+    uuid = doc.get('UUID')
+    speed, fuel, rng = qt.get('Speed'), qt.get('FuelCapacity'), qt.get('Range')
+    if not uuid or not doc.get('IsSpaceship') or not speed:
+        return None
+    grids = [g for g in doc.get('CargoGrids') or [] if isinstance(g, dict)]
+    class_name = doc.get('ClassName') or ''
+    name = _real_text(doc.get('Name'))
+    return {
+        '_id': uuid,
+        'class_name': class_name,
+        'name': name,
+        'name_lower': name.lower(),
+        'size': doc.get('Size'),
+        'qt_speed': speed,                          # 公尺／秒
+        'qt_spool': qt.get('SpoolTime'),            # 秒
+        'qt_fuel_capacity': fuel,
+        'qt_range': rng,                            # 公尺
+        'qt_fuel_per_m': (fuel / rng) if fuel and rng else None,
+        'cargo_scu': doc.get('Cargo') or sum(g.get('SCU') or 0 for g in grids),
+        # Hull 系列的外掛貨櫃：裝貨後只能停太空站（不能進大氣層）
+        'external_cargo': '_hull_' in class_name.lower(),
+        'mass': doc.get('Mass'),
+        'mass_total': doc.get('MassTotal') or doc.get('Mass'),
+    }
+
+
+#: 星圖地點的絕對座標（scunpacked-data，{entities: [...], connections: [...]}），
+#: 地點同步完由 Starmap.apply_positions() 寫進 starmap_master
+SCUNPACKED_POSITIONS_PATH = 'starmap_positions.json'
 
 
 # resource -> (collection 名稱, 檔案路徑, mapper)。跟 WIKI_RESOURCES 不同的是
@@ -1167,6 +1207,7 @@ SCUNPACKED_RESOURCES: dict = {
     'mining_deposits': ('mining_deposit_master', 'resources/resources.json', map_mining_deposit),
     'mining_locations': ('mining_location_master', 'resources/locations.json', map_mining_location),
     'starmap': ('starmap_master', 'starmap.json', map_starmap),
+    'ship_nav': ('ship_nav_master', 'ships.json', map_ship_nav),
     # 藍圖的品質試算資料（部位、品質加成），跟著「藍圖」同步項目一起更新
     'blueprint_quality': ('blueprint_quality_master', 'blueprints.json', map_blueprint_quality),
 }
@@ -1174,7 +1215,7 @@ SCUNPACKED_RESOURCES: dict = {
 #: 同步項目 → 它包含的 scunpacked 資源（見 src/models/sync_schedule.py 的 SYNC_JOBS）
 SCUNPACKED_JOBS: dict = {
     'mining': ['mining_deposits', 'mining_locations'],
-    'locations': ['starmap'],
+    'locations': ['starmap', 'ship_nav'],
 }
 
 #: 掛在 Wiki 同步項目後面一起跑的 scunpacked 資源（例如藍圖品質試算資料只有 scunpacked 有）
@@ -1265,6 +1306,7 @@ def job_upstreams() -> dict:
         out[key] = rows
     for key, resources in SCUNPACKED_JOBS.items():
         out[key] = [g(SCUNPACKED_RESOURCES[r][1]) for r in resources]
+    out['locations'].append(g(SCUNPACKED_POSITIONS_PATH, '地點座標'))
     out['uex'] = [u('categories/'), u('items/?id_category=<id>', '每個物品分類一次，間隔 ≥ 0.5 秒')] + \
         [u(f'{r}/') for r in UEX_JOB_RESOURCES['uex'] if r != 'items']
     out['uex_refinery'] = [u(f'{r}/') for r in UEX_JOB_RESOURCES['uex_refinery']]

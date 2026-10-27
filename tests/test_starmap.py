@@ -122,12 +122,21 @@ def test_locations_sync_job(app, monkeypatch):
     import tasks.scdata_sync as sync_mod
     fetched = []
 
+    ship = {'UUID': 'ship-1', 'ClassName': 'TEST_Ship', 'Name': 'Test Ship', 'IsSpaceship': True,
+            'QuantumTravel': {'Speed': 2e8, 'SpoolTime': 5, 'FuelCapacity': 1000, 'Range': 1e11}}
+    positions = {'entities': [{'uuid': 'o-lorville', 'system': 'stanton', 'qt_valid': True,
+                               'x': 1, 'y': 2, 'z': 3}], 'connections': []}
+
     def fake_fetch(client, path, expect=list):
         fetched.append(path)
-        return [STAR, PLANET, OUTPOST]
+        return {'starmap.json': [STAR, PLANET, OUTPOST], 'ships.json': [ship],
+                'starmap_positions.json': positions}[path]
     monkeypatch.setattr(sync_mod, 'fetch_scunpacked_rows', fake_fetch)
     result = sync_mod._do_sync(jobs=['locations'])
-    assert result['ok'] is True and fetched == ['starmap.json']
+    assert result['ok'] is True
+    assert fetched == ['starmap.json', 'ships.json', 'starmap_positions.json']
+    assert get_db()['starmap_master'].find_one({'_id': 'o-lorville'})['pos'] == {'x': 1.0, 'y': 2.0, 'z': 3.0}
+    assert get_db()['ship_nav_master'].find_one({'_id': 'ship-1'})['qt_speed'] == 2e8
     assert get_db()['starmap_master'].find_one({'_id': 'o-lorville'})['system_name'] == 'Stanton'
     lorville = get_db()['starmap_master'].find_one({'_id': 'o-lorville'})
     assert lorville['can_store'] is True and lorville['has_hangar'] is True

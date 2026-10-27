@@ -25,6 +25,7 @@ CATALOG = [
     ]),
     ('載具', [
         ('uex_vehicles', 'UEX 載具'),
+        ('ship_nav_master', '艦船量子航行參數'),
     ]),
     ('礦物／精煉', [
         ('mineral_uex_links', '礦物 UEX 手動關聯'),
