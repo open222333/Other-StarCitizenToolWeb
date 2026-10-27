@@ -21,7 +21,7 @@
     <SfState :loading="loading && !rows.length" :error="loadFailed ? '讀取船艦資料失敗。' : ''" :empty="!rows.length"
       empty-text="沒有符合條件的船艦。" @retry="reload(offset)">
       <!-- 欄位名稱列：全選本頁＋欄位名稱（船名、尺寸、價格可以排序，後端排序）＋跟「登記」一樣寬的空位 -->
-      <div class="vdb-row vdb-headrow" style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 9rem">
+      <div class="vdb-row vdb-headrow" style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 6.5rem 9rem">
         <input class="form-check-input vdb-check" type="checkbox" aria-label="全選本頁"
           :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
           :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
@@ -36,18 +36,21 @@
             :disabled="isRegistered(v)" :aria-label="`勾選 ${v.name_zh || v.name}`"
             @change="toggleOne(v._id, $event.target.checked)">
           <button type="button" class="sf-tree-row sf-tree-row--ship sf-tree-row--cols vdb-main"
-            style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 9rem"
+            style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 9rem 6.5rem 9rem"
             :aria-expanded="openId === v._id ? 'true' : 'false'" @click="openId = openId === v._id ? '' : v._id">
             <span class="sf-tree-cell sf-tree-cell--main">
               <i class="bi" :class="openId === v._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
               <span class="sf-tree-title">{{ v.name_zh || v.name }}</span>
               <span v-if="v.name_zh" class="text-muted">{{ v.name }}</span>
               <span v-if="v.system_note" class="sf-tree-chip" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
+              <!-- 手機上載貨欄藏起來，改在船名旁邊顯示 -->
+              <span v-if="v.cargo_capacity_scu" class="sf-tree-chip vdb-scu-sm">{{ fmtNum(v.cargo_capacity_scu) }} SCU</span>
             </span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleSizeLabel(v.size_class) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleRoleLabel(v.role, v.role_zh) || '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ v.cargo_capacity_scu ? `${fmtNum(v.cargo_capacity_scu)} SCU` : '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--end">
               <template v-if="v.msrp">{{ fmtUsd(v.msrp) }}</template>
               <div v-if="v.uex_price?.buy_min" class="text-muted">{{ fmtAuec(v.uex_price.buy_min) }} 起</div>
@@ -230,7 +233,7 @@ function infoFields(v) {
   const p = v.uex_price || {}
   return [
     { label: '載員', value: crewLabel(v) },
-    { label: '貨艙', value: v.cargo_capacity_scu ? `${fmtNum(v.cargo_capacity_scu)} SCU` : '—' },
+    { label: '載貨', value: v.cargo_capacity_scu ? `${fmtNum(v.cargo_capacity_scu)} SCU` : '—' },
     { label: '質量', value: v.mass_hull ? `${fmtNum(v.mass_hull)} kg` : '—' },
     { label: '官網售價', value: fmtUsd(v.msrp) },
     { label: '遊戲內購買', value: p.buy_min ? `${fmtAuec(p.buy_min)} 起（${p.buy_count} 處）` : '—' },
@@ -245,6 +248,7 @@ const COLUMNS = [
   { label: '尺寸', field: 'size_class', opt: true },
   { label: '廠商', opt: true },
   { label: '角色', opt: true },
+  { label: '載貨', field: 'cargo_capacity_scu', end: true, opt: true },
   { label: '價格', field: 'msrp', end: true },
 ]
 const sort = useTableSort(null, { onChange: () => reload(0) })
@@ -328,4 +332,6 @@ async function goPage(newOffset) {
   .vdb-submit { position: sticky; bottom: .5rem; z-index: 10; }
 }
 .vdb-pager-info { font-size: .95rem; color: var(--bs-secondary-color); }
+.vdb-scu-sm { display: none; }
+@media (max-width: 767.98px) { .vdb-scu-sm { display: inline-block; } }
 </style>

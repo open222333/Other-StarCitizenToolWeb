@@ -160,6 +160,7 @@ def _vehicle_summary(master: dict | None) -> dict | None:
         'role': master.get('role'),
         'role_zh': master.get('role_zh'),
         'career': master.get('career'),
+        'cargo_capacity_scu': master.get('cargo_capacity_scu'),   # 貨艙（SCU）
         'msrp': master.get('msrp'),   # 官網現金價（美金）
         'is_current': master.get('is_current'),
         'note': master.get('note'),   # 後台手寫的說明

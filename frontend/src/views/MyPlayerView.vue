@@ -78,10 +78,12 @@
       </div>
     </header>
 
-    <!-- ══════════ 分頁列（手機上橫向捲動，不折行） ══════════ -->
+    <!-- ══════════ 分頁列（放不下時橫向捲動，左右出現箭頭；「個人資料」可以選要顯示哪些分頁） ══════════ -->
     <nav class="scifi-tabs">
-      <ul class="nav nav-tabs" role="tablist">
-        <li class="nav-item" v-for="tab in tabs" :key="tab.key" role="presentation">
+      <button v-show="tabsOverflow.left" type="button" class="scifi-tabs__arrow scifi-tabs__arrow--left"
+        aria-label="往左捲動分頁" tabindex="-1" @click="scrollTabs(-1)"><i class="bi bi-chevron-left"></i></button>
+      <ul ref="tabsListEl" class="nav nav-tabs" role="tablist" @scroll.passive="updateTabsOverflow" @wheel="onTabsWheel">
+        <li class="nav-item" v-for="tab in visibleTabs" :key="tab.key" role="presentation">
           <button
             class="nav-link"
             :class="{ active: activeTab === tab.key }"
@@ -95,6 +97,8 @@
           </button>
         </li>
       </ul>
+      <button v-show="tabsOverflow.right" type="button" class="scifi-tabs__arrow scifi-tabs__arrow--right"
+        aria-label="往右捲動分頁" tabindex="-1" @click="scrollTabs(1)"><i class="bi bi-chevron-right"></i></button>
     </nav>
 
     <!-- ══════════ 下層分頁（倉庫／查詢才有） ══════════ -->
@@ -153,7 +157,7 @@
       <button class="btn btn-sm btn-primary" @click="refreshWarehouse" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
     <!-- 倉庫 › 共用篩選：只有這一張，同時篩「物品庫存」跟展開的「庫存紀錄」 -->
-    <InventoryFilterBar v-show="activeTab === 'warehouse'"
+    <InventoryFilterBar v-show="activeTab === 'warehouse' && !(stockOpen || commodityOpen || homeOpen || moveAllOpen)"
       :rows="warehouseFilterRows" :known-locations="locations" :counts="warehouseFilterCounts" :loc-label="locLabel"
       :type-options="itemTypeOptions" v-model:q="stockFilter.q" v-model:types="stockFilter.types"
       :show-buyable="itemDataOpen" v-model:buyable="stockFilter.buyable" v-model:dismantlable="stockFilter.dismantlable"
@@ -590,7 +594,7 @@
       <div v-else-if="!fleetHolders.length" class="text-muted small">
         沒有人登記符合條件的船／載具。
       </div>
-      <div v-else class="holder-tree" style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 6rem 6rem">
+      <div v-else class="holder-tree" style="--sf-tree-cols: minmax(0, 1fr) 7rem 5rem 9rem 6.5rem 6rem 6rem">
         <!-- 蜂巢式下拉：船艦 → 持有的玩家 → 那位玩家的配件網址，每一層按了才展開（樣式見 scifi-theme.css）；上層有欄位名稱＋排序 -->
         <SfTreeHead :sort="fleetHolderSort" :columns="FLEET_HOLDER_COLUMNS" />
         <div v-for="group in fleetHolderSort.sorted.value" :key="group._id" class="holder-ship">
@@ -602,15 +606,19 @@
               <span class="sf-tree-title">{{ group.vehicle?.name_zh || group.vehicle?.name || group.name }}</span>
               <span v-if="group.vehicle?.name_zh" class="text-muted">{{ group.vehicle.name }}</span>
               <span v-if="group.vehicle?.system_note" class="sf-tree-chip" title="系統說明：同名變體的區別">{{ group.vehicle.system_note }}</span>
+              <!-- 手機上載貨欄藏起來，改在船名旁邊顯示 -->
+              <span v-if="group.vehicle?.cargo_capacity_scu" class="sf-tree-chip scu-sm">{{ scuLabel(group.vehicle.cargo_capacity_scu) }}</span>
             </span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleTypeLabel(group.vehicle?.vehicle_type) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleSizeLabel(group.vehicle?.size_class) || '—' }}</span>
             <span class="sf-tree-cell sf-tree-cell--opt">{{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) || '—' }}</span>
+            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ scuLabel(group.vehicle?.cargo_capacity_scu) }}</span>
             <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ group.holder_count }} 人</span>
             <span class="sf-tree-cell sf-tree-cell--end">{{ group.total_quantity }} 艘</span>
           </button>
           <div v-if="openHolderGroups.has(group._id)" class="sf-tree-level">
             <div class="sf-tree-info">
+              <template v-if="group.vehicle?.cargo_capacity_scu">載貨 {{ scuLabel(group.vehicle.cargo_capacity_scu) }} · </template>
               {{ vehicleTypeLabel(group.vehicle?.vehicle_type) }} ·
               {{ vehicleSizeLabel(group.vehicle?.size_class) }} ·
               {{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) }} ·
@@ -683,7 +691,8 @@
     </div>
 
     <!-- ══════════ 倉庫 › 物品庫存 ══════════ -->
-    <div v-show="activeTab === 'warehouse'" role="tabpanel"
+    <!-- 有展開工具時隱藏列表（工具一次只開一個，見 exclusiveDrawers） -->
+    <div v-show="activeTab === 'warehouse' && !warehouseDrawerOpen" role="tabpanel"
          id="panel-warehouse" :aria-labelledby="'tab-warehouse'">
       <SfState :loading="loadingInventory" :empty="!filteredInventory.length"
         :empty-text="myInventory.length ? '沒有符合篩選條件的物品。' : '目前沒有登記任何物品。'">
@@ -791,7 +800,7 @@
     </div>
 
     <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
-    <div v-show="activeTab === 'blueprints'" role="tabpanel"
+    <div v-show="activeTab === 'blueprints' && !bpDataOpen" role="tabpanel"
          id="panel-blueprints" :aria-labelledby="'tab-blueprints'">
       <Transition name="alert-slide">
         <div v-if="blueprintError" class="alert alert-danger py-2">{{ blueprintError }}</div>
@@ -907,7 +916,7 @@
         :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </div>
     <!-- 任務 › 共用搜尋：名稱即時篩；類型／星系／勢力／合法性手機收進「篩選」面板 -->
-    <div v-show="activeTab === 'missions'" class="card scifi-card sf-search mb-3">
+    <div v-show="activeTab === 'missions' && !factionRepOpen" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-4">
@@ -953,7 +962,7 @@
         </div>
       </div>
     </div>
-    <div v-show="activeTab === 'missions'" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
+    <div v-show="activeTab === 'missions' && !factionRepOpen" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
       <MissionBrowser ref="missionBrowserRef" :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions'"
         :filters="msFilter" :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </div>
@@ -979,7 +988,7 @@
       </div>
 
       <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「登記船艦資料」 -->
-      <div class="card scifi-card sf-search mb-3">
+      <div v-show="!fleetImportOpen" class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
             <div class="col col-md-6">
@@ -1018,8 +1027,8 @@
           </div>
           <div v-if="fleet.length || myFleetHasFilter" class="d-flex flex-wrap align-items-center gap-2 mt-2">
             <span v-if="fleet.length" class="small text-muted">
-              <template v-if="myFleetHasFilter">符合 {{ filteredFleet.length }} 款、{{ filteredFleetShipCount }} 艘 · </template>
-              共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘
+              <template v-if="myFleetHasFilter">符合 {{ filteredFleet.length }} 款、{{ filteredFleetShipCount }} 艘、{{ scuLabel(fleetScuOf(filteredFleet)) }} · </template>
+              共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘、載貨 {{ scuLabel(fleetScuOf(fleet)) }}
             </span>
             <button v-if="myFleetHasFilter && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearMyFleetFilters">清除篩選</button>
           </div>
@@ -1040,6 +1049,7 @@
         <FleetImport :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
       </div>
 
+      <div v-show="!fleetDataOpen && !fleetImportOpen">
       <div v-if="loadingFleet" class="text-muted small">載入中…</div>
       <div v-else-if="fleetLoaded && !fleet.length" class="text-muted small">還沒有登記任何船／載具。</div>
       <div v-else-if="fleet.length && !filteredFleet.length" class="text-muted small">沒有符合篩選條件的船／載具。</div>
@@ -1057,6 +1067,7 @@
             <SortTh :sort="myFleetSort" field="size" class="d-none d-md-table-cell">尺寸</SortTh>
             <SortTh :sort="myFleetSort" field="manufacturer" class="d-none d-lg-table-cell">廠商</SortTh>
             <SortTh :sort="myFleetSort" field="role" class="d-none d-lg-table-cell">角色</SortTh>
+            <SortTh :sort="myFleetSort" field="cargo" class="text-end">載貨</SortTh>
             <SortTh :sort="myFleetSort" field="loadouts" class="text-end d-none d-lg-table-cell">配件網址</SortTh>
             <SortTh :sort="myFleetSort" field="quantity" class="text-end">數量</SortTh>
             <th class="pe-3"></th>
@@ -1077,6 +1088,7 @@
             <td class="d-none d-md-table-cell" data-label="尺寸">{{ vehicleSizeLabel(row.vehicle?.size_class) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="角色">{{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) || '—' }}</td>
+            <td class="text-end text-nowrap" data-label="載貨">{{ scuLabel(row.vehicle?.cargo_capacity_scu) }}</td>
             <td class="text-end d-none d-lg-table-cell" data-label="配件網址">{{ row.loadout_links?.length || '—' }}</td>
             <td class="text-end" data-label="數量">{{ row.quantity }}</td>
             <td class="text-end text-nowrap pe-3 sf-stack__actions">
@@ -1099,8 +1111,8 @@
             </td>
           </tr>
           <tr v-if="openMyFleet.has(row._id)" class="sf-stack__detail">
-            <!-- colspan 要跟 thead 的欄數一致（8）；手機上這一列變成底部面板 -->
-            <td colspan="8" class="myfleet-detail">
+            <!-- colspan 要跟 thead 的欄數一致（9）；手機上這一列變成底部面板 -->
+            <td colspan="9" class="myfleet-detail">
                 <div class="sf-sheet__head sf-stack__sheet-head">
                   <h3 class="sf-sheet__title">{{ row.vehicle?.name_zh || row.name }}</h3>
                   <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleMyFleet(row._id)"><i class="bi bi-x-lg"></i></button>
@@ -1193,6 +1205,7 @@
       </div>
       </div>
       </template>
+      </div>
     </div>
 
     <!-- ══════════ 礦物參考查詢 ══════════ -->
@@ -1201,6 +1214,12 @@
       <!-- 元件跟後台「礦物參考查詢」頁共用，差別只在帶進去的身分 -->
       <MiningLookup :fetcher="playerAuth.playerFetch" :active="activeTab === 'mining'"
         card-class="card scifi-card" />
+    </div>
+
+    <!-- ══════════ 航線規劃（見 components/RoutePlanner.vue、src/models/nav.py）══════════ -->
+    <div v-show="activeTab === 'route'" role="tabpanel" id="panel-route" :aria-labelledby="'tab-route'">
+      <RoutePlanner :fetcher="playerAuth.playerFetch" :active="activeTab === 'route'"
+        :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
     </div>
 
     <!-- ══════════ LOG 解析（Game.log 在瀏覽器裡解析，不上傳；見 components/GameLogReader.vue）══════════ -->
@@ -1316,6 +1335,24 @@
         </div>
       </div>
 
+      <!-- 顯示的分頁：勾掉的分頁不出現在分頁列（手機底部列／更多），存在帳號上，換裝置也一樣 -->
+      <div v-if="player" class="card scifi-card mt-3">
+        <div class="card-body">
+          <h3 class="sf-drawer__title"><i class="bi bi-ui-checks-grid me-1"></i>顯示的分頁</h3>
+          <div class="tab-prefs">
+            <div v-for="tab in orderedTabs" :key="tab.key" class="form-check mb-0">
+              <input :id="`tab-show-${tab.key}`" class="form-check-input" type="checkbox"
+                :checked="tab.key === 'profile' || !hiddenTabs.includes(tab.key)"
+                :disabled="tab.key === 'profile' || savingTabs" @change="toggleTab(tab.key, $event.target.checked)">
+              <label class="form-check-label" :for="`tab-show-${tab.key}`">
+                <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
+              </label>
+            </div>
+          </div>
+          <div v-if="tabsError" class="sf-bad mt-2">{{ tabsError }}</div>
+        </div>
+      </div>
+
       <!-- 更改密碼：只在「個人資料」分頁才放進 DOM，並包成自己的 <form>（附隱藏的帳號欄位）。
            否則瀏覽器會把自動填入的「目前密碼」跟其他分頁的搜尋欄位湊成一組帳密，
            打完搜尋字、切分頁（網址改變）時就跳出「要儲存密碼嗎」。 -->
@@ -1411,7 +1448,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
 import { PLAYER_LOGIN_PATH } from '@/router'
@@ -1438,6 +1475,8 @@ import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { fmtAuec, fmtUsd, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
+import RoutePlanner from '@/components/RoutePlanner.vue'
+import { PLAYER_TABS, orderTabs } from '@/utils/playerTabs'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MissionBrowser from '@/components/MissionBrowser.vue'
@@ -1497,40 +1536,106 @@ function holderLabel(nickname, playerName, scid) {
 
 // 主分頁。目前都沒有下層分頁（subTabs，保留機制備用），
 // 頂層 6 個項目，手機上放不下時分頁列可以左右滑（見 scifi-theme.css 的 .scifi-tabs）。
-const tabs = [
-  {
-    // 原本的「物品庫存／庫存紀錄」合併成一頁，庫存紀錄改成按鈕展開（比照艦隊）
-    key: 'warehouse', label: '倉庫',   icon: 'bi bi-box-seam',
-  },
-  {
-    // 原本的「我的藍圖／藍圖資料／批量登記」合併成一頁，後兩個再合併成按鈕展開的「登記藍圖資料」（比照艦隊）
-    key: 'blueprints', label: '藍圖',  icon: 'bi bi-diagram-3',
-  },
-  // 任務資料庫（唯讀），藍圖欄標出自己已登記幾張
-  { key: 'missions', label: '任務', icon: 'bi bi-flag' },
-  {
-    // 原本的「我的艦隊／批量登記」兩個下層分頁合併成一頁；批量登記後來併進按鈕展開的「登記船艦資料」
-    key: 'fleet', label: '艦隊',  icon: 'bi bi-rocket-takeoff',
-  },
-  { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
-  {
-    // 原本的三個下層分頁合併成一頁，改成上方按鈕點開（SEARCH_SECTIONS）。
-    // 原名「查詢」；商品購買地點搬到倉庫後只剩查別人持有的東西，改名「查詢持有資訊」
-    key: 'search',    label: '查詢持有資訊',   icon: 'bi bi-search', short: '查詢',
-  },
-  { key: 'gamelog',   label: 'LOG 解析', icon: 'bi bi-journal-code' },
-  { key: 'payout',    label: '酬勞分配', icon: 'bi bi-cash-coin' },
-  { key: 'chatcode',  label: '中文轉碼', icon: 'bi bi-translate' },
-  { key: 'tools',     label: '工具網站', icon: 'bi bi-link-45deg' },
-  { key: 'profile',   label: '個人資料', icon: 'bi bi-person-gear' },
-]
+const tabs = PLAYER_TABS
+// 後台設定的分頁順序（/player/me 的 tab_order）
+const TAB_ORDER_CACHE = 'sc_player_tab_order'
+const tabOrder = ref((() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(TAB_ORDER_CACHE) || '[]')
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
+})())
+const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value))
 
 // 手機／平板（方案見專案文件「星際公民工具-玩家頁手機平板UI方案」）：
 // 手機上方分頁列換成底部導覽列，常用四個直接放，其餘收進「更多」
 const { isPhone } = useBreakpoint()
 const BOTTOM_TAB_KEYS = ['warehouse', 'blueprints', 'fleet', 'search']
-const bottomTabs = tabs.filter(t => BOTTOM_TAB_KEYS.includes(t.key))
-const moreTabs = tabs.filter(t => !BOTTOM_TAB_KEYS.includes(t.key))
+const BOTTOM_COUNT = 4
+
+// ── 顯示的分頁（個人資料可勾選；存在帳號上 hidden_tabs，這台瀏覽器另存一份避免載入時閃一下）──
+const tabsCacheKey = () => `sc_player_hidden_tabs:${playerAuth.starCitizenId || ''}`
+function readTabsCache() {
+  try {
+    const v = JSON.parse(localStorage.getItem(tabsCacheKey()) || '[]')
+    return Array.isArray(v) ? v.filter(k => typeof k === 'string') : []
+  } catch {
+    return []
+  }
+}
+const hiddenTabs = ref(readTabsCache())
+const savingTabs = ref(false)
+const tabsError = ref('')
+function applyHiddenTabs(keys) {
+  hiddenTabs.value = (keys || []).filter(k => k !== 'profile')
+  try { localStorage.setItem(tabsCacheKey(), JSON.stringify(hiddenTabs.value)) } catch { /* 存不了就算了 */ }
+}
+// 被隱藏的分頁如果正好是目前這頁（例如從舊連結進來），還是照常顯示
+const visibleTabs = computed(() => orderedTabs.value.filter(t => t.key === 'profile' || t.key === activeTab.value
+  || !hiddenTabs.value.includes(t.key)))
+const bottomTabs = computed(() => {
+  const shown = visibleTabs.value.filter(t => t.key !== 'profile')
+  const first = shown.filter(t => BOTTOM_TAB_KEYS.includes(t.key))   // 照後台排的順序
+  const rest = shown.filter(t => !BOTTOM_TAB_KEYS.includes(t.key))
+  return [...first, ...rest].slice(0, BOTTOM_COUNT)
+})
+const moreTabs = computed(() => visibleTabs.value.filter(t => !bottomTabs.value.includes(t)))
+
+async function toggleTab(key, show) {
+  if (key === 'profile') return
+  const before = hiddenTabs.value
+  const next = show ? before.filter(k => k !== key) : [...before, key]
+  tabsError.value = ''
+  applyHiddenTabs(next)
+  savingTabs.value = true
+  const res = await playerAuth.playerFetch('/player/me/tabs', {
+    method: 'PUT', body: JSON.stringify({ hidden_tabs: next }),
+  })
+  savingTabs.value = false
+  const data = res ? await res.json().catch(() => null) : null
+  if (!res?.ok || !data?.success) {
+    applyHiddenTabs(before)
+    tabsError.value = data?.message || '儲存失敗。'
+  }
+}
+
+// ── 分頁列放不下時：左右箭頭、滑鼠滾輪橫向捲動、切換分頁時把目前分頁捲進畫面 ──
+const tabsListEl = ref(null)
+const tabsOverflow = reactive({ left: false, right: false })
+function updateTabsOverflow() {
+  const el = tabsListEl.value
+  if (!el) return
+  tabsOverflow.left = el.scrollLeft > 2
+  tabsOverflow.right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+}
+function scrollTabs(dir) {
+  const el = tabsListEl.value
+  if (el) el.scrollBy({ left: dir * el.clientWidth * 0.7, behavior: 'smooth' })
+}
+function onTabsWheel(event) {
+  const el = tabsListEl.value
+  if (!el || el.scrollWidth <= el.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+  event.preventDefault()
+  el.scrollLeft += event.deltaY
+}
+function revealActiveTab() {
+  nextTick(() => {
+    const el = tabsListEl.value?.querySelector('.nav-link.active')
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    updateTabsOverflow()
+  })
+}
+let tabsResizeObserver = null
+onMounted(() => {
+  if (tabsListEl.value && typeof ResizeObserver !== 'undefined') {
+    tabsResizeObserver = new ResizeObserver(updateTabsOverflow)
+    tabsResizeObserver.observe(tabsListEl.value)
+  }
+  revealActiveTab()
+})
+onBeforeUnmount(() => tabsResizeObserver?.disconnect())
 const moreOpen = ref(false)
 // 「更多」底部面板：Esc 關閉、開啟時焦點移進面板、關閉後回到「更多」按鈕
 const moreSheetEl = ref(null)
@@ -1540,13 +1645,13 @@ useSheet(moreOpen, moreSheetEl)
 // deletingKey＝送出中的那一列（按鈕停用＋轉圈）。key：bp:<id>、fleet:<id>、unit:<id>:<第幾艘>
 const confirmDeleteKey = ref('')
 const deletingKey = ref('')
-const moreTabActive = computed(() => !BOTTOM_TAB_KEYS.includes(activeTab.value))
+const moreTabActive = computed(() => !bottomTabs.value.some(t => t.key === activeTab.value))
 // 手機的排序下拉選項（表頭在手機上看不到）
 const INVENTORY_SORT_OPTIONS = [{ field: 'item', label: '物品' }, { field: 'location', label: '地點' }, { field: 'quantity', label: '數量' }]
 const MY_BP_SORT_OPTIONS = [{ field: 'name', label: '名稱' }, { field: 'type', label: '類型' },
   { field: 'craft_time', label: '製作時間' }, { field: 'ingredients', label: '材料' }]
 const MY_FLEET_SORT_OPTIONS = [{ field: 'name', label: '船艦' }, { field: 'type', label: '類型' }, { field: 'size', label: '尺寸' },
-  { field: 'manufacturer', label: '廠商' }, { field: 'role', label: '角色' }, { field: 'quantity', label: '數量' }]
+  { field: 'manufacturer', label: '廠商' }, { field: 'role', label: '角色' }, { field: 'cargo', label: '載貨' }, { field: 'quantity', label: '數量' }]
 
 /** 某個主分頁的下層分頁清單（沒有就回空陣列）。 */
 function subTabsOf(key) {
@@ -1609,6 +1714,10 @@ function syncUrl() {
   router.replace({ query })
 }
 
+watch(activeTab, revealActiveTab)
+// 放在 activeTab 宣告之後：visibleTabs 用到 activeTab，watch 會立刻求值（TDZ）
+watch(visibleTabs, revealActiveTab)
+
 function setTab(key) {
   if (!validTabs.includes(key)) return
   activeTab.value = key
@@ -1634,7 +1743,7 @@ function setSub(key) {
 function loadForTab(tab) {
   // 「查詢」：點開哪一區才載入那一區的資料（見 loadSearchSections）
   if (tab === 'search') loadSearchSections()
-  if (tab === 'fleet' && !fleetLoaded.value) loadFleet()
+  if ((tab === 'fleet' || tab === 'route') && !fleetLoaded.value) loadFleet()
   if (tab === 'tools') loadToolLinks()
   // 倉庫共用搜尋卡的「物品類型」選項（物品主檔的全部類型）
   if (tab === 'warehouse' && !itemTypes.value.length) loadItemTypes()
@@ -1708,6 +1817,9 @@ async function loadPlayer() {
   const data = await res.json().catch(() => null)
   if (res.ok && data?.success) {
     player.value = data.data
+    applyHiddenTabs(data.data.hidden_tabs)
+    tabOrder.value = Array.isArray(data.data.tab_order) ? data.data.tab_order : []
+    try { localStorage.setItem(TAB_ORDER_CACHE, JSON.stringify(tabOrder.value)) } catch { /* 存不了就算了 */ }
     profileForm.nickname     = data.data.nickname || ''
     profileForm.discord_name = data.data.discord_name || ''
     profileForm.discord_id   = data.data.discord_id || ''
@@ -2853,9 +2965,12 @@ const myFleetSort = useTableSort(filteredFleet, { accessors: {
   manufacturer: r => manufacturerLabel(r.vehicle?.manufacturer_name, r.vehicle?.manufacturer_code) || null,
   role: r => vehicleRoleLabel(r.vehicle?.role, r.vehicle?.role_zh) || null,
   loadouts: r => r.loadout_links?.length || 0,
+  cargo: r => r.vehicle?.cargo_capacity_scu || 0,
 } })
 const filteredFleetShipCount = computed(() =>
   filteredFleet.value.reduce((n, r) => n + (r.quantity || 0), 0))
+// 載貨量合計（每款的貨艙 × 艘數）
+const fleetScuOf = rows => rows.reduce((n, r) => n + (r.vehicle?.cargo_capacity_scu || 0) * (r.quantity || 0), 0)
 
 function clearMyFleetFilters() {
   myFleetQuery.value = ''
@@ -2936,6 +3051,11 @@ async function removeFleetUnit(row, n) {
 }
 
 /** 展開後的船艦資訊格子 */
+/** 貨艙容量（SCU），沒有貨艙顯示 — */
+function scuLabel(scu) {
+  return scu ? `${Math.round(scu).toLocaleString('en-US')} SCU` : '—'
+}
+
 function fleetInfoFields(v) {
   if (!v) return []
   const p = v.uex_price || {}
@@ -2944,6 +3064,7 @@ function fleetInfoFields(v) {
     { label: '尺寸', value: vehicleSizeLabel(v.size_class) || '—' },
     { label: '廠商', value: manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' },
     { label: '角色', value: vehicleRoleLabel(v.role, v.role_zh) || '—' },
+    { label: '載貨', value: scuLabel(v.cargo_capacity_scu) },
     { label: '官網售價', value: fmtUsd(v.msrp) },
     { label: '遊戲內購買', value: p.buy_min ? `${fmtAuec(p.buy_min)} 起` : '—' },
     { label: '租船', value: p.rent_min ? `${fmtAuec(p.rent_min)} 起` : '—' },
@@ -3073,6 +3194,7 @@ const FLEET_HOLDER_COLUMNS = [
   { label: '類型', field: 'type', opt: true },
   { label: '尺寸', field: 'size', opt: true },
   { label: '廠商', field: 'manufacturer', opt: true },
+  { label: '載貨', field: 'cargo', end: true, opt: true },
   { label: '持有人數', field: 'holder_count', end: true, opt: true },
   { label: '總艘數', field: 'total_quantity', end: true },
 ]
@@ -3080,6 +3202,7 @@ const fleetHolderSort = useTableSort(fleetHolders, { accessors: {
   name: g => vehicleSortAccessors.name(g.vehicle) || g.name,
   type: g => vehicleSortAccessors.type(g.vehicle), size: g => vehicleSortAccessors.size(g.vehicle),
   manufacturer: g => vehicleSortAccessors.manufacturer(g.vehicle),
+  cargo: g => g.vehicle?.cargo_capacity_scu || 0,
 } })
 const loadingFleetHolders = ref(false)
 const vehicleFacets       = ref({ size_classes: [], types: [], manufacturers: [], roles: [] })
@@ -3181,6 +3304,18 @@ watch([locations, myInventory, history, whoRows], () => {
   ])
 })
 
+// ── 工具列的展開區塊：同一個分頁一次只開一個，開了一個就收起其他的 ──
+function exclusiveDrawers(refs) {
+  refs.forEach((r, i) => watch(r, on => {
+    if (on) refs.forEach((o, j) => { if (j !== i && o.value) o.value = false })
+  }))
+}
+const warehouseDrawers = [itemDataOpen, stockOpen, historyOpen, commodityOpen, homeOpen, moveAllOpen]
+exclusiveDrawers(warehouseDrawers)
+exclusiveDrawers(SEARCH_SECTIONS.map(sec => toRef(searchOpen, sec.key)))
+exclusiveDrawers([fleetDataOpen, fleetImportOpen])
+const warehouseDrawerOpen = computed(() => warehouseDrawers.some(r => r.value))
+
 onMounted(() => {
   scifiTheme.apply()      // 套用這位玩家自己存的配色（localStorage）
   trackStickyHeights()
@@ -3226,4 +3361,7 @@ onBeforeUnmount(() => {
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
 .nav-tabs .nav-link { cursor: pointer; }
+.scu-sm { display: none; }
+@media (max-width: 767.98px) { .scu-sm { display: inline-block; } }
+.tab-prefs { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .5rem 1rem; }
 </style>

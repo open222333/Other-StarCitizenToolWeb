@@ -248,6 +248,17 @@ class Player:
         return result.matched_count > 0
 
     @classmethod
+    def set_hidden_tabs(cls, player_id: str, keys: list) -> bool:
+        """玩家頁不顯示的分頁（分頁代號清單，空清單＝全部顯示）。呼叫端先驗證格式。"""
+        try:
+            oid = ObjectId(str(player_id))
+        except Exception:
+            return False
+        result = cls._col().update_one({'_id': oid}, {'$set': {
+            'hidden_tabs': list(keys), 'updated_at': datetime.utcnow()}})
+        return result.matched_count > 0
+
+    @classmethod
     def update(cls, player_id: str, **fields) -> bool:
         """只更新有傳入的欄位（None 表示「不動這個欄位」，呼叫端請先過濾）。
 

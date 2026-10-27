@@ -98,6 +98,9 @@ ADMIN_ROUTES = [
     ('POST',   '/blueprint/',         WRITE_ROLES),
     ('PUT',    f'/blueprint/{_OID}',  WRITE_ROLES),
     ('DELETE', f'/blueprint/{_OID}',  WRITE_ROLES),
+    # 玩家頁分頁順序（全站設定）
+    ('GET',    '/player/settings/tab-order', READ_ROLES),
+    ('PUT',    '/player/settings/tab-order', WRITE_ROLES),
     # 稽核日誌
     ('GET',    '/log/',               READ_ROLES),
     # 庫存（寫入端）
@@ -251,6 +254,10 @@ UNGUARDED_ALLOWLIST = {
     # 可存放的地點（公開星圖資料，玩家站庫存地點下拉在用）
     'app_starmap.storage_locations',
     'app_starmap.home_locations',     # 可選居住地清單，刻意公開（同 storage_locations）
+    # 航線規劃（玩家頁「航線」分頁）：公開星圖座標與艦船量子參數，唯讀計算
+    'app_starmap.nav_places',
+    'app_starmap.nav_ships',
+    'app_starmap.nav_route',
     'app_item.search_items',
     'app_item.list_types',
     'app_item.get_item',

@@ -328,6 +328,7 @@
   overflow-y: hidden;
   scrollbar-width: none;
   scroll-snap-type: x proximity;
+  scroll-padding-inline: 3.25rem;   /* 捲到目前分頁時不要被左右箭頭蓋住 */
 }
 .scifi-tabs .nav-tabs::-webkit-scrollbar { display: none; }
 .scifi-tabs .nav-tabs .nav-link {
@@ -345,6 +346,19 @@
   background: rgba(var(--sf-accent-rgb), .12);
   border-bottom: 3px solid var(--sf-accent);
 }
+/* 放不下時的左右箭頭（MyPlayerView.vue：捲到最左／最右就藏起來） */
+.scifi-tabs__arrow {
+  position: absolute; top: 0; bottom: 1px; z-index: 2; width: 3.25rem;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; padding: 0; color: var(--sf-text-strong); font-size: 1.15rem;
+}
+.scifi-tabs__arrow--left {
+  left: 0; background: linear-gradient(to right, rgba(var(--sf-topbar-rgb, 10, 14, 23), .98) 65%, transparent);
+}
+.scifi-tabs__arrow--right {
+  right: 0; background: linear-gradient(to left, rgba(var(--sf-topbar-rgb, 10, 14, 23), .98) 65%, transparent);
+}
+.scifi-tabs__arrow:hover { color: var(--sf-accent); }
 /* 置中：用頭尾 auto margin 而不是 justify-content: center——
  * 手機上放不下要橫向捲動時，center 會把最左邊的分頁切掉捲不到 */
 .scifi-tabs .nav-tabs .nav-item:first-child { margin-left: auto; }
@@ -365,6 +379,14 @@
   -webkit-overflow-scrolling: touch;
 }
 .scifi-scroll > table { margin-bottom: 0; }
+
+/* 上下滑超出頁面（橡皮筋回彈）時露出的是 <html>／<body> 的底色，預設白色——
+ * 玩家頁（.scifi-page）在的時候改成跟頁面背景同色 */
+html:has(.scifi-page), html:has(.scifi-page) body {
+  background-color: var(--sf-bg-2);
+}
+html:has(.scifi-page) { color-scheme: dark; }
+:root[data-sf-mode='light']:has(.scifi-page) { color-scheme: light; }
 
 /* ── 資訊密度（由 stores/scifiTheme.js 寫在 <html data-sf-density>）── */
 :root[data-sf-density='compact'] .scifi-body { padding: .6rem .75rem; }

@@ -45,3 +45,23 @@ def test_set_home_and_move_all(client, setup):
 
     assert client.put('/player/me/home', json={'home_location': None}, headers=h).get_json()['data']['home_location'] is None
     assert client.post('/player/inventory/move-all-home', headers=h).status_code == 400
+
+
+def test_hidden_tabs(client, setup):
+    h = setup
+    res = client.put('/player/me/tabs', json={'hidden_tabs': ['mining', 'gamelog', 'mining', 'profile']}, headers=h)
+    assert res.status_code == 200
+    assert res.get_json()['data']['hidden_tabs'] == ['mining', 'gamelog']
+    assert client.get('/player/me', headers=h).get_json()['data']['hidden_tabs'] == ['mining', 'gamelog']
+    assert client.put('/player/me/tabs', json={'hidden_tabs': 'mining'}, headers=h).status_code == 400
+    assert client.put('/player/me/tabs', json={'hidden_tabs': ['<script>']}, headers=h).status_code == 400
+    assert client.put('/player/me/tabs', json={'hidden_tabs': []}, headers=h).get_json()['data']['hidden_tabs'] == []
+
+
+def test_tab_order(client, setup, auth_headers):
+    assert client.get('/player/settings/tab-order', headers=auth_headers).get_json()['data']['tab_order'] == []
+    res = client.put('/player/settings/tab-order', json={'tab_order': ['fleet', 'warehouse', 'fleet']}, headers=auth_headers)
+    assert res.status_code == 200 and res.get_json()['data']['tab_order'] == ['fleet', 'warehouse']
+    assert client.get('/player/me', headers=setup).get_json()['data']['tab_order'] == ['fleet', 'warehouse']
+    assert client.put('/player/settings/tab-order', json={'tab_order': ['Bad Key']}, headers=auth_headers).status_code == 400
+    assert client.put('/player/settings/tab-order', json={'tab_order': []}, headers=setup).status_code in (401, 403)

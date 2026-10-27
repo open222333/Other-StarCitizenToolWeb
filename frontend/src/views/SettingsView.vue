@@ -2,6 +2,9 @@
   <div>
     <h4 class="fw-bold mb-4"><i class="bi bi-gear me-2"></i>系統設定</h4>
 
+    <!-- 玩家頁分頁順序（全站設定，存在伺服器） -->
+    <PlayerTabOrderCard />
+
     <!-- 外觀模式 -->
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body p-4">
@@ -147,6 +150,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useThemeStore } from '@/stores/theme'
+import PlayerTabOrderCard from '@/components/PlayerTabOrderCard.vue'
 
 const theme = useThemeStore()
 
