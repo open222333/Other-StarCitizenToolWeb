@@ -175,6 +175,7 @@ async function reload(newOffset = 0) {
     faction_uuid: f.factions || [],
     legality: f.legality || [],
     has_blueprints: f.hasBlueprints ? 1 : '',
+    has_reward: f.hasReward ? 1 : '',
     ...sort.params.value,
     limit, offset: newOffset,
   })}`)

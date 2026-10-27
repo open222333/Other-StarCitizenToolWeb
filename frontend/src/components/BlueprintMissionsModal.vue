@@ -139,7 +139,7 @@ function systemLabel(s) { return translate('location', s) || s }
 function infoLine(m) {
   const parts = []
   const reward = rewardLabel(m)
-  if (reward !== '—') parts.push(`報酬 ${reward}`)
+  parts.push(`報酬 ${reward}`)
   if (reputationLabel(m)) parts.push(`聲望 ${reputationLabel(m)}`)
   if (m.cooldown_label) parts.push(`冷卻 ${m.cooldown_label}`)
   return parts.join(' · ')

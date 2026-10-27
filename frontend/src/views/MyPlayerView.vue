@@ -950,6 +950,10 @@
                 <input id="ms-filter-bp-m" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
                 <label class="form-check-label" for="ms-filter-bp-m">只看有藍圖</label>
               </div>
+              <div class="form-check mt-2">
+                <input id="ms-filter-reward-m" v-model="msFilter.hasReward" class="form-check-input" type="checkbox">
+                <label class="form-check-label" for="ms-filter-reward-m">只看固定報酬</label>
+              </div>
             </template>
           </SfFilterSheet>
         </div>
@@ -957,6 +961,10 @@
           <div v-if="!isPhone" class="form-check form-check-inline mb-0">
             <input id="ms-filter-bp" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="ms-filter-bp">只看有藍圖</label>
+          </div>
+          <div v-if="!isPhone" class="form-check form-check-inline mb-0">
+            <input id="ms-filter-reward" v-model="msFilter.hasReward" class="form-check-input" type="checkbox">
+            <label class="form-check-label" for="ms-filter-reward">只看固定報酬</label>
           </div>
           <button v-if="msFilterActive && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearMsFilter">清除篩選</button>
         </div>
@@ -2403,7 +2411,7 @@ const missionBrowserRef = ref(null)
 // 任務 › 勢力聲望（?tab=missions&sub=reputation 直接展開）
 const factionRepOpen = ref(activeTab.value === 'missions' && route.query.sub === 'reputation')
 const MS_LEGALITY_OPTIONS = [{ value: 'legal', label: '合法' }, { value: 'illegal', label: '違法' }]
-const msFilter = reactive({ q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: true })
+const msFilter = reactive({ q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: true, hasReward: false })
 const msFacets = ref({ reward_scopes: [], star_systems: [], factions: [] })
 const msFactionOptions = computed(() => msFacets.value.factions.map(f => ({
   value: f.uuid, label: f.name_zh ? `${f.name_zh}（${f.name}）` : f.name,
@@ -2413,10 +2421,10 @@ const zhOption = (domain, en) => { const zh = translate(domain, en); return { va
 const msScopeOptions = computed(() => msFacets.value.reward_scopes.map(s => zhOption('mission_type', s)))
 const msSystemOptions = computed(() => msFacets.value.star_systems.map(s => zhOption('location', s)))
 const msSheetCount = computed(() => msFilter.scopes.length + msFilter.systems.length + msFilter.factions.length
-  + msFilter.legality.length + (msFilter.hasBlueprints ? 1 : 0))
+  + msFilter.legality.length + (msFilter.hasBlueprints ? 1 : 0) + (msFilter.hasReward ? 1 : 0))
 const msFilterActive = computed(() => !!msFilter.q.trim() || msSheetCount.value > 0)
 function clearMsFilter() {
-  Object.assign(msFilter, { q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: false })
+  Object.assign(msFilter, { q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: false, hasReward: false })
 }
 let msFacetsLoaded = false
 watch(activeTab, async (tab) => {

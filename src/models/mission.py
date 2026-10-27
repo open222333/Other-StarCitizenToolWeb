@@ -45,7 +45,7 @@ class Mission:
         'mission_giver': 1, 'mission_giver_zh': 1,
         'faction_uuid': 1, 'faction_name': 1, 'faction_name_zh': 1,
         'reward_scope': 1, 'illegal': 1, 'shareable': 1, 'once_only': 1,
-        'reward_min': 1, 'reward_max': 1, 'reward_currency': 1,
+        'reward_min': 1, 'reward_max': 1, 'reward_currency': 1, 'time_to_complete_minutes': 1,
         'reputation_gained': 1, 'cooldown_label': 1, 'star_systems': 1,
         'blueprint_pools': 1,
     }
@@ -56,7 +56,7 @@ class Mission:
 
     @classmethod
     def _filter(cls, *, query: str = '', reward_scopes=None, star_systems=None,
-                faction_uuids=None, legality=None, has_blueprints: bool = False,
+                faction_uuids=None, legality=None, has_blueprints: bool = False, has_reward: bool = False,
                 missing_zh: bool = False, mission_id: str = '', blueprint_uuid: str = '',
                 visible_only: bool = False, visibility=None) -> dict:
         filt: dict = {'is_current': True}
@@ -78,6 +78,10 @@ class Mission:
             filt['illegal'] = wants == {'illegal'}
         if has_blueprints:
             filt['has_blueprints'] = True
+        if has_reward:
+            # 固定報酬（上游 FixedReward）：金額在 reward_min，少數有範圍的在 reward_max；
+            # 其他任務的報酬是遊戲接取時依難度動態計算，資料裡沒有數字
+            filt['$and'] = [*filt.get('$and', []), {'$or': [{'reward_min': {'$gt': 0}}, {'reward_max': {'$gt': 0}}]}]
         if missing_zh:
             filt['title_zh'] = {'$in': [None, '']}
         if (blueprint_uuid or '').strip():
@@ -113,7 +117,8 @@ class Mission:
     SORT_FIELDS = {
         'title': 'title_lower', 'title_zh': 'title_zh', 'reward_scope': 'reward_scope',
         'giver': ['faction_name', 'mission_giver'], 'star_systems': 'star_systems', 'illegal': 'illegal',
-        'reward': 'reward_max', 'player_visible': 'player_visible',
+        # 固定報酬的金額在 reward_min（reward_max 多半是 0）
+        'reward': ['reward_min', 'reward_max'], 'player_visible': 'player_visible',
         'reputation': 'reputation_gained.amount', 'cooldown': 'cooldown_seconds',
     }
 
@@ -372,6 +377,7 @@ class Faction:
         'title', 'title_zh', 'description', 'description_zh', 'reward_scope', 'illegal', 'star_systems',
         'faction_uuid', 'faction_name', 'faction_name_zh', 'mission_giver', 'mission_giver_zh',
         'min_standing_name', 'max_standing_name', 'blueprint_pools', 'reward_min', 'reward_max', 'reward_currency',
+        'time_to_complete_minutes',
         'reputation_gained', 'cooldown_seconds', 'shareable', 'once_only', 'has_combat',
         'enemy_count_min', 'enemy_count_max', 'has_chain', 'has_prerequisites', 'max_players_per_instance')}
 

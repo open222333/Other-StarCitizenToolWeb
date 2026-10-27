@@ -478,3 +478,15 @@ def test_title_matching_tolerates_tokens_quotes_and_filled_values(seed_translati
     assert Z.mission_text_zh('Delivery for Lorville Ready')['title_zh'] == '前往 Lorville 的貨已備妥'
     # 整句都是代入欄位的樣板不能對到任何標題
     assert Z.mission_text_zh('Something Unrelated')['title_zh'] is None
+
+
+def test_has_reward_filter_and_sort():
+    _insert_mission('r1', 'Fixed small', reward_min=1000, reward_max=0)
+    _insert_mission('r2', 'Dynamic', reward_min=None, reward_max=None)
+    _insert_mission('r3', 'Fixed big', reward_min=5000, reward_max=0)
+    rows, total = Mission.list_all(has_reward=True, query='Fixed')
+    assert {r['_id'] for r in rows} == {'r1', 'r3'}
+    rows, _ = Mission.list_all(has_reward=True, sort_by='reward', sort_dir='desc')
+    assert [r['_id'] for r in rows][:2] == ['r3', 'r1']
+    rows, _ = Mission.list_all(has_reward=True, query='Dynamic')
+    assert rows == []

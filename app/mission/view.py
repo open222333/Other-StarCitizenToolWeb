@@ -49,6 +49,7 @@ def list_missions():
       - {in: query, name: faction_uuid,  type: string,  description: "勢力 uuid，可重複帶多個"}
       - {in: query, name: legality,      type: string,  description: "legal／illegal，可重複帶"}
       - {in: query, name: has_blueprints, type: integer, description: "1 = 只看會給藍圖的"}
+      - {in: query, name: has_reward,    type: integer, description: "1 = 只看有固定報酬金額的"}
       - {in: query, name: missing_zh,    type: integer, description: "1 = 只看沒有中文標題的"}
       - {in: query, name: id,            type: string,  description: "指定單一任務 uuid（從別頁跳過來用）"}
       - {in: query, name: blueprint_uuid, type: string, description: "只看會給這張藍圖的任務"}
@@ -70,6 +71,7 @@ def list_missions():
         faction_uuids=_multi('faction_uuid'),
         legality=_multi('legality'),
         has_blueprints=request.args.get('has_blueprints') == '1',
+        has_reward=request.args.get('has_reward') == '1',
         missing_zh=request.args.get('missing_zh') == '1',
         mission_id=(request.args.get('id') or '').strip(),
         blueprint_uuid=(request.args.get('blueprint_uuid') or '').strip(),

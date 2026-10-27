@@ -21,10 +21,22 @@ export function fmtChance(v) {
 }
 
 /** 報酬（含幣別）：上游 reward_max 常是 0（代表固定金額），大於 min 才顯示區間 */
+/** 沒有固定報酬時的顯示：多數是遊戲接取時依難度動態計算的報酬，資料裡沒有金額 */
+export const REWARD_DYNAMIC = '浮動'
+
+/** 有沒有固定報酬金額 */
+export function hasFixedReward(m) {
+  return !!(m?.reward_min || m?.reward_max)
+}
+
+/** 浮動報酬附上遊戲資料的預估耗時（遊戲依耗時與難度計算金額），例如「浮動 · 約 6 分鐘」 */
 export function rewardLabel(m) {
   const min = m?.reward_min
   const max = m?.reward_max
-  if (!min && !max) return '—'
+  if (!min && !max) {
+    const minutes = Number(m?.time_to_complete_minutes)
+    return minutes > 0 ? `${REWARD_DYNAMIC} · 約 ${Math.max(1, Math.round(minutes))} 分鐘` : REWARD_DYNAMIC
+  }
   const cur = ` ${m?.reward_currency || 'UEC'}`
   if (max && min && max > min) return `${fmtInt(min)}–${fmtInt(max)}${cur}`
   return `${fmtInt(min || max)}${cur}`
