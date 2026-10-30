@@ -193,6 +193,16 @@ WIKI_QUERY_EXTRA: dict = {
     'missions': {'include': 'blueprints'},
 }
 
+#: 同一個 collection 放好幾個上游資源時，各資源「自己那一份」的範圍（算筆數、下架都只看這一份）
+WIKI_SCOPES: dict = {
+    'items': {'_source': {'$ne': 'vehicle-items'}},
+    'vehicle-items': {'_source': 'vehicle-items'},
+}
+#: 跟著某個 Wiki 同步項目一起跑的其他 Wiki 資源
+WIKI_EXTRA: dict = {
+    'items': ['vehicle-items'],
+}
+
 # 列表回應欄位太少、要逐筆打明細端點補齊的資源（筆數要小）。
 # factions 列表只有名稱／類型／合法與否，說明、總部、聲望階級都只在明細裡；
 # 目前 64 筆，多 64 個請求。明細抓失敗就用列表那筆，不拖垮整個資源。
@@ -494,6 +504,8 @@ def map_item(doc: dict) -> Optional[dict]:
         'classification': doc.get('classification'),
         'size': doc.get('size'),
         'grade': doc.get('grade'),
+        # 組件類別：Civilian／Industrial／Military／Stealth／Competition（翻譯見 sc_zh.item_class_zh）
+        'item_class': doc.get('class') or None,
         'mass': doc.get('mass'),
         # 倉儲容量計算用，單位是 µSCU
         'volume_uscu': dim.get('volume_converted'),
@@ -509,7 +521,27 @@ def map_item(doc: dict) -> Optional[dict]:
         'game_version': doc.get('version'),
         'source_updated_at': doc.get('updated_at'),
         'web_url': doc.get('web_url'),
+        # 量子引擎規格（/vehicle-items 的 quantum_drive），航線規劃換引擎用（src/models/nav.py）
+        **_quantum_drive_fields(doc.get('quantum_drive')),
         'raw': doc,
+    }
+
+
+def _quantum_drive_fields(qd) -> dict:
+    """Wiki API 量子引擎規格 → qd_speed（公尺／秒）、qd_spool（秒）、qd_cooldown（秒）、
+    qd_fuel_per_gm（每 Gm 用掉的量子燃料，單位跟艦船油箱 FuelCapacity 一樣＝quantum_fuel_requirement × 1000）。
+    不是量子引擎回空 dict。"""
+    if not isinstance(qd, dict):
+        return {}
+    jump = qd.get('standard_jump') if isinstance(qd.get('standard_jump'), dict) else {}
+    requirement = qd.get('quantum_fuel_requirement')
+    if not jump.get('drive_speed') or not requirement:
+        return {}
+    return {
+        'qd_speed': jump.get('drive_speed'),
+        'qd_spool': jump.get('spool_up_time'),
+        'qd_cooldown': jump.get('cooldown_time'),
+        'qd_fuel_per_gm': requirement * 1000,
     }
 
 
@@ -1038,6 +1070,9 @@ def map_faction(doc: dict) -> Optional[dict]:
 # resource -> (collection 名稱, mapper)。要加新資源就在這裡加一組。
 WIKI_RESOURCES: dict = {
     'items': ('item_master', map_item),
+    # 飛船組件（量子引擎、護盾、發電機、冷卻器、艦砲…）：跟著「物品」同步項目一起跑，
+    # 寫進同一個 item_master（_source 區分，下架時各管各的，見 WIKI_SCOPES）
+    'vehicle-items': ('item_master', map_item),
     'vehicles': ('vehicle_master', map_vehicle),
     'commodities': ('commodity_master', map_commodity),
     'blueprints': ('blueprint_master', map_blueprint),
@@ -1177,6 +1212,7 @@ def map_ship_nav(doc: dict) -> Optional[dict]:
     grids = [g for g in doc.get('CargoGrids') or [] if isinstance(g, dict)]
     class_name = doc.get('ClassName') or ''
     name = _real_text(doc.get('Name'))
+    qd = _default_quantum_drive(doc.get('Loadout'))
     return {
         '_id': uuid,
         'class_name': class_name,
@@ -1193,7 +1229,25 @@ def map_ship_nav(doc: dict) -> Optional[dict]:
         'external_cargo': '_hull_' in class_name.lower(),
         'mass': doc.get('Mass'),
         'mass_total': doc.get('MassTotal') or doc.get('Mass'),
+        # 預設量子引擎與引擎槽尺寸（航線規劃可以換同尺寸的量子引擎，見 src/models/nav.py）
+        'qd_uuid': qd.get('UUID'),
+        'qd_class_name': qd.get('ClassName'),
+        'qd_size': qd.get('MaxSize') or qd.get('MinSize'),
     }
+
+
+def _default_quantum_drive(loadout) -> dict:
+    """船的預設配備裡第一個量子引擎（Type 是 QuantumDrive.*）那一格，找不到回 {}。"""
+    stack = [loadout]
+    while stack:
+        node = stack.pop(0)
+        if isinstance(node, dict):
+            if str(node.get('Type') or '').startswith('QuantumDrive') and node.get('ClassName'):
+                return node
+            stack.extend(v for v in node.values() if isinstance(v, (list, dict)))
+        elif isinstance(node, list):
+            stack.extend(node)
+    return {}
 
 
 #: 星圖地點的絕對座標（scunpacked-data，{entities: [...], connections: [...]}），
@@ -1298,8 +1352,11 @@ def job_upstreams() -> dict:
         'translations': [g(SCUNPACKED_LABELS_PATH, '英文原文'),
                          {'provider': 'github', 'url': SCDATA_TRANSLATION_INI_URL, 'note': '繁中翻譯'}],
     }
+    extras = {r for rs in WIKI_EXTRA.values() for r in rs}
     for key in WIKI_RESOURCES:
-        rows = [w(key)]
+        if key in extras:
+            continue
+        rows = [w(key)] + [w(r, '飛船組件') for r in WIKI_EXTRA.get(key, [])]
         if key in WIKI_DETAIL_RESOURCES:
             rows.append({'provider': 'wiki', 'url': f'{wiki}/{key}/<uuid>', 'note': '每筆明細一次'})
         rows += [g(SCUNPACKED_RESOURCES[r][1]) for r in SCUNPACKED_EXTRA.get(key, [])]

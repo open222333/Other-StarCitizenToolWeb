@@ -60,6 +60,8 @@ def list_items():
       - {in: query, name: manufacturer_code, type: array, items: {type: string}, description: "製造商代碼，可重複帶多個"}
       - {in: query, name: size,              type: array, items: {type: integer}, description: "尺寸，可重複帶多個"}
       - {in: query, name: grade,             type: array, items: {type: integer}, description: "等級，可重複帶多個"}
+      - {in: query, name: item_class,        type: array, items: {type: string}, description: "組件類別（Civilian／Industrial／Military／Stealth／Competition），可重複帶多個"}
+      - {in: query, name: source,            type: string,  description: "vehicle＝只看飛船組件、personal＝只看其他物品"}
       - {in: query, name: acquire,           type: array, items: {type: string}, description: "buy（UEX 有地方買得到）／sell（有地方收），可重複帶多個（取聯集）"}
       - {in: query, name: dismantlable,      type: integer, description: "1 = 只看可拆解的物品（有藍圖且藍圖有拆解回收），每筆附 dismantle_hits（全部拆解回收）"}
       - {in: query, name: dismantle,         type: array, items: {type: string}, description: "拆解後會回收這些材料的物品（取聯集；見 /blueprint/master/dismantle-materials），每筆附 dismantle_hits"}
@@ -99,6 +101,8 @@ def list_items():
         manufacturer_codes=request.args.getlist('manufacturer_code'),
         sizes=request.args.getlist('size'),
         grades=request.args.getlist('grade'),
+        item_classes=request.args.getlist('item_class'),
+        source=request.args.get('source', ''),
         ids=ids,
         visible_only=hide, visibility=None if hide else visibility_arg(request.args),
         sort_by='name' if by_dismantle else sort_by,

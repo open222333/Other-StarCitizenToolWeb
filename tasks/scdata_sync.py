@@ -62,7 +62,7 @@ from src import SCDATA_REQUEST_DELAY
 from src.scdata import (BULK_SIZE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_POSITIONS_PATH,
                         SCUNPACKED_RESOURCES,
                         UEX_JOB_RESOURCES, UEX_PRUNE_MIN_RATIO, UEX_PRUNE_RESOURCES, UEX_RESOURCES,
-                        WIKI_DETAIL_RESOURCES, WIKI_RESOURCES, ScDataError, build_client,
+                        WIKI_DETAIL_RESOURCES, WIKI_EXTRA, WIKI_RESOURCES, WIKI_SCOPES, ScDataError, build_client,
                         fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
                         normalize_labels, request_counts, requests_used, uex_doc_id, uex_rows,
                         wiki_detail, wiki_rows)
@@ -206,7 +206,9 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
     logger.info('scdata_sync: 同步 %s -> %s', resource, collection_name)
 
     with_detail = resource in WIKI_DETAIL_RESOURCES
-    expected = db[collection_name].count_documents({'is_current': {'$ne': False}})
+    # 同一個 collection 放好幾個上游資源（item_master：/items、/vehicle-items）時只看自己那一份
+    scope = WIKI_SCOPES.get(resource, {})
+    expected = db[collection_name].count_documents({**scope, 'is_current': {'$ne': False}})
     _report(force=True, phase='讀取 Star Citizen Wiki API', seen=0, total=expected or None)
 
     for row in wiki_rows(client, resource):
@@ -226,6 +228,8 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
 
         doc['_sync'] = {'run_id': run_id, 'at': stamp}
         doc['is_current'] = True
+        if resource in WIKI_SCOPES:
+            doc['_source'] = resource
 
         main_ops.append(UpdateOne(
             {'_id': doc['_id']},
@@ -272,7 +276,7 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
     #    所以改成跟「上次同步後還在架上的筆數」比：少於 80% 就當成抓取不完整
     #    往上拋，讓這輪記成失敗並走 backoff 重試，主檔維持原狀。
     #    首次同步（before == 0）沒有基準，只要有資料就放行。
-    before_current = db[collection_name].count_documents({'is_current': {'$ne': False}})
+    before_current = db[collection_name].count_documents({**scope, 'is_current': {'$ne': False}})
     floor = int(before_current * 0.8)
     if seen == 0 or (before_current and seen < floor):
         raise ScDataError(
@@ -281,7 +285,7 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
 
     # 這輪沒碰到的 → 目前 patch 已不存在，但保留紀錄
     retired = db[collection_name].update_many(
-        {'_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
+        {**scope, '_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
         {'$set': {'is_current': False, 'retired_at': stamp}},
     ).modified_count
 
@@ -518,6 +522,13 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
         except Exception as err:
             logger.exception('scdata_sync: %s 失敗', key)
             errors.append(f'{key}: {err}')
+        # 例如「物品」一起同步飛船組件（/vehicle-items）
+        for extra in WIKI_EXTRA.get(key, []):
+            try:
+                stats.append(_sync_wiki_resource(client('wiki'), extra, run_id, stamp))
+            except Exception as err:
+                logger.exception('scdata_sync: %s 失敗', extra)
+                errors.append(f'{extra}: {err}')
         # 例如藍圖的品質試算資料（部位、品質加成）只有 scunpacked 有，另外抓一份（見 map_blueprint_quality）
         for extra in SCUNPACKED_EXTRA.get(key, []):
             try:

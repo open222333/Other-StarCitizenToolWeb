@@ -158,6 +158,10 @@ class _MasterBase:
         return cls._col().count_documents({'is_current': True})
 
 
+#: 物品資料「來源」篩選 → _source 條件（飛船組件是 Wiki /vehicle-items，見 src/scdata.py 的 WIKI_SCOPES）
+SOURCE_FILTERS = {'vehicle': 'vehicle-items', 'personal': {'$ne': 'vehicle-items'}}
+
+
 class ItemMaster(_MasterBase):
     COLLECTION = 'item_master'
     PROJECTION = {
@@ -167,7 +171,7 @@ class ItemMaster(_MasterBase):
     }
     #: 「物品資料」列表（後台、玩家頁）多帶的欄位
     LIST_PROJECTION = {
-        **PROJECTION, 'manufacturer_name': 1, 'classification': 1, 'mass': 1,
+        **PROJECTION, 'manufacturer_name': 1, 'classification': 1, 'mass': 1, 'item_class': 1, '_source': 1,
         'is_craftable': 1, 'is_lootable': 1, **VISIBILITY_PROJECTION,
     }
     #: 依拆解回收量排序時一次最多撈幾筆在記憶體裡排（可拆解的物品約一千多種）
@@ -177,10 +181,11 @@ class ItemMaster(_MasterBase):
 
     @classmethod
     def list_all(cls, *, query: str = '', types=None, sub_types=None, manufacturer_codes=None,
-                 sizes=None, grades=None, ids=None, visible_only: bool = False, visibility=None,
-                 sort_by: str = 'name', sort_dir: int = 1, limit: int = 50, offset: int = 0) -> tuple:
+                 sizes=None, grades=None, item_classes=None, source: str = '', ids=None,
+                 visible_only: bool = False, visibility=None, sort_by: str = 'name', sort_dir: int = 1, limit: int = 50, offset: int = 0) -> tuple:
         """「物品資料」列表：名稱（中英文、class name 任一段）＋多選篩選，回傳 (該頁資料, 總筆數)。
-        ids 傳 None 代表不限；傳清單（例如「買得到」的物品）就只看這些。"""
+        ids 傳 None 代表不限；傳清單（例如「買得到」的物品）就只看這些。
+        source：vehicle＝只看飛船組件（Wiki /vehicle-items）、personal＝只看其他物品，其他值不限。"""
         filt: dict = {'is_current': True}
         q = (query or '').strip()
         if q:
@@ -191,7 +196,7 @@ class ItemMaster(_MasterBase):
                 {'class_name': {'$regex': escaped, '$options': 'i'}},
             ]
         for field, values in (('type', types), ('sub_type', sub_types),
-                              ('manufacturer_code', manufacturer_codes)):
+                              ('manufacturer_code', manufacturer_codes), ('item_class', item_classes)):
             values = _clean_list(values)
             if values:
                 filt[field] = {'$in': values}
@@ -204,6 +209,8 @@ class ItemMaster(_MasterBase):
                     nums.append(v)
             if nums:
                 filt[field] = {'$in': nums}
+        if source in SOURCE_FILTERS:
+            filt['_source'] = SOURCE_FILTERS[source]
         if ids is not None:
             filt['_id'] = {'$in': list(ids)}
         add_visibility_filter(filt, visible_only=visible_only, visibility=visibility)
@@ -235,6 +242,7 @@ class ItemMaster(_MasterBase):
                                      for code, name in manufacturers.items()), key=lambda o: o['label'].lower()),
             'sizes': nums('size'),
             'grades': nums('grade'),
+            'item_classes': sorted(t for t in col.distinct('item_class', filt) if t),
         }
 
     @classmethod

@@ -19,6 +19,13 @@
       <AdminSearchField label="名稱（英文／中文）" for-id="item-q" col="col-12 col-md-6 col-xl-3">
         <input id="item-q" v-model="nameQuery" type="search" class="form-control form-control-sm" placeholder="輸入物品名稱">
       </AdminSearchField>
+      <AdminSearchField label="來源" for-id="item-source" col="col-6 col-md-3 col-xl">
+        <select id="item-source" v-model="source" class="form-select form-select-sm" @change="reload(0)">
+          <option value="">全部</option>
+          <option value="personal">個人物品</option>
+          <option value="vehicle">飛船組件</option>
+        </select>
+      </AdminSearchField>
       <AdminSearchField label="類型" for-id="item-type" col="col-6 col-md-3 col-xl">
         <MultiSelectFilter id="item-type" :model-value="selectedTypes" label="類型" :options="typeOptions" searchable block placeholder="全部"
           @update:model-value="v => { selectedTypes = v; reload(0) }" />
@@ -34,6 +41,10 @@
       <AdminSearchField label="等級" for-id="item-grade" col="col-6 col-md-3 col-xl">
         <MultiSelectFilter id="item-grade" :model-value="selectedGrades" label="等級" :options="gradeOptions" block placeholder="全部"
           @update:model-value="v => { selectedGrades = v; reload(0) }" />
+      </AdminSearchField>
+      <AdminSearchField label="類別" for-id="item-class" col="col-6 col-md-3 col-xl">
+        <MultiSelectFilter id="item-class" :model-value="selectedClasses" label="類別" :options="classOptions" block placeholder="全部"
+          @update:model-value="v => { selectedClasses = v; reload(0) }" />
       </AdminSearchField>
       <AdminSearchField label="製造商" for-id="item-manufacturer" col="col-6 col-md-3 col-xl">
         <MultiSelectFilter id="item-manufacturer" :model-value="selectedManufacturers" label="製造商" :options="facets.manufacturers" searchable block placeholder="全部"
@@ -100,7 +111,9 @@
                     </div>
                   </td>
                   <td class="text-end small">{{ it.size ?? '—' }}</td>
-                  <td class="text-end small">{{ it.grade ?? '—' }}</td>
+                  <td class="text-end small">{{ it.grade ?? '—' }}
+                    <div v-if="it.item_class" class="text-muted text-nowrap">{{ itemClassZh(it.item_class) || it.item_class }}</div>
+                  </td>
                   <td class="small">{{ it.manufacturer_name || it.manufacturer_code || '—' }}</td>
                   <td class="text-end small text-nowrap">{{ it.volume_scu ? fmtNum(it.volume_scu) : '—' }}</td>
                   <td class="text-end small text-nowrap">
@@ -143,14 +156,15 @@ import AdminSearchField from '@/components/AdminSearchField.vue'
 import ItemDetail from '@/components/ItemDetail.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
-import { itemSubTypeOption, itemSubTypeZh, itemTypeOption, itemTypeZh, loadItemTypeZh } from '@/utils/itemType'
+import { itemClassOption, itemClassZh, itemSubTypeOption, itemSubTypeZh, itemTypeOption, itemTypeZh, loadItemClassZh,
+  loadItemTypeZh } from '@/utils/itemType'
 import { fmtAuec, ITEM_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 
 const COLUMNS = [
   { label: '名稱', cls: 'ps-3', sort: 'name' },
   { label: '類型', sort: 'type' },
   { label: '尺寸', cls: 'text-end', sort: 'size' },
-  { label: '等級', cls: 'text-end', sort: 'grade' },
+  { label: '等級／類別', cls: 'text-end text-nowrap', sort: 'grade' },
   { label: '製造商' },
   { label: '體積 (SCU)', cls: 'text-end', sort: 'volume_uscu' },
   { label: '最低購買', cls: 'text-end text-nowrap' },
@@ -166,11 +180,12 @@ const loading = ref(false)
 const loadFailed = ref(false)
 const openId = ref('')
 
-const facets = ref({ types: [], sub_types: [], manufacturers: [], sizes: [], grades: [] })
+const facets = ref({ types: [], sub_types: [], manufacturers: [], sizes: [], grades: [], item_classes: [] })
 const byLabel = (a, b) => a.label.localeCompare(b.label, 'zh-Hant')
 const typeOptions = computed(() => facets.value.types.map(itemTypeOption).sort(byLabel))
 const subTypeOptions = computed(() => facets.value.sub_types.filter(s => s !== 'UNDEFINED').map(itemSubTypeOption).sort(byLabel))
 const sizeOptions = computed(() => facets.value.sizes.map(n => ({ value: String(n), label: `Size ${n}` })))
+const classOptions = computed(() => facets.value.item_classes.map(itemClassOption).sort(byLabel))
 const gradeOptions = computed(() => facets.value.grades.map(n => ({ value: String(n), label: `等級 ${n}` })))
 
 const nameQuery = ref('')
@@ -180,6 +195,8 @@ const selectedManufacturers = ref([])
 const selectedSizes = ref([])
 const selectedGrades = ref([])
 const selectedAcquire = ref([])
+const selectedClasses = ref([])
+const source = ref('')
 const playerVisible = ref('')
 // 後端排序：點同一欄升冪↔降冪（不取消），換欄從升冪開始，改了就回第一頁重查
 const sort = useTableSort(null, { key: 'name', dir: 'asc', cycle: false, onChange: () => reload(0) })
@@ -188,7 +205,8 @@ const sortDir = sort.sortDir
 
 const hasActiveFilters = computed(() => !!(nameQuery.value.trim() || selectedTypes.value.length
   || selectedSubTypes.value.length || selectedManufacturers.value.length || selectedSizes.value.length
-  || selectedGrades.value.length || selectedAcquire.value.length || playerVisible.value))
+  || selectedGrades.value.length || selectedAcquire.value.length || selectedClasses.value.length
+  || source.value || playerVisible.value))
 
 function fmtNum(v) {
   return Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 })
@@ -202,6 +220,8 @@ function resetFilters() {
   selectedSizes.value = []
   selectedGrades.value = []
   selectedAcquire.value = []
+  selectedClasses.value = []
+  source.value = ''
   playerVisible.value = ''
   reload(0)
 }
@@ -220,6 +240,8 @@ async function reload(newOffset = 0) {
     size: selectedSizes.value,
     grade: selectedGrades.value,
     acquire: selectedAcquire.value,
+    item_class: selectedClasses.value,
+    source: source.value,
     player_visible: playerVisible.value,
     sort_by: sortBy.value,
     sort_dir: sortDir.value,
@@ -238,6 +260,7 @@ async function reload(newOffset = 0) {
   items.value = body.data || []
   total.value = body.total || 0
   loadItemTypeZh(items.value.map(r => r.type), items.value.map(r => r.sub_type))
+  loadItemClassZh(items.value.map(r => r.item_class))
   openId.value = ''
 }
 
@@ -255,6 +278,7 @@ onMounted(async () => {
   if (body?.success) {
     facets.value = { ...facets.value, ...body.data }
     loadItemTypeZh(facets.value.types, facets.value.sub_types)
+    loadItemClassZh(facets.value.item_classes)
   }
 })
 </script>

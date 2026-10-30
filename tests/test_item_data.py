@@ -15,7 +15,7 @@ ITEMS = [
      'description_en': 'A long rifle.'},
     {'_id': 'b', 'name': 'Bracer Cooler', 'name_lower': 'bracer cooler', 'class_name': 'COOL_Bracer',
      'type': 'Cooler', 'size': 1, 'grade': 3, 'manufacturer_code': 'JUST', 'manufacturer_name': 'Juno Starwerk',
-     'is_current': True},
+     'item_class': 'Military', '_source': 'vehicle-items', 'is_current': True},
     {'_id': 'c', 'name': 'PLACEHOLDER Gun', 'name_lower': 'placeholder gun', 'class_name': 'test_gun',
      'type': 'WeaponPersonal', 'size': 1, 'is_current': True},
     {'_id': 'old', 'name': 'Old Cooler', 'name_lower': 'old cooler', 'type': 'Cooler', 'is_current': False},
@@ -66,6 +66,9 @@ def test_list_filters(client, auth_headers, items):
     assert _ids(client, auth_headers, 'acquire=sell') == ['a', 'b']
     assert _ids(client, auth_headers, 'sort_by=size&sort_dir=desc') == ['a', 'b', 'c']
     assert _ids(client, auth_headers, 'player_visible=0') == ['c'], '佔位名稱自動不顯示'
+    assert _ids(client, auth_headers, 'source=vehicle') == ['b'], '飛船組件'
+    assert _ids(client, auth_headers, 'source=personal') == ['a', 'c']
+    assert _ids(client, auth_headers, 'item_class=Military') == ['b']
 
 
 def test_list_with_prices_and_facets(client, auth_headers, items):
@@ -78,6 +81,7 @@ def test_list_with_prices_and_facets(client, auth_headers, items):
     assert facets['manufacturers'] == [{'value': 'JUST', 'label': 'Juno Starwerk（JUST）'},
                                        {'value': 'KLWE', 'label': 'Klaus & Werner（KLWE）'}]
     assert facets['sizes'] == [1, 3] and facets['grades'] == [1, 3]
+    assert facets['item_classes'] == ['Military']
 
 
 def test_player_sees_visible_only(client, player_headers, items):
@@ -115,10 +119,16 @@ def test_item_type_translations(client, seed_translations):
     seed_translations({
         'item_TypeWeaponPersonal': ('Personal Weapon', '個人武器'),
         'item_SubTypeSniper': ('Sniper', '狙擊'),
+        'item_TypeFlightController,P': ('Flight Controller', '引擎'),
+        'item_SubTypeBombRack,P': ('Bomb Rack', '炸彈架'),
     })
     from src.sc_zh import item_sub_type_zh, item_type_zh
     assert item_type_zh('WeaponPersonal') == '個人武器'
     assert item_type_zh('Cooler') == '散熱器', '退回藍圖類型的人工條目'
+    assert item_type_zh('FlightController') == '引擎', '遊戲 key 尾巴多了 ,P'
+    assert item_type_zh('SeatAccess') == '座椅出入口', '翻譯包沒有的內部類型用人工條目'
+    assert item_sub_type_zh('BombRack') == '炸彈架'
+    assert item_sub_type_zh('MidRangeRadar') == '中程雷達'
     assert item_sub_type_zh('Sniper') == '狙擊' and item_sub_type_zh('UNDEFINED') is None
     body = client.get('/item/translations?domain=item_type&text=WeaponPersonal&text=Nope').get_json()
     assert body['data'] == {'WeaponPersonal': '個人武器', 'Nope': ''} or body['data'].get('WeaponPersonal') == '個人武器'

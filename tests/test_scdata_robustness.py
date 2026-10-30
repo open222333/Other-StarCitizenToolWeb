@@ -176,3 +176,32 @@ def test_zero_rows_still_blocked(monkeypatch):
     with pytest.raises(Exception):
         scdata_sync._sync_wiki_resource(
             None, 'items', 'run-1', __import__('datetime').datetime.utcnow())
+
+
+def test_items_and_vehicle_items_share_item_master_without_retiring_each_other(monkeypatch):
+    """物品（/items）跟飛船組件（/vehicle-items）都寫 item_master：各自只下架、只比筆數自己那一份。"""
+    from datetime import datetime
+    from tasks import scdata_sync
+    from src.mongo import get_db
+
+    data = {
+        'items': [{'uuid': f'fps-{i}', 'name': f'Item {i}'} for i in range(10)],
+        'vehicle-items': [{'uuid': f'ship-{i}', 'name': f'Part {i}', 'type': 'Cooler'} for i in range(30)],
+    }
+    monkeypatch.setattr(scdata_sync, 'wiki_rows', lambda client, resource: iter(data[resource]))
+    scdata_sync._sync_wiki_resource(None, 'items', 'run-1', datetime.utcnow())
+    scdata_sync._sync_wiki_resource(None, 'vehicle-items', 'run-1', datetime.utcnow())
+    db = get_db()
+    assert db['item_master'].count_documents({'is_current': True}) == 40
+
+    # 下一輪：物品照常（10 筆，比全部 40 筆少很多也不能被當成抓取不完整），
+    # 不能把飛船組件下架
+    scdata_sync._sync_wiki_resource(None, 'items', 'run-2', datetime.utcnow())
+    assert db['item_master'].count_documents({'is_current': True}) == 40
+    assert db['item_master'].find_one({'_id': 'ship-0'})['_source'] == 'vehicle-items'
+
+    # 飛船組件少了一筆 → 只下架那一筆
+    data['vehicle-items'] = data['vehicle-items'][:29]
+    scdata_sync._sync_wiki_resource(None, 'vehicle-items', 'run-3', datetime.utcnow())
+    assert db['item_master'].find_one({'_id': 'ship-29'})['is_current'] is False
+    assert db['item_master'].count_documents({'is_current': True}) == 39

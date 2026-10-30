@@ -8,6 +8,13 @@ export function loadItemTypeZh(types = [], subTypes = []) {
   loadTranslations('item_sub_type', subTypes.filter(s => s && s !== 'UNDEFINED'))
 }
 
+export const itemClassZh = code => translate('item_class', code)
+export function itemClassOption(code) {
+  const zh = itemClassZh(code)
+  return { value: code, label: zh && zh !== code ? `${zh}（${code}）` : code }
+}
+export const loadItemClassZh = (classes = []) => loadTranslations('item_class', classes)
+
 export const itemTypeZh = code => translate('item_type', code)
 export const itemSubTypeZh = code => (code === 'UNDEFINED' ? '' : translate('item_sub_type', code))
 
