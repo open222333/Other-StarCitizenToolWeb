@@ -350,8 +350,7 @@ const effective = computed(() => {
   }
 })
 function qdLabel(q) {
-  // 等級 1–7 對應 A–G
-  const grade = q.grade >= 1 && q.grade <= 7 ? `${'ABCDEFG'[q.grade - 1]} 級` : ''
+  const grade = q.grade ? `${q.grade} 級` : ''
   const cls = q.item_class_zh || q.item_class || ''
   const parts = [`S${q.size}`, [cls, grade].filter(Boolean).join(' '), q.manufacturer || '',
     `${fmtSpeed(q.speed)}`, `每 Gm ${fmtNum(q.fuel_per_gm, 2)}`].filter(Boolean)

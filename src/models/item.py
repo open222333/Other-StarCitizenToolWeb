@@ -241,7 +241,8 @@ class ItemMaster(_MasterBase):
             'manufacturers': sorted(({'value': code, 'label': f'{name}（{code}）' if name != code else code}
                                      for code, name in manufacturers.items()), key=lambda o: o['label'].lower()),
             'sizes': nums('size'),
-            'grades': nums('grade'),
+            # 飛船組件的等級是字母（A–D），其他物品是數字
+            'grades': nums('grade') + sorted(v for v in col.distinct('grade', filt) if isinstance(v, str) and v),
             'item_classes': sorted(t for t in col.distinct('item_class', filt) if t),
         }
 

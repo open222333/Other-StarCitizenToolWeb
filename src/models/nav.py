@@ -27,6 +27,7 @@ import threading
 import time
 
 from src.mongo import get_db
+from src.scdata import grade_letter, item_class_of
 from src.sc_zh import item_class_zh, vehicle_name_zh
 
 BODY_TYPES = ('Planet', 'Moon')
@@ -271,14 +272,18 @@ SHIP_FIELDS = {'name': 1, 'class_name': 1, 'size': 1, 'qt_speed': 1, 'qt_spool':
                'qd_uuid': 1, 'qd_size': 1}
 #: 量子引擎來自物品主檔（Wiki API /vehicle-items，見 src/scdata.py 的 _quantum_drive_fields）
 QD_FIELDS = {'name': 1, 'name_zh': 1, 'class_name': 1, 'size': 1, 'grade': 1, 'manufacturer_name': 1, 'item_class': 1,
+             'raw.class': 1, 'raw.description_data': 1, 'raw.grade': 1,
              'qd_speed': 1, 'qd_spool': 1, 'qd_cooldown': 1, 'qd_fuel_per_gm': 1}
 QD_FILTER = {'is_current': True, 'type': 'QuantumDrive', 'qd_speed': {'$gt': 0}, 'qd_fuel_per_gm': {'$gt': 0}}
 
 
 def _qd_row(r: dict) -> dict:
+    # 舊資料（還沒重新同步）沒有 item_class，從 raw 補
+    cls = r.get('item_class') or item_class_of(r.get('raw'))
     return {'id': r['_id'], 'name': r.get('name') or r.get('class_name'), 'name_zh': r.get('name_zh'),
-            'size': r.get('size'), 'grade': r.get('grade'), 'manufacturer': r.get('manufacturer_name'),
-            'item_class': r.get('item_class'), 'item_class_zh': item_class_zh(r.get('item_class') or ''),
+            'size': r.get('size'), 'grade': grade_letter(r.get('grade')) or grade_letter((r.get('raw') or {}).get('grade')),
+            'manufacturer': r.get('manufacturer_name'),
+            'item_class': cls, 'item_class_zh': item_class_zh(cls or ''),
             'speed': r.get('qd_speed'), 'spool': r.get('qd_spool'), 'cooldown': r.get('qd_cooldown'),
             'fuel_per_gm': r.get('qd_fuel_per_gm')}
 

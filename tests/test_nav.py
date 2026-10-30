@@ -253,3 +253,17 @@ def test_ships_dedupe_variants_and_zh_name(world_data, monkeypatch):
     rows = [r for r in nav.ships() if r['name'] == 'RSI Apollo Medivac']
     assert [r['id'] for r in rows] == ['apo'] and rows[0]['name_zh'] == '阿波羅醫療'
     assert nav.ship('apo1')['name_zh'] == '阿波羅醫療'
+
+
+def test_quantum_drive_class_and_grade_fallback(world_data):
+    db = get_db()
+    base = {'is_current': True, 'type': 'QuantumDrive', 'size': 1, 'qd_speed': 1e8, 'qd_fuel_per_gm': 10}
+    db.item_master.insert_many([
+        {'_id': 'q1', 'name': 'Atlas', 'grade': 'C', 'item_class': 'Military', **base},
+        # 舊資料沒有 item_class：從 raw 的 description_data 取
+        {'_id': 'q2', 'name': 'Bolt', 'grade': 2, **base,
+         'raw': {'description_data': [{'name': 'Grade', 'value': 'B'}, {'name': 'Class', 'value': 'Civilian'}]}},
+    ])
+    rows = {r['id']: r for r in nav.quantum_drives()}
+    assert rows['q1']['item_class'] == 'Military' and rows['q1']['grade'] == 'C'
+    assert rows['q2']['item_class'] == 'Civilian' and rows['q2']['grade'] == 'B'

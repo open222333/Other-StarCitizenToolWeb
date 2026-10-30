@@ -505,7 +505,7 @@ def map_item(doc: dict) -> Optional[dict]:
         'size': doc.get('size'),
         'grade': doc.get('grade'),
         # 組件類別：Civilian／Industrial／Military／Stealth／Competition（翻譯見 sc_zh.item_class_zh）
-        'item_class': doc.get('class') or None,
+        'item_class': item_class_of(doc),
         'mass': doc.get('mass'),
         # 倉儲容量計算用，單位是 µSCU
         'volume_uscu': dim.get('volume_converted'),
@@ -525,6 +525,32 @@ def map_item(doc: dict) -> Optional[dict]:
         **_quantum_drive_fields(doc.get('quantum_drive')),
         'raw': doc,
     }
+
+
+def item_class_of(doc: dict) -> Optional[str]:
+    """組件類別：Wiki 只有 classification 是 Ship.* 的才給頂層 class，
+    沒有的話從遊戲說明的數值（description_data 的 Class）取。"""
+    if not isinstance(doc, dict):
+        return None
+    value = doc.get('class')
+    if not value:
+        for row in doc.get('description_data') or []:
+            if isinstance(row, dict) and (row.get('name') or '').strip().lower() == 'class':
+                value = row.get('value')
+                break
+    return (value.strip() or None) if isinstance(value, str) else None
+
+
+def grade_letter(grade) -> Optional[str]:
+    """等級 → A–G（Wiki 有時給數字 1–7，飛船組件給字母）。"""
+    if isinstance(grade, (int, float)) and 1 <= int(grade) <= 7:
+        return 'ABCDEFG'[int(grade) - 1]
+    if isinstance(grade, str):
+        g = grade.strip().upper()
+        if g.isdigit():
+            return grade_letter(int(g))
+        return g[:1] if g[:1] in 'ABCDEFG' and len(g) == 1 else None
+    return None
 
 
 def _quantum_drive_fields(qd) -> dict:
