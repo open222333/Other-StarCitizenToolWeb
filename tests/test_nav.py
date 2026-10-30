@@ -33,6 +33,7 @@ def world_data():
         _loc('stC', 'Station C', 'Manmade', 'pc', (20 * GM - 2 * R, 0, 0)),
         _loc('stY', 'Station Y', 'Manmade', 'sys', (10 * GM, 5 * GM, 0)),
         _loc('hidden', 'Secret', 'Manmade', 'sys', (5 * GM, 5 * GM, 0), player_visible=False),
+        _loc('clinicY', 'Station Y Clinic', 'Outpost', 'stY', (10 * GM, 5 * GM, 0)),
     ])
     db.ship_nav_master.insert_many([
         {'_id': 'ship1', 'name': 'Freighter', 'class_name': 'TEST_Freighter', 'qt_speed': 2e8, 'qt_spool': 10,
@@ -130,6 +131,7 @@ def test_places_hide_invisible_for_players(world_data):
     assert 'hidden' not in ids and 'stA' in ids
     assert 'hidden' in {p['id'] for p in nav.places(visible_only=False)}
     assert all(p['type'] != 'Asteroid' for p in nav.places())
+    assert 'clinicY' not in {p['id'] for p in nav.places()}, '站內設施（上層是太空站）不列'
 
 
 def test_map_ship_nav():
@@ -173,3 +175,81 @@ def test_route_api(client, auth_headers, world_data):
     assert bad.status_code == 400
     assert client.get('/starmap/nav/ships', headers=auth_headers).get_json()['data'][0]['id']
     assert client.get('/starmap/nav/places', headers=auth_headers).status_code == 200
+
+
+def test_quantum_drive_override_and_size_check(world_data):
+    db = get_db()
+    db.ship_nav_master.update_one({'_id': 'ship1'}, {'$set': {'qd_uuid': 'qd-default', 'qd_size': 2}})
+    qd = lambda _id, name, size, speed, spool, fuel: {
+        '_id': _id, 'name': name, 'type': 'QuantumDrive', 'size': size, 'is_current': True,
+        'qd_speed': speed, 'qd_spool': spool, 'qd_fuel_per_gm': fuel}
+    db.item_master.insert_many([
+        qd('qd-default', 'Default', 2, 2e8, 10, 10), qd('qd-fast', 'Fast', 2, 4e8, 4, 20),
+        qd('qd-small', 'Small', 1, 1e8, 3, 5),
+        {'_id': 'not-qd', 'name': 'Cooler', 'type': 'Cooler', 'size': 2, 'is_current': True},
+    ])
+    base = nav.plan_route(start_id='stA', waypoints=['stY'], cargo=[], ship_id='ship1')['plans'][0]['legs'][0]
+    fast = nav.plan_route(start_id='stA', waypoints=['stY'], cargo=[], ship_id='ship1',
+                          qd_id='qd-fast')
+    leg = fast['plans'][0]['legs'][0]
+    assert fast['ship']['qd_name'] == 'Fast'
+    assert leg['time'] == pytest.approx(leg['distance'] / 4e8 + 4)
+    assert leg['fuel'] == pytest.approx(base['fuel'] * 2)
+    with pytest.raises(nav.RouteError, match='S2'):
+        nav.plan_route(start_id='stA', waypoints=['stY'], cargo=[], ship_id='ship1', qd_id='qd-small')
+    with pytest.raises(nav.RouteError):
+        nav.plan_route(start_id='stA', waypoints=['stY'], cargo=[], ship_id='ship1', qd_id='not-qd')
+    assert [q['id'] for q in nav.quantum_drives()] == ['qd-small', 'qd-default', 'qd-fast']
+
+
+def test_refuel_stops(world_data):
+    db = get_db()
+    # 小油箱：250，每 Gm 耗 10；stA→stY→stC 各約 112，stC→stA 約 200
+    db.ship_nav_master.insert_one({'_id': 'tiny', 'name': 'Tiny', 'qt_speed': 2e8, 'qt_spool': 5,
+                                   'qt_fuel_capacity': 250, 'qt_fuel_per_m': 10 / 1e9, 'qt_range': 25 * GM})
+    kw = dict(start_id='stA', waypoints=['stY', 'stC'], cargo=[], ship_id='tiny', auto_order=False, end_mode='start')
+    plan = nav.plan_route(**kw)['plans'][0]
+    # 到 Station C 剩的油不夠回 Station A → 在 Station C（第 2 站）補滿，不管有沒有 Vehicle Services
+    assert plan['refuel_stops'] == [2] and 'fuel_short' not in plan['warnings']
+    assert plan['legs'][1].get('refuel_here') is True
+    assert plan['legs'][2]['fuel_after'] == pytest.approx(250 - plan['legs'][2]['fuel'])
+    assert plan['legs'][0]['fuel_after'] == pytest.approx(250 - plan['legs'][0]['fuel'])
+
+    # 單段就超過油箱：補滿也不夠
+    db.ship_nav_master.update_one({'_id': 'tiny'}, {'$set': {'qt_fuel_capacity': 150}})
+    nav.clear_cache()
+    plan = nav.plan_route(**kw)['plans'][0]
+    assert 'fuel_short' in plan['warnings'] and plan['legs'][2].get('fuel_short') is True
+
+
+def test_map_item_quantum_drive_fields():
+    from src.scdata import map_item
+    row = map_item({'uuid': 'q1', 'name': 'Kama', 'type': 'QuantumDrive', 'quantum_drive': {
+        'quantum_fuel_requirement': 0.03864,
+        'standard_jump': {'drive_speed': 532468700, 'spool_up_time': 9.3, 'cooldown_time': 15}}})
+    assert row['qd_speed'] == 532468700 and row['qd_spool'] == 9.3
+    assert row['qd_fuel_per_gm'] == pytest.approx(38.64)
+    assert 'qd_speed' not in map_item({'uuid': 'c1', 'name': 'Cooler', 'type': 'Cooler'})
+    assert map_item({'uuid': 'c2', 'name': 'Glacier', 'type': 'Cooler', 'class': 'Military'})['item_class'] == 'Military'
+def test_route_includes_map_and_positions(world_data):
+    res = nav.plan_route(start_id='stA', waypoints=['stC'], cargo=[], ship_id='ship1')
+    assert set(res['map']) == {'stanton'}
+    names = {b['name'] for b in res['map']['stanton']['bodies']}
+    assert {'Alpha', 'Beta', 'Gamma', 'Stanton'} <= names
+    leg = res['plans'][0]['legs'][0]
+    assert leg['to']['p'] == [20 * GM - 2 * R, 0, 0] and res['plans'][0]['start']['p'] == [2 * R, 0, 0]
+    assert all('p' in s['to'] for s in leg['steps'])
+
+
+def test_ships_dedupe_variants_and_zh_name(world_data, monkeypatch):
+    db = get_db()
+    base = {'qt_speed': 2e8, 'qt_spool': 5, 'qt_fuel_capacity': 100, 'qt_fuel_per_m': 1e-9}
+    db.ship_nav_master.insert_many([
+        {'_id': 'apo', 'name': 'RSI Apollo Medivac', 'class_name': 'RSI_Apollo_Medivac', **base},
+        {'_id': 'apo1', 'name': 'RSI Apollo Medivac', 'class_name': 'RSI_Apollo_Medivac_Tier_1', **base},
+        {'_id': 'apo2', 'name': 'RSI Apollo Medivac', 'class_name': 'RSI_Apollo_Medivac_Tier_2', **base},
+    ])
+    monkeypatch.setattr(nav, 'vehicle_name_zh', lambda cls='', name='': '阿波羅醫療' if 'Apollo' in cls else None)
+    rows = [r for r in nav.ships() if r['name'] == 'RSI Apollo Medivac']
+    assert [r['id'] for r in rows] == ['apo'] and rows[0]['name_zh'] == '阿波羅醫療'
+    assert nav.ship('apo1')['name_zh'] == '阿波羅醫療'

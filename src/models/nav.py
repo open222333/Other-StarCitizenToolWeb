@@ -22,14 +22,19 @@
 """
 
 import math
+import re
 import threading
 import time
 
 from src.mongo import get_db
+from src.sc_zh import item_class_zh, vehicle_name_zh
 
 BODY_TYPES = ('Planet', 'Moon')
 #: 不列入地點選單的類型（一般小行星群：數量多、不能量子定位）
 PLACE_EXCLUDE_TYPES = ('Asteroid',)
+#: 上層是這些類型的地點是「站內設施」（太空站／城市裡的診所、醫院、競技場、跳躍點閘門…），
+#: 不能單獨量子定位，不列入地點選單（航線計算照樣用得到，例如跳躍點）
+FACILITY_PARENT_TYPES = ('Manmade', 'Manmade_VisibleOnInteraction', 'LandingZone')
 #: 地表判定：離所屬星體中心 ≤ 半徑 × 這個倍數
 SURFACE_RATIO = 1.06
 #: 星體本身的實心半徑（判斷直線是否穿過星體）
@@ -105,6 +110,9 @@ class World:
                 'jump_links': r.get('jump_links') or [],
                 'parent_uuid': r.get('parent_uuid'),
                 'named': bool(r.get('is_named', bool(r.get('name')))),
+                'facility': (by_id.get(r.get('parent_uuid')) or {}).get('type') in FACILITY_PARENT_TYPES,
+                # 有「Vehicle Services」設施（可以補量子燃料）
+                'services': bool(r.get('has_vehicle_services')),
             }
         # 星體（會擋航線）：有半徑的行星、衛星
         self.bodies = [n for n in self.nodes.values() if n['type'] in BODY_TYPES and n['radius'] > 0]
@@ -196,7 +204,8 @@ def world(visible_only: bool = False) -> World:
         filt['player_visible'] = {'$ne': False}
     fields = {'name': 1, 'name_zh': 1, 'type': 1, 'type_zh': 1, 'pos_system': 1, 'system_name': 1,
               'system_name_zh': 1, 'path_zh': 1, 'pos': 1, 'qt_valid': 1, 'quantum_travel': 1,
-              'size': 1, 'obstruction_radius': 1, 'jump_links': 1, 'parent_uuid': 1, 'is_named': 1}
+              'size': 1, 'obstruction_radius': 1, 'jump_links': 1, 'parent_uuid': 1, 'is_named': 1,
+              'has_vehicle_services': 1}
     w = World(list(get_db()['starmap_master'].find(filt, fields)))
     with _lock:
         _cache[key] = (time.time(), w)
@@ -208,28 +217,77 @@ def clear_cache():
         _cache.clear()
 
 
-def node_brief(n: dict) -> dict:
-    return {'id': n['id'], 'name': n['name'], 'name_zh': n.get('name_zh'), 'type': n['type'],
+def node_brief(n: dict, pos: bool = False) -> dict:
+    """pos=True 時附上座標 p [x, y, z]（公尺，航線結果的 3D 星圖用）。"""
+    out = {'id': n['id'], 'name': n['name'], 'name_zh': n.get('name_zh'), 'type': n['type'],
             'type_zh': n.get('type_zh'), 'system': n.get('system_name'),
             'system_zh': n.get('system_name_zh'), 'path_zh': n.get('path_zh') or [],
             'surface': bool(n.get('surface')), 'synthetic': bool(n.get('synthetic')),
             'group': n.get('group'), 'group_name': n.get('group_name'), 'group_name_zh': n.get('group_name_zh'),
-            'group_type': n.get('group_type')}
+            'group_type': n.get('group_type'), 'services': bool(n.get('services')),
+            'jump': bool(n.get('jump_links'))}
+    if pos:
+        out['p'] = [round(v, 1) for v in n['p']]
+        out['system_key'] = n.get('system')
+    return out
 
 
 def places(visible_only: bool = False) -> list:
     """可以當起點／站點的地點（有座標、有名稱）。"""
     w = world(visible_only)
     rows = [node_brief(n) for n in w.nodes.values()
-            if not n.get('synthetic') and n['named'] and n['name'] and n['type'] not in PLACE_EXCLUDE_TYPES]
+            if not n.get('synthetic') and n['named'] and n['name'] and n['type'] not in PLACE_EXCLUDE_TYPES
+            and not n.get('facility')]
     rows.sort(key=lambda r: (r['system'] or '', '/'.join(r['path_zh']), r['name']))
     return rows
+
+
+#: 3D 星圖畫的背景天體
+MAP_TYPES = ('Star', 'Planet', 'Moon', 'JumpPoint')
+
+
+def star_map(w: World, systems) -> dict:
+    """航線經過的星系 → {name, name_zh, bodies: [{id, name, name_zh, type, p, radius, parent}]}，
+    給航線結果的 3D 星圖畫背景（恆星、行星、衛星、跳躍點）。"""
+    out = {}
+    for n in w.nodes.values():
+        # 跳躍點：星圖類型是 JumpPoint，或實際連到別的星系的那個點（類型常是 Anomaly）
+        is_jump = bool(n.get('jump_links'))
+        if n.get('synthetic') or n['system'] not in systems or (n['type'] not in MAP_TYPES and not is_jump):
+            continue
+        entry = out.setdefault(n['system'], {'name': n.get('system_name') or n['system'],
+                                             'name_zh': n.get('system_name_zh'), 'bodies': []})
+        entry['bodies'].append({'id': n['id'], 'name': n['name'], 'name_zh': n.get('name_zh'),
+                                'type': 'JumpPoint' if is_jump else n['type'],
+                                'p': [round(v, 1) for v in n['p']], 'radius': n.get('radius') or 0,
+                                'parent': n.get('body') if n['type'] == 'Moon' else None})
+    return out
 
 
 # ── 艦船 ─────────────────────────────────────────────────────
 
 SHIP_FIELDS = {'name': 1, 'class_name': 1, 'size': 1, 'qt_speed': 1, 'qt_spool': 1, 'qt_fuel_capacity': 1,
-               'qt_range': 1, 'qt_fuel_per_m': 1, 'cargo_scu': 1, 'external_cargo': 1, 'mass_total': 1}
+               'qt_range': 1, 'qt_fuel_per_m': 1, 'cargo_scu': 1, 'external_cargo': 1, 'mass_total': 1,
+               'qd_uuid': 1, 'qd_size': 1}
+#: 量子引擎來自物品主檔（Wiki API /vehicle-items，見 src/scdata.py 的 _quantum_drive_fields）
+QD_FIELDS = {'name': 1, 'name_zh': 1, 'class_name': 1, 'size': 1, 'grade': 1, 'manufacturer_name': 1, 'item_class': 1,
+             'qd_speed': 1, 'qd_spool': 1, 'qd_cooldown': 1, 'qd_fuel_per_gm': 1}
+QD_FILTER = {'is_current': True, 'type': 'QuantumDrive', 'qd_speed': {'$gt': 0}, 'qd_fuel_per_gm': {'$gt': 0}}
+
+
+def _qd_row(r: dict) -> dict:
+    return {'id': r['_id'], 'name': r.get('name') or r.get('class_name'), 'name_zh': r.get('name_zh'),
+            'size': r.get('size'), 'grade': r.get('grade'), 'manufacturer': r.get('manufacturer_name'),
+            'item_class': r.get('item_class'), 'item_class_zh': item_class_zh(r.get('item_class') or ''),
+            'speed': r.get('qd_speed'), 'spool': r.get('qd_spool'), 'cooldown': r.get('qd_cooldown'),
+            'fuel_per_gm': r.get('qd_fuel_per_gm')}
+
+
+def quantum_drives() -> list:
+    """全部量子引擎（尺寸、速度、啟動時間、每 Gm 油耗），前端依船的引擎槽尺寸篩。"""
+    rows = [r for r in get_db()['item_master'].find(QD_FILTER, QD_FIELDS)
+            if r.get('name') and '<=' not in r['name']]          # 遊戲資料裡的 <= PLACEHOLDER => 不列
+    return sorted((_qd_row(r) for r in rows), key=lambda r: (r.get('size') or 0, (r.get('name') or '').lower()))
 
 
 def _ship_row(r: dict, name_zh) -> dict:
@@ -240,27 +298,68 @@ def _ship_row(r: dict, name_zh) -> dict:
     return out
 
 
+#: scunpacked 同一艘船的 NPC／任務／展示用變體（同名、class_name 多了這些尾巴），選單只留一筆
+_VARIANT_RE = re.compile(r'_(tier_\d+|temp|boarded|display|collector|fw_\d+|tsg|bis\d+|pu_ai|ai|unmanned|'
+                         r'wreck|template|stealth|military|indust|gs)(_|$)', re.I)
+
+
+def _ship_zh(r: dict):
+    return vehicle_name_zh(r.get('class_name') or '', r.get('name') or '')
+
+
 def ships() -> list:
-    """有量子引擎的太空船（中文名稱取 vehicle_master 的 name_zh）。"""
+    """有量子引擎的太空船。同名的只留一筆：玩家載具主檔（vehicle_master）有的優先，再來是沒有變體尾巴、
+    class_name 最短的（例如 RSI_Apollo_Medivac 而不是 RSI_Apollo_Medivac_Tier_1）。"""
     db = get_db()
     rows = list(db['ship_nav_master'].find({'is_current': {'$ne': False}}, SHIP_FIELDS))
-    names_zh = {r['_id']: r.get('name_zh') for r in db['vehicle_master'].find(
-        {'_id': {'$in': [r['_id'] for r in rows]}}, {'name_zh': 1})}
-    out = [_ship_row(r, names_zh.get(r['_id'])) for r in rows]
+    known_ids, known_cls = set(), set()
+    for v in db['vehicle_master'].find({'is_current': {'$ne': False}}, {'class_name': 1}):
+        known_ids.add(v['_id'])
+        if v.get('class_name'):
+            known_cls.add(v['class_name'].lower())
+
+    def rank(r):
+        cls = r.get('class_name') or ''
+        known = r['_id'] in known_ids or cls.lower() in known_cls
+        return (not known, bool(_VARIANT_RE.search(cls)), len(cls), cls)
+
+    best = {}
+    for r in sorted(rows, key=rank):
+        key = (r.get('name') or r.get('class_name') or '').strip().lower()
+        if key and key not in best:
+            best[key] = r
+    out = [_ship_row(r, _ship_zh(r)) for r in best.values()]
     out.sort(key=lambda r: r['name'].lower())
     return out
 
 
-def ship(ship_id) -> dict:
+def ship(ship_id, qd_id: str = '') -> dict:
+    """船的量子航行參數；qd_id 給了就換成那顆量子引擎的速度、啟動時間、油耗（油箱還是船的）。"""
     if not ship_id:
         return dict(DEFAULT_SHIP)
     db = get_db()
     r = db['ship_nav_master'].find_one({'_id': ship_id}, SHIP_FIELDS)
     if not r:
         raise RouteError('找不到這艘船的量子航行資料')
-    zh = (db['vehicle_master'].find_one({'_id': ship_id}, {'name_zh': 1}) or {}).get('name_zh')
-    row = _ship_row(r, zh)
-    return {**DEFAULT_SHIP, **{k: v for k, v in row.items() if v is not None}}
+    row = _ship_row(r, _ship_zh(r))
+    out = {**DEFAULT_SHIP, **{k: v for k, v in row.items() if v is not None}}
+    qd_id = qd_id or out.get('qd_uuid')
+    row_qd = db['item_master'].find_one({**QD_FILTER, '_id': qd_id}, QD_FIELDS) if qd_id else None
+    qd = _qd_row(row_qd) if row_qd else None
+    if qd_id and not qd and qd_id != out.get('qd_uuid'):
+        raise RouteError('找不到這顆量子引擎')
+    if qd:
+        if out.get('qd_size') and qd.get('size') and qd['size'] != out['qd_size']:
+            raise RouteError(f'這艘船的量子引擎槽是 S{out["qd_size"]}，不能裝 S{qd["size"]} 的引擎')
+        out['qd_uuid'] = qd['id']
+        out['qd_name'] = qd.get('name')
+        out['qt_speed'] = qd.get('speed') or out['qt_speed']
+        out['qt_spool'] = qd.get('spool') if qd.get('spool') is not None else out['qt_spool']
+        if qd.get('fuel_per_gm'):
+            out['qt_fuel_per_m'] = qd['fuel_per_gm'] / 1e9
+            cap = out.get('qt_fuel_capacity')
+            out['qt_range'] = cap / out['qt_fuel_per_m'] if cap else None
+    return out
 
 
 # ── 規劃 ─────────────────────────────────────────────────────
@@ -469,7 +568,7 @@ def _build_plan(planner: Planner, start, events, order, end, key, label) -> dict
         out_steps = []
         for s in planner.route(cur, target):
             m = planner.step_metrics(s, load)
-            out_steps.append({'from': node_brief(s['from']), 'to': node_brief(s['to']), 'kind': s['kind'],
+            out_steps.append({'from': node_brief(s['from'], True), 'to': node_brief(s['to'], True), 'kind': s['kind'],
                               'distance': s['distance'], 'time': m['time'], 'fuel': m['fuel']})
             leg['distance'] += s['distance']
             leg['time'] += m['time']
@@ -482,7 +581,7 @@ def _build_plan(planner: Planner, start, events, order, end, key, label) -> dict
         if event:
             load += event['delta']
         legs.append({
-            'to': node_brief(target),
+            'to': node_brief(target, True),
             'action': event['kind'] if event else 'end',
             'cargo': event.get('cargo') if event else None,
             'scu': event.get('scu') if event else None,
@@ -498,12 +597,42 @@ def _build_plan(planner: Planner, start, events, order, end, key, label) -> dict
         totals['fuel'] = None
         for leg in legs:
             leg['fuel'] = None
-    return {'key': key, 'label': label, 'start': node_brief(start), 'legs': legs, 'totals': totals,
-            'warnings': []}
+    plan = {'key': key, 'label': label, 'start': node_brief(start, True), 'legs': legs, 'totals': totals,
+            'warnings': [], 'refuel_stops': []}
+    _plan_refuel(plan, planner.ship.get('qt_fuel_capacity'), [start] + [t for t, _ in targets])
+    return plan
+
+
+def _plan_refuel(plan: dict, capacity, stops: list) -> None:
+    """從滿油出發，算每一段跑完剩多少量子燃料（leg['fuel_after']）。
+    剩的油不夠跑下一段時，在那一站標「需補充燃料」並當作補滿再出發（plan['refuel_stops'] 是站點序號：
+    0＝起點、i＝第 i 段的目的地）。補滿也跑不完的段落（單段超過油箱）標 leg['fuel_short']。
+
+    stops：[起點, 第 1 段目的地, …]（節點），stops[i] 是第 i 段（0 起算）的出發點。
+    """
+    legs = plan['legs']
+    if not capacity or any(leg.get('fuel') is None for leg in legs):
+        return
+    capacity = float(capacity)
+    remaining = capacity
+    for i, leg in enumerate(legs):
+        need = leg['fuel'] or 0.0
+        if need > remaining + 1e-9 and remaining < capacity:
+            plan['refuel_stops'].append(i)
+            remaining = capacity
+        if need > capacity + 1e-9:
+            leg['fuel_short'] = True
+            if 'fuel_short' not in plan['warnings']:
+                plan['warnings'].append('fuel_short')
+        remaining = max(0.0, remaining - need)
+        leg['fuel_after'] = remaining
+    for k in plan['refuel_stops']:
+        if k > 0:
+            legs[k - 1]['refuel_here'] = True
 
 
 def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = 'none', end_id: str = '',
-               auto_order: bool = True, ship_id: str = '', external_cargo=None,
+               auto_order: bool = True, ship_id: str = '', qd_id: str = '', external_cargo=None,
                visible_only: bool = False) -> dict:
     """規劃航線，回傳三種方案。
 
@@ -511,7 +640,7 @@ def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = '
     external_cargo：None = 依船自動判斷（Hull 系列）。
     """
     w = world(visible_only)
-    ship_info = ship(ship_id)
+    ship_info = ship(ship_id, qd_id)
     if external_cargo is None:
         external_cargo = bool(ship_info.get('external_cargo'))
 
@@ -572,15 +701,17 @@ def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = '
             tuple(s['to']['id'] for leg in plan['legs'] for s in leg['steps'])
         plan['same_as'] = seen.get(sig)
         seen.setdefault(sig, key)
-        fuel_cap, rng = ship_info.get('qt_fuel_capacity'), ship_info.get('qt_range')
-        if fuel_cap and plan['totals']['fuel'] and plan['totals']['fuel'] > fuel_cap:
-            plan['warnings'].append('fuel_over_capacity')
+        # 油箱不夠時要在哪補油、補了也到不了的段落，見 _plan_refuel（fuel_short）
+        rng = ship_info.get('qt_range')
         if rng and any(s['distance'] > rng for leg in plan['legs'] for s in leg['steps']):
             plan['warnings'].append('step_over_range')
         plans.append(plan)
+    systems = {start['system']} | {s['to']['system_key'] for p in plans for leg in p['legs'] for s in leg['steps']}
     return {
+        'map': star_map(w, systems),
         'ship': {k: ship_info.get(k) for k in ('id', 'name', 'name_zh', 'qt_speed', 'qt_spool',
-                                               'qt_fuel_capacity', 'qt_range', 'cargo_scu', 'mass_total')},
+                                               'qt_fuel_capacity', 'qt_range', 'qt_fuel_per_m', 'cargo_scu',
+                                               'mass_total', 'qd_uuid', 'qd_name', 'qd_size')},
         'external_cargo': bool(external_cargo),
         'total_cargo_scu': total_cargo,
         'plans': plans,

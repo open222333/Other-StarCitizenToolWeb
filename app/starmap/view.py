@@ -142,6 +142,21 @@ def nav_ships():
     return jsonify({'success': True, 'data': nav.ships()})
 
 
+@app_starmap.route('/nav/quantum-drives', methods=['GET'])
+@jwt_required()
+def nav_quantum_drives():
+    """量子引擎清單（尺寸、速度、啟動時間、每 Gm 油耗），航線規劃換引擎用。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': nav.quantum_drives()})
+
+
 @app_starmap.route('/nav/route', methods=['POST'])
 @jwt_required()
 @limiter.limit('30 per minute')
@@ -164,6 +179,7 @@ def nav_route():
             end: {type: string, description: "end_mode=fixed 時的終點 id"}
             auto_order: {type: boolean, description: "true = 自動排序站點"}
             ship: {type: string, description: "船的 UUID（ship_nav_master）"}
+            quantum_drive: {type: string, description: "換裝的量子引擎 UUID（物品主檔裡的量子引擎，要跟船的引擎槽同尺寸）；不帶＝預設配備"}
             external_cargo: {type: boolean, description: "外掛貨櫃；不帶 = 依船自動判斷"}
     responses:
       200:
@@ -188,6 +204,7 @@ def nav_route():
             end_id=str(body.get('end') or ''),
             auto_order=body.get('auto_order', True) is not False,
             ship_id=str(body.get('ship') or ''),
+            qd_id=str(body.get('quantum_drive') or ''),
             external_cargo=external if isinstance(external, bool) else None,
             visible_only=not viewer_sees_hidden(),
         )

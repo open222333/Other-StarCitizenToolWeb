@@ -101,7 +101,8 @@ function optionName(p) {
 
 function optionMeta(p) {
   const type = p.type_zh || p.type
-  return [p.system_zh || p.system, groupLabel(p), type, p.surface ? '地表' : ''].filter(Boolean).join(' · ')
+  return [p.system_zh || p.system, groupLabel(p), type, p.surface ? '地表' : '', p.services ? '可補給' : '']
+    .filter(Boolean).join(' · ')
 }
 
 const norm = s => (s || '').toLowerCase()

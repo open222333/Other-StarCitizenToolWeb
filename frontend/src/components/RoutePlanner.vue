@@ -1,7 +1,7 @@
 <!--
   玩家頁「航線」：量子航行路線規劃（後端 POST /starmap/nav/route，演算法見 src/models/nav.py）。
   起點＋途經站點＋貨運（取貨→送貨、SCU；目前隱藏，見 SHOW_CARGO），可自動排序或照輸入順序，終點可不指定／回到起點／指定地點。
-  結果一次給三種方案（最快／最省油／最順路），每一段列出經過的 OM 點、跳躍點。
+  結果一次給三種方案（最快／最省油／最順路），每一段列出經過的 OM 點、跳躍點；可切換成 3D 星圖（components/RouteMap3D.vue）。
   表單（地點、船、貨運）記在這台瀏覽器（localStorage）。
 -->
 <template>
@@ -17,10 +17,19 @@
                 :get-meta="shipMeta" :min-chars="0" :debounce-ms="0" aria-label="船" @select="pickShip" />
             </div>
             <div class="col-12 col-md-6">
-              <div v-if="ship" class="d-flex flex-wrap gap-1 rp-ship-facts">
-                <span class="sf-chip">量子速度 {{ fmtSpeed(ship.qt_speed) }}</span>
-                <span class="sf-chip">啟動 {{ fmtNum(ship.qt_spool, 1) }} 秒</span>
+              <label class="form-label small fw-semibold mb-1" for="rp-qd">量子引擎</label>
+              <select id="rp-qd" v-model="qdId" class="form-select form-select-sm" :disabled="!ship || !qdOptions.length">
+                <option v-if="!qdOptions.length" value="">預設</option>
+                <option v-for="q in qdOptions" :key="q.id" :value="q.id">{{ qdLabel(q) }}</option>
+              </select>
+            </div>
+            <div v-if="ship" class="col-12">
+              <div class="d-flex flex-wrap gap-1 rp-ship-facts">
+                <span class="sf-chip">量子速度 {{ fmtSpeed(effective.speed) }}</span>
+                <span class="sf-chip">啟動 {{ fmtNum(effective.spool, 1) }} 秒</span>
+                <span v-if="effective.fuelPerGm" class="sf-chip">每 Gm 耗油 {{ fmtNum(effective.fuelPerGm, 2) }}</span>
                 <span v-if="ship.qt_fuel_capacity" class="sf-chip">量子油箱 {{ fmtNum(ship.qt_fuel_capacity) }}</span>
+                <span v-if="effective.rangeGm" class="sf-chip">滿油約 {{ fmtNum(effective.rangeGm, 1) }} Gm</span>
                 <span v-if="SHOW_CARGO && ship.cargo_scu" class="sf-chip">貨艙 {{ fmtNum(ship.cargo_scu) }} SCU</span>
               </div>
             </div>
@@ -136,11 +145,19 @@
               <span v-if="current.totals.fuel != null" class="sf-chip sf-chip--accent">油量 {{ fmtNum(current.totals.fuel) }}</span>
               <span class="sf-chip">量子跳躍 {{ current.totals.jumps }} 次</span>
               <span v-if="current.same_as" class="sf-chip">與「{{ planLabel(current.same_as) }}」相同</span>
-              <span v-if="current.warnings.includes('fuel_over_capacity')" class="sf-chip sf-chip--warn">
-                超過量子油箱 {{ fmtNum(result.ship.qt_fuel_capacity) }}，需中途加油</span>
+              <span v-if="current.refuel_stops?.length" class="sf-chip sf-chip--warn">
+                需補充燃料 {{ current.refuel_stops.length }} 次</span>
+              <span v-if="current.warnings.includes('fuel_short')" class="sf-chip sf-chip--warn">
+                油量不足：有段落單趟就超過油箱</span>
               <span v-if="current.warnings.includes('step_over_range')" class="sf-chip sf-chip--warn">單段超過可達距離</span>
             </div>
-            <div style="overflow-x:auto">
+            <div class="btn-group btn-group-sm mb-2" role="group" aria-label="顯示方式">
+              <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab"
+                :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
+                @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
+            </div>
+            <RouteMap3D v-if="view === 'map'" :plan="current" :map="result.map || {}" />
+            <div v-show="view === 'table'" style="overflow-x:auto">
               <table class="table table-hover align-middle mb-0 sf-stack rp-legs">
                 <thead class="table-light">
                   <tr>
@@ -149,7 +166,8 @@
                     <th v-if="SHOW_CARGO" class="text-end">載貨</th>
                     <th class="text-end">距離</th>
                     <th class="text-end">時間</th>
-                    <th class="text-end pe-3">油量</th>
+                    <th class="text-end">油量</th>
+                    <th class="text-end pe-3">剩油</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,11 +176,15 @@
                       <div class="fw-semibold"><span class="rp-no">0</span>{{ placeLabel(current.start) }}</div>
                       <div class="rp-path ps-4">{{ placePath(current.start) }}</div>
                     </td>
-                    <td data-label="動作">出發</td>
+                    <td data-label="動作">
+                      出發
+                      <span v-if="refuelAt(0)" class="sf-chip sf-chip--warn text-nowrap ms-1">需補充燃料</span>
+                    </td>
                     <td v-if="SHOW_CARGO" class="text-end" data-label="載貨">0</td>
                     <td class="text-end" data-label="距離">—</td>
                     <td class="text-end" data-label="時間">—</td>
-                    <td class="text-end pe-3" data-label="油量">—</td>
+                    <td class="text-end" data-label="油量">—</td>
+                    <td class="text-end pe-3" data-label="剩油">{{ result.ship.qt_fuel_capacity ? '滿油' : '—' }}</td>
                   </tr>
                   <tr v-for="(leg, i) in current.legs" :key="i">
                     <td class="ps-3 sf-stack__title">
@@ -177,12 +199,16 @@
                     </td>
                     <td data-label="動作">
                       <span class="sf-chip text-nowrap" :class="actionClass(leg.action)">{{ actionLabel(leg) }}</span>
+                      <span v-if="refuelAt(i + 1)" class="sf-chip sf-chip--warn text-nowrap ms-1">需補充燃料</span>
+                      <span v-if="leg.fuel_short" class="sf-chip sf-chip--warn text-nowrap ms-1">油量不足</span>
                     </td>
                     <td v-if="SHOW_CARGO" class="text-end text-nowrap" data-label="載貨">{{ fmtNum(leg.load_after) }}</td>
                     <td class="text-end text-nowrap" data-label="距離">{{ leg.steps.length ? fmtDist(leg.distance) : '—' }}</td>
                     <td class="text-end text-nowrap" data-label="時間">{{ leg.steps.length ? fmtTime(leg.time) : '—' }}</td>
-                    <td class="text-end text-nowrap pe-3" data-label="油量">
+                    <td class="text-end text-nowrap" data-label="油量">
                       {{ leg.fuel != null && leg.steps.length ? fmtNum(leg.fuel, leg.fuel < 10 ? 1 : 0) : '—' }}</td>
+                    <td class="text-end text-nowrap pe-3" data-label="剩油" :class="{ 'sf-bad': leg.fuel_short }">
+                      {{ fuelLeft(leg) }}<template v-if="refuelAt(i + 1)"> → 補滿</template></td>
                   </tr>
                 </tbody>
               </table>
@@ -198,6 +224,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import PlacePicker from '@/components/PlacePicker.vue'
+import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
 
 const props = defineProps({
@@ -234,15 +261,16 @@ const cargo = reactive((Array.isArray(saved.cargo) ? saved.cargo : []).slice(0, 
 const autoOrder = ref(saved.autoOrder !== false)
 const shipId = ref(saved.shipId || '')
 const shipText = ref(saved.shipText || '')
+const qdId = ref(saved.qdId || '')
 const externalCargo = ref(!!saved.externalCargo)
 
 const plain = p => ({ id: p.id, text: p.text })
-watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, externalCargo], () => {
+watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plain),
       cargo: cargo.map(c => ({ pickup: plain(c.pickup), dropoff: plain(c.dropoff), scu: c.scu })),
-      autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value,
+      autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
       externalCargo: externalCargo.value,
     }))
   } catch { /* 存不了就算了 */ }
@@ -251,6 +279,7 @@ watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, exte
 // ── 地點、船 ─────────────────────────────────────────────
 const places = ref([])
 const ships = ref([])
+const quantumDrives = ref([])
 const loadingBase = ref(false)
 const baseError = ref('')
 const baseLoaded = ref(false)
@@ -264,7 +293,8 @@ async function getJson(path, options) {
 async function loadBase() {
   loadingBase.value = true
   baseError.value = ''
-  const [p, s] = await Promise.all([getJson('/starmap/nav/places'), getJson('/starmap/nav/ships')])
+  const [p, s, q] = await Promise.all([getJson('/starmap/nav/places'), getJson('/starmap/nav/ships'),
+    getJson('/starmap/nav/quantum-drives')])
   loadingBase.value = false
   if (!p.ok || !s.ok) {
     baseError.value = '讀取失敗。'
@@ -272,6 +302,7 @@ async function loadBase() {
   }
   places.value = p.body.data || []
   ships.value = s.body.data || []
+  quantumDrives.value = q.ok ? q.body.data || [] : []
   baseLoaded.value = true
   pickDefaultShip()
 }
@@ -289,11 +320,42 @@ function pickDefaultShip() {
 watch(() => props.fleetUuids, () => { if (baseLoaded.value && !shipId.value) pickDefaultShip() })
 
 function pickShip(s) {
+  const changed = (s?.id || '') !== shipId.value
   shipId.value = s?.id || ''
+  if (changed || !qdId.value) qdId.value = s?.qd_uuid || ''   // 換船就換回它的預設量子引擎
   if (s) {
     shipText.value = shipLabel(s)
     externalCargo.value = !!s.external_cargo
   }
+}
+
+// ── 量子引擎：只列跟船的引擎槽同尺寸的 ─────────────────────
+const qdOptions = computed(() => {
+  const size = ship.value?.qd_size
+  if (!size) return []
+  return quantumDrives.value.filter(q => q.size === size)
+    .sort((a, b) => (a.id === ship.value.qd_uuid ? -1 : b.id === ship.value.qd_uuid ? 1 : 0)
+      || (a.name || '').localeCompare(b.name || ''))
+})
+const qd = computed(() => qdOptions.value.find(q => q.id === qdId.value) || null)
+// 畫面上顯示的實際數值（換了引擎就用引擎的；油箱一律是船的）
+const effective = computed(() => {
+  const s = ship.value || {}
+  const fuelPerGm = qd.value?.fuel_per_gm || (s.qt_fuel_per_m ? s.qt_fuel_per_m * 1e9 : null)
+  return {
+    speed: qd.value?.speed || s.qt_speed,
+    spool: qd.value?.spool ?? s.qt_spool,
+    fuelPerGm,
+    rangeGm: fuelPerGm && s.qt_fuel_capacity ? s.qt_fuel_capacity / fuelPerGm : null,
+  }
+})
+function qdLabel(q) {
+  // 等級 1–7 對應 A–G
+  const grade = q.grade >= 1 && q.grade <= 7 ? `${'ABCDEFG'[q.grade - 1]} 級` : ''
+  const cls = q.item_class_zh || q.item_class || ''
+  const parts = [`S${q.size}`, [cls, grade].filter(Boolean).join(' '), q.manufacturer || '',
+    `${fmtSpeed(q.speed)}`, `每 Gm ${fmtNum(q.fuel_per_gm, 2)}`].filter(Boolean)
+  return `${q.name}${q.id === ship.value?.qd_uuid ? '（預設）' : ''} · ${parts.join(' · ')}`
 }
 
 const shipLabel = s => (s.name_zh && s.name_zh !== s.name ? `${s.name_zh}（${s.name}）` : s.name)
@@ -318,6 +380,12 @@ const planning = ref(false)
 const planError = ref('')
 const result = ref(null)
 const planKey = ref('fastest')
+// 結果的顯示方式：航段表／3D 星圖
+const VIEWS = [
+  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
+  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
+]
+const view = ref('table')
 
 const filledStops = computed(() => stops.filter(s => s.id))
 const filledCargo = computed(() => !SHOW_CARGO ? [] : cargo.filter(c => c.pickup.id && c.dropoff.id && Number(c.scu) > 0))
@@ -338,6 +406,7 @@ async function plan() {
       end: endPlace.id,
       auto_order: autoOrder.value,
       ship: shipId.value,
+      quantum_drive: qdId.value,
       external_cargo: SHOW_CARGO ? externalCargo.value : false,
     }),
   })
@@ -363,6 +432,14 @@ function clearForm() {
 
 const current = computed(() => result.value?.plans.find(p => p.key === planKey.value) || null)
 const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || key
+
+// 在第 k 個站點補燃料（0＝起點、i＝第 i 段的目的地）
+const refuelAt = k => !!current.value?.refuel_stops?.includes(k)
+function fuelLeft(leg) {
+  const cap = result.value?.ship?.qt_fuel_capacity
+  if (leg.fuel_after == null || !cap) return '—'
+  return `${fmtNum(leg.fuel_after)}（${Math.max(0, Math.round(leg.fuel_after / cap * 100))}%）`
+}
 
 function viaOf(leg) {
   // 中途經過的點（最後一步的終點就是目的地，不列）

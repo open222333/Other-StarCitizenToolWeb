@@ -257,6 +257,7 @@ UNGUARDED_ALLOWLIST = {
     # 航線規劃（玩家頁「航線」分頁）：公開星圖座標與艦船量子參數，唯讀計算
     'app_starmap.nav_places',
     'app_starmap.nav_ships',
+    'app_starmap.nav_quantum_drives',
     'app_starmap.nav_route',
     'app_item.search_items',
     'app_item.list_types',
