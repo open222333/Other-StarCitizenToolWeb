@@ -88,6 +88,352 @@
       "zh-TW": "個人武器"
     }
   },
+  "item_type": {
+    "Usable": {
+      "zh-TW": "可互動物件"
+    },
+    "SeatAccess": {
+      "zh-TW": "座椅出入口"
+    },
+    "ShopDisplay": {
+      "zh-TW": "商店展示架"
+    },
+    "ControlPanel": {
+      "zh-TW": "控制面板"
+    },
+    "QuantumFuelTank": {
+      "zh-TW": "量子燃料箱"
+    },
+    "Decal": {
+      "zh-TW": "貼花"
+    },
+    "CargoGrid": {
+      "zh-TW": "貨艙格"
+    },
+    "ShieldController": {
+      "zh-TW": "護盾控制器"
+    },
+    "AttachedPart": {
+      "zh-TW": "附加部件"
+    },
+    "Hangar": {
+      "zh-TW": "機庫"
+    },
+    "Char_Head_Piercings": {
+      "zh-TW": "穿環"
+    },
+    "Sensor": {
+      "zh-TW": "感測器"
+    },
+    "Player": {
+      "zh-TW": "玩家"
+    },
+    "Char_Head_Beard": {
+      "zh-TW": "鬍鬚"
+    },
+    "AIModule": {
+      "zh-TW": "AI 模組"
+    },
+    "Room": {
+      "zh-TW": "艙室"
+    },
+    "DockingAnimator": {
+      "zh-TW": "對接機構"
+    },
+    "Thumbnail": {
+      "zh-TW": "縮圖"
+    },
+    "Elevator": {
+      "zh-TW": "電梯"
+    },
+    "InventoryContainer": {
+      "zh-TW": "儲物容器"
+    },
+    "StatusScreen": {
+      "zh-TW": "狀態螢幕"
+    },
+    "ToolArm": {
+      "zh-TW": "工具臂"
+    },
+    "SalvageController": {
+      "zh-TW": "打撈控制器"
+    },
+    "MissileController": {
+      "zh-TW": "飛彈控制器"
+    },
+    "UtilityTurret": {
+      "zh-TW": "工具砲塔"
+    },
+    "Lightgroup": {
+      "zh-TW": "燈光組"
+    },
+    "WeaponMount": {
+      "zh-TW": "武器架座"
+    },
+    "WeaponController": {
+      "zh-TW": "武器控制器"
+    },
+    "Char_Clothing_Torso_2": {
+      "zh-TW": "外套"
+    },
+    "SalvageModifier": {
+      "zh-TW": "打撈模組"
+    },
+    "SalvageFillerStation": {
+      "zh-TW": "打撈填料站"
+    },
+    "GroundVehicleMissileLauncher": {
+      "zh-TW": "地面載具飛彈發射器"
+    },
+    "LandingSystem": {
+      "zh-TW": "降落系統"
+    },
+    "PersistentHab": {
+      "zh-TW": "個人住所"
+    },
+    "SalvageInternalStorage": {
+      "zh-TW": "打撈內部儲存"
+    },
+    "FPS_Deployable": {
+      "zh-TW": "可部署裝置"
+    },
+    "MiningController": {
+      "zh-TW": "採礦控制器"
+    },
+    "LandingGear": {
+      "zh-TW": "起落架"
+    },
+    "Transponder": {
+      "zh-TW": "應答器"
+    },
+    "Crafter": {
+      "zh-TW": "製作台"
+    },
+    "Char_Hair_Prop": {
+      "zh-TW": "髮飾"
+    },
+    "SpaceMine": {
+      "zh-TW": "太空水雷"
+    },
+    "CommsController": {
+      "zh-TW": "通訊控制器"
+    },
+    "DoorController": {
+      "zh-TW": "艙門控制器"
+    },
+    "Scanner": {
+      "zh-TW": "掃描器"
+    },
+    "Currency": {
+      "zh-TW": "貨幣"
+    },
+    "FPS_Radar": {
+      "zh-TW": "個人雷達"
+    },
+    "CoolerController": {
+      "zh-TW": "冷卻控制器"
+    },
+    "FuelController": {
+      "zh-TW": "燃料控制器"
+    },
+    "EnergyController": {
+      "zh-TW": "能源控制器"
+    },
+    "CapacitorAssignmentController": {
+      "zh-TW": "電容分配控制器"
+    },
+    "TargetSelector": {
+      "zh-TW": "目標選擇器"
+    },
+    "LightController": {
+      "zh-TW": "燈光控制器"
+    },
+    "SalvageFieldSupporter": {
+      "zh-TW": "打撈力場支撐器"
+    },
+    "SalvageFieldEmitter": {
+      "zh-TW": "打撈力場發射器"
+    },
+    "RemoteConnection": {
+      "zh-TW": "遠端連線"
+    },
+    "Char_Clothing_Backpack": {
+      "zh-TW": "背包"
+    },
+    "Char_Head_Stubble": {
+      "zh-TW": "鬍渣"
+    }
+  },
+  "item_sub_type": {
+    "Vehicle_Spaceship": {
+      "zh-TW": "太空船"
+    },
+    "Light": {
+      "zh-TW": "輕型"
+    },
+    "Heavy": {
+      "zh-TW": "重型"
+    },
+    "DoorPart": {
+      "zh-TW": "艙門部件"
+    },
+    "Personal": {
+      "zh-TW": "個人"
+    },
+    "QuantumFuel": {
+      "zh-TW": "量子燃料"
+    },
+    "Helmet": {
+      "zh-TW": "頭盔"
+    },
+    "Barrel": {
+      "zh-TW": "槍管"
+    },
+    "Harvestable": {
+      "zh-TW": "可採集物"
+    },
+    "PowerArray": {
+      "zh-TW": "電源陣列"
+    },
+    "Ventilation": {
+      "zh-TW": "通風"
+    },
+    "FiringMechanism": {
+      "zh-TW": "擊發機構"
+    },
+    "MidRangeRadar": {
+      "zh-TW": "中程雷達"
+    },
+    "Retro": {
+      "zh-TW": "反推"
+    },
+    "AirlockPart": {
+      "zh-TW": "氣閘部件"
+    },
+    "SystemAccess": {
+      "zh-TW": "系統存取"
+    },
+    "Junk": {
+      "zh-TW": "雜物"
+    },
+    "Flair_Wall_Picture": {
+      "zh-TW": "牆面掛畫"
+    },
+    "Bottle": {
+      "zh-TW": "瓶裝"
+    },
+    "Vehicle_GroundVehicle": {
+      "zh-TW": "地面載具"
+    },
+    "Consumable": {
+      "zh-TW": "消耗品"
+    },
+    "Flair_Surface_DisplayCase": {
+      "zh-TW": "展示櫃"
+    },
+    "Mineable": {
+      "zh-TW": "可開採物"
+    },
+    "Medical": {
+      "zh-TW": "醫療"
+    },
+    "Can": {
+      "zh-TW": "罐裝"
+    },
+    "Torpedo": {
+      "zh-TW": "魚雷"
+    },
+    "GroundVehicleMissile": {
+      "zh-TW": "地面載具飛彈"
+    },
+    "Box": {
+      "zh-TW": "盒裝"
+    },
+    "Hacking": {
+      "zh-TW": "駭客"
+    },
+    "Tin": {
+      "zh-TW": "罐頭"
+    },
+    "Vanduul": {
+      "zh-TW": "凡杜爾"
+    },
+    "Bar": {
+      "zh-TW": "棒狀"
+    },
+    "Sachet": {
+      "zh-TW": "小包裝"
+    },
+    "ThrusterPack": {
+      "zh-TW": "推進背包"
+    },
+    "TopTurret": {
+      "zh-TW": "上方砲塔"
+    },
+    "Plant": {
+      "zh-TW": "植物"
+    },
+    "WeaponControl": {
+      "zh-TW": "武器控制"
+    },
+    "BottomAttachment": {
+      "zh-TW": "下掛配件"
+    },
+    "Trophy": {
+      "zh-TW": "戰利品"
+    },
+    "Vehicle_PowerSuit": {
+      "zh-TW": "動力裝甲"
+    },
+    "GroundVehicleMissileRack": {
+      "zh-TW": "地面載具飛彈架"
+    },
+    "Flair_Floor_WallAligned": {
+      "zh-TW": "靠牆地面擺飾"
+    },
+    "Credit": {
+      "zh-TW": "信用點"
+    },
+    "LightArmor": {
+      "zh-TW": "輕甲"
+    },
+    "Female": {
+      "zh-TW": "女性"
+    },
+    "BottomTurret": {
+      "zh-TW": "下方砲塔"
+    },
+    "Flair_Surface_Clutter": {
+      "zh-TW": "桌面擺飾"
+    },
+    "Fuse": {
+      "zh-TW": "保險絲"
+    },
+    "Scanner": {
+      "zh-TW": "掃描器"
+    },
+    "SalvageModifier_TractorBeam": {
+      "zh-TW": "牽引光束模組"
+    },
+    "Flair_Wall_Interaction": {
+      "zh-TW": "牆面互動擺飾"
+    },
+    "Mission": {
+      "zh-TW": "任務"
+    },
+    "Unmanned": {
+      "zh-TW": "無人"
+    },
+    "Glass": {
+      "zh-TW": "玻璃"
+    },
+    "ShortRangeRadar": {
+      "zh-TW": "短程雷達"
+    },
+    "Kopion": {
+      "zh-TW": "科皮恩"
+    }
+  },
   "mining_deposit": {
     "Asteroid (C-Type)": {
       "zh-TW": "C 型小行星"
@@ -164,6 +510,23 @@
     },
     "has_landing_pad": {
       "zh-TW": "停機坪"
+    }
+  },
+  "item_class": {
+    "Civilian": {
+      "zh-TW": "民用"
+    },
+    "Industrial": {
+      "zh-TW": "工業"
+    },
+    "Military": {
+      "zh-TW": "軍用"
+    },
+    "Stealth": {
+      "zh-TW": "隱形"
+    },
+    "Competition": {
+      "zh-TW": "競速"
     }
   }
 }
