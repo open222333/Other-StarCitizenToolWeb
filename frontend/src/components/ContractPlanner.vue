@@ -39,6 +39,7 @@
           <!-- 小隊 -->
           <div class="mt-3">
             <div class="cp-section-title cp-section-title--squad mb-2"><i class="bi bi-people me-1"></i>小隊 {{ squads.length }} / {{ MAX_SQUADS }}</div>
+            <ShipFilter id="cp-filter" class="mb-2" />
             <div v-for="(sq, i) in squads" :key="sq.key" class="cp-box cp-box--squad mb-2">
               <div class="row g-2 align-items-center mb-1">
                 <div class="col-12 col-md-4">
@@ -241,6 +242,7 @@ import PlacePicker from '@/components/PlacePicker.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
+import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
 import { useNavBase } from '@/utils/navBase'
 import { fmtDist, fmtNum, fmtTime, placeLabel, shipLabel } from '@/utils/navFormat'

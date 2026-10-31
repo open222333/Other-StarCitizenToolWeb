@@ -11,6 +11,7 @@
       <div class="card-body">
         <SfState :loading="base.loading.value" :error="base.error.value"
           :empty="base.loaded.value && !base.places.value.length" empty-text="尚無地點座標資料。" @retry="base.load">
+          <ShipFilter id="rp-filter" class="mb-2" />
           <ShipPicker id="rp" v-model:ship-id="shipId" v-model:ship-text="shipText" v-model:qd-id="qdId"
             :ships="base.ships.value" :quantum-drives="base.quantumDrives.value" :fleet-uuids="fleetUuids"
             :show-cargo="SHOW_CARGO" auto-pick @pick="s => { if (s) externalCargo = !!s.external_cargo }" />
@@ -154,6 +155,7 @@ import PlacePicker from '@/components/PlacePicker.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
+import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
 import { useNavBase } from '@/utils/navBase'
 import { fmtDist, fmtNum, fmtTime } from '@/utils/navFormat'

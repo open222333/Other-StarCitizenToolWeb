@@ -37,6 +37,7 @@
 <script setup>
 import { computed, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
+import { shipPasses } from '@/utils/navBase'
 import { fmtNum, fmtSpeed, shipLabel } from '@/utils/navFormat'
 
 const props = defineProps({
@@ -68,7 +69,8 @@ function pickShip(s) {
 
 watch([() => props.ships, fleetSet], () => {
   if (!props.autoPick || ship.value || !props.ships.length) return
-  const mine = props.ships.find(s => fleetSet.value.has(s.id))
+  const mine = props.ships.find(s => fleetSet.value.has(s.id) && shipPasses(s, fleetSet.value))
+    || props.ships.find(s => fleetSet.value.has(s.id))
   if (mine) pickShip(mine)
 }, { immediate: true })
 
@@ -105,7 +107,9 @@ const norm = text => (text || '').toLowerCase()
 
 async function searchShips(q) {
   const t = norm(q)
-  const rows = props.ships.filter(s => !t || norm(s.name).includes(t) || norm(s.name_zh).includes(t))
+  // 篩選（貨艙、我的機庫，見 components/ShipFilter.vue）只影響候選清單
+  const rows = props.ships.filter(s => shipPasses(s, fleetSet.value)
+    && (!t || norm(s.name).includes(t) || norm(s.name_zh).includes(t)))
   rows.sort((a, b) => (fleetSet.value.has(b.id) - fleetSet.value.has(a.id)))
   return rows.slice(0, 40)
 }
