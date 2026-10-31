@@ -259,6 +259,8 @@ UNGUARDED_ALLOWLIST = {
     'app_starmap.nav_ships',
     'app_starmap.nav_quantum_drives',
     'app_starmap.nav_route',
+    'app_starmap.nav_contracts',
+    'app_starmap.nav_commodities',
     'app_item.search_items',
     'app_item.list_types',
     'app_item.get_item',

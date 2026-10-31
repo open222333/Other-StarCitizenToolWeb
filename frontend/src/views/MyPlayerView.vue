@@ -1258,9 +1258,15 @@
         card-class="card scifi-card" />
     </div>
 
-    <!-- ══════════ 航線規劃（見 components/RoutePlanner.vue、src/models/nav.py）══════════ -->
-    <div v-show="activeTab === 'route'" role="tabpanel" id="panel-route" :aria-labelledby="'tab-route'">
-      <RoutePlanner :fetcher="playerAuth.playerFetch" :active="activeTab === 'route'"
+    <!-- ══════════ 航線規劃／合約分配（見 components/RoutePlanner.vue、ContractPlanner.vue、src/models/nav.py、haul.py）══════════ -->
+    <div v-show="activeTab === 'route' && activeSub === 'plan'" role="tabpanel" id="panel-route-plan"
+      aria-labelledby="subtab-route-plan">
+      <RoutePlanner :fetcher="playerAuth.playerFetch" :active="activeTab === 'route' && activeSub === 'plan'"
+        :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
+    </div>
+    <div v-show="activeTab === 'route' && activeSub === 'contracts'" role="tabpanel" id="panel-route-contracts"
+      aria-labelledby="subtab-route-contracts">
+      <ContractPlanner :fetcher="playerAuth.playerFetch" :active="activeTab === 'route' && activeSub === 'contracts'"
         :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
     </div>
 
@@ -1518,6 +1524,7 @@ import { auecPerUsd, fmtAuec, fmtAuecPerUsd, fmtUsd, vehicleInRanges, VEHICLE_AC
 import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
 import RoutePlanner from '@/components/RoutePlanner.vue'
+import ContractPlanner from '@/components/ContractPlanner.vue'
 import { PLAYER_TABS, orderTabs } from '@/utils/playerTabs'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'

@@ -28,7 +28,7 @@ import time
 
 from src.mongo import get_db
 from src.scdata import grade_letter, item_class_of
-from src.sc_zh import item_class_zh, vehicle_name_zh
+from src.sc_zh import item_class_zh, item_name_zh, mining_resource_name_zh, vehicle_name_zh
 
 BODY_TYPES = ('Planet', 'Moon')
 #: 不列入地點選單的類型（一般小行星群：數量多、不能量子定位）
@@ -53,6 +53,8 @@ DEFAULT_SHIP = {'id': None, 'name': '', 'name_zh': None, 'qt_speed': 2.0e8, 'qt_
 MAX_WAYPOINTS = 12
 MAX_CARGO = 8
 CACHE_TTL = 300
+#: 事件帶到航段的額外欄位（合約分配用）
+LEG_EXTRA = ('contract', 'contract_name', 'item', 'item_name', 'item_named')
 
 PLANS = (
     ('fastest', '最快'),
@@ -216,6 +218,27 @@ def world(visible_only: bool = False) -> World:
 def clear_cache():
     with _lock:
         _cache.clear()
+
+
+def commodities() -> list:
+    """貨物（後台「商品資料庫」，UEX 商品 uex_commodities）[{id, code, name, name_zh}]，合約分配的貨物選單用；
+    中文跟商品資料庫頁同一套（礦物／商品翻譯，查不到再用物品翻譯）。"""
+    with _lock:
+        cached = _cache.get('commodities')
+        if cached and time.time() - cached[0] < CACHE_TTL:
+            return cached[1]
+    out, seen = [], set()
+    for r in get_db()['uex_commodities'].find({}, {'id': 1, 'code': 1, 'name': 1}):
+        name = (r.get('name') or '').strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        out.append({'id': str(r.get('id', r['_id'])), 'code': r.get('code') or None, 'name': name,
+                    'name_zh': mining_resource_name_zh(name=name) or item_name_zh(name)})
+    out.sort(key=lambda c: c['name'].lower())
+    with _lock:
+        _cache['commodities'] = (time.time(), out)
+    return out
 
 
 def node_brief(n: dict, pos: bool = False) -> dict:
@@ -590,6 +613,8 @@ def _build_plan(planner: Planner, start, events, order, end, key, label) -> dict
             'action': event['kind'] if event else 'end',
             'cargo': event.get('cargo') if event else None,
             'scu': event.get('scu') if event else None,
+            # 合約分配（src/models/haul.py）帶的：哪份合約、哪項貨物
+            **({k: event[k] for k in LEG_EXTRA if k in event} if event else {}),
             'load_before': load_before,
             'load_after': load,
             'steps': out_steps,

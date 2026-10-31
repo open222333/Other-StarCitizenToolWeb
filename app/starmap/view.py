@@ -12,7 +12,7 @@ from src.limiter import limiter
 from src.models.log import Log
 from src.models.sorting import sort_args
 from src.models.starmap import FEATURE_KEYS, MAX_LIMIT, Starmap
-from src.models import nav
+from src.models import haul, nav
 from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg
 
 app_starmap = Blueprint('app_starmap', __name__)
@@ -206,6 +206,62 @@ def nav_route():
             ship_id=str(body.get('ship') or ''),
             qd_id=str(body.get('quantum_drive') or ''),
             external_cargo=external if isinstance(external, bool) else None,
+            visible_only=not viewer_sees_hidden(),
+        )
+    except nav.RouteError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    return jsonify({'success': True, 'data': data})
+
+
+@app_starmap.route('/nav/commodities', methods=['GET'])
+@jwt_required()
+def nav_commodities():
+    """合約分配的貨物選單：商品資料庫（UEX 商品）的商品（含縮寫、中文名稱）。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{id, code, name, name_zh}]"
+    """
+    return jsonify({'success': True, 'data': nav.commodities()})
+
+
+@app_starmap.route('/nav/contracts', methods=['POST'])
+@jwt_required()
+@limiter.limit('10 per minute')
+def nav_contracts():
+    """合約分配：多份運貨合約分給多個小隊，各隊的航線（最快完成／總時間最少／總油量最少），見 src/models/haul.py。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            start: {type: string, description: "共同起點地點 id（小隊沒填起點時用）"}
+            squads: {type: array, items: {type: object}, description: "[{name, ship, quantum_drive, start}]，最多 6 隊"}
+            contracts: {type: array, items: {type: object}, description: "[{name, items: [{cargo, pickup, dropoff, scu}]}]，最多 10 份、每份 10 項"}
+            end_mode: {type: string, description: "none（停在最後一站）／start（各隊回到自己的起點）"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 參數錯誤或排不出分配
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({'success': False, 'message': '格式錯誤'}), 400
+    try:
+        data = haul.plan_contracts(
+            start_id=str(body.get('start') or ''),
+            squads=body.get('squads'),
+            contracts=body.get('contracts'),
+            end_mode='start' if body.get('end_mode') == 'start' else 'none',
             visible_only=not viewer_sees_hidden(),
         )
     except nav.RouteError as exc:

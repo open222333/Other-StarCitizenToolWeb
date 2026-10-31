@@ -17,8 +17,11 @@ export const PLAYER_TABS = [
     key: 'fleet', label: '艦隊',  icon: 'bi bi-rocket-takeoff',
   },
   { key: 'mining',     label: '礦物',   icon: 'bi bi-gem' },
-  // 量子航線規劃（多站點、貨運取送順序；見 components/RoutePlanner.vue）
-  { key: 'route',      label: '航線',   icon: 'bi bi-signpost-split' },
+  // 量子航線規劃（多站點；見 components/RoutePlanner.vue）、合約分配（多合約 × 多小隊；見 components/ContractPlanner.vue）
+  {
+    key: 'route', label: '航線', icon: 'bi bi-signpost-split',
+    subTabs: [{ key: 'plan', label: '航線規劃' }, { key: 'contracts', label: '合約分配' }],
+  },
   {
     // 原本的三個下層分頁合併成一頁，改成上方按鈕點開（SEARCH_SECTIONS）。
     // 原名「查詢」；商品購買地點搬到倉庫後只剩查別人持有的東西，改名「查詢持有資訊」
