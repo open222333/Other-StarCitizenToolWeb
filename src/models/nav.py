@@ -88,6 +88,14 @@ def _seg_point_distance(a, b, c):
 class World:
     """一次載入的地點、星體、OM 點、跳躍點。"""
 
+    def external_ok(self, n: dict) -> bool:
+        """外掛貨櫃（Hull 系列）能不能在這個站點裝卸：有外部貨運（裝卸碼頭）資料時看它，沒有就只擋地表。"""
+        return n['loading_dock'] if self.has_dock_data else not n['surface']
+
+    @property
+    def external_rule(self) -> str:
+        return '外掛貨櫃只能在有外部貨運（裝卸碼頭）的站點裝卸' if self.has_dock_data else '外掛貨櫃只能停太空站'
+
     def __init__(self, rows: list):
         self.nodes: dict = {}
         by_id = {r['_id']: r for r in rows}
@@ -116,7 +124,16 @@ class World:
                 'facility': (by_id.get(r.get('parent_uuid')) or {}).get('type') in FACILITY_PARENT_TYPES,
                 # 有「Vehicle Services」設施（可以補量子燃料）
                 'services': bool(r.get('has_vehicle_services')),
+                # 外部貨運（裝卸碼頭）：外掛貨櫃（Hull 系列）只能在這種站點裝卸；
+                # 星圖設施「Loading Dock」或 UEX 交易終端的 has_loading_dock（見 Starmap.apply_uex_terminals）
+                'loading_dock': bool(r.get('has_loading_dock') or r.get('uex_has_loading_dock')),
+                # 有特大（XL）機庫（星圖設施 Hangar (XL)）
+                'xl_hangar': 'XL' in (r.get('hangar_sizes') or []),
+                # 有對接口（星圖設施 Docking，或 UEX 交易終端的 has_docking_port）
+                'docking': bool(r.get('has_docking') or r.get('uex_has_docking_port')),
             }
+        # 還沒有任何外部貨運資料（舊資料、還沒同步）時，外掛貨櫃退回「不能停地表」的判斷
+        self.has_dock_data = any(n['loading_dock'] for n in self.nodes.values())
         # 星體（會擋航線）：有半徑的行星、衛星
         self.bodies = [n for n in self.nodes.values() if n['type'] in BODY_TYPES and n['radius'] > 0]
         for b in self.bodies:
@@ -208,7 +225,8 @@ def world(visible_only: bool = False) -> World:
     fields = {'name': 1, 'name_zh': 1, 'type': 1, 'type_zh': 1, 'pos_system': 1, 'system_name': 1,
               'system_name_zh': 1, 'path_zh': 1, 'pos': 1, 'qt_valid': 1, 'quantum_travel': 1,
               'size': 1, 'obstruction_radius': 1, 'jump_links': 1, 'parent_uuid': 1, 'is_named': 1,
-              'has_vehicle_services': 1}
+              'has_vehicle_services': 1, 'has_loading_dock': 1, 'uex_has_loading_dock': 1, 'hangar_sizes': 1,
+              'has_docking': 1, 'uex_has_docking_port': 1}
     w = World(list(get_db()['starmap_master'].find(filt, fields)))
     with _lock:
         _cache[key] = (time.time(), w)
@@ -249,6 +267,8 @@ def node_brief(n: dict, pos: bool = False) -> dict:
             'surface': bool(n.get('surface')), 'synthetic': bool(n.get('synthetic')),
             'group': n.get('group'), 'group_name': n.get('group_name'), 'group_name_zh': n.get('group_name_zh'),
             'group_type': n.get('group_type'), 'services': bool(n.get('services')),
+            'loading_dock': bool(n.get('loading_dock')), 'xl_hangar': bool(n.get('xl_hangar')),
+            'docking': bool(n.get('docking')),
             'jump': bool(n.get('jump_links'))}
     if pos:
         out['p'] = [round(v, 1) for v in n['p']]
@@ -717,10 +737,10 @@ def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = '
         if biggest > capacity:
             raise RouteError(f'單筆貨運 {biggest:g} SCU 超過貨艙容量 {capacity:g} SCU')
     if external_cargo and cargo:
-        bad = [e['node'] for e in events if e['kind'] in ('pickup', 'dropoff') and e['node']['surface']]
+        bad = [e['node'] for e in events if e['kind'] in ('pickup', 'dropoff') and not w.external_ok(e['node'])]
         if bad:
             names = '、'.join(dict.fromkeys(n.get('name_zh') or n['name'] for n in bad))
-            raise RouteError(f'外掛貨櫃只能停太空站：{names}')
+            raise RouteError(f'{w.external_rule}：{names}')
 
     planner = Planner(w, ship_info)
     plans, seen = [], {}

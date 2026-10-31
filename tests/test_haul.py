@@ -156,3 +156,27 @@ def test_pickup_amounts_can_be_unknown(haulers):
     item['pickups'][1]['scu'] = 14
     with pytest.raises(nav.RouteError, match='沒有貨可拿'):
         haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}], contracts=[{'name': 'A', 'items': [item]}])
+
+
+def test_external_cargo_needs_loading_dock(haulers):
+    db = get_db()
+    db.ship_nav_master.insert_one({'_id': 'hullx', 'name': 'Hull', 'class_name': 'MISC_Hull_C', 'cargo_scu': 500,
+                                   **{**FAST, 'external_cargo': True}})
+    contracts = [_contract('A', ('Ore', 'stA', 'stC', 10))]
+    # 還沒有外部貨運資料：照舊只擋地表，太空站都可以
+    nav.clear_cache()
+    res = haul.plan_contracts(start_id='stA', squads=[{'ship': 'hullx'}], contracts=contracts)
+    assert res['plans'][0]['squads'][0]['trips'] == 1
+    # 有資料之後：只有裝卸碼頭（星圖設施或 UEX）的站點能裝卸
+    db.starmap_master.update_one({'_id': 'stA'}, {'$set': {'has_loading_dock': True}})
+    db.starmap_master.update_one({'_id': 'stY'}, {'$set': {'uex_has_loading_dock': True}})
+    nav.clear_cache()
+    with pytest.raises(nav.RouteError, match='外部貨運'):
+        haul.plan_contracts(start_id='stA', squads=[{'ship': 'hullx'}], contracts=contracts)
+    ok = haul.plan_contracts(start_id='stA', squads=[{'ship': 'hullx'}],
+                             contracts=[_contract('A', ('Ore', 'stA', 'stY', 10))])
+    assert ok['plans'][0]['squads'][0]['trips'] == 1
+    # 一般航線也一樣
+    with pytest.raises(nav.RouteError, match='外部貨運'):
+        nav.plan_route(start_id='stA', waypoints=[], ship_id='hullx', cargo=[{'pickup': 'stA', 'dropoff': 'stC', 'scu': 5}])
+    assert {p['id']: p['loading_dock'] for p in nav.places()}['stY'] is True

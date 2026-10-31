@@ -28,7 +28,7 @@
         <span v-if="effective.fuelPerGm" class="sf-chip">每 Gm 耗油 {{ fmtNum(effective.fuelPerGm, 2) }}</span>
         <span v-if="ship.qt_fuel_capacity" class="sf-chip">量子油箱 {{ fmtNum(ship.qt_fuel_capacity) }}</span>
         <span v-if="effective.rangeGm" class="sf-chip">滿油約 {{ fmtNum(effective.rangeGm, 1) }} Gm</span>
-        <span v-if="showCargo && ship.external_cargo" class="sf-chip">外掛貨櫃（只停太空站）</span>
+        <span v-if="showCargo && ship.external_cargo" class="sf-chip">外掛貨櫃（只停外部貨運站）</span>
       </div>
     </div>
   </div>

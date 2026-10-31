@@ -96,7 +96,7 @@
             </div>
             <div v-if="SHOW_CARGO" class="form-check mb-0">
               <input id="rp-external" v-model="externalCargo" class="form-check-input" type="checkbox">
-              <label class="form-check-label" for="rp-external">外掛貨櫃（只停太空站）</label>
+              <label class="form-check-label" for="rp-external">外掛貨櫃（只停外部貨運站）</label>
             </div>
             <div class="ms-auto d-flex gap-2">
               <button type="button" class="btn btn-sm btn-warning" @click="clearForm">

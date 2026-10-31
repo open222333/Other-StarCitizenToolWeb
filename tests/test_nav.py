@@ -267,3 +267,16 @@ def test_quantum_drive_class_and_grade_fallback(world_data):
     rows = {r['id']: r for r in nav.quantum_drives()}
     assert rows['q1']['item_class'] == 'Military' and rows['q1']['grade'] == 'C'
     assert rows['q2']['item_class'] == 'Civilian' and rows['q2']['grade'] == 'B'
+
+
+def test_place_traits(world_data):
+    db = get_db()
+    db.starmap_master.update_one({'_id': 'stA'}, {'$set': {'hangar_sizes': ['L', 'XL'], 'has_docking': True}})
+    db.starmap_master.update_one({'_id': 'stC'}, {'$set': {'uex_has_docking_port': True, 'has_loading_dock': True}})
+    nav.clear_cache()
+    rows = {p['id']: p for p in nav.places()}
+    assert rows['stA']['xl_hangar'] and rows['stA']['docking'] and not rows['stA']['loading_dock']
+    assert rows['stC']['docking'] and rows['stC']['loading_dock'] and not rows['stC']['xl_hangar']
+    assert not rows['stY']['docking']
+    leg = nav.plan_route(start_id='stA', waypoints=['stC'], cargo=[], ship_id='ship1')['plans'][0]['legs'][0]
+    assert leg['to']['docking'] is True

@@ -25,6 +25,9 @@
           <td class="ps-3 sf-stack__title">
             <div class="fw-semibold"><span class="rlt-no">0</span>{{ placeLabel(plan.start) }}</div>
             <div class="rlt-path ps-4">{{ placePath(plan.start) }}</div>
+            <div v-if="traitsOf(plan.start).length" class="d-flex flex-wrap gap-1 mt-1 ps-4">
+              <span v-for="t in traitsOf(plan.start)" :key="t" class="sf-chip">{{ t }}</span>
+            </div>
           </td>
           <td data-label="動作">
             <div v-if="!table.start" class="rlt-action"><span class="sf-chip text-nowrap">出發</span></div>
@@ -49,6 +52,9 @@
           <td class="ps-3 sf-stack__title">
             <div class="fw-semibold"><span class="rlt-no">{{ i + 1 }}</span>{{ placeLabel(row.to) }}</div>
             <div class="rlt-path ps-4">{{ placePath(row.to) }}</div>
+            <div v-if="traitsOf(row.to).length" class="d-flex flex-wrap gap-1 mt-1 ps-4">
+              <span v-for="t in traitsOf(row.to)" :key="t" class="sf-chip">{{ t }}</span>
+            </div>
             <div v-if="row.via.length" class="d-flex flex-wrap gap-1 mt-1 ps-4">
               <span v-for="(v, j) in row.via" :key="j" class="sf-chip"
                 :class="{ 'sf-chip--accent': v.kind === 'jump' }">
@@ -98,6 +104,10 @@ function actionLabel(a) {
   if (a.contract_name) return `${base} ${fmtNum(a.scu)} SCU`
   return a.cargo ? `${base} #${a.cargo} · ${fmtNum(a.scu)} SCU` : base
 }
+
+// 站點特性：特大機庫、外部貨運（裝卸碼頭，外掛貨櫃船能裝卸）、對接口
+const traitsOf = p => [p?.xl_hangar ? '特大機庫' : '', p?.loading_dock ? '外部貨運' : '', p?.docking ? '對接口' : '']
+  .filter(Boolean)
 
 // 第 k 段出發前要補燃料／第 k 段單段就超過油箱
 const refuelBefore = k => !!props.plan.refuel_stops?.includes(k)

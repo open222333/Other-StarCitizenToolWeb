@@ -417,12 +417,13 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
     if len(tasks) > MAX_TASKS:
         raise RouteError(f'拆成趟數後共 {len(tasks)} 趟，最多 {MAX_TASKS} 趟，請減少合約或換大一點的船')
     for task in tasks:
-        surface = task['pickup']['surface'] or task['dropoff']['surface']
+        # 外掛貨櫃（Hull 系列）只能在有外部貨運（裝卸碼頭）的站點裝卸（見 nav.World.external_ok）
+        external_ok = w.external_ok(task['pickup']) and w.external_ok(task['dropoff'])
         task['eligible'] = [s['index'] for s in squad_infos
-                            if s['cap'] + 1e-9 >= task['scu'] and not (s['external'] and surface)]
+                            if s['cap'] + 1e-9 >= task['scu'] and (external_ok or not s['external'])]
         if not task['eligible']:
             raise RouteError(f'{task["contract_name"]} {task["item_name"]}：沒有小隊載得了'
-                             '（貨艙不夠，或外掛貨櫃不能停地表）')
+                             f'（貨艙不夠，或{w.external_rule}）')
 
     # 每個方案各自搜尋；最後每個方案再從所有方案找到的分配裡挑對它最好的（搜尋是啟發式，互相補位）
     evals = {key: [_Squad(s, planners[s['index']], _LEG_COST[key]) for s in squad_infos] for key, _ in OBJECTIVES}
