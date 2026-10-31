@@ -17,7 +17,7 @@
     </div>
     <div class="form-check mb-0">
       <input :id="`${id}-fleet`" v-model="filter.fleetOnly" class="form-check-input" type="checkbox">
-      <label class="form-check-label" :for="`${id}-fleet`">只看我的機庫</label>
+      <label class="form-check-label" :for="`${id}-fleet`">{{ fleetLabel }}</label>
     </div>
   </div>
 </template>
@@ -25,7 +25,10 @@
 <script setup>
 import { shipFilter as filter } from '@/utils/navBase'
 
-defineProps({ id: { type: String, required: true } })
+defineProps({
+  id: { type: String, required: true },
+  fleetLabel: { type: String, default: '只看我的機庫' },
+})
 </script>
 
 <style scoped>

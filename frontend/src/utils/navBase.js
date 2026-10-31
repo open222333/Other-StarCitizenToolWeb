@@ -39,12 +39,12 @@ watch(shipFilter, () => {
   } catch { /* 存不了就算了 */ }
 }, { deep: true })
 
-/** 這艘船符不符合篩選（fleet：我的機庫的船 id Set） */
-export function shipPasses(s, fleet) {
+/** 這艘船符不符合篩選（fleet：我的機庫的船 id Set；applyFleet＝false 時不套「只看我的機庫」） */
+export function shipPasses(s, fleet, applyFleet = true) {
   const cargo = Number(s.cargo_scu) || 0
   if (shipFilter.hideNoCargo && cargo <= 0) return false
   if (Number(shipFilter.minScu) > 0 && cargo < Number(shipFilter.minScu)) return false
-  if (shipFilter.fleetOnly && !fleet.has(s.id)) return false
+  if (applyFleet && shipFilter.fleetOnly && !fleet.has(s.id)) return false
   return true
 }
 

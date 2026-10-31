@@ -53,6 +53,8 @@ const props = defineProps({
   showCargo: { type: Boolean, default: false },
   // 還沒選船時，自動選機庫裡的第一艘
   autoPick: { type: Boolean, default: false },
+  // 套用篩選的「只看我的機庫」（合約分配只有「我的小隊」才套用）
+  fleetFilter: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update:shipId', 'update:shipText', 'update:qdId', 'pick'])
 
@@ -69,7 +71,7 @@ function pickShip(s) {
 
 watch([() => props.ships, fleetSet], () => {
   if (!props.autoPick || ship.value || !props.ships.length) return
-  const mine = props.ships.find(s => fleetSet.value.has(s.id) && shipPasses(s, fleetSet.value))
+  const mine = props.ships.find(s => fleetSet.value.has(s.id) && shipPasses(s, fleetSet.value, props.fleetFilter))
     || props.ships.find(s => fleetSet.value.has(s.id))
   if (mine) pickShip(mine)
 }, { immediate: true })
@@ -108,7 +110,7 @@ const norm = text => (text || '').toLowerCase()
 async function searchShips(q) {
   const t = norm(q)
   // 篩選（貨艙、我的機庫，見 components/ShipFilter.vue）只影響候選清單
-  const rows = props.ships.filter(s => shipPasses(s, fleetSet.value)
+  const rows = props.ships.filter(s => shipPasses(s, fleetSet.value, props.fleetFilter)
     && (!t || norm(s.name).includes(t) || norm(s.name_zh).includes(t)))
   rows.sort((a, b) => (fleetSet.value.has(b.id) - fleetSet.value.has(a.id)))
   return rows.slice(0, 40)

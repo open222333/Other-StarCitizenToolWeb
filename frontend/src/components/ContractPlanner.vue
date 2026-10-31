@@ -39,14 +39,18 @@
           <!-- 小隊 -->
           <div class="mt-3">
             <div class="cp-section-title cp-section-title--squad mb-2"><i class="bi bi-people me-1"></i>小隊 {{ squads.length }} / {{ MAX_SQUADS }}</div>
-            <ShipFilter id="cp-filter" class="mb-2" />
+            <ShipFilter id="cp-filter" class="mb-2" fleet-label="我的小隊只看我的機庫" />
             <div v-for="(sq, i) in squads" :key="sq.key" class="cp-box cp-box--squad mb-2">
               <div class="row g-2 align-items-center mb-1">
                 <div class="col-12 col-md-4">
                   <input v-model="sq.name" type="text" maxlength="30" class="form-control form-control-sm"
                     :placeholder="`小隊 ${i + 1}`" :aria-label="`小隊 ${i + 1} 名稱`">
                 </div>
-                <div class="col d-flex align-items-center gap-2">
+                <div class="col d-flex flex-wrap align-items-center gap-2">
+                  <div class="form-check mb-0">
+                    <input :id="`cp-mine-${sq.key}`" v-model="sq.mine" class="form-check-input" type="checkbox">
+                    <label class="form-check-label" :for="`cp-mine-${sq.key}`">我的小隊</label>
+                  </div>
                   <div v-if="commonStart" class="form-check mb-0">
                     <input :id="`cp-own-start-${sq.key}`" v-model="sq.ownStart" class="form-check-input" type="checkbox">
                     <label class="form-check-label" :for="`cp-own-start-${sq.key}`">另設起點</label>
@@ -58,7 +62,7 @@
               <ShipPicker :id="`cp-sq-${sq.key}`" v-model:ship-id="sq.shipId" v-model:ship-text="sq.shipText"
                 :class="{ 'cp-invalid': isBad(`ship-${sq.key}`) }"
                 v-model:qd-id="sq.qdId" :ships="base.ships.value" :quantum-drives="base.quantumDrives.value"
-                :fleet-uuids="fleetUuids" show-cargo :auto-pick="i === 0" />
+                :fleet-uuids="fleetUuids" show-cargo :auto-pick="sq.mine" :fleet-filter="sq.mine" />
               <div v-if="usesOwnStart(sq)" class="mt-2">
                 <label class="form-label small fw-semibold mb-1" :for="`cp-sq-start-${sq.key}`">起點</label>
                 <PlacePicker :id="`cp-sq-start-${sq.key}`" :label="`${squadName(sq, i)}起點`" :places="base.places.value"
@@ -264,8 +268,10 @@ const STORAGE_KEY = 'sc_contracts_v1'
 
 let keySeq = 0
 const newPlace = (p = {}) => ({ id: p?.id || '', text: p?.text || '' })
-const newSquad = (s = {}) => ({ key: ++keySeq, name: s.name || '', shipId: s.shipId || '', shipText: s.shipText || '',
-  qdId: s.qdId || '', ownStart: !!s.ownStart, start: reactive(newPlace(s.start)) })
+// mine：「我的小隊」（用我機庫的船；選船篩選的「只看我的機庫」只套用在這種小隊）；舊存檔沒有這欄時第一隊算我的
+const newSquad = (s = {}, i = -1) => ({ key: ++keySeq, name: s.name || '', shipId: s.shipId || '', shipText: s.shipText || '',
+  qdId: s.qdId || '', ownStart: !!s.ownStart, start: reactive(newPlace(s.start)),
+  mine: typeof s.mine === 'boolean' ? s.mine : i === 0 })
 const numOrNull = v => (Number(v) > 0 ? Number(v) : null)
 const newPoint = (pt = {}) => ({ key: ++keySeq, place: reactive(newPlace(pt.place)), scu: numOrNull(pt.scu) })
 // 一項貨物：取貨點、送貨點各可以好幾個（舊格式 {pickup, dropoff, scu} 轉成各一個點）
@@ -304,7 +310,7 @@ watch([start, endMode, commonStart, squads, contracts], () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), endMode: endMode.value, commonStart: commonStart.value,
       squads: squads.map(s => ({ name: s.name, shipId: s.shipId, shipText: s.shipText, qdId: s.qdId,
-        ownStart: s.ownStart, start: plain(s.start) })),
+        ownStart: s.ownStart, start: plain(s.start), mine: s.mine })),
       contracts: contracts.map(c => ({ name: c.name, items: c.items.map(it => ({ cargo: it.cargo,
         pickups: it.pickups.map(savePoint), dropoffs: it.dropoffs.map(savePoint) })) })),
     }))
