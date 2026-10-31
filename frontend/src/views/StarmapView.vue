@@ -99,23 +99,24 @@
                 <SortTh :sort="sort" field="can_store" class="text-center">可存放</SortTh>
                 <SortTh :sort="sort" field="is_home" class="text-center">居住地</SortTh>
                 <SortTh :sort="sort" field="amenity_count" class="text-end">設施</SortTh>
+                <th>UEX 貨運</th>
                 <SortTh :sort="sort" field="player_visible" class="pe-3">玩家頁面</SortTh>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="10" class="text-center py-4 text-muted">
+                <td colspan="11" class="text-center py-4 text-muted">
                   <span class="spinner-border spinner-border-sm me-2"></span>載入中...
                 </td>
               </tr>
               <tr v-else-if="loadFailed">
-                <td colspan="10" class="text-center py-4">
+                <td colspan="11" class="text-center py-4">
                   <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取地點資料失敗。</span>
                   <button class="btn btn-sm btn-link p-0 ms-1" @click="reload(offset)">重試</button>
                 </td>
               </tr>
               <tr v-else-if="!rows.length">
-                <td colspan="10" class="text-center py-4 text-muted">
+                <td colspan="11" class="text-center py-4 text-muted">
                   {{ hasActiveFilters ? '沒有符合篩選條件的地點。' : '尚無地點資料' }}
                 </td>
               </tr>
@@ -154,10 +155,17 @@
                       <span v-if="loc.amenity_count" class="badge text-bg-primary">{{ loc.amenity_count }}</span>
                       <span v-else class="text-muted">—</span>
                     </td>
+                    <td>
+                      <div v-if="uexList(loc).length || loc.uex_max_container_size" class="d-flex flex-wrap gap-1">
+                        <span v-for="f in uexList(loc)" :key="f.key" class="badge text-bg-info">{{ f.label }}</span>
+                        <span v-if="loc.uex_max_container_size" class="badge text-bg-secondary">≤ {{ loc.uex_max_container_size }} SCU</span>
+                      </div>
+                      <span v-else class="text-muted">—</span>
+                    </td>
                     <td class="pe-3"><PlayerVisibleToggle dataset="locations" :doc-id="loc._id" :row="loc" /></td>
                   </tr>
                   <tr v-if="expandedId === loc._id">
-                    <td colspan="10" class="detail-cell ps-5 pe-3 py-3">
+                    <td colspan="11" class="detail-cell ps-5 pe-3 py-3">
                       <div class="row g-3">
                         <div class="col-lg-4">
                           <div class="fw-semibold mb-1">說明</div>
@@ -209,6 +217,10 @@
                           <div v-if="!featureList(loc).length" class="text-muted">—</div>
                           <div v-for="f in featureList(loc)" :key="f.key">
                             {{ f.label }}<span v-if="f.sizes" class="text-muted"> {{ f.sizes }}</span>
+                          </div>
+                          <div v-if="loc.uex_max_container_size">
+                            最大貨櫃 {{ loc.uex_max_container_size }} SCU
+                            <span class="text-muted">（UEX 終端 {{ loc.uex_terminal_count }} 個）</span>
                           </div>
                         </div>
                         <div class="col-lg-3">
@@ -544,6 +556,14 @@ async function setHome(loc, value) {
 }
 
 const SIZE_FIELDS = { has_hangar: 'hangar_sizes', has_landing_pad: 'landing_pad_sizes' }
+
+// UEX 交易終端的屬性（後端 Starmap.apply_uex_terminals 寫進地點）：表格那一欄用短名稱（去掉「（UEX）」）
+function uexList(loc) {
+  return (facets.value.features || []).filter(f => f.uex && loc[f.value] === true).map(f => ({
+    key: f.value,
+    label: (featureLabels.value[f.value] || f.value).replace(/\s*[（(]UEX[）)]\s*$/, ''),
+  }))
+}
 
 function featureList(loc) {
   return (facets.value.features || []).filter(f => loc[f.value] === true).map(f => ({

@@ -567,6 +567,7 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
             logger.info('scdata_sync: 地點設施人工修正 %d 筆', Starmap.apply_amenities())
             logger.info('scdata_sync: 地點「可存放」更新 %d 筆', Starmap.apply_storage())
             logger.info('scdata_sync: 地點「可選居住地」更新 %d 筆', Starmap.apply_home())
+            logger.info('scdata_sync: 地點 UEX 終端屬性更新 %d 筆', Starmap.apply_uex_terminals())
             try:
                 _report(force=True, phase=f'下載 {SCUNPACKED_POSITIONS_PATH}')
                 payload = fetch_scunpacked_rows(client('github'), SCUNPACKED_POSITIONS_PATH, expect=dict)
@@ -589,6 +590,12 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
             except Exception as err:
                 logger.exception('scdata_sync: UEX %s 失敗', resource)
                 errors.append(f'uex:{resource}: {err}')
+        if 'terminals' in UEX_JOB_RESOURCES[key] and not any(e.startswith('uex:terminals') for e in errors):
+            # 交易終端的停靠埠、裝卸碼頭、貨梯、自動裝貨、最大貨櫃寫進地點（見 Starmap.apply_uex_terminals）
+            try:
+                logger.info('scdata_sync: 地點 UEX 終端屬性更新 %d 筆', Starmap.apply_uex_terminals())
+            except Exception:
+                logger.exception('scdata_sync: 地點 UEX 終端屬性更新失敗')
 
     if key in visibility.SYNC_JOB_DATASETS:
         # 「玩家頁面顯示」：依名稱自動判斷，再套上後台的手動設定（見 src/models/visibility.py）

@@ -334,3 +334,30 @@ def test_home_names_file():
     from src.models.starmap import home_names
     assert {'lorville', 'area18', 'new babbage', 'orison', 'ruin station', 'checkmate', 'orbituary',
             'levski'} == home_names()
+
+
+def test_apply_uex_terminals(app):
+    db = get_db()
+    db.starmap_master.insert_many([
+        {'_id': 'p1', 'name': 'Port Tressler', 'system_name': 'Stanton', 'is_current': True},
+        {'_id': 'p2', 'name': 'Lorville', 'system_name': 'Stanton', 'is_current': True},
+        {'_id': 'p3', 'name': 'Checkmate', 'system_name': 'Pyro', 'is_current': True},
+        {'_id': 'p4', 'name': 'Checkmate', 'system_name': 'Stanton', 'is_current': True},
+    ])
+    db.uex_terminals.insert_many([
+        {'_id': '1', 'id': 1, 'space_station_name': 'Port Tressler', 'star_system_name': 'Stanton',
+         'has_docking_port': 1, 'is_auto_load': 1, 'max_container_size': 32},
+        {'_id': '2', 'id': 2, 'space_station_name': 'Port Tressler', 'star_system_name': 'Stanton',
+         'has_loading_dock': 1, 'max_container_size': 16},
+        {'_id': '3', 'id': 3, 'city_name': 'Lorville', 'star_system_name': 'Stanton', 'has_freight_elevator': 1},
+        {'_id': '4', 'id': 4, 'space_station_name': 'Checkmate', 'star_system_name': 'Pyro', 'has_docking_port': 1},
+    ])
+    assert Starmap.apply_uex_terminals() == 3   # p4 對不到，本來就沒有這些欄位
+    p1, p2, p3, p4 = (db.starmap_master.find_one({'_id': k}) for k in ('p1', 'p2', 'p3', 'p4'))
+    assert p1['uex_has_docking_port'] and p1['uex_is_auto_load'] and p1['uex_has_loading_dock']
+    assert p1['uex_has_freight_elevator'] is False and p1['uex_max_container_size'] == 32 and p1['uex_terminal_count'] == 2
+    assert p2['uex_has_freight_elevator'] is True and p2['uex_max_container_size'] is None
+    assert p3['uex_has_docking_port'] is True and p4.get('uex_has_docking_port') is None, '同名用星系挑'
+    assert Starmap.apply_uex_terminals() == 0
+    ids = [r['_id'] for r in Starmap.list_all(features=['uex_is_auto_load'], named_only=False)[0]]
+    assert ids == ['p1']

@@ -510,6 +510,21 @@
     },
     "has_landing_pad": {
       "zh-TW": "停機坪"
+    },
+    "uex_has_docking_port": {
+      "zh-TW": "停靠埠（UEX）"
+    },
+    "uex_has_loading_dock": {
+      "zh-TW": "外部貨運（UEX）"
+    },
+    "uex_has_freight_elevator": {
+      "zh-TW": "貨梯（UEX）"
+    },
+    "uex_is_auto_load": {
+      "zh-TW": "自動裝貨（UEX）"
+    },
+    "has_loading_dock": {
+      "zh-TW": "外部貨運（裝卸碼頭）"
     }
   },
   "item_class": {

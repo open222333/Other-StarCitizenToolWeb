@@ -65,6 +65,19 @@ FEATURES = [
     ('rent_vehicles', ['Rent Vehicles', 'Buy/Rent Vehicles']),
 ]
 FEATURE_KEYS = [k for k, _ in FEATURES]
+#: UEX 交易終端的屬性（uex_terminals，「UEX 價格」同步），用終端所在的太空站／城市／前哨站／地標名稱對應到地點，
+#: 同一個地點有好幾個終端時「任一有」就算有（見 Starmap.apply_uex_terminals）。欄位 → (UEX 欄位, 英文名稱)
+UEX_FEATURES = [
+    ('uex_has_docking_port', 'has_docking_port', 'Docking Port (UEX)'),
+    ('uex_has_loading_dock', 'has_loading_dock', 'Loading Dock (UEX)'),
+    ('uex_has_freight_elevator', 'has_freight_elevator', 'Freight Elevator (UEX)'),
+    ('uex_is_auto_load', 'is_auto_load', 'Auto Load (UEX)'),
+]
+UEX_FEATURE_KEYS = [k for k, _, _ in UEX_FEATURES]
+#: 後台「屬性」篩選可以用的欄位
+FILTER_FEATURE_KEYS = FEATURE_KEYS + UEX_FEATURE_KEYS
+#: UEX 終端所在地點的名稱欄位（由細到粗，取第一個有值的）
+UEX_PLACE_FIELDS = ('space_station_name', 'city_name', 'outpost_name', 'poi_name')
 _FEATURE_BY_AMENITY = {}
 for _key, _names in FEATURES:
     for _n in _names:
@@ -129,7 +142,7 @@ class Starmap:
         filt: dict = {'is_current': True}
         # 屬性：勾幾個就要全部都有（例如「有機庫」＋「武器商店」）
         for key in _clean_list(features):
-            if key in FEATURE_KEYS:
+            if key in FILTER_FEATURE_KEYS:
                 filt[key] = True
         add_visibility_filter(filt, visibility=visibility)
         if can_store is not None:
@@ -218,6 +231,9 @@ class Starmap:
                              'label_zh': starmap_feature_zh(key, names),
                              'storage': key in STORAGE_FEATURES,
                              'count': col.count_documents({**base, key: True})})
+        for key, _, label in UEX_FEATURES:
+            features.append({'value': key, 'label': label, 'label_zh': starmap_feature_zh(key), 'storage': False,
+                             'uex': True, 'count': col.count_documents({**base, key: True})})
         return {
             'features': features,
             'can_store': {'yes': col.count_documents({**base, 'can_store': True}),
@@ -351,6 +367,57 @@ class Starmap:
             effective = auto if override is None else bool(override)
             if row.get('home_auto') != auto or row.get('is_home') != effective:
                 ops.append(UpdateOne({'_id': row['_id']}, {'$set': {'home_auto': auto, 'is_home': effective}}))
+        for i in range(0, len(ops), 1000):
+            cls._col().bulk_write(ops[i:i + 1000], ordered=False)
+        return len(ops)
+
+    @classmethod
+    def apply_uex_terminals(cls) -> int:
+        """把 UEX 交易終端的屬性（停靠埠、裝卸碼頭、貨梯、自動裝貨、最大貨櫃）寫進地點：
+        終端的太空站／城市／前哨站／地標名稱對到地點名稱（同名的再用星系挑），同一個地點好幾個終端時
+        「任一有」就算有、最大貨櫃取最大；對不到任何終端的地點這幾個欄位是 None。
+        「地點」「UEX 價格」同步完都會跑，回傳有變動的筆數。"""
+        db = get_db()
+        by_name: dict = {}
+        current = {}
+        fields = {'name': 1, 'system_name': 1, 'uex_terminal_count': 1, 'uex_max_container_size': 1,
+                  **{k: 1 for k in UEX_FEATURE_KEYS}}
+        for row in cls._col().find({'is_current': True}, fields):
+            current[row['_id']] = row
+            name = (row.get('name') or '').strip().lower()
+            if name:
+                by_name.setdefault(name, []).append(row)
+        agg: dict = {}
+        uex_fields = {f: 1 for f in UEX_PLACE_FIELDS + ('star_system_name', 'max_container_size')}
+        uex_fields.update({src: 1 for _, src, _ in UEX_FEATURES})
+        for t in db['uex_terminals'].find({}, uex_fields):
+            place = next(((t.get(f) or '').strip() for f in UEX_PLACE_FIELDS if (t.get(f) or '').strip()), '')
+            hits = by_name.get(place.lower()) or []
+            if len(hits) > 1:
+                same_system = [h for h in hits if (h.get('system_name') or '').lower()
+                               == (t.get('star_system_name') or '').strip().lower()]
+                hits = same_system or hits
+            if not hits:
+                continue
+            loc = hits[0]['_id']
+            a = agg.setdefault(loc, {'uex_terminal_count': 0, 'uex_max_container_size': None,
+                                     **{k: False for k in UEX_FEATURE_KEYS}})
+            a['uex_terminal_count'] += 1
+            for key, src, _ in UEX_FEATURES:
+                if t.get(src) in (1, True, '1'):
+                    a[key] = True
+            try:
+                size = float(t.get('max_container_size') or 0)
+            except (TypeError, ValueError):
+                size = 0
+            if size > 0 and (a['uex_max_container_size'] or 0) < size:
+                a['uex_max_container_size'] = int(size) if size.is_integer() else size
+        empty = {'uex_terminal_count': None, 'uex_max_container_size': None, **{k: None for k in UEX_FEATURE_KEYS}}
+        ops = []
+        for loc_id, row in current.items():
+            want = agg.get(loc_id, empty)
+            if any(row.get(k) != v for k, v in want.items()):
+                ops.append(UpdateOne({'_id': loc_id}, {'$set': want}))
         for i in range(0, len(ops), 1000):
             cls._col().bulk_write(ops[i:i + 1000], ordered=False)
         return len(ops)
