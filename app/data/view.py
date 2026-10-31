@@ -1,4 +1,6 @@
-"""後台「資料庫檢視」（唯讀）：沒有專屬後台頁面的資料表原樣列出，見 src/models/data_browser.py。"""
+"""後台「資料庫檢視」（唯讀）：資料表原樣列出（全部欄位、每欄可篩選），見 src/models/data_browser.py。"""
+
+import json
 
 from flask import Blueprint, jsonify, request
 
@@ -26,7 +28,7 @@ def list_collections():
 @app_data.route('/collections/<name>', methods=['GET'])
 @admin_api(*READ_ROLES)
 def list_documents(name):
-    """某個資料表的文件（分頁）；欄位取前 100 筆的頂層欄位，陣列／物件只給縮短的預覽。
+    """某個資料表的文件（分頁）；欄位是取樣文件的全部欄位（物件展開成 a.b），陣列只給縮短的預覽。
     ---
     tags: [Data]
     security:
@@ -37,6 +39,7 @@ def list_documents(name):
       - {in: query, name: q, type: string, description: "關鍵字（不分大小寫的部分比對；數字也比對相等）"}
       - {in: query, name: sort_by, type: string}
       - {in: query, name: sort_dir, type: string, description: "asc／desc"}
+      - {in: query, name: filters, type: string, description: "篩選條件 JSON：[{field, op, value}]，op 是 contains／not_contains／eq／ne／gt／gte／lt／lte／empty／not_empty，全部都要符合；field 可以是任何欄位路徑（例如 raw.class）"}
       - {in: query, name: limit, type: integer, default: 50}
       - {in: query, name: offset, type: integer, default: 0}
     responses:
@@ -49,11 +52,15 @@ def list_documents(name):
     """
     args = request.args
     try:
+        filters = json.loads(args.get('filters') or '[]')
+    except ValueError:
+        return jsonify({'success': False, 'message': '篩選條件格式錯誤'}), 400
+    try:
         limit = int(args.get('limit') or 50)
         offset = int(args.get('offset') or 0)
         data = data_browser.list_docs(name, field=args.get('field') or '', q=args.get('q') or '',
                                       sort_by=args.get('sort_by') or '', sort_dir=args.get('sort_dir') or 'asc',
-                                      limit=limit, offset=offset)
+                                      limit=limit, offset=offset, filters=filters)
     except KeyError:
         return jsonify({'success': False, 'message': '不開放檢視的資料表'}), 404
     except ValueError as err:

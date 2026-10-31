@@ -1,8 +1,9 @@
-"""後台「資料庫檢視」：把沒有專屬後台頁面的資料表（collection）原樣列出來，方便檢查同步進來的資料。
+"""後台「資料庫檢視」：把資料表（collection）原樣列出來，看全部欄位、每一欄都能篩選。
 
 只開放下面 CATALOG 列的遊戲資料／同步紀錄（唯讀）；帳號、玩家、token、登入失敗這類資料一律不列。
-列表的欄位是取前 SAMPLE 筆文件的頂層欄位（依出現順序），陣列／物件只回縮短的 JSON 預覽，
-完整內容（含 raw）要點開單筆看（doc()）。
+列表的欄位是取前 SAMPLE 筆＋隨機 RANDOM_SAMPLE 筆文件的全部欄位（物件展開成 a.b，依出現順序），
+陣列只回縮短的 JSON 預覽，完整內容（含 raw）要點開單筆看（doc()）。
+篩選條件（filters）可以對任何欄位（含 raw.xxx）做包含／等於／大小／有沒有值的比對，全部條件都要符合。
 大資料表（翻譯約 9 萬筆）「全部欄位」搜尋只比對名稱類欄位，每次查詢最多跑 MAX_TIME_MS，超過就請使用者指定欄位。
 """
 
@@ -15,20 +16,34 @@ from bson import ObjectId
 
 from src.mongo import get_db
 
-#: 類別 → [(collection, 中文名稱)]
+#: 類別 → [(collection, 中文名稱)]：遊戲資料、同步資料與系統紀錄全部列出（有專屬後台頁的也列，這裡看的是原始欄位）。
+#: 帳號、玩家、玩家個人資料（倉庫、艦隊、藍圖）、token、登入失敗、系統設定（含 token）一律不列。
 CATALOG = [
     ('物品／藍圖', [
+        ('item_master', '物品主檔（含飛船組件）'),
+        ('blueprint_master', '藍圖主檔'),
         ('commodity_master', 'Wiki 商品主檔'),
         ('blueprint_quality_master', '藍圖品質試算資料'),
         ('uex_items', 'UEX 物品'),
         ('uex_items_prices', 'UEX 物品價格'),
     ]),
     ('載具', [
-        ('uex_vehicles', 'UEX 載具'),
+        ('vehicle_master', '艦船主檔'),
         ('ship_nav_master', '艦船量子航行參數'),
+        ('uex_vehicles', 'UEX 載具'),
+        ('uex_vehicles_purchases', 'UEX 載具購買價'),
+        ('uex_vehicles_rentals', 'UEX 租船價'),
     ]),
-    ('礦物／精煉', [
+    ('地點', [
+        ('starmap_master', '地點主檔'),
+        ('uex_terminals', 'UEX 交易終端'),
+    ]),
+    ('礦物／精煉／商品', [
+        ('mining_deposit_master', '礦床'),
+        ('mining_location_master', '採礦地點'),
         ('mineral_uex_links', '礦物 UEX 手動關聯'),
+        ('uex_commodities', 'UEX 商品'),
+        ('uex_commodities_prices', 'UEX 商品價格'),
         ('uex_commodities_raw_prices', 'UEX 原礦價格'),
         ('uex_refinery_yields', '精煉站產量加成'),
         ('uex_refinery_methods', '精煉方式'),
@@ -44,15 +59,33 @@ CATALOG = [
         ('sc_translation_meta', '翻譯同步資訊'),
         ('chat_code_dictionary', '中文轉碼字典'),
     ]),
+    ('版本紀錄', [
+        ('item_master_versions', '物品版本紀錄'),
+        ('vehicle_master_versions', '艦船版本紀錄'),
+        ('commodity_master_versions', '商品版本紀錄'),
+        ('blueprint_master_versions', '藍圖版本紀錄'),
+        ('mission_master_versions', '任務版本紀錄'),
+    ]),
     ('系統', [
         ('sync_jobs', '同步項目'),
         ('sync_runs', '同步紀錄'),
         ('player_visibility', '玩家頁面顯示設定'),
+        ('tool_links', '工具網站'),
+        ('tool_link_tags', '工具網站標籤'),
     ]),
 ]
 LABELS = {name: label for _, items in CATALOG for name, label in items}
 
 SAMPLE = 100
+#: 另外隨機抽幾筆找欄位（只出現在後面幾筆的欄位也要列得出來）
+RANDOM_SAMPLE = 300
+#: 巢狀物件（不含 raw）展開成「a.b」欄位的最大層數、最多欄位數
+FLATTEN_DEPTH = 3
+MAX_COLUMNS = 300
+#: 一次最多幾個篩選條件
+MAX_FILTERS = 10
+#: 篩選條件的比對方式
+FILTER_OPS = ('contains', 'not_contains', 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'empty', 'not_empty')
 MAX_LIMIT = 200
 #: 超過這個筆數的資料表，「全部欄位」搜尋只比對名稱類欄位（_id、name、title、key、code…），避免每個欄位都做模糊比對
 LARGE_COLLECTION = 20000
@@ -108,13 +141,45 @@ def catalog() -> list:
         for cat, items in CATALOG]
 
 
+def _flat_keys(doc: dict, prefix: str = '', depth: int = 1) -> list:
+    """文件的欄位路徑：物件展開成 a.b（最多 FLATTEN_DEPTH 層），陣列和其他值就是一欄。"""
+    out = []
+    for key, value in doc.items():
+        if not prefix and key in HIDDEN_IN_LIST:
+            continue
+        path = f'{prefix}{key}'
+        if isinstance(value, dict) and value and depth < FLATTEN_DEPTH:
+            out += _flat_keys(value, f'{path}.', depth + 1)
+        else:
+            out.append(path)
+    return out
+
+
+def _get_path(doc: dict, path: str):
+    value = doc
+    for part in path.split('.'):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+
 def columns(collection: str) -> list:
-    """取前 SAMPLE 筆的頂層欄位（依出現順序，_id 第一）。"""
+    """全部欄位（_id 第一，依出現順序）：前 SAMPLE 筆＋隨機 RANDOM_SAMPLE 筆的欄位，物件展開成 a.b。"""
+    col = get_db()[_check(collection)]
+    hide = {k: 0 for k in HIDDEN_IN_LIST}
+    docs = list(col.find({}, hide).limit(SAMPLE))
+    try:
+        docs += list(col.aggregate([{'$sample': {'size': RANDOM_SAMPLE}}, {'$project': hide}], maxTimeMS=MAX_TIME_MS))
+    except Exception:   # 抽樣失敗就只用前面幾筆
+        pass
     out = ['_id']
-    for doc in get_db()[_check(collection)].find({}, {k: 0 for k in HIDDEN_IN_LIST}).limit(SAMPLE):
-        for key in doc:
-            if key not in out and key not in HIDDEN_IN_LIST:
+    for doc in docs:
+        for key in _flat_keys(doc):
+            if key not in out:
                 out.append(key)
+                if len(out) >= MAX_COLUMNS:
+                    return out
     return out
 
 
@@ -148,8 +213,59 @@ def _num(text: str):
     return int(n) if n.is_integer() else n
 
 
+def _value_candidates(text: str) -> list:
+    """「等於」比對的候選值：原字串、數字、布林（true／false）。"""
+    out = [text]
+    num = _num(text)
+    if num is not None:
+        out.append(num)
+    low = text.strip().lower()
+    if low in ('true', 'false'):
+        out.append(low == 'true')
+    if low in ('null', 'none'):
+        out.append(None)
+    return out
+
+
+def _filters_query(filters) -> dict:
+    """篩選條件 [{field, op, value}]（全部都要符合）→ Mongo 查詢。field 可以是任何欄位路徑（含 raw.xxx）。"""
+    if not filters:
+        return {}
+    if not isinstance(filters, list) or len(filters) > MAX_FILTERS:
+        raise ValueError(f'篩選條件最多 {MAX_FILTERS} 個')
+    conds = []
+    for f in filters:
+        f = f if isinstance(f, dict) else {}
+        field = str(f.get('field') or '').strip()
+        op = f.get('op') or 'contains'
+        value = str(f.get('value') if f.get('value') is not None else '').strip()
+        if not field:
+            continue
+        if not _FIELD_RE.match(field):
+            raise ValueError(f'欄位名稱不正確：{field}')
+        if op not in FILTER_OPS:
+            raise ValueError('比對方式不正確')
+        if op == 'empty':
+            conds.append({'$or': [{field: {'$exists': False}}, {field: {'$in': [None, '', []]}}]})
+        elif op == 'not_empty':
+            conds.append({field: {'$exists': True, '$nin': [None, '', []]}})
+        elif op in ('contains', 'not_contains'):
+            if not value:
+                continue
+            pattern = re.compile(re.escape(value), re.IGNORECASE)
+            conds.append({field: pattern} if op == 'contains' else {field: {'$not': pattern}})
+        elif op in ('eq', 'ne'):
+            conds.append({field: {'$in' if op == 'eq' else '$nin': _value_candidates(value)}})
+        else:
+            num = _num(value)
+            if num is None:
+                raise ValueError(f'{field}：要填數字')
+            conds.append({field: {f'${op}': num}})
+    return {'$and': conds} if conds else {}
+
+
 def list_docs(collection: str, *, field: str = '', q: str = '', sort_by: str = '', sort_dir: str = 'asc',
-              limit: int = 50, offset: int = 0) -> dict:
+              limit: int = 50, offset: int = 0, filters=None) -> dict:
     """{label, columns, rows, total}；rows 的陣列／物件值是縮短的 JSON 字串。"""
     from pymongo.errors import ExecutionTimeout
 
@@ -159,6 +275,9 @@ def list_docs(collection: str, *, field: str = '', q: str = '', sort_by: str = '
     estimated = col.estimated_document_count()
     filt = _search_filter(searchable, field, q, large=estimated > LARGE_COLLECTION,
                           preferred=SEARCH_FIELDS.get(collection))
+    extra = _filters_query(filters)
+    if extra:
+        filt = {'$and': [filt, extra]} if filt else extra
     limit = max(1, min(int(limit or 50), MAX_LIMIT))
     offset = max(0, int(offset or 0))
     cursor = col.find(filt, {k: 0 for k in HIDDEN_IN_LIST}).max_time_ms(MAX_TIME_MS)
@@ -170,7 +289,9 @@ def list_docs(collection: str, *, field: str = '', q: str = '', sort_by: str = '
         cursor = cursor.sort('_id', 1)
     try:
         # _id 不截斷：點開單筆要用完整的 _id 去查
-        rows = [{k: (_plain(v) if k == '_id' else _preview(v)) for k, v in doc.items()} for doc in cursor.skip(offset).limit(limit)]
+        rows = [{c: (_plain(doc.get('_id')) if c == '_id' else _preview(_get_path(doc, c))) for c in cols
+                 if c == '_id' or _get_path(doc, c) is not None}
+                for doc in cursor.skip(offset).limit(limit)]
         total = col.count_documents(filt, maxTimeMS=MAX_TIME_MS) if filt else estimated
     except ExecutionTimeout:
         raise ValueError('查詢太久，請指定欄位再搜尋') from None

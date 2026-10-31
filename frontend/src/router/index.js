@@ -193,7 +193,7 @@ const router = createRouter({
           component: () => import('@/views/ToolLinksView.vue'),
         },
         {
-          // 資料庫檢視（唯讀）：沒有專屬頁面的資料表依類別列出，見 DataBrowserView.vue 檔頭；?c= 直接打開某個資料表
+          // 資料庫檢視（唯讀）：資料表依類別列出（全部欄位、可加條件篩選），見 DataBrowserView.vue 檔頭；?c= 直接打開某個資料表
           path: 'data',
           name: 'data-browser',
           component: () => import('@/views/DataBrowserView.vue'),
