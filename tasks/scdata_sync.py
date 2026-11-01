@@ -59,11 +59,12 @@ from src.models import visibility
 from src.models.item import VehicleMaster
 from src.models.starmap import Starmap
 from src import SCDATA_REQUEST_DELAY
-from src.scdata import (BULK_SIZE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_POSITIONS_PATH,
+from src.scdata import (BULK_SIZE, CARGO_GRID_LIST_URL, CARGO_GRID_RAW_BASE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_POSITIONS_PATH,
                         SCUNPACKED_RESOURCES,
                         UEX_JOB_RESOURCES, UEX_PRUNE_MIN_RATIO, UEX_PRUNE_RESOURCES, UEX_RESOURCES,
                         WIKI_DETAIL_RESOURCES, WIKI_EXTRA, WIKI_RESOURCES, WIKI_SCOPES, ScDataError, build_client,
-                        fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
+                        fetch_json_url, fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
+                        map_cargo_grid,
                         normalize_labels, request_counts, requests_used, uex_doc_id, uex_rows,
                         wiki_detail, wiki_rows)
 
@@ -430,6 +431,51 @@ def _sync_scunpacked_resource(client, resource: str, run_id: str, stamp: datetim
             'written': written, 'skipped': skipped, 'retired': retired}
 
 
+def _sync_cargo_grids(client, run_id: str, stamp: datetime) -> dict:
+    """「貨物網格」：sc-cargo.space 的飛船貨物網格（一艘船一個 JSON）→ cargo_grid_master。
+
+    檔案清單用 GitHub API 抓一次，每個檔案走 raw；下架與 80% 門檻跟 scunpacked 一樣。
+    寫完對到載具主檔（src/models/cargo_grid.py 的 link_vehicles）。
+    """
+    from src.models import cargo_grid
+    collection_name = cargo_grid.COLLECTION
+    db = get_db()
+    _report(force=True, phase='讀取貨物網格檔案清單')
+    listing = fetch_json_url(client, CARGO_GRID_LIST_URL, list, label='sc-cargo.space 檔案清單')
+    names = sorted(e['name'] for e in listing
+                   if isinstance(e, dict) and e.get('type') == 'file' and str(e.get('name', '')).endswith('.json'))
+    ops, seen, written, skipped = [], 0, 0, 0
+    for name in names:
+        seen += 1
+        _report(phase='下載貨物網格', seen=seen, total=len(names))
+        slug = name[:-len('.json')]
+        doc = map_cargo_grid(slug, fetch_json_url(client, f'{CARGO_GRID_RAW_BASE}/{name}', dict,
+                                                  label=f'sc-cargo.space {name}'))
+        if doc is None:
+            skipped += 1
+            continue
+        doc['_sync'] = {'run_id': run_id, 'at': stamp}
+        doc['is_current'] = True
+        ops.append(UpdateOne({'_id': doc['_id']}, {'$set': doc, '$setOnInsert': {'first_seen_at': stamp}},
+                             upsert=True))
+    written += _flush(collection_name, ops)
+    good = seen - skipped
+    before_current = db[collection_name].count_documents({'is_current': {'$ne': False}})
+    floor = int(before_current * 0.8)
+    if good == 0 or (before_current and good < floor):
+        raise ScDataError(f'cargo_grids: 只抓到 {good} 艘，低於原有 {before_current} 艘的 80%（門檻 {floor}），'
+                          '判定抓取不完整，跳過下架步驟')
+    retired = db[collection_name].update_many(
+        {'_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
+        {'$set': {'is_current': False, 'retired_at': stamp}},
+    ).modified_count
+    linked = cargo_grid.link_vehicles()
+    logger.info('scdata_sync: 貨物網格完成 讀取=%d 寫入=%d 跳過=%d 下架=%d 對應載具更新=%d',
+                seen, written, skipped, retired, linked)
+    return {'resource': 'cargo_grids', 'collection': collection_name, 'seen': seen,
+            'written': written, 'skipped': skipped, 'retired': retired}
+
+
 TRANSLATION_LANG = 'zh-TW'
 
 
@@ -575,6 +621,13 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
             except Exception as err:
                 logger.exception('scdata_sync: 地點座標更新失敗')
                 errors.append(f'scunpacked:positions: {err}')
+
+    elif key == 'cargo_grids':
+        try:
+            stats.append(_sync_cargo_grids(client('github'), run_id, stamp))
+        except Exception as err:
+            logger.exception('scdata_sync: 貨物網格失敗')
+            errors.append(f'cargo_grids: {err}')
 
     elif key in UEX_JOB_RESOURCES:
         # 後台「資料同步排程」頁設定的 token 優先，沒有就用環境變數 UEX_API_TOKEN

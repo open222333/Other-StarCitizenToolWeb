@@ -200,6 +200,8 @@ SYNC_JOBS = [
     ('locations', '地點', DEFAULT_CRON),
     ('uex', 'UEX 價格', DEFAULT_CRON),
     ('uex_refinery', 'UEX 精煉', DEFAULT_CRON),
+    # 飛船貨物網格（sc-cargo.space，見 tasks/scdata_sync.py 的 _sync_cargo_grids）
+    ('cargo_grids', '貨物網格', DEFAULT_CRON),
 ]
 JOB_KEYS = [k for k, _, _ in SYNC_JOBS]
 JOB_LABELS = {k: label for k, label, _ in SYNC_JOBS}
@@ -395,6 +397,7 @@ class SyncJobs:
         'locations': ('starmap_master', {'is_current': True}),
         'uex': ('uex_items', {}),
         'uex_refinery': ('uex_refinery_yields', {}),
+        'cargo_grids': ('cargo_grid_master', {'is_current': True}),
     }
 
     @classmethod

@@ -422,17 +422,17 @@ def iter_translation_entries(english: dict, ini_text: str, lang: str):
         yield key, {LANG_EN: en}, None
 
 
-def fetch_scunpacked_rows(client: httpx.Client, path: str, expect: type = list):
-    """抓 scunpacked-data 的靜態 JSON 檔（GitHub raw，單一請求、無分頁、無 token）。
+def fetch_json_url(client: httpx.Client, url: str, expect: type = list, label: str = ''):
+    """抓一個靜態 JSON（GitHub raw／GitHub API，單一請求、無分頁、無 token）。
 
     這批檔案的回應是「裸陣列」（`[...]`），不是 Wiki API 那種 `{"data": [...]}`
     包裝，跟 get_json() 預期回傳 dict 的假設不同，所以另外寫一支；重試邏輯
     （429 / 5xx / 連線錯誤都重試）照抄 get_json()。
 
-    :param path: 相對於 SCDATA_SCUNPACKED_BASE 的檔案路徑，例如 'resources/resources.json'
+    :param url: 完整網址；label 是 log 用的名稱（沒給就用網址）
     :param expect: 預期的最外層型別；大部分檔案是陣列，labels.json（遊戲英文在地化表）是物件
     """
-    url = f'{SCDATA_SCUNPACKED_BASE}/{path}'
+    path = label or url
     delay = 1.0
     last_err = None
 
@@ -472,7 +472,12 @@ def fetch_scunpacked_rows(client: httpx.Client, path: str, expect: type = list):
             time.sleep(delay)
             delay = min(delay * 2, 60)
 
-    raise ScDataError(f'scunpacked {path} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {last_err}')
+    raise ScDataError(f'{path} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {last_err}')
+
+
+def fetch_scunpacked_rows(client: httpx.Client, path: str, expect: type = list):
+    """抓 scunpacked-data 的靜態 JSON 檔；path 相對於 SCDATA_SCUNPACKED_BASE，例如 'resources/resources.json'。"""
+    return fetch_json_url(client, f'{SCDATA_SCUNPACKED_BASE}/{path}', expect, label=f'scunpacked {path}')
 
 
 # ─────────────────────────────────────────────── 欄位映射
@@ -1304,6 +1309,83 @@ SCUNPACKED_EXTRA: dict = {
 }
 
 
+# ─────────────────────────────────────────── 貨物網格（sc-cargo.space）
+
+#: 飛船貨物網格（sc-cargo.space 的資料，MIT）：一艘船一個 JSON（src/grids/<名稱>.json），
+#: 列表用 GitHub API 取一次（未登入 60 次/小時），檔案走 raw。
+CARGO_GRID_REPO = 'sccargospace/sc-cargo.space'
+CARGO_GRID_BRANCH = 'main'
+CARGO_GRID_DIR = 'src/grids'
+CARGO_GRID_LIST_URL = (f'https://api.github.com/repos/{CARGO_GRID_REPO}/contents/{CARGO_GRID_DIR}'
+                       f'?ref={CARGO_GRID_BRANCH}')
+CARGO_GRID_RAW_BASE = f'https://raw.githubusercontent.com/{CARGO_GRID_REPO}/{CARGO_GRID_BRANCH}/{CARGO_GRID_DIR}'
+CARGO_GRID_WEB_URL = f'https://github.com/{CARGO_GRID_REPO}/tree/{CARGO_GRID_BRANCH}/{CARGO_GRID_DIR}'
+
+
+def _cargo_num(value, default=0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _cargo_layout(layout) -> Optional[dict]:
+    """sc-cargo.space 的版面（official／unofficial）→ 容量、網格清單（每格長寬高、SCU、限制）。"""
+    if not isinstance(layout, dict):
+        return None
+    grids = []
+    for gi, group in enumerate(layout.get('groups') or [], start=1):
+        group = group if isinstance(group, dict) else {}
+        for grid in group.get('grids') or []:
+            if not isinstance(grid, dict):
+                continue
+            w, h, l = (_cargo_num(grid.get(k)) for k in ('width', 'height', 'length'))
+            grids.append({
+                'group': group.get('name') or f'區 {gi}', 'name': grid.get('name'),
+                'width': w, 'height': h, 'length': l, 'scu': w * h * l,
+                'max_size': grid.get('maxSize'), 'min_size': grid.get('minSize'),
+                'unsecured': bool(grid.get('unsecured')), 'prefer_horizontal': bool(grid.get('preferHorizontal')),
+                'x': _cargo_num(group.get('x')) + _cargo_num(grid.get('x')), 'y': _cargo_num(grid.get('y')),
+                'z': _cargo_num(group.get('z')) + _cargo_num(grid.get('z')),
+            })
+    return {
+        'name': layout.get('name'),
+        'capacity': layout.get('capacity'),
+        'grid_scu': sum(g['scu'] for g in grids),
+        'grid_count': len(grids),
+        'group_count': len(layout.get('groups') or []),
+        'grids': grids,
+        'max_box': max((g['max_size'] for g in grids if isinstance(g.get('max_size'), (int, float))), default=None),
+        'labels': layout.get('labels') or [],
+    }
+
+
+def map_cargo_grid(slug: str, doc: dict) -> Optional[dict]:
+    """sc-cargo.space 的一艘船（檔名去掉 .json 當 _id）→ cargo_grid_master。"""
+    if not slug or not isinstance(doc, dict) or not doc.get('name') or not isinstance(doc.get('official'), dict):
+        return None
+    name = str(doc['name']).strip()
+    official = _cargo_layout(doc.get('official'))
+    unofficial = _cargo_layout(doc.get('unofficial'))
+    return {
+        '_id': slug,
+        'name': name,
+        'name_lower': name.lower(),
+        'manufacturer': doc.get('manufacturer'),
+        'capacity_scu': official['capacity'],
+        'grid_count': official['grid_count'],
+        'max_box_scu': official['max_box'],
+        'official': official,
+        'unofficial': unofficial,
+        'unofficial_capacity_scu': unofficial['capacity'] if unofficial else None,
+        'labels': doc.get('labels') or [],
+        'alternative_names': doc.get('alternativeNames') or [],
+        'search_aliases': doc.get('searchAliases') or [],
+        'source_url': f'{CARGO_GRID_RAW_BASE}/{slug}.json',
+        'raw': doc,
+    }
+
+
 def uex_doc_id(row: dict, key_fields: list) -> Optional[str]:
     parts = []
     for field in key_fields:
@@ -1393,4 +1475,6 @@ def job_upstreams() -> dict:
     out['uex'] = [u('categories/'), u('items/?id_category=<id>', '每個物品分類一次，間隔 ≥ 0.5 秒')] + \
         [u(f'{r}/') for r in UEX_JOB_RESOURCES['uex'] if r != 'items']
     out['uex_refinery'] = [u(f'{r}/') for r in UEX_JOB_RESOURCES['uex_refinery']]
+    out['cargo_grids'] = [{'provider': 'github', 'url': CARGO_GRID_LIST_URL, 'note': '檔案清單（GitHub API）'},
+                          {'provider': 'github', 'url': f'{CARGO_GRID_RAW_BASE}/<名稱>.json', 'note': '每艘船一次'}]
     return out

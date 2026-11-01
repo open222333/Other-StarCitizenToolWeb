@@ -149,7 +149,10 @@ def test_sync_job_applies_visibility(app, monkeypatch):
     import tasks.scdata_sync as sync_mod
     rows = [{'UUID': 's-1', 'Name': 'Lorville', 'Type': {'Name': 'City'}, 'Amenities': []},
             {'UUID': 's-2', 'Name': 'WIP Refinery_0001', 'Type': {'Name': 'Outpost'}, 'Amenities': []}]
-    monkeypatch.setattr(sync_mod, 'fetch_scunpacked_rows', lambda client, path, expect=list: rows)
+    positions = {'entities': [{'uuid': 's-1', 'system': 'stanton', 'qt_valid': True, 'x': 1, 'y': 2, 'z': 3}],
+                 'connections': []}
+    monkeypatch.setattr(sync_mod, 'fetch_scunpacked_rows',
+                        lambda client, path, expect=list: positions if path == 'starmap_positions.json' else rows)
     assert sync_mod._do_sync(jobs=['locations'])['ok'] is True
     col = get_db()['starmap_master']
     assert col.find_one({'_id': 's-1'})['player_visible'] is True

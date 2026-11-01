@@ -134,7 +134,7 @@ def test_job_keys_match_sync_sources():
     from src.scdata import WIKI_EXTRA, WIKI_RESOURCES
     extras = {r for rs in WIKI_EXTRA.values() for r in rs}   # 跟著別的同步項目跑的（例如 vehicle-items）
     assert set(WIKI_JOB_KEYS) == set(WIKI_RESOURCES) - extras
-    assert set(JOB_KEYS) == (set(WIKI_RESOURCES) - extras) | {'translations', 'mining', 'locations', 'uex', 'uex_refinery'}
+    assert set(JOB_KEYS) == (set(WIKI_RESOURCES) - extras) | {'translations', 'mining', 'locations', 'uex', 'uex_refinery', 'cargo_grids'}
     from src.scdata import SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_RESOURCES
     assert set(SCUNPACKED_EXTRA) <= set(WIKI_RESOURCES), '額外的 scunpacked 資源掛在 Wiki 同步項目後面'
     synced = [r for jobs in (SCUNPACKED_JOBS, SCUNPACKED_EXTRA) for rs in jobs.values() for r in rs]

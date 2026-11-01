@@ -33,6 +33,7 @@ CATALOG = [
         ('uex_vehicles', 'UEX 載具'),
         ('uex_vehicles_purchases', 'UEX 載具購買價'),
         ('uex_vehicles_rentals', 'UEX 租船價'),
+        ('cargo_grid_master', '貨物網格（sc-cargo.space）'),
     ]),
     ('地點', [
         ('starmap_master', '地點主檔'),
