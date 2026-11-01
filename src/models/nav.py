@@ -12,7 +12,8 @@
      OM 點（北極、南極、赤道四方向，離中心＝星體半徑 × OM_RADIUS_RATIO），遞迴最多
      MAX_DETOUR_DEPTH 層。端點在星體表面（或阻擋球內）時，自己那顆星體只有「直線穿過星體本身」才算擋住。
   2. 多站點順序：自動排序用 Held-Karp 動態規劃（取貨一定在送貨前、載貨量不超過貨艙），
-     事件數超過 EXACT_LIMIT 改用貪婪＋相鄰交換改良。
+     事件數超過 EXACT_LIMIT 改用貪婪建構＋局部搜尋（搬移、區段反轉、交換，時間上限 HEURISTIC_SECONDS），
+     結果接近最佳但不保證。
   3. 方案：最快（距離 ÷ 量子速度＋每段啟動時間）、最省油（距離 × 每公尺耗油 × 載重係數）、
      最順路（量子跳躍次數最少，其次距離最短）。
   4. 載重：載重係數＝1 + 貨重 ÷ 船重（每 SCU 以 KG_PER_SCU 估算），乘在油耗上，啟動時間乘它的平方根。
@@ -50,7 +51,10 @@ KG_PER_SCU = 1000
 DEFAULT_SHIP = {'id': None, 'name': '', 'name_zh': None, 'qt_speed': 2.0e8, 'qt_spool': 5.0,
                 'qt_fuel_per_m': None, 'qt_fuel_capacity': None, 'qt_range': None, 'cargo_scu': None,
                 'external_cargo': False, 'mass_total': None}
-MAX_WAYPOINTS = 12
+#: 途經站點上限（玩家頁可以依星系一次填入整個星系的站點）；超過 EXACT_LIMIT 的用近似排序
+MAX_WAYPOINTS = 40
+#: 近似排序每個方案的局部搜尋時間上限（秒）
+HEURISTIC_SECONDS = 1.0
 MAX_CARGO = 8
 CACHE_TTL = 300
 #: 事件帶到航段的額外欄位（合約分配用）
@@ -564,8 +568,13 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
     if not auto or n <= 1:
         return list(range(n))
 
+    memo = {}
+
     def cost(a, b, load):
-        return planner.leg_cost(a, b, load, plan)
+        key = (a['id'], b['id'], load)
+        if key not in memo:
+            memo[key] = planner.leg_cost(a, b, load, plan)
+        return memo[key]
 
     def feasible(i, mask, load):
         e = events[i]
@@ -609,7 +618,7 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
             last = prev
         return list(reversed(order))
 
-    # 事件太多：貪婪（每次挑成本最低的可行事件）＋相鄰交換改良
+    # 事件太多：貪婪（每次挑成本最低的可行事件）建構，再做局部搜尋改良
     order, mask, cur, load = [], 0, start, base_load
     while len(order) < n:
         cands = [i for i in range(n) if not (mask >> i) & 1 and feasible(i, mask, load)]
@@ -620,6 +629,13 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
         mask |= 1 << i
         load += events[i]['delta']
         cur = events[i]['node']
+    return _improve_order(order, start, events, end, base_load, cost, feasible)
+
+
+def _improve_order(order: list, start: dict, events: list, end, base_load: float, cost, feasible) -> list:
+    """局部搜尋：搬移一個事件到別的位置、反轉一段、兩兩交換，有變好就接受，直到沒有改良或超過 HEURISTIC_SECONDS。
+    不可行的順序（取貨在送貨後、超過貨艙）成本是無限大，自然不會被接受。"""
+    n = len(order)
 
     def total(seq):
         c, cur_, ld, done = 0.0, start, base_load, 0
@@ -632,15 +648,33 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
             cur_ = events[i]['node']
         return c + (cost(cur_, end, ld) if end else 0.0)
 
+    def moves(seq):
+        for i in range(n):                       # 搬移
+            rest = seq[:i] + seq[i + 1:]
+            for j in range(n):
+                if j != i:
+                    yield rest[:j] + [seq[i]] + rest[j:]
+        for i in range(n - 1):                   # 區段反轉（2-opt）
+            for j in range(i + 2, n + 1):
+                yield seq[:i] + seq[i:j][::-1] + seq[j:]
+        for i in range(n - 1):                   # 交換
+            for j in range(i + 1, n):
+                cand = seq[:]
+                cand[i], cand[j] = cand[j], cand[i]
+                yield cand
+
+    deadline = time.monotonic() + HEURISTIC_SECONDS
     best = total(order)
     improved = True
-    while improved:
+    while improved and time.monotonic() < deadline:
         improved = False
-        for i in range(n - 1):
-            cand = order[:i] + [order[i + 1], order[i]] + order[i + 2:]
+        for k, cand in enumerate(moves(order)):
+            if k % 256 == 0 and time.monotonic() >= deadline:
+                break
             c = total(cand)
             if c < best - 1e-9:
                 order, best, improved = cand, c, True
+                break
     return order
 
 

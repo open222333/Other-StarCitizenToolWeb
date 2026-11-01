@@ -44,14 +44,35 @@
           </div>
 
           <div class="mt-3">
-            <div class="d-flex align-items-center gap-2 mb-1">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <span class="small fw-semibold">途經站點</span>
-              <button type="button" class="btn btn-sm btn-success ms-auto" :disabled="stops.length >= MAX_STOPS"
-                @click="stops.push(newPlace())"><i class="bi bi-plus-lg me-1"></i>加站點</button>
+              <span v-if="stops.length" class="sf-chip" :class="{ 'sf-chip--warn': onCount >= MAX_ON }">
+                規劃 {{ onCount }} / {{ MAX_ON }}</span>
+              <div class="ms-auto d-flex flex-wrap gap-2">
+                <button v-if="stops.length > 1" type="button" class="btn btn-sm btn-info" @click="setAllOn(true)">
+                  <i class="bi bi-toggle-on me-1"></i>全部開啟</button>
+                <button v-if="stops.length > 1" type="button" class="btn btn-sm btn-info" @click="setAllOn(false)">
+                  <i class="bi bi-toggle-off me-1"></i>全部關閉</button>
+                <button v-if="stops.length > 1" type="button" class="btn btn-sm btn-warning" @click="stops.splice(0)">
+                  <i class="bi bi-eraser me-1"></i>清空站點</button>
+                <button type="button" class="btn btn-sm btn-success" :disabled="stops.length >= MAX_STOPS"
+                  @click="stops.push(newStop({ on: onCount < MAX_ON }))"><i class="bi bi-plus-lg me-1"></i>加站點</button>
+              </div>
             </div>
-            <div v-for="(s, i) in stops" :key="s.key" class="d-flex gap-2 mb-2 align-items-center">
+            <SystemStopsFill id="rp-fill" :places="base.places.value" @fill="fillStops" />
+            <div v-if="fillNote" class="sf-chip sf-chip--warn mb-2">{{ fillNote }}</div>
+            <div v-for="(s, i) in stops" :key="s.key" class="d-flex gap-2 mb-2 align-items-center"
+              :class="{ 'rp-off': !s.on }">
               <span class="rp-index">{{ i + 1 }}</span>
-              <div class="flex-grow-1">
+              <div class="form-check form-switch mb-0 rp-switch">
+                <input :id="`rp-on-${s.key}`" v-model="s.on" class="form-check-input" type="checkbox" role="switch"
+                  :disabled="!s.on && onCount >= MAX_ON" :aria-label="`站點 ${i + 1} 加入規劃`">
+              </div>
+              <div v-if="s.auto && placeOf(s)" class="flex-grow-1 min-w-0 rp-auto">
+                <span class="fw-semibold">{{ placeLabel(placeOf(s)) }}</span>
+                <span class="rp-path">{{ placePath(placeOf(s)) }}</span>
+              </div>
+              <div v-else class="flex-grow-1">
                 <PlacePicker :id="`rp-stop-${s.key}`" :label="`站點 ${i + 1} `" :places="base.places.value" :model-value="s"
                   @update:model-value="v => Object.assign(s, v)" />
               </div>
@@ -165,10 +186,11 @@ import FuelStartInput from '@/components/FuelStartInput.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
+import SystemStopsFill from '@/components/SystemStopsFill.vue'
 import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
 import { useNavBase } from '@/utils/navBase'
-import { fmtDist, fmtNum, fmtTime, placeLabel } from '@/utils/navFormat'
+import { fmtDist, fmtNum, fmtTime, placeLabel, placePath } from '@/utils/navFormat'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -178,7 +200,9 @@ const props = defineProps({
   fleetUuids: { type: Array, default: () => [] },
 })
 
-const MAX_STOPS = 12
+// 列在清單上的站點上限；實際送去規劃的（開關打開的）上限跟後端 nav.MAX_WAYPOINTS 一樣
+const MAX_STOPS = 300
+const MAX_ON = 40
 // 貨運（取送順序、貨重、外掛貨櫃）先隱藏，後端仍支援；打開時改成 true（多份合約請用「合約分配」）
 const SHOW_CARGO = false
 const MAX_CARGO = 8
@@ -199,7 +223,11 @@ const saved = loadSaved()
 const start = reactive(newPlace(saved.start))
 const endPlace = reactive(newPlace(saved.end))
 const endMode = ref(['none', 'start', 'fixed'].includes(saved.endMode) ? saved.endMode : 'none')
-const stops = reactive((Array.isArray(saved.stops) ? saved.stops : []).slice(0, MAX_STOPS).map(newPlace))
+// 途經站點：on＝加入規劃（開關）；auto＝依星系填入的（不用地點選擇器，直接顯示名稱）
+const newStop = (p = {}) => ({ ...newPlace(p), on: p.on !== false, auto: !!p.auto })
+const stops = reactive((Array.isArray(saved.stops) ? saved.stops : []).slice(0, MAX_STOPS).map(newStop))
+// 舊存檔（12 個上限以前）沒有 on：超過上限的先關掉
+stops.forEach((s, i) => { if (i >= MAX_ON) s.on = false })
 const cargo = reactive((Array.isArray(saved.cargo) ? saved.cargo : []).slice(0, MAX_CARGO).map(newCargo))
 const autoOrder = ref(saved.autoOrder !== false)
 const shipId = ref(saved.shipId || '')
@@ -212,10 +240,11 @@ const startFuel = ref({ mode: saved.startFuel?.mode === 'amount' ? 'amount' : 'p
 const fuelParam = () => (startFuel.value.value == null ? null : startFuel.value)
 
 const plain = p => ({ id: p.id, text: p.text })
+const plainStop = s => ({ ...plain(s), on: s.on, auto: s.auto })
 watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plain),
+      start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plainStop),
       cargo: cargo.map(c => ({ pickup: plain(c.pickup), dropoff: plain(c.dropoff), scu: c.scu })),
       autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
       externalCargo: externalCargo.value, startFuel: startFuel.value,
@@ -243,7 +272,40 @@ const VIEWS = [
 ]
 const view = ref('table')
 
-const filledStops = computed(() => stops.filter(s => s.id))
+const filledStops = computed(() => stops.filter(s => s.id && s.on))
+const onCount = computed(() => stops.filter(s => s.on).length)
+const placeById = computed(() => new Map(base.places.value.map(p => [p.id, p])))
+const placeOf = s => placeById.value.get(s.id) || null
+
+function setAllOn(on) {
+  let n = 0
+  for (const s of stops) {
+    s.on = on && n < MAX_ON
+    if (s.on) n++
+  }
+}
+
+// 依星系填入：已經在清單上的跳過；開關打開到上限為止，其餘先關著
+const fillNote = ref('')
+function fillStops(rows) {
+  const have = new Set(stops.map(s => s.id).filter(Boolean))
+  let on = onCount.value, added = 0, skipped = 0
+  for (const p of rows) {
+    if (have.has(p.id)) continue
+    if (stops.length >= MAX_STOPS) {
+      skipped++
+      continue
+    }
+    stops.push(newStop({ id: p.id, text: placeLabel(p), auto: true, on: on < MAX_ON }))
+    if (on < MAX_ON) on++
+    have.add(p.id)
+    added++
+  }
+  const off = stops.filter(s => !s.on).length
+  fillNote.value = [skipped ? `清單已滿 ${MAX_STOPS} 個，${skipped} 個沒有填入` : '',
+    added && off ? `超過 ${MAX_ON} 個，${off} 個站點先關閉` : ''].filter(Boolean).join('；')
+}
+watch(() => stops.length, n => { if (!n) fillNote.value = '' })
 const filledCargo = computed(() => !SHOW_CARGO ? [] : cargo.filter(c => c.pickup.id && c.dropoff.id && Number(c.scu) > 0))
 const canPlan = computed(() => !!start.id && (filledStops.value.length || filledCargo.value.length
   || (endMode.value === 'fixed' && endPlace.id)))
@@ -354,6 +416,13 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 
 <style scoped>
 .rp-index { min-width: 1.5rem; text-align: center; color: var(--sf-text-muted); }
+.rp-switch { padding-left: 2.5em; }
+.rp-switch .form-check-input { width: 2.2em; height: 1.2em; cursor: pointer; }
+.rp-auto { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; padding: .25rem .5rem;
+  border: 1px solid var(--sf-border); border-radius: .375rem; background: var(--sf-chip-bg); }
+.rp-path { font-size: 1rem; color: var(--sf-text-muted); }
+.rp-off .rp-auto, .rp-off .rp-index { opacity: .5; }
+.min-w-0 { min-width: 0; }
 .rp-cargo { border: 1px solid var(--sf-border); border-radius: .5rem; padding: .5rem; }
 .rp-cargo-tag { min-width: 2.5rem; font-size: 1rem; color: var(--sf-text-muted); }
 .rp-scu { max-width: 9rem; }

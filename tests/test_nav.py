@@ -298,3 +298,21 @@ def test_start_fuel(world_data):
     assert nav.plan_route(**kw, start_fuel={'mode': 'amount', 'value': 9999})['plans'][0]['start_fuel'] == 250
     with pytest.raises(nav.RouteError):
         nav.plan_route(**kw, start_fuel={'mode': 'pct', 'value': 'x'})
+
+
+def test_many_waypoints_use_heuristic_and_limit(world_data):
+    """超過 EXACT_LIMIT 的站點用近似排序：一排站點打亂給，排出來應該照順序一路掃過去；超過 MAX_WAYPOINTS 擋下。"""
+    db = get_db()
+    n = nav.EXACT_LIMIT + 9
+    db.starmap_master.insert_many([_loc(f'line{i}', f'Line {i}', 'Manmade', 'sys', (0, 0, (i + 1) * GM))
+                                   for i in range(n)])
+    nav.clear_cache()
+    ids = [f'line{i}' for i in range(n)]
+    shuffled = ids[1::2] + ids[::2]
+    res = nav.plan_route(start_id='stA', waypoints=shuffled, cargo=[], ship_id='ship1', auto_order=True,
+                         end_mode='none')
+    for plan in res['plans']:
+        got = [l['to']['id'] for l in plan['legs']]
+        assert got == ids, (plan['key'], got)
+    with pytest.raises(nav.RouteError):
+        nav.plan_route(start_id='stA', waypoints=['stY'] * (nav.MAX_WAYPOINTS + 1), cargo=[], ship_id='ship1')
