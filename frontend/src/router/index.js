@@ -45,6 +45,9 @@ export const ADMIN_LOGIN_PATH = adminPath('/login')
 // 玩家登入頁：/player/login（舊網址 /login、/player-login 由 LEGACY_REDIRECTS 導過來）。
 export const PLAYER_LOGIN_PATH = playerPath('/login')
 
+// 玩家頁使用說明：/player/help（公開，登入頁有連結）
+export const PLAYER_HELP_PATH = playerPath('/help')
+
 // 改成 /admin/、/player/ 分層前的舊網址 → 新網址（只有 web build 需要；admin build 的網址沒變）
 const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles'
 const keepQuery = path => to => ({ path: typeof path === 'function' ? path(to) : path, query: to.query, hash: to.hash })
@@ -88,6 +91,13 @@ const router = createRouter({
       path: PLAYER_LOGIN_PATH,
       name: 'player-login',
       component: () => import('@/views/PlayerLoginView.vue'),
+    },
+
+    {
+      // 玩家頁使用說明（公開頁面，玩家登入頁有連結）
+      path: PLAYER_HELP_PATH,
+      name: 'player-help',
+      component: () => import('@/views/PlayerHelpView.vue'),
     },
 
     {

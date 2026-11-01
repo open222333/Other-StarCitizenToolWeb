@@ -44,6 +44,9 @@
           <span class="small text-muted">還沒有帳號？</span>
           <RouterLink :to="PLAYER_REGISTER_PATH" class="btn btn-sm btn-primary ms-1">前往註冊</RouterLink>
         </div>
+        <div class="text-center mt-2">
+          <RouterLink :to="PLAYER_HELP_PATH" class="btn btn-sm btn-info"><i class="bi bi-book me-1"></i>使用說明</RouterLink>
+        </div>
 
         <!-- 刻意不放「前往後台登入」的入口：後台登入頁不對玩家公開，管理員自己記網址 -->
       </div>
@@ -56,7 +59,7 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { loginPlayer } from '@/api'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
-import { PLAYER_HOME, PLAYER_REGISTER_PATH, safeRedirect } from '@/router'
+import { PLAYER_HELP_PATH, PLAYER_HOME, PLAYER_REGISTER_PATH, safeRedirect } from '@/router'
 
 const router     = useRouter()
 const route      = useRoute()
