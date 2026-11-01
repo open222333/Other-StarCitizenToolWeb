@@ -29,6 +29,8 @@
         <span v-if="ship.qt_fuel_capacity" class="sf-chip">量子油箱 {{ fmtNum(ship.qt_fuel_capacity) }}</span>
         <span v-if="effective.rangeGm" class="sf-chip">滿油約 {{ fmtNum(effective.rangeGm, 1) }} Gm</span>
         <span v-if="showCargo && ship.external_cargo" class="sf-chip">外掛貨櫃（只停外部貨運站）</span>
+        <!-- 貨物網格（sc-cargo.space）：每種貨櫃最多裝幾個 -->
+        <span v-for="s in boxSizes" :key="s" class="sf-chip sp-box"><i class="bi bi-box me-1" aria-hidden="true"></i>{{ s }} SCU × {{ boxes[s] }}</span>
       </div>
     </div>
   </div>
@@ -37,7 +39,7 @@
 <script setup>
 import { computed, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
-import { shipPasses } from '@/utils/navBase'
+import { BOX_SIZES, boxCapacity, shipPasses } from '@/utils/navBase'
 import { fmtNum, fmtSpeed, shipLabel } from '@/utils/navFormat'
 
 const props = defineProps({
@@ -75,6 +77,10 @@ watch([() => props.ships, fleetSet], () => {
     || props.ships.find(s => fleetSet.value.has(s.id))
   if (mine) pickShip(mine)
 }, { immediate: true })
+
+// 貨物網格：8／16／32 SCU 貨櫃各最多裝幾個（0 個的不列）
+const boxes = computed(() => (ship.value ? boxCapacity(ship.value.id) : null))
+const boxSizes = computed(() => (boxes.value ? BOX_SIZES.filter(s => boxes.value[s] > 0) : []))
 
 const qdOptions = computed(() => {
   const size = ship.value?.qd_size
@@ -119,4 +125,5 @@ async function searchShips(q) {
 
 <style scoped>
 .sp-facts { min-height: 1.75rem; }
+.sf-chip.sp-box { color: var(--sf-text); border-style: dashed; }
 </style>

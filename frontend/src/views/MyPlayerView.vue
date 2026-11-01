@@ -1270,6 +1270,12 @@
         :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
     </div>
 
+    <!-- ══════════ 貨艙網格（見 components/CargoLoader.vue）══════════ -->
+    <div v-show="activeTab === 'cargo'" role="tabpanel" id="panel-cargo" :aria-labelledby="'tab-cargo'">
+      <CargoLoader :fetcher="playerAuth.playerFetch" :active="activeTab === 'cargo'"
+        :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
+    </div>
+
     <!-- ══════════ LOG 解析（Game.log 在瀏覽器裡解析，不上傳；見 components/GameLogReader.vue）══════════ -->
     <div v-show="activeTab === 'gamelog'" role="tabpanel" id="panel-gamelog" :aria-labelledby="'tab-gamelog'">
       <GameLogReader card-class="card scifi-card" :player-name="playerAuth.starCitizenId" />
@@ -1525,6 +1531,7 @@ import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
 import RoutePlanner from '@/components/RoutePlanner.vue'
 import ContractPlanner from '@/components/ContractPlanner.vue'
+import CargoLoader from '@/components/CargoLoader.vue'
 import { PLAYER_TABS, orderTabs } from '@/utils/playerTabs'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
@@ -1792,7 +1799,7 @@ function setSub(key) {
 function loadForTab(tab) {
   // 「查詢」：點開哪一區才載入那一區的資料（見 loadSearchSections）
   if (tab === 'search') loadSearchSections()
-  if ((tab === 'fleet' || tab === 'route') && !fleetLoaded.value) loadFleet()
+  if ((tab === 'fleet' || tab === 'route' || tab === 'cargo') && !fleetLoaded.value) loadFleet()
   if (tab === 'tools') loadToolLinks()
   // 倉庫共用搜尋卡的「物品類型」選項（物品主檔的全部類型）
   if (tab === 'warehouse' && !itemTypes.value.length) loadItemTypes()

@@ -1,5 +1,6 @@
 // 航線規劃的基本資料（地點、船、量子引擎），「航線規劃」「合約分配」共用同一份，只載一次。
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { maxOf } from '@/utils/cargoPack'
 
 const places = ref([])
 const ships = ref([])
@@ -48,6 +49,25 @@ export function shipPasses(s, fleet, applyFleet = true) {
   return true
 }
 
+// 飛船貨物網格（GET /starmap/nav/cargo-grids，sc-cargo.space）：選船後顯示 8／16／32 SCU 貨櫃最多裝幾個
+export const cargoGrids = ref([])
+let gridsPending = null
+// 載具 UUID → 網格（同一艘船對到好幾個載具時每個都指過去）
+export const gridByVehicle = computed(() => {
+  const map = new Map()
+  for (const g of cargoGrids.value) for (const u of g.vehicle_uuids || []) if (!map.has(u)) map.set(u, g)
+  return map
+})
+export const BOX_SIZES = [8, 16, 32]
+const boxCache = new Map()
+/** 這艘船（載具 UUID）每種貨櫃最多裝幾個 { 8: n, 16: n, 32: n }；沒有網格資料回 null */
+export function boxCapacity(vehicleId) {
+  const g = gridByVehicle.value.get(vehicleId)
+  if (!g?.official?.grids?.length) return null
+  if (!boxCache.has(g.id)) boxCache.set(g.id, Object.fromEntries(BOX_SIZES.map(s => [s, maxOf(g.official.grids, s)])))
+  return boxCache.get(g.id)
+}
+
 export function useNavBase(fetcher) {
   function load() {
     if (pending) return pending
@@ -79,5 +99,18 @@ export function useNavBase(fetcher) {
     }
     return commoditiesPending
   }
-  return { places, ships, quantumDrives, commodities, loading, error, loaded, load, loadCommodities }
+  function loadCargoGrids() {
+    if (cargoGrids.value.length) return Promise.resolve()
+    if (!gridsPending) {
+      gridsPending = getJson(fetcher, '/starmap/nav/cargo-grids').then((r) => {
+        if (r.ok) {
+          boxCache.clear()
+          cargoGrids.value = r.body.data || []
+        }
+        gridsPending = null
+      })
+    }
+    return gridsPending
+  }
+  return { places, ships, quantumDrives, commodities, loading, error, loaded, load, loadCommodities, loadCargoGrids }
 }

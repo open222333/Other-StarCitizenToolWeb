@@ -22,6 +22,8 @@ export const PLAYER_TABS = [
     key: 'route', label: '航線', icon: 'bi bi-signpost-split',
     subTabs: [{ key: 'plan', label: '航線規劃' }, { key: 'contracts', label: '合約分配' }],
   },
+  // 貨艙網格：選船、擺貨櫃、3D 檢視（見 components/CargoLoader.vue；資料是 sc-cargo.space 的貨物網格）
+  { key: 'cargo', label: '貨艙網格', icon: 'bi bi-boxes' },
   {
     // 原本的三個下層分頁合併成一頁，改成上方按鈕點開（SEARCH_SECTIONS）。
     // 原名「查詢」；商品購買地點搬到倉庫後只剩查別人持有的東西，改名「查詢持有資訊」
