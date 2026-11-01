@@ -259,6 +259,43 @@ def commodities() -> list:
     return out
 
 
+def cargo_grids() -> list:
+    """飛船貨物網格（cargo_grid_master，sc-cargo.space）給玩家頁「貨艙網格」與航線選船：每艘船的網格（位置、長寬高、
+    箱子大小限制），中文名稱用對到的載具主檔查翻譯。"""
+    with _lock:
+        cached = _cache.get('cargo_grids')
+        if cached and time.time() - cached[0] < CACHE_TTL:
+            return cached[1]
+    db = get_db()
+    rows = list(db['cargo_grid_master'].find({'is_current': {'$ne': False}}, {
+        'name': 1, 'manufacturer': 1, 'capacity_scu': 1, 'vehicle_uuids': 1, 'alternative_names': 1,
+        'search_aliases': 1, 'official.grids': 1, 'official.capacity': 1, 'unofficial.grids': 1,
+        'unofficial.capacity': 1}))
+    uuids = {u for r in rows for u in r.get('vehicle_uuids') or []}
+    vehicles = {v['_id']: v for v in db['vehicle_master'].find({'_id': {'$in': list(uuids)}},
+                                                               {'name': 1, 'class_name': 1})}
+    keep = ('x', 'y', 'z', 'width', 'height', 'length', 'max_size', 'min_size', 'unsecured', 'group', 'name')
+
+    def layout(lay):
+        if not isinstance(lay, dict) or not lay.get('grids'):
+            return None
+        return {'capacity': lay.get('capacity'), 'grids': [{k: g.get(k) for k in keep} for g in lay['grids']]}
+
+    out = []
+    for r in rows:
+        v = next((vehicles[u] for u in r.get('vehicle_uuids') or [] if u in vehicles), None)
+        zh = vehicle_name_zh(v.get('class_name') or '', v.get('name') or '') if v else None
+        out.append({'id': r['_id'], 'name': r.get('name'), 'name_zh': zh, 'manufacturer': r.get('manufacturer'),
+                    'capacity': r.get('capacity_scu'), 'vehicle_uuids': r.get('vehicle_uuids') or [],
+                    'aliases': (r.get('alternative_names') or []) + (r.get('search_aliases') or []),
+                    'official': layout(r.get('official')), 'unofficial': layout(r.get('unofficial'))})
+    out = [o for o in out if o['official']]
+    out.sort(key=lambda o: (o['name'] or '').lower())
+    with _lock:
+        _cache['cargo_grids'] = (time.time(), out)
+    return out
+
+
 def node_brief(n: dict, pos: bool = False) -> dict:
     """pos=True 時附上座標 p [x, y, z]（公尺，航線結果的 3D 星圖用）。"""
     out = {'id': n['id'], 'name': n['name'], 'name_zh': n.get('name_zh'), 'type': n['type'],
@@ -519,8 +556,10 @@ class Planner:
         return sum(m['time'] for m in ms)
 
 
-def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bool, capacity) -> list:
-    """事件順序（events 的 index）。事件：{node, delta（+取貨／−送貨／0 途經）, need（要先完成的事件 index）}"""
+def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bool, capacity,
+           base_load: float = 0.0) -> list:
+    """事件順序（events 的 index）。事件：{node, delta（+取貨／−送貨／0 途經）, need（要先完成的事件 index）}
+    base_load：出發時貨艙裡已經有的貨（中途重新規劃時）。"""
     n = len(events)
     if not auto or n <= 1:
         return list(range(n))
@@ -535,7 +574,7 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
         return capacity is None or load + e['delta'] <= capacity + 1e-9
 
     def load_of(mask):
-        return sum(events[i]['delta'] for i in range(n) if (mask >> i) & 1)
+        return base_load + sum(events[i]['delta'] for i in range(n) if (mask >> i) & 1)
 
     def tail(k, load):
         return cost(events[k]['node'], end, load) if end else 0.0
@@ -544,8 +583,8 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
         full = (1 << n) - 1
         dp = [dict() for _ in range(1 << n)]          # dp[mask][last] = (成本, 上一個)
         for i in range(n):
-            if feasible(i, 0, 0.0):
-                dp[1 << i][i] = (cost(start, events[i]['node'], 0.0), None)
+            if feasible(i, 0, base_load):
+                dp[1 << i][i] = (cost(start, events[i]['node'], base_load), None)
         for mask in range(1, full + 1):
             if not dp[mask]:
                 continue
@@ -571,7 +610,7 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
         return list(reversed(order))
 
     # 事件太多：貪婪（每次挑成本最低的可行事件）＋相鄰交換改良
-    order, mask, cur, load = [], 0, start, 0.0
+    order, mask, cur, load = [], 0, start, base_load
     while len(order) < n:
         cands = [i for i in range(n) if not (mask >> i) & 1 and feasible(i, mask, load)]
         if not cands:
@@ -583,7 +622,7 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
         cur = events[i]['node']
 
     def total(seq):
-        c, cur_, ld, done = 0.0, start, 0.0, 0
+        c, cur_, ld, done = 0.0, start, base_load, 0
         for i in seq:
             if not feasible(i, done, ld):
                 return math.inf
@@ -605,9 +644,27 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
     return order
 
 
-def _build_plan(planner: Planner, start, events, order, end, key, label) -> dict:
+def start_fuel_amount(spec, capacity):
+    """起始油量設定 {mode: pct（百分比）／amount（油量）, value} → 實際油量（不超過油箱）；沒設定＝滿油。"""
+    if not capacity:
+        return None
+    capacity = float(capacity)
+    if not isinstance(spec, dict) or spec.get('value') in (None, ''):
+        return capacity
+    try:
+        value = float(spec.get('value'))
+    except (TypeError, ValueError):
+        raise RouteError('起始油量格式錯誤')
+    if value < 0:
+        raise RouteError('起始油量不能是負的')
+    amount = capacity * value / 100 if spec.get('mode') == 'pct' else value
+    return min(amount, capacity)
+
+
+def _build_plan(planner: Planner, start, events, order, end, key, label, start_fuel=None,
+                initial_load: float = 0.0) -> dict:
     legs = []
-    cur, load = start, 0.0
+    cur, load = start, initial_load
     targets = [(events[i]['node'], events[i]) for i in order] + ([(end, None)] if end else [])
     totals = {'distance': 0.0, 'time': 0.0, 'fuel': 0.0, 'jumps': 0}
     has_fuel = True
@@ -649,12 +706,14 @@ def _build_plan(planner: Planner, start, events, order, end, key, label) -> dict
             leg['fuel'] = None
     plan = {'key': key, 'label': label, 'start': node_brief(start, True), 'legs': legs, 'totals': totals,
             'warnings': [], 'refuel_stops': []}
-    _plan_refuel(plan, planner.ship.get('qt_fuel_capacity'), [start] + [t for t, _ in targets])
+    capacity = planner.ship.get('qt_fuel_capacity')
+    plan['start_fuel'] = start_fuel_amount(start_fuel, capacity)
+    _plan_refuel(plan, capacity, [start] + [t for t, _ in targets], plan['start_fuel'])
     return plan
 
 
-def _plan_refuel(plan: dict, capacity, stops: list) -> None:
-    """從滿油出發，算每一段跑完剩多少量子燃料（leg['fuel_after']）。
+def _plan_refuel(plan: dict, capacity, stops: list, start_fuel=None) -> None:
+    """從起始油量（start_fuel，沒給＝滿油）出發，算每一段跑完剩多少量子燃料（leg['fuel_after']）。
     剩的油不夠跑下一段時，在那一站標「需補充燃料」並當作補滿再出發（plan['refuel_stops'] 是站點序號：
     0＝起點、i＝第 i 段的目的地）。補滿也跑不完的段落（單段超過油箱）標 leg['fuel_short']。
 
@@ -664,7 +723,7 @@ def _plan_refuel(plan: dict, capacity, stops: list) -> None:
     if not capacity or any(leg.get('fuel') is None for leg in legs):
         return
     capacity = float(capacity)
-    remaining = capacity
+    remaining = capacity if start_fuel is None else min(float(start_fuel), capacity)
     for i, leg in enumerate(legs):
         need = leg['fuel'] or 0.0
         if need > remaining + 1e-9 and remaining < capacity:
@@ -683,8 +742,10 @@ def _plan_refuel(plan: dict, capacity, stops: list) -> None:
 
 def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = 'none', end_id: str = '',
                auto_order: bool = True, ship_id: str = '', qd_id: str = '', external_cargo=None,
-               visible_only: bool = False) -> dict:
+               visible_only: bool = False, start_fuel=None) -> dict:
     """規劃航線，回傳三種方案。
+
+    start_fuel：起始油量 {mode: pct／amount, value}（見 start_fuel_amount），沒給＝滿油。
 
     waypoints：[地點 id]；cargo：[{pickup, dropoff, scu}]；end_mode：none／start（回到起點）／fixed（end_id）。
     external_cargo：None = 依船自動判斷（Hull 系列）。
@@ -746,7 +807,7 @@ def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = '
     plans, seen = [], {}
     for key, label in PLANS:
         order = _order(planner, start, events, end, key, auto_order, capacity)
-        plan = _build_plan(planner, start, events, order, end, key, label)
+        plan = _build_plan(planner, start, events, order, end, key, label, start_fuel)
         sig = tuple((leg['to']['id'], leg['action'], leg['cargo']) for leg in plan['legs']) + \
             tuple(s['to']['id'] for leg in plan['legs'] for s in leg['steps'])
         plan['same_as'] = seen.get(sig)

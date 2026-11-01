@@ -343,10 +343,11 @@ def _pair(supply: list, demand: list, distance) -> list:
 
 
 def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: str = 'none',
-                   visible_only: bool = False) -> dict:
+                   visible_only: bool = False, start_fuel=None) -> dict:
     """squads：[{name, ship, quantum_drive, start}]；
     contracts：[{name, items: [{cargo, pickups: [{place, scu}], dropoffs: [{place, scu}]}]}]；
-    end_mode：none（停在最後一站）／start（各隊回到自己的起點）。"""
+    end_mode：none（停在最後一站）／start（各隊回到自己的起點）；
+    start_fuel：各隊的起始油量 {mode: pct／amount, value}（百分比照各自油箱算，油量超過油箱就是滿油），沒給＝滿油。"""
     w = nav.world(visible_only)
 
     def node(nid, label):
@@ -441,7 +442,7 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
             if seq:
                 events = _events_of(seq)
                 plan = nav._build_plan(planners[s['index']], s['start'], events, list(range(len(events))),
-                                       s['end'], key, s['name'])
+                                       s['end'], key, s['name'], start_fuel)
                 systems |= {s['start']['system']} | {st['to']['system_key'] for leg in plan['legs']
                                                       for st in leg['steps']}
                 for task, sign in seq:
@@ -482,3 +483,149 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
         'total_scu': sum(t['scu'] for t in tasks),
         'trips': len(tasks),
     }
+
+
+MAX_SEQUENCE = 2 * MAX_TASKS
+
+
+def evaluate_sequence(*, start_id: str, ship_id: str, qd_id: str = '', steps: list, end_mode: str = 'none',
+                      name: str = '', visible_only: bool = False, start_fuel=None, end_id: str = '',
+                      onboard=()) -> dict:
+    """照給定的順序算一個小隊的航線（玩家在結果上拖拉調整順序後重算）。
+
+    steps：[{place, kind: pickup／dropoff／stop（途經）, scu, cargo, contract, contract_name, item, item_name, item_named}]。
+    檢查：同一份合約的同一種貨物要先取貨才能送、途中不超過貨艙、外掛貨櫃只停外部貨運站。
+    end_id：最後要回去的地點（中途重新規劃過時是原起點），有給就不看 end_mode；
+    onboard：出發時貨艙裡已經有的貨 [{contract, item, item_name, scu}]（中途重新規劃過）。"""
+    w = nav.world(visible_only)
+    if not isinstance(steps, list) or not steps:
+        raise RouteError('沒有要跑的站點')
+    if len(steps) > MAX_SEQUENCE:
+        raise RouteError(f'站點最多 {MAX_SEQUENCE} 個')
+
+    def node(nid, label):
+        n = w.nodes.get(nid) if isinstance(nid, str) and nid else None
+        if not n or n.get('synthetic'):
+            raise RouteError(f'{label}：找不到地點或沒有座標')
+        return n
+
+    info = nav.ship(ship_id, qd_id)
+    cap = float(info.get('cargo_scu') or 0)
+    start = node(start_id, '起點')
+    preload = onboard if isinstance(onboard, (list, tuple)) else []
+    events, onboard, load = [], {}, 0.0
+    for it in preload:
+        it = it if isinstance(it, dict) else {}
+        try:
+            scu = float(it.get('scu') or 0)
+        except (TypeError, ValueError):
+            raise RouteError('貨艙裡的貨 SCU 格式錯誤')
+        key = (it.get('contract'), str(it.get('item_name') or '').strip().lower(), it.get('item'))
+        onboard[key] = onboard.get(key, 0.0) + scu
+        load += scu
+    initial_load = load
+    for i, st in enumerate(steps, start=1):
+        st = st if isinstance(st, dict) else {}
+        kind = st.get('kind')
+        if kind == 'stop':     # 途經（中途插入的站點）
+            events.append({'node': node(st.get('place'), f'第 {i} 站'), 'delta': 0.0, 'need': None, 'kind': 'stop'})
+            continue
+        if kind not in ('pickup', 'dropoff'):
+            raise RouteError(f'第 {i} 站：動作不正確')
+        try:
+            scu = float(st.get('scu') or 0)
+        except (TypeError, ValueError):
+            raise RouteError(f'第 {i} 站：SCU 格式錯誤')
+        if scu <= 0:
+            raise RouteError(f'第 {i} 站：SCU 要大於 0')
+        n = node(st.get('place'), f'第 {i} 站')
+        label = f'{st.get("contract_name") or ""} {st.get("item_name") or ""}'.strip()
+        key = (st.get('contract'), str(st.get('item_name') or '').strip().lower(), st.get('item'))
+        if kind == 'pickup':
+            onboard[key] = onboard.get(key, 0.0) + scu
+            load += scu
+            if load > cap + 1e-9:
+                raise RouteError(f'第 {i} 站 {n.get("name_zh") or n["name"]}：載貨 {load:g} SCU 超過貨艙 {cap:g} SCU')
+        else:
+            if onboard.get(key, 0.0) + 1e-9 < scu:
+                raise RouteError(f'第 {i} 站 {n.get("name_zh") or n["name"]}：{label} 要先取貨才能送')
+            onboard[key] -= scu
+            load -= scu
+        if info.get('external_cargo') and not w.external_ok(n):
+            raise RouteError(f'{w.external_rule}：{n.get("name_zh") or n["name"]}')
+        events.append({'node': n, 'delta': scu if kind == 'pickup' else -scu, 'need': None, 'kind': kind,
+                       # cargo：哪一趟（取貨、送貨同一個號碼；中途重新規劃靠它配對），沒給就用站序
+                       'cargo': st.get('cargo') or i, 'scu': scu, **{k: st.get(k) for k in nav.LEG_EXTRA}})
+    end = node(end_id, '終點') if end_id else (start if end_mode == 'start' else None)
+    plan = nav._build_plan(nav.Planner(w, info), start, events, list(range(len(events))), end, 'custom',
+                           name or '自訂順序', start_fuel, initial_load)
+    return {'plan': plan, 'ship': {k: info.get(k) for k in SHIP_KEYS}}
+
+
+def replan_squad(*, start_id: str, ship_id: str, qd_id: str = '', steps: list, onboard=(), stops=(),
+                 end_id: str = '', name: str = '', visible_only: bool = False, start_fuel=None) -> dict:
+    """中途重新規劃一個小隊還沒跑完的行程（可以插入新的站點）。
+
+    start_id：現在的位置（最後一個已去過的站）；steps：還沒做的取貨／送貨（同一趟的 cargo 號碼一樣）；
+    onboard：已經取了、還沒送的趟（cargo 號碼），它們在 steps 裡只剩送貨；stops：要插入的途經站點；
+    end_id：最後要回去的地點（原本「回到起點」時是原起點）。
+    順序重新排（跟一般航線同一套：取貨在送貨前、不超過貨艙，事件少時是精確解），成本用時間。"""
+    w = nav.world(visible_only)
+
+    def node(nid, label):
+        n = w.nodes.get(nid) if isinstance(nid, str) and nid else None
+        if not n or n.get('synthetic'):
+            raise RouteError(f'{label}：找不到地點或沒有座標')
+        return n
+
+    steps = steps if isinstance(steps, list) else []
+    stops = [s for s in (stops or []) if s]
+    if not steps and not stops and not end_id:
+        raise RouteError('沒有還沒跑的站點')
+    if len(steps) + len(stops) > MAX_SEQUENCE:
+        raise RouteError(f'站點最多 {MAX_SEQUENCE} 個')
+    info = nav.ship(ship_id, qd_id)
+    cap = float(info.get('cargo_scu') or 0)
+    start = node(start_id, '目前位置')
+    onboard = {str(c) for c in (onboard or [])}
+    events, picks, base_load = [], {}, 0.0
+    by_cargo: dict = {}
+    for i, st in enumerate(steps, start=1):
+        st = st if isinstance(st, dict) else {}
+        if st.get('kind') not in ('pickup', 'dropoff'):
+            raise RouteError(f'第 {i} 站：動作不正確')
+        by_cargo.setdefault(str(st.get('cargo')), {})[st['kind']] = st
+    for cargo, pair in by_cargo.items():
+        drop = pair.get('dropoff')
+        if not drop:
+            raise RouteError(f'{pair["pickup"].get("contract_name") or ""} {pair["pickup"].get("item_name") or ""}：'
+                             '缺少送貨站')
+        try:
+            scu = float(drop.get('scu') or 0)
+        except (TypeError, ValueError):
+            raise RouteError('SCU 格式錯誤')
+        extra = {k: drop.get(k) for k in nav.LEG_EXTRA}
+        need = None
+        if 'pickup' in pair:
+            pick = node(pair['pickup'].get('place'), '取貨站')
+            need = len(events)
+            events.append({'node': pick, 'delta': scu, 'need': None, 'kind': 'pickup', 'cargo': drop.get('cargo'),
+                           'scu': scu, **extra})
+        elif cargo in onboard:
+            base_load += scu
+        else:
+            raise RouteError(f'{drop.get("contract_name") or ""} {drop.get("item_name") or ""}：還沒取貨，缺少取貨站')
+        events.append({'node': node(drop.get('place'), '送貨站'), 'delta': -scu, 'need': need, 'kind': 'dropoff',
+                       'cargo': drop.get('cargo'), 'scu': scu, **extra})
+    for sid in stops:
+        events.append({'node': node(sid, '插入的站點'), 'delta': 0.0, 'need': None, 'kind': 'stop'})
+    if base_load > cap + 1e-9:
+        raise RouteError(f'貨艙裡的貨 {base_load:g} SCU 超過貨艙 {cap:g} SCU')
+    for e in events:
+        if e['kind'] in ('pickup', 'dropoff') and info.get('external_cargo') and not w.external_ok(e['node']):
+            raise RouteError(f'{w.external_rule}：{e["node"].get("name_zh") or e["node"]["name"]}')
+    end = node(end_id, '終點') if end_id else None
+    planner = nav.Planner(w, info)
+    order = nav._order(planner, start, events, end, 'fastest', True, cap, base_load) if events else []
+    plan = nav._build_plan(planner, start, events, order, end, 'custom', name or '重新規劃', start_fuel, base_load)
+    return {'plan': plan, 'ship': {k: info.get(k) for k in SHIP_KEYS}}

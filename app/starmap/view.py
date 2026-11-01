@@ -181,6 +181,7 @@ def nav_route():
             ship: {type: string, description: "船的 UUID（ship_nav_master）"}
             quantum_drive: {type: string, description: "換裝的量子引擎 UUID（物品主檔裡的量子引擎，要跟船的引擎槽同尺寸）；不帶＝預設配備"}
             external_cargo: {type: boolean, description: "外掛貨櫃；不帶 = 依船自動判斷"}
+            start_fuel: {type: object, description: "起始油量 {mode: pct（百分比）／amount（油量）, value}；不帶＝滿油"}
     responses:
       200:
         description: 成功
@@ -207,6 +208,7 @@ def nav_route():
             qd_id=str(body.get('quantum_drive') or ''),
             external_cargo=external if isinstance(external, bool) else None,
             visible_only=not viewer_sees_hidden(),
+            start_fuel=body.get('start_fuel'),
         )
     except nav.RouteError as exc:
         return jsonify({'success': False, 'message': str(exc)}), 400
@@ -228,6 +230,21 @@ def nav_commodities():
     return jsonify({'success': True, 'data': nav.commodities()})
 
 
+@app_starmap.route('/nav/cargo-grids', methods=['GET'])
+@jwt_required()
+def nav_cargo_grids():
+    """玩家頁「貨艙網格」、航線選船時的貨櫃最大量：每艘船的貨物網格（sc-cargo.space，「貨物網格」同步項目），見 src/models/nav.py 的 cargo_grids。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{id, name, name_zh, manufacturer, capacity, vehicle_uuids, official: {capacity, grids}, unofficial}]"
+    """
+    return jsonify({'success': True, 'data': nav.cargo_grids()})
+
+
 @app_starmap.route('/nav/contracts', methods=['POST'])
 @jwt_required()
 @limiter.limit('10 per minute')
@@ -247,6 +264,7 @@ def nav_contracts():
             squads: {type: array, items: {type: object}, description: "[{name, ship, quantum_drive, start}]，最多 6 隊"}
             contracts: {type: array, items: {type: object}, description: "[{name, items: [{cargo, pickup, dropoff, scu}]}]，最多 10 份、每份 10 項"}
             end_mode: {type: string, description: "none（停在最後一站）／start（各隊回到自己的起點）"}
+            start_fuel: {type: object, description: "起始油量 {mode: pct（百分比）／amount（油量）, value}；不帶＝滿油"}
     responses:
       200:
         description: 成功
@@ -263,7 +281,102 @@ def nav_contracts():
             contracts=body.get('contracts'),
             end_mode='start' if body.get('end_mode') == 'start' else 'none',
             visible_only=not viewer_sees_hidden(),
+            start_fuel=body.get('start_fuel'),
         )
+    except nav.RouteError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    return jsonify({'success': True, 'data': data})
+
+
+@app_starmap.route('/nav/sequence', methods=['POST'])
+@jwt_required()
+@limiter.limit('60 per minute')
+def nav_sequence():
+    """照給定的順序重算一個小隊的航線（合約分配結果拖拉調整順序後），見 src/models/haul.py 的 evaluate_sequence。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            start: {type: string, description: "起點地點 id"}
+            ship: {type: string}
+            quantum_drive: {type: string}
+            end_mode: {type: string, description: "none／start"}
+            name: {type: string}
+            start_fuel: {type: object, description: "起始油量 {mode: pct（百分比）／amount（油量）, value}；不帶＝滿油"}
+            steps: {type: array, items: {type: object}, description: "[{place, kind: pickup／dropoff, scu, contract, contract_name, item, item_name, item_named}]"}
+            end: {type: string, description: "最後要回去的地點（有帶就不看 end_mode）"}
+            onboard: {type: array, items: {type: object}, description: "出發時貨艙裡已經有的貨 [{contract, item, item_name, scu}]"}
+    responses:
+      200:
+        description: "data: {plan, ship}"
+      400:
+        description: 順序不合法（先送後取、超過貨艙…）
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({'success': False, 'message': '格式錯誤'}), 400
+    try:
+        data = haul.evaluate_sequence(
+            start_id=str(body.get('start') or ''), ship_id=str(body.get('ship') or ''),
+            qd_id=str(body.get('quantum_drive') or ''), steps=body.get('steps'),
+            end_mode='start' if body.get('end_mode') == 'start' else 'none',
+            name=str(body.get('name') or '')[:30], visible_only=not viewer_sees_hidden(),
+            start_fuel=body.get('start_fuel'), end_id=str(body.get('end') or ''),
+            onboard=body.get('onboard') if isinstance(body.get('onboard'), list) else [])
+    except nav.RouteError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    return jsonify({'success': True, 'data': data})
+
+
+@app_starmap.route('/nav/replan', methods=['POST'])
+@jwt_required()
+@limiter.limit('30 per minute')
+def nav_replan():
+    """中途重新規劃一個小隊還沒跑完的行程（可插入站點），見 src/models/haul.py 的 replan_squad。
+    ---
+    tags: [Starmap]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            start: {type: string, description: "目前位置（最後一個已去過的站）"}
+            ship: {type: string}
+            quantum_drive: {type: string}
+            end: {type: string, description: "最後要回去的地點（不帶＝停在最後一站）"}
+            name: {type: string}
+            steps: {type: array, items: {type: object}, description: "還沒做的取貨／送貨 [{place, kind, scu, cargo, contract, contract_name, item, item_name, item_named}]"}
+            onboard: {type: array, items: {type: string}, description: "已經取了、還沒送的趟（cargo 號碼）"}
+            stops: {type: array, items: {type: string}, description: "要插入的途經站點 id"}
+            start_fuel: {type: object, description: "目前油量 {mode: pct／amount, value}"}
+    responses:
+      200:
+        description: "data: {plan, ship}"
+      400:
+        description: 參數錯誤或排不出路線
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({'success': False, 'message': '格式錯誤'}), 400
+    stops = body.get('stops') or []
+    if not isinstance(stops, list):
+        return jsonify({'success': False, 'message': '格式錯誤'}), 400
+    try:
+        data = haul.replan_squad(
+            start_id=str(body.get('start') or ''), ship_id=str(body.get('ship') or ''),
+            qd_id=str(body.get('quantum_drive') or ''), steps=body.get('steps'),
+            onboard=[str(c) for c in body.get('onboard') or []], stops=[str(s) for s in stops],
+            end_id=str(body.get('end') or ''), name=str(body.get('name') or '')[:30],
+            visible_only=not viewer_sees_hidden(), start_fuel=body.get('start_fuel'))
     except nav.RouteError as exc:
         return jsonify({'success': False, 'message': str(exc)}), 400
     return jsonify({'success': True, 'data': data})

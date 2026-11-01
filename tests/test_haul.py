@@ -180,3 +180,51 @@ def test_external_cargo_needs_loading_dock(haulers):
     with pytest.raises(nav.RouteError, match='外部貨運'):
         nav.plan_route(start_id='stA', waypoints=[], ship_id='hullx', cargo=[{'pickup': 'stA', 'dropoff': 'stC', 'scu': 5}])
     assert {p['id']: p['loading_dock'] for p in nav.places()}['stY'] is True
+
+
+def test_evaluate_sequence(client, auth_headers, haulers):
+    st = lambda place, kind, scu, item='Ore', c=1: {'place': place, 'kind': kind, 'scu': scu, 'contract': c,
+                                                    'contract_name': f'C{c}', 'item': 1, 'item_name': item}
+    res = haul.evaluate_sequence(start_id='stA', ship_id='big', end_mode='start',
+                                 steps=[st('stA', 'pickup', 50), st('stY', 'pickup', 40), st('stC', 'dropoff', 90)])
+    legs = res['plan']['legs']
+    assert [l['action'] for l in legs] == ['pickup', 'pickup', 'dropoff', 'end'] and legs[2]['load_after'] == 0
+    assert legs[0]['contract_name'] == 'C1'
+    with pytest.raises(nav.RouteError, match='先取貨'):
+        haul.evaluate_sequence(start_id='stA', ship_id='big', steps=[st('stC', 'dropoff', 10), st('stA', 'pickup', 10)])
+    with pytest.raises(nav.RouteError, match='先取貨'):   # 不同合約的同名貨物不能互抵
+        haul.evaluate_sequence(start_id='stA', ship_id='big',
+                               steps=[st('stA', 'pickup', 10, c=1), st('stC', 'dropoff', 10, c=2)])
+    with pytest.raises(nav.RouteError, match='超過貨艙'):
+        haul.evaluate_sequence(start_id='stA', ship_id='small', steps=[st('stA', 'pickup', 30), st('stC', 'dropoff', 30)])
+    resp = client.post('/starmap/nav/sequence', headers=auth_headers, json={
+        'start': 'stA', 'ship': 'big', 'steps': [st('stA', 'pickup', 5), st('stY', 'dropoff', 5)]})
+    assert resp.status_code == 200 and resp.get_json()['data']['plan']['legs'][-1]['to']['id'] == 'stY'
+
+
+def test_replan_squad(client, auth_headers, haulers):
+    st = lambda place, kind, scu, cargo: {'place': place, 'kind': kind, 'scu': scu, 'cargo': cargo, 'contract': 1,
+                                          'contract_name': 'C1', 'item': 1, 'item_name': 'Ore'}
+    # 第 1 趟已經在貨艙（只剩送貨到 stC），第 2 趟還沒取；中途插入 stY
+    res = haul.replan_squad(start_id='stA', ship_id='big', onboard=['1'], stops=['stY'], end_id='stA',
+                            steps=[st('stC', 'dropoff', 30, 1), st('stA', 'pickup', 20, 2), st('stC', 'dropoff', 20, 2)],
+                            start_fuel={'mode': 'amount', 'value': 500})
+    legs = res['plan']['legs']
+    assert legs[0]['load_before'] == 30, '出發時貨艙裡已經有 30'
+    assert {l['to']['id'] for l in legs if l['action'] == 'stop'} == {'stY'}
+    assert legs[-1]['action'] == 'end' and legs[-1]['to']['id'] == 'stA' and legs[-1]['load_after'] == 0
+    assert res['plan']['start_fuel'] == 500
+    with pytest.raises(nav.RouteError, match='缺少取貨站'):
+        haul.replan_squad(start_id='stA', ship_id='big', steps=[st('stC', 'dropoff', 30, 1)])
+    resp = client.post('/starmap/nav/replan', headers=auth_headers, json={
+        'start': 'stA', 'ship': 'big', 'stops': ['stC'], 'steps': []})
+    assert resp.status_code == 200 and resp.get_json()['data']['plan']['legs'][0]['to']['id'] == 'stC'
+
+
+def test_evaluate_sequence_with_onboard_and_end(haulers):
+    res = haul.evaluate_sequence(start_id='stY', ship_id='big', end_id='stA',
+                                 onboard=[{'contract': 1, 'item': 1, 'item_name': 'Ore', 'scu': 30}],
+                                 steps=[{'place': 'stC', 'kind': 'dropoff', 'scu': 30, 'contract': 1, 'item': 1,
+                                         'item_name': 'Ore', 'cargo': 7}])
+    legs = res['plan']['legs']
+    assert legs[0]['load_before'] == 30 and legs[0]['cargo'] == 7 and legs[-1]['to']['id'] == 'stA'

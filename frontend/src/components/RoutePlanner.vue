@@ -17,6 +17,10 @@
             :show-cargo="SHOW_CARGO" auto-pick @pick="s => { if (s) externalCargo = !!s.external_cargo }" />
           <div class="row g-2 align-items-end mt-0">
             <div class="col-12">
+              <label class="form-label small fw-semibold mb-1" for="rp-fuel">起始油量</label>
+              <FuelStartInput id="rp-fuel" v-model="startFuel" />
+            </div>
+            <div class="col-12">
               <label class="form-label small fw-semibold mb-1" for="rp-start">起點</label>
               <PlacePicker id="rp-start" label="起點" :places="base.places.value" :model-value="start"
                 @update:model-value="v => Object.assign(start, v)" />
@@ -127,7 +131,9 @@
               <span class="sf-chip sf-chip--accent">時間 {{ fmtTime(current.totals.time) }}</span>
               <span v-if="current.totals.fuel != null" class="sf-chip sf-chip--accent">油量 {{ fmtNum(current.totals.fuel) }}</span>
               <span class="sf-chip">量子跳躍 {{ current.totals.jumps }} 次</span>
-              <span v-if="current.same_as" class="sf-chip">與「{{ planLabel(current.same_as) }}」相同</span>
+              <span v-if="current.same_as && !manualOrder" class="sf-chip">與「{{ planLabel(current.same_as) }}」相同</span>
+              <span v-if="manualOrder" class="sf-chip sf-chip--accent">已手動調整順序</span>
+              <span v-if="replannedFrom" class="sf-chip sf-chip--accent">已從 {{ placeLabel(replannedFrom) }} 重新規劃</span>
               <span v-if="current.refuel_stops?.length" class="sf-chip sf-chip--warn">
                 需補充燃料 {{ current.refuel_stops.length }} 次</span>
               <span v-if="current.warnings.includes('fuel_short')" class="sf-chip sf-chip--warn">
@@ -140,8 +146,11 @@
                 @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
             </div>
             <RouteMap3D v-if="view === 'map'" :plan="current" :map="result.map || {}" />
-            <RouteLegsTable v-show="view === 'table'" :plan="current" :fuel-capacity="result.ship.qt_fuel_capacity"
-              :show-load="SHOW_CARGO" />
+            <div v-if="reorderError" class="alert alert-warning py-2 mb-2" role="alert">{{ reorderError }}</div>
+            <RouteLegsTable v-show="view === 'table'" v-model:visited="visited" :plan="current"
+              :fuel-capacity="result.ship.qt_fuel_capacity" :show-load="SHOW_CARGO" :reorderable="!SHOW_CARGO && !reordering"
+              :replannable="!SHOW_CARGO" :replanning="reordering" :places="base.places.value"
+              @reorder="reorder" @replan="replan" />
           </template>
         </div>
       </div>
@@ -152,13 +161,14 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import PlacePicker from '@/components/PlacePicker.vue'
+import FuelStartInput from '@/components/FuelStartInput.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
 import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
 import { useNavBase } from '@/utils/navBase'
-import { fmtDist, fmtNum, fmtTime } from '@/utils/navFormat'
+import { fmtDist, fmtNum, fmtTime, placeLabel } from '@/utils/navFormat'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -196,22 +206,30 @@ const shipId = ref(saved.shipId || '')
 const shipText = ref(saved.shipText || '')
 const qdId = ref(saved.qdId || '')
 const externalCargo = ref(!!saved.externalCargo)
+// 起始油量 { mode: pct／amount, value }，value 空的＝滿油（components/FuelStartInput.vue）
+const startFuel = ref({ mode: saved.startFuel?.mode === 'amount' ? 'amount' : 'pct',
+  value: Number(saved.startFuel?.value) >= 0 && saved.startFuel?.value !== null ? Number(saved.startFuel.value) : null })
+const fuelParam = () => (startFuel.value.value == null ? null : startFuel.value)
 
 const plain = p => ({ id: p.id, text: p.text })
-watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo], () => {
+watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plain),
       cargo: cargo.map(c => ({ pickup: plain(c.pickup), dropoff: plain(c.dropoff), scu: c.scu })),
       autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
-      externalCargo: externalCargo.value,
+      externalCargo: externalCargo.value, startFuel: startFuel.value,
     }))
   } catch { /* 存不了就算了 */ }
 }, { deep: true })
 
 // ── 地點、船、量子引擎（跟「合約分配」共用，見 utils/navBase.js）──
 const base = useNavBase(props.fetcher)
-watch(() => props.active, on => { if (on && !base.loaded.value) base.load() }, { immediate: true })
+watch(() => props.active, (on) => {
+  if (!on) return
+  if (!base.loaded.value) base.load()
+  base.loadCargoGrids()
+}, { immediate: true })
 
 // ── 規劃 ─────────────────────────────────────────────────
 const planning = ref(false)
@@ -230,24 +248,84 @@ const filledCargo = computed(() => !SHOW_CARGO ? [] : cargo.filter(c => c.pickup
 const canPlan = computed(() => !!start.id && (filledStops.value.length || filledCargo.value.length
   || (endMode.value === 'fixed' && endPlace.id)))
 
+// 航段表：已去過（列代號）、拖拉調整順序後的重算（照新順序、不自動排序）
+const visited = ref([])
+const manualOrder = ref(false)
+const reordering = ref(false)
+const reorderError = ref('')
+
+// 上一次成功的規劃參數（調整順序時沿用：中途重新規劃過的話起點、終點、油量是新的）
+let lastReq = null
+
+// 中途重新規劃：從目前位置出發，還沒去的站＋插入的站自動排序；原本要回起點／指定終點的照舊
+const replannedFrom = ref(null)
+async function replan(p) {
+  const waypoints = p.remaining.filter(l => l.action === 'stop').map(l => l.to.id)
+  if (p.insert) waypoints.push(p.insert)
+  // 原本的終點（回到起點＝原起點）
+  const endId = lastReq?.end_mode === 'start' ? lastReq.start : lastReq?.end_mode === 'fixed' ? lastReq.end : ''
+  if (!waypoints.length && !endId) {
+    reorderError.value = '沒有還沒去的站點，請插入一個站點'
+    return
+  }
+  reordering.value = true
+  reorderError.value = ''
+  const req = {
+    ...lastReq, start: p.current.id, waypoints, cargo: [], end_mode: endId ? 'fixed' : 'none', end: endId,
+    auto_order: true, start_fuel: p.fuel != null ? { mode: 'amount', value: p.fuel } : lastReq?.start_fuel,
+  }
+  const res = await props.fetcher('/starmap/nav/route', { method: 'POST', body: JSON.stringify(req) })
+  const body = res ? await res.json().catch(() => null) : null
+  reordering.value = false
+  if (!res?.ok || !body?.success) {
+    reorderError.value = body?.message || '重新規劃失敗。'
+    return
+  }
+  result.value = body.data
+  lastReq = req
+  visited.value = []
+  manualOrder.value = false
+  replannedFrom.value = p.current
+}
+
+async function reorder(legs) {
+  reordering.value = true
+  reorderError.value = ''
+  const res = await props.fetcher('/starmap/nav/route', {
+    method: 'POST',
+    body: JSON.stringify({ ...lastReq, waypoints: legs.filter(l => l.action === 'stop').map(l => l.to.id), auto_order: false }),
+  })
+  const body = res ? await res.json().catch(() => null) : null
+  reordering.value = false
+  if (!res?.ok || !body?.success) {
+    reorderError.value = body?.message || '重新計算失敗。'
+    return
+  }
+  result.value = body.data
+  manualOrder.value = true
+}
+
 async function plan() {
   if (!canPlan.value) return
   planning.value = true
   planError.value = ''
-  const res = await props.fetcher('/starmap/nav/route', {
-    method: 'POST',
-    body: JSON.stringify({
-      start: start.id,
-      waypoints: filledStops.value.map(s => s.id),
-      cargo: filledCargo.value.map(c => ({ pickup: c.pickup.id, dropoff: c.dropoff.id, scu: Number(c.scu) })),
-      end_mode: endMode.value,
-      end: endPlace.id,
-      auto_order: autoOrder.value,
-      ship: shipId.value,
-      quantum_drive: qdId.value,
-      external_cargo: SHOW_CARGO ? externalCargo.value : false,
-    }),
-  })
+  visited.value = []
+  manualOrder.value = false
+  replannedFrom.value = null
+  reorderError.value = ''
+  const req = {
+    start: start.id,
+    waypoints: filledStops.value.map(s => s.id),
+    cargo: filledCargo.value.map(c => ({ pickup: c.pickup.id, dropoff: c.dropoff.id, scu: Number(c.scu) })),
+    end_mode: endMode.value,
+    end: endPlace.id,
+    auto_order: autoOrder.value,
+    ship: shipId.value,
+    quantum_drive: qdId.value,
+    external_cargo: SHOW_CARGO ? externalCargo.value : false,
+    start_fuel: fuelParam(),
+  }
+  const res = await props.fetcher('/starmap/nav/route', { method: 'POST', body: JSON.stringify(req) })
   const body = res ? await res.json().catch(() => null) : null
   planning.value = false
   if (!res?.ok || !body?.success) {
@@ -256,6 +334,7 @@ async function plan() {
     return
   }
   result.value = body.data
+  lastReq = req
   if (!result.value.plans.some(p => p.key === planKey.value)) planKey.value = result.value.plans[0]?.key
 }
 

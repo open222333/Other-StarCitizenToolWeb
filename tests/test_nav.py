@@ -280,3 +280,21 @@ def test_place_traits(world_data):
     assert not rows['stY']['docking']
     leg = nav.plan_route(start_id='stA', waypoints=['stC'], cargo=[], ship_id='ship1')['plans'][0]['legs'][0]
     assert leg['to']['docking'] is True
+
+
+def test_start_fuel(world_data):
+    db = get_db()
+    db.ship_nav_master.insert_one({'_id': 'tiny2', 'name': 'Tiny', 'qt_speed': 2e8, 'qt_spool': 5,
+                                   'qt_fuel_capacity': 250, 'qt_fuel_per_m': 10 / 1e9, 'qt_range': 25 * GM})
+    kw = dict(start_id='stA', waypoints=['stY'], cargo=[], ship_id='tiny2', auto_order=False)
+    full = nav.plan_route(**kw)['plans'][0]
+    need = full['legs'][0]['fuel']
+    assert full['start_fuel'] == 250 and full['refuel_stops'] == []
+    half = nav.plan_route(**kw, start_fuel={'mode': 'pct', 'value': 40})['plans'][0]
+    assert half['start_fuel'] == 100
+    assert half['refuel_stops'] == ([0] if need > 100 else [])
+    some = nav.plan_route(**kw, start_fuel={'mode': 'amount', 'value': 200})['plans'][0]
+    assert some['legs'][0]['fuel_after'] == pytest.approx(200 - need)
+    assert nav.plan_route(**kw, start_fuel={'mode': 'amount', 'value': 9999})['plans'][0]['start_fuel'] == 250
+    with pytest.raises(nav.RouteError):
+        nav.plan_route(**kw, start_fuel={'mode': 'pct', 'value': 'x'})

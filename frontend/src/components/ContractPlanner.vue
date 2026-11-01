@@ -29,6 +29,10 @@
               </select>
             </div>
             <div class="w-100 m-0"></div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold mb-1" for="cp-fuel">起始油量</label>
+              <FuelStartInput id="cp-fuel" v-model="startFuel" />
+            </div>
             <div class="col-12 col-md-4">
               <label class="form-label small fw-semibold mb-1" for="cp-squads">小隊數</label>
               <input id="cp-squads" :value="squads.length" type="number" min="1" :max="MAX_SQUADS" step="1"
@@ -215,6 +219,9 @@
             <div class="d-flex flex-wrap gap-2 mb-2">
               <span class="sf-chip">{{ shipLabel(squad.ship) }}</span>
               <span class="sf-chip">{{ squad.trips }} 趟 · {{ fmtNum(squad.scu) }} SCU</span>
+              <span v-if="squad.edited" class="sf-chip sf-chip--accent">已手動調整順序</span>
+              <span v-if="squad.ctx?.replanned" class="sf-chip sf-chip--accent">
+                已從 {{ placeLabel(squad.plan?.start) }} 重新規劃</span>
               <template v-if="squad.plan">
                 <span class="sf-chip sf-chip--accent">時間 {{ fmtTime(squad.plan.totals.time) }}</span>
                 <span v-if="squad.plan.totals.fuel != null" class="sf-chip sf-chip--accent">油量 {{ fmtNum(squad.plan.totals.fuel) }}</span>
@@ -229,8 +236,12 @@
                   @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
               </div>
               <RouteMap3D v-if="view === 'map'" :key="`${planKey}-${squad.index}`" :plan="squad.plan" :map="result.map || {}" />
-              <RouteLegsTable v-show="view === 'table'" :plan="squad.plan" :fuel-capacity="squad.ship.qt_fuel_capacity"
-                show-load />
+              <div v-if="reorderError" class="alert alert-warning py-2 mb-2" role="alert">{{ reorderError }}</div>
+              <RouteLegsTable v-show="view === 'table'" :visited="visitedOf(squad)"
+                :plan="squad.plan" :fuel-capacity="squad.ship.qt_fuel_capacity" show-load :reorderable="!reordering"
+                replannable :replanning="reordering" :places="base.places.value"
+                @update:visited="v => setVisitedOf(squad, v)" @reorder="legs => reorder(squad, legs)"
+                @replan="p => replan(squad, p)" />
             </template>
           </template>
         </div>
@@ -246,6 +257,7 @@ import PlacePicker from '@/components/PlacePicker.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
+import FuelStartInput from '@/components/FuelStartInput.vue'
 import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
 import { useNavBase } from '@/utils/navBase'
@@ -295,6 +307,10 @@ function loadSaved() {
 const saved = loadSaved()
 const start = reactive(newPlace(saved.start))
 const endMode = ref(saved.endMode === 'start' ? 'start' : 'none')
+// 各隊的起始油量 { mode: pct／amount, value }，value 空的＝滿油（百分比照各自油箱算）
+const startFuel = ref({ mode: saved.startFuel?.mode === 'amount' ? 'amount' : 'pct',
+  value: Number(saved.startFuel?.value) >= 0 && saved.startFuel?.value !== null ? Number(saved.startFuel.value) : null })
+const fuelParam = () => (startFuel.value.value == null ? null : { ...startFuel.value })
 // 共同起點預設關閉：每個小隊各自選起點；打開後沒勾「另設起點」的小隊用共同起點
 const commonStart = ref(saved.commonStart === true)
 const usesOwnStart = sq => !commonStart.value || sq.ownStart
@@ -305,10 +321,10 @@ const contracts = reactive((Array.isArray(saved.contracts) && saved.contracts.le
 
 const plain = p => ({ id: p.id, text: p.text })
 const savePoint = pt => ({ place: plain(pt.place), scu: pt.scu })
-watch([start, endMode, commonStart, squads, contracts], () => {
+watch([start, endMode, commonStart, startFuel, squads, contracts], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      start: plain(start), endMode: endMode.value, commonStart: commonStart.value,
+      start: plain(start), endMode: endMode.value, commonStart: commonStart.value, startFuel: startFuel.value,
       squads: squads.map(s => ({ name: s.name, shipId: s.shipId, shipText: s.shipText, qdId: s.qdId,
         ownStart: s.ownStart, start: plain(s.start), mine: s.mine })),
       contracts: contracts.map(c => ({ name: c.name, items: c.items.map(it => ({ cargo: it.cargo,
@@ -322,6 +338,7 @@ watch(() => props.active, (on) => {
   if (!on) return
   if (!base.loaded.value) base.load()
   base.loadCommodities()
+  base.loadCargoGrids()
 }, { immediate: true })
 
 // 貨物：從商品資料庫選（中文、英文、縮寫都能搜），也可以直接打字
@@ -460,6 +477,90 @@ const VIEWS = [
 ]
 const view = ref('table')
 
+// ── 航段表：已去過（每個方案、每隊各自記）、拖拉調整順序後重算那一隊 ──
+const visitedMap = reactive({})
+const visitedOf = sq => visitedMap[`${planKey.value}-${sq.index}`] || []
+const setVisitedOf = (sq, v) => { visitedMap[`${planKey.value}-${sq.index}`] = v }
+const reordering = ref(false)
+const reorderError = ref('')
+let resultEndMode = 'none'
+let resultStartFuel = null
+
+// 一隊目前航線的出發條件：起點、最後回去的地點、起始油量、出發時貨艙裡已有的貨（中途重新規劃後會變）
+function ctxOf(sq) {
+  return sq.ctx || { start: sq.start.id, end: resultEndMode === 'start' ? sq.start.id : '',
+    fuel: resultStartFuel, onboard: [] }
+}
+// 航段 → 後端的站（取貨／送貨／途經）
+const stepOf = l => (l.action === 'stop' ? { place: l.to.id, kind: 'stop' } : {
+  place: l.to.id, kind: l.action, scu: l.scu, cargo: l.cargo, contract: l.contract, contract_name: l.contract_name,
+  item: l.item, item_name: l.item_name, item_named: l.item_named })
+const isStep = l => ['pickup', 'dropoff', 'stop'].includes(l.action)
+
+async function reorder(sq, legs) {
+  reordering.value = true
+  reorderError.value = ''
+  const ctx = ctxOf(sq)
+  const res = await props.fetcher('/starmap/nav/sequence', {
+    method: 'POST',
+    body: JSON.stringify({ start: ctx.start, end: ctx.end, ship: sq.ship.id, quantum_drive: sq.ship.qd_uuid,
+      name: sq.name, steps: legs.filter(isStep).map(stepOf), start_fuel: ctx.fuel, onboard: ctx.onboard }),
+  })
+  const body = res ? await res.json().catch(() => null) : null
+  reordering.value = false
+  if (!res?.ok || !body?.success) {
+    reorderError.value = body?.message || '重新計算失敗。'
+    return
+  }
+  sq.plan = body.data.plan
+  sq.edited = true
+  recomputeTotals(current.value)
+}
+
+// 中途重新規劃：從目前位置出發，還沒做的取貨／送貨＋還沒去的插入站＋新插入的站重新排
+async function replan(sq, p) {
+  const ctx = ctxOf(sq)
+  // 貨艙裡現在有的：原本就在的＋跑完的取貨，扣掉跑完的送貨（用 cargo 號碼配對）
+  const dropped = new Set(p.done.filter(l => l.action === 'dropoff').map(l => String(l.cargo)))
+  const onboard = [...ctx.onboard, ...p.done.filter(l => l.action === 'pickup').map(l => ({
+    cargo: l.cargo, contract: l.contract, item: l.item, item_name: l.item_name, scu: l.scu }))]
+    .filter(o => !dropped.has(String(o.cargo)))
+  const steps = p.remaining.filter(l => l.action === 'pickup' || l.action === 'dropoff').map(stepOf)
+  const stops = [...p.remaining.filter(l => l.action === 'stop').map(l => l.to.id), ...(p.insert ? [p.insert] : [])]
+  const fuel = p.fuel != null ? { mode: 'amount', value: p.fuel } : ctx.fuel
+  reordering.value = true
+  reorderError.value = ''
+  const res = await props.fetcher('/starmap/nav/replan', {
+    method: 'POST',
+    body: JSON.stringify({ start: p.current.id, end: ctx.end, ship: sq.ship.id, quantum_drive: sq.ship.qd_uuid,
+      name: sq.name, steps, onboard: onboard.map(o => String(o.cargo)), stops, start_fuel: fuel }),
+  })
+  const body = res ? await res.json().catch(() => null) : null
+  reordering.value = false
+  if (!res?.ok || !body?.success) {
+    reorderError.value = body?.message || '重新規劃失敗。'
+    return
+  }
+  sq.plan = body.data.plan
+  sq.ctx = { start: p.current.id, end: ctx.end, fuel, onboard, replanned: true }
+  sq.edited = false
+  setVisitedOf(sq, [])
+  recomputeTotals(current.value)
+}
+
+// 某一隊的航線改了：重算這個方案的合計
+function recomputeTotals(p) {
+  const plans = p.squads.map(s => s.plan).filter(Boolean)
+  const times = plans.map(x => x.totals.time)
+  const fuels = plans.map(x => x.totals.fuel)
+  p.totals = { makespan: times.length ? Math.max(...times) : 0, time: times.reduce((a, b) => a + b, 0),
+    fuel: fuels.some(f => f == null) ? null : fuels.reduce((a, b) => a + b, 0),
+    distance: plans.reduce((a, x) => a + x.totals.distance, 0),
+    refuels: plans.reduce((a, x) => a + (x.refuel_stops?.length || 0), 0) }
+  p.warnings = [...new Set(plans.flatMap(x => x.warnings))].sort()
+  p.same_as = null
+}
+
 async function plan() {
   if (problems.value.list.length) {
     showProblems.value = true
@@ -470,11 +571,16 @@ async function plan() {
   showProblems.value = false
   planning.value = true
   planError.value = ''
+  reorderError.value = ''
+  Object.keys(visitedMap).forEach(k => delete visitedMap[k])
+  resultEndMode = endMode.value
+  resultStartFuel = fuelParam()
   const res = await props.fetcher('/starmap/nav/contracts', {
     method: 'POST',
     body: JSON.stringify({
       start: commonStart.value ? start.id : '',
       end_mode: endMode.value,
+      start_fuel: resultStartFuel,
       squads: squads.map((s, i) => ({ name: squadName(s, i), ship: s.shipId, quantum_drive: s.qdId,
         start: usesOwnStart(s) ? s.start.id : '' })),
       contracts: filledContracts.value,
