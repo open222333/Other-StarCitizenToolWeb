@@ -50,6 +50,41 @@ def test_cargo_grids_sync_job_and_vehicle_link(app, monkeypatch):
     assert cargo_grid.link_vehicles() == 0
 
 
+def test_link_vehicles_prefix_fallback(app):
+    """完全對不到的船名用「載具名稱以它開頭」補對；已經完全對到別的網格的載具不搶，符合好幾個時給最長的。"""
+    db = get_db()
+    db.vehicle_master.insert_many([
+        {'_id': 'v-c2', 'name': 'C2 Hercules Starlifter', 'manufacturer_name': 'Crusader Industries', 'is_current': True},
+        {'_id': 'v-mpuv', 'name': 'MPUV Cargo', 'manufacturer_code': 'ARGO', 'is_current': True},
+        {'_id': 'v-pisces', 'name': 'C8X Pisces Expedition', 'is_current': True},
+        {'_id': 'v-pisces-x', 'name': 'C8X Pisces', 'is_current': True},
+        {'_id': 'v-galaxy', 'name': 'Galaxy', 'is_current': True},
+        {'_id': 'v-nomad', 'name': 'Consolidated Outland Nomad', 'manufacturer_name': 'Consolidated Outland',
+         'is_current': True},
+        {'_id': 'v-mustang', 'name': 'C.O. Mustang Alpha', 'is_current': True},
+        {'_id': 'v-aurora', 'name': 'RSI Aurora Mk I CL', 'manufacturer_code': 'RSI', 'is_current': True},
+    ])
+    db.cargo_grid_master.insert_many([
+        {'_id': 'c2', 'name': 'C2 Hercules', 'manufacturer': 'Crusader'},
+        {'_id': 'mpuv', 'name': 'MPUV-C', 'manufacturer': 'Argo'},
+        {'_id': 'pisces', 'name': 'C8X Pisces', 'manufacturer': 'Anvil'},
+        {'_id': 'galaxy', 'name': 'Galaxy [Cargo Concept]', 'manufacturer': 'RSI'},
+        {'_id': 'gal', 'name': 'Gal', 'manufacturer': 'X'},
+        {'_id': 'nomad', 'name': 'Nomad', 'manufacturer': 'Consolidated Outland'},
+        {'_id': 'mustang', 'name': 'Mustang Alpha', 'manufacturer': 'Consolidated Outland'},
+        {'_id': 'aurora', 'name': 'Aurora CL (Mk I)', 'manufacturer': 'RSI'},
+    ])
+    assert cargo_grid.link_vehicles() == 7
+    got = {r['_id']: r.get('vehicle_uuids') for r in db.cargo_grid_master.find()}
+    assert got['c2'] == ['v-c2'] and got['mpuv'] == ['v-mpuv'] and got['nomad'] == ['v-nomad']
+    assert got['pisces'] == ['v-pisces-x'], '完全對到就不用開頭比對（Expedition 不併進來）'
+    assert got['galaxy'] == ['v-galaxy'], '概念船標記拿掉再比'
+    assert not got['gal'], '太短的名稱不做開頭比對'
+    assert got['mustang'] == ['v-mustang'], '廠商縮寫前綴（C.O.）拿掉再比'
+    assert got['aurora'] == ['v-aurora'], '型號（Mk I）在後面的寫法也比'
+    assert cargo_grid.link_vehicles() == 0
+
+
 def test_cargo_grids_api(client, auth_headers, app):
     from src.models import nav
     from src.scdata import map_cargo_grid
