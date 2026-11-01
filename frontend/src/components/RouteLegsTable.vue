@@ -36,7 +36,11 @@
               <button type="button" class="rlt-mark" :class="{ 'is-done': isVisited(START_KEY) }"
                 :aria-pressed="isVisited(START_KEY) ? 'true' : 'false'" aria-label="起點已去過"
                 @click="setVisited(START_KEY, !isVisited(START_KEY))">
-                <i v-if="isVisited(START_KEY)" class="bi bi-check-lg"></i><template v-else>0</template>
+                <i v-if="isVisited(START_KEY)" class="bi bi-check-lg"></i>
+                <template v-else>
+                  <span class="rlt-mark__num">0</span><i class="bi bi-check-lg rlt-mark__peek" aria-hidden="true"></i>
+                  <span class="rlt-mark__badge" aria-hidden="true"><i class="bi bi-check"></i></span>
+                </template>
               </button>
               <div class="flex-grow-1">
                 <div class="fw-semibold">{{ placeLabel(plan.start) }}</div>
@@ -83,10 +87,15 @@
           </td>
           <td class="sf-stack__title" :class="reorderable ? '' : 'ps-3'">
             <div class="rlt-dest">
-              <button type="button" class="rlt-mark" :class="{ 'is-done': isVisited(row.key) }"
+              <button type="button" class="rlt-mark"
+                :class="{ 'is-done': isVisited(row.key), 'is-hint': showHint && nextKey === row.key }"
                 :aria-pressed="isVisited(row.key) ? 'true' : 'false'" :aria-label="`第 ${i + 1} 站已去過`"
                 @click="setVisited(row.key, !isVisited(row.key))">
-                <i v-if="isVisited(row.key)" class="bi bi-check-lg"></i><template v-else>{{ i + 1 }}</template>
+                <i v-if="isVisited(row.key)" class="bi bi-check-lg"></i>
+                <template v-else>
+                  <span class="rlt-mark__num">{{ i + 1 }}</span><i class="bi bi-check-lg rlt-mark__peek" aria-hidden="true"></i>
+                  <span class="rlt-mark__badge" aria-hidden="true"><i class="bi bi-check"></i></span>
+                </template>
               </button>
               <div class="flex-grow-1">
                 <div class="fw-semibold">
@@ -149,6 +158,28 @@
   </div>
 </template>
 
+<script>
+import { ref as moduleRef } from 'vue'
+
+// 「已去過」引導有沒有看過（記在這台瀏覽器，所有航段表共用）
+const HINT_KEY = 'sc_route_mark_hint_v1'
+function readHint() {
+  try {
+    return localStorage.getItem(HINT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const hintSeen = moduleRef(readHint())
+function markHintSeen() {
+  if (hintSeen.value) return
+  hintSeen.value = true
+  try {
+    localStorage.setItem(HINT_KEY, '1')
+  } catch { /* 存不了就算了 */ }
+}
+</script>
+
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import PlacePicker from '@/components/PlacePicker.vue'
@@ -197,10 +228,13 @@ const visitedSet = computed(() => new Set(props.visited))
 const isVisited = key => visitedSet.value.has(key)
 function setVisited(key, on) {
   const next = new Set(props.visited)
+  if (on) markHintSeen()
   if (on) next.add(key)
   else next.delete(key)
   emit('update:visited', [...next])
 }
+// 第一次使用的引導：還沒在這台瀏覽器標記過任何一站時，「下一站」的站號外圈會閃（點過一次就不再閃）
+const showHint = computed(() => !hintSeen.value && !props.visited.length)
 // 第一個還沒去的列＝下一站
 const nextKey = computed(() => table.value.rows.find(r => !isVisited(r.key))?.key || '')
 
@@ -366,15 +400,43 @@ function fuelLeft(row) {
 /* 站號＝「已去過」按鈕：大顆好按，勾了變成打勾 */
 .rlt-dest { display: flex; align-items: flex-start; gap: .65rem; }
 .rlt-mark {
-  flex: 0 0 auto; width: 2.6rem; height: 2.6rem; border-radius: 50%;
+  position: relative; flex: 0 0 auto; width: 2.6rem; height: 2.6rem; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 1.05rem; font-weight: 600; line-height: 1;
-  color: var(--sf-text); background: var(--sf-chip-bg);
+  color: var(--sf-text);
+  /* 長得像按鈕：有底色、上亮下暗、帶一點陰影 */
+  background: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(0, 0, 0, .12)), var(--sf-chip-bg);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .12);
   border: 2px solid var(--sf-border-hi); cursor: pointer;
-  transition: background-color .15s, border-color .15s, color .15s, transform .1s;
+  transition: background-color .15s, border-color .15s, color .15s, transform .1s, box-shadow .15s;
 }
-.rlt-mark:hover { border-color: var(--sf-accent); }
-.rlt-mark:active { transform: scale(.94); }
+.rlt-mark:active { transform: scale(.92); box-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
+/* 右下角的小勾徽章：像還沒打勾的勾選框 */
+.rlt-mark__badge {
+  position: absolute; right: -.3rem; bottom: -.3rem; width: 1.15rem; height: 1.15rem; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; font-size: .85rem;
+  color: var(--sf-text-muted); background: var(--sf-bg-2); border: 1.5px solid var(--sf-border-hi);
+}
+.rlt-mark__peek { display: none; font-size: 1.35rem; }
+/* 滑鼠移過去：預告按下去的樣子（數字換成打勾） */
+@media (hover: hover) {
+  .rlt-mark:not(.is-done):hover { border-color: var(--sf-accent); color: var(--sf-accent-text, var(--sf-accent)); }
+  .rlt-mark:not(.is-done):hover .rlt-mark__num { display: none; }
+  .rlt-mark:not(.is-done):hover .rlt-mark__peek { display: inline-block; }
+  .rlt-mark:not(.is-done):hover .rlt-mark__badge { color: var(--sf-accent-text, var(--sf-accent)); border-color: var(--sf-accent); }
+}
+/* 第一次使用：下一站外圈閃動 */
+.rlt-mark.is-hint::after {
+  content: ''; position: absolute; inset: -2px; border-radius: 50%; pointer-events: none;
+  border: 2px solid var(--sf-accent); animation: rlt-pulse 1.6s ease-out infinite;
+}
+@keyframes rlt-pulse {
+  0% { transform: scale(1); opacity: .9; }
+  100% { transform: scale(1.75); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rlt-mark.is-hint::after { animation: none; transform: scale(1.3); opacity: .6; }
+}
 .rlt-mark.is-done { color: rgb(var(--bs-success-rgb)); background: rgba(var(--bs-success-rgb), .16); border-color: rgb(var(--bs-success-rgb)); font-size: 1.35rem; }
 .rlt-next .rlt-mark { border-color: var(--sf-accent); box-shadow: 0 0 0 3px rgba(var(--sf-accent-rgb), .25); }
 /* 順序欄（最左）：往前、拖拉握把、往後 */
