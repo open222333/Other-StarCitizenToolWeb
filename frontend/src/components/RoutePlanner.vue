@@ -41,6 +41,26 @@
                 </div>
               </div>
             </div>
+            <div class="col-12">
+              <div class="form-check mb-1">
+                <input id="rp-hub-on" v-model="hubOn" class="form-check-input" type="checkbox">
+                <label class="form-check-label small fw-semibold" for="rp-hub-on">定期回指定站</label>
+              </div>
+              <div v-if="hubOn" class="row g-1">
+                <div class="col-12 col-md-3">
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">每</span>
+                    <input id="rp-hub-every" v-model.number="hubEvery" type="number" min="1" :max="MAX_ON" step="1"
+                      class="form-control" aria-label="幾站回指定站一次">
+                    <span class="input-group-text">站</span>
+                  </div>
+                </div>
+                <div class="col-12 col-md-9">
+                  <PlacePicker id="rp-hub" label="指定站" :places="base.places.value" :model-value="hubPlace"
+                    @update:model-value="v => Object.assign(hubPlace, v)" />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="mt-3">
@@ -76,6 +96,8 @@
                 <PlacePicker :id="`rp-stop-${s.key}`" :label="`站點 ${i + 1} `" :places="base.places.value" :model-value="s"
                   @update:model-value="v => Object.assign(s, v)" />
               </div>
+              <span v-if="directDist(s)" class="sf-chip text-nowrap" :title="`起點直達 ${directDist(s)}`">
+                <i class="bi bi-rulers me-1"></i>{{ directDist(s) }}</span>
               <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除站點 ${i + 1}`"
                 @click="stops.splice(i, 1)"><i class="bi bi-trash"></i></button>
             </div>
@@ -238,16 +260,23 @@ const externalCargo = ref(!!saved.externalCargo)
 const startFuel = ref({ mode: saved.startFuel?.mode === 'amount' ? 'amount' : 'pct',
   value: Number(saved.startFuel?.value) >= 0 && saved.startFuel?.value !== null ? Number(saved.startFuel.value) : null })
 const fuelParam = () => (startFuel.value.value == null ? null : startFuel.value)
+// 定期回指定站：每跑 hubEvery 站回 hubPlace 一次（後端 nav.plan_route 的 hub／hub_every）
+const hubOn = ref(saved.hubOn === true)
+const hubPlace = reactive(newPlace(saved.hub))
+const hubEvery = ref(Number(saved.hubEvery) >= 1 ? Math.round(Number(saved.hubEvery)) : 3)
+const hubReady = computed(() => !hubOn.value || (!!hubPlace.id && hubEvery.value >= 1 && hubEvery.value <= MAX_ON))
 
 const plain = p => ({ id: p.id, text: p.text })
 const plainStop = s => ({ ...plain(s), on: s.on, auto: s.auto })
-watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel], () => {
+watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel,
+  hubOn, hubPlace, hubEvery], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plainStop),
       cargo: cargo.map(c => ({ pickup: plain(c.pickup), dropoff: plain(c.dropoff), scu: c.scu })),
       autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
       externalCargo: externalCargo.value, startFuel: startFuel.value,
+      hubOn: hubOn.value, hub: plain(hubPlace), hubEvery: hubEvery.value,
     }))
   } catch { /* 存不了就算了 */ }
 }, { deep: true })
@@ -276,6 +305,13 @@ const filledStops = computed(() => stops.filter(s => s.id && s.on))
 const onCount = computed(() => stops.filter(s => s.on).length)
 const placeById = computed(() => new Map(base.places.value.map(p => [p.id, p])))
 const placeOf = s => placeById.value.get(s.id) || null
+// 起點到站點的直線距離（同星系才算；地點座標是各星系自己的座標系）
+function directDist(s) {
+  const a = placeById.value.get(start.id), b = placeOf(s)
+  if (!a?.p || !b?.p) return ''
+  if (a.system_key !== b.system_key) return '跨星系'
+  return fmtDist(Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1], a.p[2] - b.p[2]))
+}
 
 function setAllOn(on) {
   let n = 0
@@ -307,7 +343,7 @@ function fillStops(rows) {
 }
 watch(() => stops.length, n => { if (!n) fillNote.value = '' })
 const filledCargo = computed(() => !SHOW_CARGO ? [] : cargo.filter(c => c.pickup.id && c.dropoff.id && Number(c.scu) > 0))
-const canPlan = computed(() => !!start.id && (filledStops.value.length || filledCargo.value.length
+const canPlan = computed(() => !!start.id && hubReady.value && (filledStops.value.length || filledCargo.value.length
   || (endMode.value === 'fixed' && endPlace.id)))
 
 // 航段表：已去過（列代號）、拖拉調整順序後的重算（照新順序、不自動排序）
@@ -386,6 +422,8 @@ async function plan() {
     quantum_drive: qdId.value,
     external_cargo: SHOW_CARGO ? externalCargo.value : false,
     start_fuel: fuelParam(),
+    hub: hubOn.value ? hubPlace.id : '',
+    hub_every: hubOn.value ? hubEvery.value : null,
   }
   const res = await props.fetcher('/starmap/nav/route', { method: 'POST', body: JSON.stringify(req) })
   const body = res ? await res.json().catch(() => null) : null
@@ -404,6 +442,8 @@ function clearForm() {
   Object.assign(start, newPlace())
   Object.assign(endPlace, newPlace())
   endMode.value = 'none'
+  hubOn.value = false
+  Object.assign(hubPlace, newPlace())
   stops.splice(0)
   cargo.splice(0)
   result.value = null

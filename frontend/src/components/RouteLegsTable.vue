@@ -238,11 +238,11 @@ const showHint = computed(() => !hintSeen.value && !props.visited.length)
 // 第一個還沒去的列＝下一站
 const nextKey = computed(() => table.value.rows.find(r => !isVisited(r.key))?.key || '')
 
-// ── 調整順序：起點那一列不在 rows 裡；終點（action end）固定在最後 ──
+// ── 調整順序：起點那一列不在 rows 裡；終點（action end）固定在最後、回指定站（action hub）由後端每 N 站插入 ──
 const dragFrom = ref(-1)
 const dragOver = ref(-1)
 const canMove = i => props.reorderable && i >= 0 && i < table.value.rows.length
-  && !table.value.rows[i].legs.some(l => l.action === 'end')
+  && !table.value.rows[i].legs.some(l => l.action === 'end' || l.action === 'hub')
 function move(from, to) {
   if (!canMove(from) || !canMove(to) || from === to) return
   const rows = [...table.value.rows]
@@ -260,8 +260,8 @@ function onDrop(i) {
   dragFrom.value = dragOver.value = -1
 }
 
-const ACTIONS = { stop: '途經', pickup: '取貨', dropoff: '送貨', end: '終點' }
-const actionClass = a => ({ pickup: 'sf-chip--accent', dropoff: 'sf-chip--ok', end: 'sf-chip--todo' }[a] || '')
+const ACTIONS = { stop: '途經', pickup: '取貨', dropoff: '送貨', end: '終點', hub: '回指定站' }
+const actionClass = a => ({ pickup: 'sf-chip--accent', dropoff: 'sf-chip--ok', end: 'sf-chip--todo', hub: 'sf-chip--todo' }[a] || '')
 function actionLabel(a) {
   const base = ACTIONS[a.action] || a.action
   if (a.contract_name) return `${base} ${fmtNum(a.scu)} SCU`

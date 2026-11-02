@@ -320,7 +320,8 @@ def node_brief(n: dict, pos: bool = False) -> dict:
 def places(visible_only: bool = False) -> list:
     """可以當起點／站點的地點（有座標、有名稱）。"""
     w = world(visible_only)
-    rows = [node_brief(n) for n in w.nodes.values()
+    # 附座標（p、system_key）：前端算起點到各站的直線距離
+    rows = [node_brief(n, True) for n in w.nodes.values()
             if not n.get('synthetic') and n['named'] and n['name'] and n['type'] not in PLACE_EXCLUDE_TYPES
             and not n.get('facility')]
     rows.sort(key=lambda r: (r['system'] or '', '/'.join(r['path_zh']), r['name']))
@@ -560,21 +561,33 @@ class Planner:
         return sum(m['time'] for m in ms)
 
 
+def _hub_due(hub, every: int, done: int, a: dict, b: dict) -> bool:
+    """「每 every 站回指定站」：已經完成 done 站、要從 a 去 b 時，是不是要先繞回指定站 hub
+    （a 或 b 本身就是指定站時不用繞）。"""
+    return bool(hub and every and done and done % every == 0 and a['id'] != hub['id'] and b['id'] != hub['id'])
+
+
 def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bool, capacity,
-           base_load: float = 0.0) -> list:
+           base_load: float = 0.0, hub=None, every: int = 0) -> list:
     """事件順序（events 的 index）。事件：{node, delta（+取貨／−送貨／0 途經）, need（要先完成的事件 index）}
-    base_load：出發時貨艙裡已經有的貨（中途重新規劃時）。"""
+    base_load：出發時貨艙裡已經有的貨（中途重新規劃時）。
+    hub／every：每完成 every 站要先回 hub 一次（見 _hub_due），排序時把繞回去的成本算進去。"""
     n = len(events)
     if not auto or n <= 1:
         return list(range(n))
 
     memo = {}
 
-    def cost(a, b, load):
+    def leg(a, b, load):
         key = (a['id'], b['id'], load)
         if key not in memo:
             memo[key] = planner.leg_cost(a, b, load, plan)
         return memo[key]
+
+    def cost(a, b, load, done=0):
+        if _hub_due(hub, every, done, a, b):
+            return leg(a, hub, load) + leg(hub, b, load)
+        return leg(a, b, load)
 
     def feasible(i, mask, load):
         e = events[i]
@@ -602,7 +615,7 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
                 for j in range(n):
                     if (mask >> j) & 1 or not feasible(j, mask, load):
                         continue
-                    nc = c + cost(events[last]['node'], events[j]['node'], load)
+                    nc = c + cost(events[last]['node'], events[j]['node'], load, mask.bit_count())
                     nm = mask | (1 << j)
                     if j not in dp[nm] or nc < dp[nm][j][0]:
                         dp[nm][j] = (nc, last)
@@ -624,7 +637,7 @@ def _order(planner: Planner, start: dict, events: list, end, plan: str, auto: bo
         cands = [i for i in range(n) if not (mask >> i) & 1 and feasible(i, mask, load)]
         if not cands:
             raise RouteError('貨艙容量不足，排不出可行的取送順序')
-        i = min(cands, key=lambda k: cost(cur, events[k]['node'], load))
+        i = min(cands, key=lambda k: cost(cur, events[k]['node'], load, len(order)))
         order.append(i)
         mask |= 1 << i
         load += events[i]['delta']
@@ -639,10 +652,10 @@ def _improve_order(order: list, start: dict, events: list, end, base_load: float
 
     def total(seq):
         c, cur_, ld, done = 0.0, start, base_load, 0
-        for i in seq:
+        for k, i in enumerate(seq):
             if not feasible(i, done, ld):
                 return math.inf
-            c += cost(cur_, events[i]['node'], ld)
+            c += cost(cur_, events[i]['node'], ld, k)
             ld += events[i]['delta']
             done |= 1 << i
             cur_ = events[i]['node']
@@ -696,10 +709,18 @@ def start_fuel_amount(spec, capacity):
 
 
 def _build_plan(planner: Planner, start, events, order, end, key, label, start_fuel=None,
-                initial_load: float = 0.0) -> dict:
+                initial_load: float = 0.0, hub=None, every: int = 0) -> dict:
     legs = []
     cur, load = start, initial_load
-    targets = [(events[i]['node'], events[i]) for i in order] + ([(end, None)] if end else [])
+    targets, prev = [], start
+    for k, i in enumerate(order):
+        node = events[i]['node']
+        if _hub_due(hub, every, k, prev, node):
+            targets.append((hub, {'kind': 'hub', 'delta': 0.0}))
+        targets.append((node, events[i]))
+        prev = node
+    if end:
+        targets.append((end, None))
     totals = {'distance': 0.0, 'time': 0.0, 'fuel': 0.0, 'jumps': 0}
     has_fuel = True
     for target, event in targets:
@@ -776,8 +797,10 @@ def _plan_refuel(plan: dict, capacity, stops: list, start_fuel=None) -> None:
 
 def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = 'none', end_id: str = '',
                auto_order: bool = True, ship_id: str = '', qd_id: str = '', external_cargo=None,
-               visible_only: bool = False, start_fuel=None) -> dict:
+               visible_only: bool = False, start_fuel=None, hub_id: str = '', hub_every=None) -> dict:
     """規劃航線，回傳三種方案。
+
+    hub_id／hub_every：每跑 hub_every 站要回指定站 hub_id 一次（航段的 action 是 hub，不算在站數裡）。
 
     start_fuel：起始油量 {mode: pct／amount, value}（見 start_fuel_amount），沒給＝滿油。
 
@@ -800,6 +823,15 @@ def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = '
     if len(cargo) > MAX_CARGO:
         raise RouteError(f'貨運最多 {MAX_CARGO} 筆')
     start = node(start_id, '起點')
+    hub, every = None, 0
+    if hub_id:
+        hub = node(hub_id, '指定站')
+        try:
+            every = int(hub_every)
+        except (TypeError, ValueError):
+            raise RouteError('回指定站：站數格式錯誤')
+        if not 1 <= every <= MAX_WAYPOINTS:
+            raise RouteError(f'回指定站：站數要在 1～{MAX_WAYPOINTS} 之間')
     events = []
     for i, wid in enumerate(waypoints, start=1):
         events.append({'node': node(wid, f'站點 {i}'), 'delta': 0.0, 'need': None, 'kind': 'stop'})
@@ -840,8 +872,8 @@ def plan_route(*, start_id: str, waypoints: list, cargo: list, end_mode: str = '
     planner = Planner(w, ship_info)
     plans, seen = [], {}
     for key, label in PLANS:
-        order = _order(planner, start, events, end, key, auto_order, capacity)
-        plan = _build_plan(planner, start, events, order, end, key, label, start_fuel)
+        order = _order(planner, start, events, end, key, auto_order, capacity, hub=hub, every=every)
+        plan = _build_plan(planner, start, events, order, end, key, label, start_fuel, hub=hub, every=every)
         sig = tuple((leg['to']['id'], leg['action'], leg['cargo']) for leg in plan['legs']) + \
             tuple(s['to']['id'] for leg in plan['legs'] for s in leg['steps'])
         plan['same_as'] = seen.get(sig)

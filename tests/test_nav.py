@@ -316,3 +316,31 @@ def test_many_waypoints_use_heuristic_and_limit(world_data):
         assert got == ids, (plan['key'], got)
     with pytest.raises(nav.RouteError):
         nav.plan_route(start_id='stA', waypoints=['stY'] * (nav.MAX_WAYPOINTS + 1), cargo=[], ship_id='ship1')
+
+
+def test_hub_every_n_stops(world_data):
+    """每 N 站回指定站：照順序（不自動排序）時每 N 站插一段 hub；自動排序也一樣，最後一站之後不用回。"""
+    db = get_db()
+    db.starmap_master.insert_many([_loc(f'line{i}', f'Line {i}', 'Manmade', 'sys', (0, 0, (i + 1) * GM))
+                                   for i in range(5)])
+    nav.clear_cache()
+    ids = [f'line{i}' for i in range(5)]
+    kw = dict(start_id='stA', waypoints=ids, cargo=[], ship_id='ship1', hub_id='stY', hub_every=2)
+    fixed = nav.plan_route(auto_order=False, **kw)['plans'][0]
+    assert [(l['to']['id'], l['action']) for l in fixed['legs']] == [
+        ('line0', 'stop'), ('line1', 'stop'), ('stY', 'hub'), ('line2', 'stop'), ('line3', 'stop'),
+        ('stY', 'hub'), ('line4', 'stop')]
+    for plan in nav.plan_route(auto_order=True, **kw)['plans']:
+        acts = [l['action'] for l in plan['legs']]
+        assert acts == ['stop', 'stop', 'hub', 'stop', 'stop', 'hub', 'stop'], (plan['key'], acts)
+    # 從指定站出發、或下一站就是指定站時不用再繞
+    legs = nav.plan_route(start_id='stA', waypoints=['line0', 'stY', 'line1'], cargo=[], ship_id='ship1',
+                          auto_order=False, hub_id='stY', hub_every=1)['plans'][0]['legs']
+    assert [l['to']['id'] for l in legs] == ['line0', 'stY', 'line1']
+    with pytest.raises(nav.RouteError, match='回指定站'):
+        nav.plan_route(hub_every=0, **{k: v for k, v in kw.items() if k != 'hub_every'})
+
+
+def test_places_have_positions(world_data):
+    row = next(p for p in nav.places() if p['id'] == 'stY')
+    assert row['p'] == [10 * GM, 5 * GM, 0] and row['system_key'] == 'stanton'

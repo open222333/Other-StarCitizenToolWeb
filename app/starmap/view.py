@@ -182,6 +182,8 @@ def nav_route():
             quantum_drive: {type: string, description: "換裝的量子引擎 UUID（物品主檔裡的量子引擎，要跟船的引擎槽同尺寸）；不帶＝預設配備"}
             external_cargo: {type: boolean, description: "外掛貨櫃；不帶 = 依船自動判斷"}
             start_fuel: {type: object, description: "起始油量 {mode: pct（百分比）／amount（油量）, value}；不帶＝滿油"}
+            hub: {type: string, description: "每 hub_every 站要回一次的指定站 id；不帶＝不用回"}
+            hub_every: {type: integer, description: "幾站回指定站一次（1～40）"}
     responses:
       200:
         description: 成功
@@ -209,6 +211,8 @@ def nav_route():
             external_cargo=external if isinstance(external, bool) else None,
             visible_only=not viewer_sees_hidden(),
             start_fuel=body.get('start_fuel'),
+            hub_id=str(body.get('hub') or ''),
+            hub_every=body.get('hub_every'),
         )
     except nav.RouteError as exc:
         return jsonify({'success': False, 'message': str(exc)}), 400
