@@ -3,7 +3,7 @@
 每個資料庫的文件上有這幾個欄位（只有同步後的整理步驟 apply() 會寫，mapper 不輸出，
 所以重新同步不會蓋掉）：
 
-  - player_visible_auto：自動判斷（名稱明顯是佔位／開發中的 → False）
+  - player_visible_auto：自動判斷（名稱明顯是佔位／開發中的、物品是船體內建零件 → False）
   - player_hidden_reason：自動判斷成不顯示的原因（顯示用）
   - player_visible_override：後台手動設定 True／False，None = 跟著自動判斷
   - player_visible：實際結果 = override ?? auto
@@ -81,6 +81,14 @@ _KEY_FIELDS = {
 }
 
 
+#: 物品類型：船體內建零件（綁在特定船上、不會在商店出現、也不能拆下來放倉庫）→ 玩家頁不顯示。
+#: 後台仍可以逐筆手動改回顯示。
+BUILTIN_ITEM_TYPES = frozenset({
+    'Turret', 'FlightController', 'FuelTank', 'QuantumFuelTank', 'Armor', 'SelfDestruct',
+    'MainThruster', 'ManneuverThruster', 'FuelIntake', 'WeaponDefensive',
+})
+
+
 def unfinished_reason(name) -> Optional[str]:
     """名稱明顯是佔位／開發中／測試用的 → 原因；看起來正常回 None。"""
     text = name if isinstance(name, str) else ''
@@ -100,6 +108,8 @@ def auto_reason(dataset: str, doc: dict) -> Optional[str]:
     reason = unfinished_reason(doc.get(DATASETS[dataset][2]))
     if reason:
         return reason
+    if dataset == 'items' and doc.get('type') in BUILTIN_ITEM_TYPES:
+        return f'船體內建零件（{doc.get("type")}）'
     code = doc.get(_KEY_FIELDS.get(dataset, ''))
     if isinstance(code, str) and _KEY_UNFINISHED_RE.search(code):
         return f'代碼含測試／範本標記（{code}）'
@@ -148,7 +158,7 @@ def _state(dataset: str, doc: dict, override) -> dict:
 
 
 #: auto_reason() 會讀到的其他欄位
-_EXTRA_FIELDS = {'work_in_progress': 1, 'not_for_release': 1, 'key': 1, 'debug_name': 1, 'class_name': 1}
+_EXTRA_FIELDS = {'work_in_progress': 1, 'not_for_release': 1, 'key': 1, 'debug_name': 1, 'class_name': 1, 'type': 1}
 
 STATE_FIELDS = ('player_visible_auto', 'player_hidden_reason', 'player_visible_override', 'player_visible')
 

@@ -997,3 +997,34 @@ def test_search_filtered_by_system_and_planet(client, auth_headers, seed_search)
     assert body['total'] == 0, '公會庫只有 Area18'
     body = client.get('/inventory/?star_system=Pyro', headers=auth_headers).get_json()
     assert body['total'] == 0 and body['data'] == []
+
+
+def test_item_match_names(client, auth_headers):
+    """倉庫「貼上清單」：完全一樣（中英文）或只有一筆的直接選好，有好幾筆的列候選，找不到的空著。"""
+    from src.mongo import get_db
+    get_db()['item_master'].insert_many([
+        {'_id': 'p4', 'name': 'P4-AR Rifle', 'name_lower': 'p4-ar rifle', 'name_zh': 'P4-AR 步槍', 'is_current': True},
+        {'_id': 'p4b', 'name': 'P4-AR "Boneyard" Rifle', 'name_lower': 'p4-ar "boneyard" rifle', 'is_current': True},
+        {'_id': 'med', 'name': 'MedPen (Hemozal)', 'name_lower': 'medpen (hemozal)', 'name_zh': '醫療筆（血紅扎）',
+         'is_current': True},
+    ])
+    body = client.post('/item/match', json={'names': ['p4-ar rifle', 'P4-AR', 'medpen', '醫療筆（血紅扎）', 'xyz', '']},
+                       headers=auth_headers).get_json()
+    got = [(r['item'] or {}).get('_id') for r in body['data']]
+    assert got == ['p4', None, 'med', 'med', None, None]
+    assert {c['_id'] for c in body['data'][1]['candidates']} == {'p4', 'p4b'}
+    # 飛船組件／其他物品
+    get_db()['item_master'].insert_one({'_id': 'qd', 'name': 'P4 Drive', 'name_lower': 'p4 drive', 'is_current': True,
+                                        '_source': 'vehicle-items'})
+    ids = lambda rows: sorted(r['_id'] for r in rows)
+    assert ids(client.get('/item/search?q=p4&source=vehicle', headers=auth_headers).get_json()['data']) == ['qd']
+    assert 'qd' not in ids(client.get('/item/search?q=p4&source=personal', headers=auth_headers).get_json()['data'])
+    got = client.post('/item/match', json={'names': ['p4'], 'source': 'vehicle'}, headers=auth_headers).get_json()
+    assert got['data'][0]['item']['_id'] == 'qd'
+    # 限定類型（新增／異動預設只開幾種飛船組件）
+    get_db()['item_master'].update_one({'_id': 'qd'}, {'$set': {'type': 'QuantumDrive'}})
+    got = client.post('/item/match', json={'names': ['p4 drive', 'p4-ar rifle'], 'types': ['QuantumDrive']},
+                      headers=auth_headers).get_json()['data']
+    assert got[0]['item']['_id'] == 'qd' and got[1]['item'] is None and got[1]['candidates'] == []
+    assert client.post('/item/match', json={'names': 'abc'}, headers=auth_headers).status_code == 400
+    assert client.post('/item/match', json={'names': ['a'] * 51}, headers=auth_headers).status_code == 400

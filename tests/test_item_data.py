@@ -132,3 +132,30 @@ def test_item_type_translations(client, seed_translations):
     assert item_sub_type_zh('Sniper') == '狙擊' and item_sub_type_zh('UNDEFINED') is None
     body = client.get('/item/translations?domain=item_type&text=WeaponPersonal&text=Nope').get_json()
     assert body['data'] == {'WeaponPersonal': '個人武器', 'Nope': ''} or body['data'].get('WeaponPersonal') == '個人武器'
+
+
+def test_builtin_parts_hidden_and_type_options(client, auth_headers, player_headers, items):
+    """船體內建零件（依類型）自動不顯示；類型選單只列玩家看得到、且符合物品範圍的類型；玩家搜尋、比對也看不到。"""
+    db = get_db()
+    db['item_master'].insert_many([
+        {'_id': 'tank', 'name': 'Internal Tank', 'name_lower': 'internal tank', 'type': 'FuelTank',
+         '_source': 'vehicle-items', 'is_current': True},
+        {'_id': 'tur', 'name': 'Remote Turret', 'name_lower': 'remote turret', 'type': 'Turret',
+         '_source': 'vehicle-items', 'is_current': True},
+    ])
+    visibility.apply('items')
+    assert db['item_master'].find_one({'_id': 'tank'})['player_hidden_reason'] == '船體內建零件（FuelTank）'
+    assert visibility.auto_reason('items', {'name': 'Bracer', 'type': 'Cooler'}) is None
+    assert visibility.auto_reason('items', {'name': 'Aegis Sabre - Decoy Launcher', 'type': 'WeaponDefensive'})
+
+    player_types = client.get('/item/types', headers=player_headers).get_json()['data']
+    assert player_types == ['Cooler', 'WeaponPersonal'], '佔位物品、內建零件的類型不列'
+    assert 'FuelTank' in client.get('/item/types', headers=auth_headers).get_json()['data'], '後台照常看得到'
+    facets = client.get('/item/facets?source=vehicle', headers=player_headers).get_json()['data']
+    assert facets['types'] == ['Cooler']
+    assert client.get('/item/facets?source=personal', headers=player_headers).get_json()['data']['types'] == ['WeaponPersonal']
+
+    assert client.get('/item/search?q=internal', headers=player_headers).get_json()['data'] == []
+    assert [r['_id'] for r in client.get('/item/search?q=internal', headers=auth_headers).get_json()['data']] == ['tank']
+    got = client.post('/item/match', json={'names': ['Remote Turret']}, headers=player_headers).get_json()['data'][0]
+    assert got['item'] is None and got['candidates'] == []

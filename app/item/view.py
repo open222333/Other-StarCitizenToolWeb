@@ -136,11 +136,14 @@ def item_facets():
     tags: [Item]
     security:
       - Bearer: []
+    parameters:
+      - {in: query, name: source, type: string, description: "vehicle＝只算飛船組件、personal＝只算其他物品"}
     responses:
       200:
         description: 成功（data 含 types／sub_types／manufacturers（[{value, label}]）／sizes／grades）
     """
-    return jsonify({'success': True, 'data': ItemMaster.facets(visible_only=not viewer_sees_hidden())})
+    return jsonify({'success': True, 'data': ItemMaster.facets(visible_only=not viewer_sees_hidden(),
+                                                                source=request.args.get('source', ''))})
 
 
 @app_item.route('/search', methods=['GET'])
@@ -154,6 +157,7 @@ def search_items():
     parameters:
       - {in: query, name: q,     type: string,  required: true, description: "名稱或 class name 的一部分"}
       - {in: query, name: limit, type: integer, default: 25, description: "最多 200"}
+      - {in: query, name: source, type: string, description: "vehicle＝只找飛船組件、personal＝只找其他物品"}
     responses:
       200:
         description: 成功
@@ -165,16 +169,52 @@ def search_items():
         return jsonify({'success': False, 'message': 'q 不得為空'}), 400
 
     limit, _ = _paging()
-    rows = ItemMaster.search(query, limit=min(limit, 50))
+    rows = ItemMaster.search(query, limit=min(limit, 50), source=request.args.get('source', ''),
+                             visible_only=not viewer_sees_hidden())
     for row in rows:
         row['volume_scu'] = uscu_to_scu(row.get('volume_uscu'))
     return jsonify({'success': True, 'data': rows})
 
 
+@app_item.route('/match', methods=['POST'])
+@jwt_required()
+def match_items():
+    """一次比對多個物品名稱（玩家頁倉庫「貼上清單」用）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          required: [names]
+          properties:
+            names: {type: array, items: {type: string}, description: "物品名稱（中英文），最多 50 個"}
+            source: {type: string, description: "vehicle＝只找飛船組件、personal＝只找其他物品"}
+            types: {type: array, items: {type: string}, description: "只找這些物品類型（空＝不限）"}
+    responses:
+      200:
+        description: 成功，data 每個名稱一筆 {query, item, candidates}
+      400:
+        description: names 格式錯誤或超過上限
+    """
+    body = request.get_json(silent=True) or {}
+    names = body.get('names')
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        return jsonify({'success': False, 'message': 'names 必須是字串陣列'}), 400
+    if len(names) > ItemMaster.MATCH_MAX_LINES:
+        return jsonify({'success': False, 'message': f'一次最多 {ItemMaster.MATCH_MAX_LINES} 行'}), 400
+    source = body.get('source') if isinstance(body.get('source'), str) else ''
+    raw_types = body.get('types') if isinstance(body.get('types'), list) else []
+    types = [t for t in raw_types if isinstance(t, str)][:100]
+    return jsonify({'success': True, 'data': ItemMaster.match_names([n[:200] for n in names], source=source, types=types,
+                                                                         visible_only=not viewer_sees_hidden())})
+
+
 @app_item.route('/types', methods=['GET'])
 @jwt_required()
 def list_types():
-    """所有物品類型。
+    """有資料的物品類型（玩家只算玩家頁面顯示的物品）。
     ---
     tags: [Item]
     security:
@@ -183,7 +223,7 @@ def list_types():
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': ItemMaster.types()})
+    return jsonify({'success': True, 'data': ItemMaster.types(visible_only=not viewer_sees_hidden())})
 
 
 @app_item.route('/<item_id>', methods=['GET'])

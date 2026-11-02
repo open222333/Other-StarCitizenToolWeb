@@ -265,6 +265,7 @@ UNGUARDED_ALLOWLIST = {
     'app_starmap.nav_replan',
     'app_starmap.nav_cargo_grids',
     'app_item.search_items',
+    'app_item.match_items',          # 倉庫「貼上清單」一次比對多個物品名稱（@jwt_required）
     'app_item.list_types',
     'app_item.get_item',
     'app_item.get_item_prices',

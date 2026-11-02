@@ -224,9 +224,11 @@ class ItemMaster(_MasterBase):
         return rows, total
 
     @classmethod
-    def facets(cls, visible_only: bool = False) -> dict:
-        """篩選選單的選項：類型、子類型、製造商、尺寸、等級。"""
+    def facets(cls, visible_only: bool = False, source: str = '') -> dict:
+        """篩選選單的選項：類型、子類型、製造商、尺寸、等級（source：只算飛船組件／其他物品）。"""
         filt = add_visibility_filter({'is_current': True}, visible_only=visible_only)
+        if source in SOURCE_FILTERS:
+            filt['_source'] = SOURCE_FILTERS[source]
         col = cls._col()
         manufacturers = {}
         for row in col.aggregate([
@@ -247,8 +249,9 @@ class ItemMaster(_MasterBase):
         }
 
     @classmethod
-    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False) -> list:
-        """名稱前綴搜尋，給 autocomplete 用。
+    def search(cls, query: str = '', limit: int = 25, include_retired: bool = False, source: str = '',
+               visible_only: bool = False, types=None) -> list:
+        """名稱前綴搜尋，給 autocomplete 用。source：vehicle＝只找飛船組件、personal＝只找其他物品，其他值不限。
 
         覆寫 _MasterBase 的版本，多比對 name_zh —— 原本只比對英文
         name_lower／class_name，打中文名（例如「鋁礦石」）搜尋物品會是空的，
@@ -256,6 +259,12 @@ class ItemMaster(_MasterBase):
         「查詢」頁的物品名稱自動完成欄位需要中英文都找得到）。
         """
         filt: dict = {} if include_retired else {'is_current': True}
+        if source in SOURCE_FILTERS:
+            filt['_source'] = SOURCE_FILTERS[source]
+        types = _clean_list(types)
+        if types:
+            filt['type'] = {'$in': types}
+        add_visibility_filter(filt, visible_only=visible_only)
 
         if (query or '').strip():
             escaped = escape_regex(query)
@@ -270,10 +279,46 @@ class ItemMaster(_MasterBase):
 
         if not rows and (query or '').strip():
             fallback: dict = {} if include_retired else {'is_current': True}
+            if source in SOURCE_FILTERS:
+                fallback['_source'] = SOURCE_FILTERS[source]
+            add_visibility_filter(fallback, visible_only=visible_only)
+            if types:
+                fallback['type'] = {'$in': types}
             fallback['name_lower'] = {'$regex': escape_regex(query).lower()}
             rows = list(cls._col().find(fallback, cls.PROJECTION)
                         .sort('name', ASCENDING).limit(limit))
         return rows
+
+    #: 「貼上清單」一次最多比對幾行
+    MATCH_MAX_LINES = 50
+    #: 每行最多回幾個候選
+    MATCH_CANDIDATES = 6
+
+    @classmethod
+    def match_names(cls, names: list, source: str = '', visible_only: bool = False, types=None) -> list:
+        """玩家頁倉庫「貼上清單」：每行的物品名稱（中英文都可以）→ {query, item（有把握的那一個，沒有就 None）, candidates}。
+
+        有把握＝英文或中文名稱完全一樣（大小寫不計），或搜尋結果只有一筆；其餘列出候選讓玩家挑。
+        """
+        out = []
+        for raw in names[:cls.MATCH_MAX_LINES]:
+            q = (raw or '').strip()
+            if not q:
+                out.append({'query': q, 'item': None, 'candidates': []})
+                continue
+            rows = cls.search(q, limit=cls.MATCH_CANDIDATES, source=source, visible_only=visible_only, types=types)
+            filt = {'is_current': True, '$or': [{'name_lower': q.lower()}, {'name_zh': q}]}
+            if source in SOURCE_FILTERS:
+                filt['_source'] = SOURCE_FILTERS[source]
+            add_visibility_filter(filt, visible_only=visible_only)
+            if _clean_list(types):
+                filt['type'] = {'$in': _clean_list(types)}
+            exact = cls._col().find_one(filt, cls.PROJECTION)
+            if exact and not any(r['_id'] == exact['_id'] for r in rows):
+                rows = [exact, *rows][:cls.MATCH_CANDIDATES]
+            item = exact or (rows[0] if len(rows) == 1 else None)
+            out.append({'query': q, 'item': item, 'candidates': rows})
+        return out
 
     @classmethod
     def list_by_type(cls, item_type: str = '', limit: int = 50, offset: int = 0) -> tuple:
@@ -293,8 +338,10 @@ class ItemMaster(_MasterBase):
         return rows, total
 
     @classmethod
-    def types(cls) -> list:
-        return sorted(t for t in cls._col().distinct('type', {'is_current': True}) if t)
+    def types(cls, visible_only: bool = False) -> list:
+        """有資料的類型（visible_only：只算玩家頁面顯示的物品）。"""
+        filt = add_visibility_filter({'is_current': True}, visible_only=visible_only)
+        return sorted(t for t in cls._col().distinct('type', filt) if t)
 
     @classmethod
     def ids_of_type(cls, item_type, limit: int = 1000) -> list:
