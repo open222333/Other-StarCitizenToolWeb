@@ -29,9 +29,9 @@ from src.models.nav import RouteError
 MAX_CONTRACTS = 10
 MAX_ITEMS = 10
 #: 每項貨物的取貨點／送貨點各最多幾個
-MAX_POINTS = 10
+MAX_POINTS = 30
 MAX_SQUADS = 6
-MAX_TASKS = 40
+MAX_TASKS = 80
 #: 每個方案的分配搜尋最多跑幾秒
 SEARCH_SECONDS = 1.0
 
@@ -253,6 +253,9 @@ def _polish(squad: _Squad, seq: list) -> list:
     if len(seq) <= 2:
         return seq
     events = _events_of(seq)
+    # 事件太多時 nav._order 走近似排序（每次最多 HEURISTIC_SECONDS），三種方案 × 多隊會拖太久；分配搜尋已經排過
+    if len(events) > nav.EXACT_LIMIT:
+        return seq
     try:
         order = nav._order(squad.planner, squad.start, events, squad.end, squad.cost_key, True, squad.cap)
     except RouteError:
