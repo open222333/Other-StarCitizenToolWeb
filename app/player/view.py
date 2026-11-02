@@ -23,7 +23,7 @@ from src.models.fleet import MAX_QUANTITY as FLEET_MAX_QUANTITY, Fleet, clamp_qu
 from src.models import fleet_import
 from src.models.item import BlueprintMaster, ItemMaster, VehicleMaster
 from src.models.log import Log
-from src.models.app_setting import PlayerTabOrder
+from src.models.app_setting import PlayerTabAccess, PlayerTabOrder
 from src.models.mission import Mission
 from src.models.player import ROSTER_MAX, Player, PlayerError
 from src.models.tool_link import ToolLink
@@ -551,7 +551,8 @@ def get_current_player():
     if not player:
         return jsonify({'success': False, 'message': '找不到玩家'}), 404
     # 分頁順序是後台的全站設定（PlayerTabOrder），跟著個人資料一起給，玩家頁不用多打一支 API
-    return jsonify({'success': True, 'data': {**player, 'tab_order': PlayerTabOrder.get()}})
+    return jsonify({'success': True, 'data': {**player, 'tab_order': PlayerTabOrder.get(),
+                                              'tab_access': PlayerTabAccess.get()}})
 
 
 @app_player.route('/me', methods=['PUT'])
@@ -1431,22 +1432,22 @@ def set_my_home():
 @app_player.route('/settings/tab-order', methods=['GET'])
 @admin_api(*READ_ROLES)
 def get_tab_order():
-    """玩家頁分頁的排列順序（空陣列＝照程式預設順序）。
+    """玩家頁分頁的排列順序（空陣列＝照程式預設順序）與開放狀態（{分頁: hidden／closed}，沒列到的＝開放）。
     ---
     tags: [Player]
     security:
       - Bearer: []
     responses:
       200:
-        description: 成功，data.tab_order
+        description: 成功，data.tab_order、data.tab_access
     """
-    return jsonify({'success': True, 'data': {'tab_order': PlayerTabOrder.get()}})
+    return jsonify({'success': True, 'data': {'tab_order': PlayerTabOrder.get(), 'tab_access': PlayerTabAccess.get()}})
 
 
 @app_player.route('/settings/tab-order', methods=['PUT'])
 @admin_api(*WRITE_ROLES)
 def set_tab_order():
-    """設定玩家頁分頁的排列順序。
+    """設定玩家頁分頁的排列順序與開放狀態。
     ---
     tags: [Player]
     security:
@@ -1456,9 +1457,10 @@ def set_tab_order():
         schema:
           properties:
             tab_order: {type: array, items: {type: string}, description: "分頁代號，由左到右；空陣列＝恢復預設"}
+            tab_access: {type: object, description: "{分頁代號: open（開放）／hidden（預設不顯示，玩家可自己打開）／closed（不開放）}；沒帶＝不改"}
     responses:
       200:
-        description: 成功，data.tab_order
+        description: 成功，data.tab_order、data.tab_access
       400:
         description: 格式錯誤
     """
@@ -1466,10 +1468,14 @@ def set_tab_order():
     username = get_jwt_identity()
     try:
         keys = PlayerTabOrder.set(data.get('tab_order'), updated_by=username)
+        access = PlayerTabAccess.set(data['tab_access'], updated_by=username) if 'tab_access' in data \
+            else PlayerTabAccess.get()
     except ValueError as exc:
         return jsonify({'success': False, 'message': str(exc)}), 400
-    Log.create(username, 'set_player_tab_order', f'玩家頁分頁順序：{"、".join(keys) or "預設"}', success=True)
-    return jsonify({'success': True, 'data': {'tab_order': keys}})
+    label = {'hidden': '預設不顯示', 'closed': '不開放'}
+    Log.create(username, 'set_player_tab_order', f'玩家頁分頁順序：{"、".join(keys) or "預設"}；'
+               f'開放狀態：{"、".join(f"{k} {label[v]}" for k, v in access.items()) or "全部開放"}', success=True)
+    return jsonify({'success': True, 'data': {'tab_order': keys, 'tab_access': access}})
 
 
 #: 玩家頁分頁代號的格式（實際有哪些分頁是前端決定的，後端只擋格式、數量）
@@ -1490,6 +1496,7 @@ def set_my_hidden_tabs():
         schema:
           properties:
             hidden_tabs: {type: array, items: {type: string}, description: "不顯示的分頁代號，例如 [\"mining\", \"gamelog\"]；空陣列＝全部顯示"}
+            shown_tabs: {type: array, items: {type: string}, description: "後台設成「預設不顯示」、自己打開的分頁；沒帶＝不改"}
     responses:
       200:
         description: 成功，data.hidden_tabs
@@ -1502,9 +1509,18 @@ def set_my_hidden_tabs():
             or not all(isinstance(k, str) and _TAB_KEY_RE.match(k) for k in keys):
         return jsonify({'success': False, 'message': '格式錯誤'}), 400
     keys = [k for k in dict.fromkeys(keys) if k != 'profile']
+    shown = data.get('shown_tabs')
+    if shown is not None:
+        if not isinstance(shown, list) or len(shown) > MAX_HIDDEN_TABS \
+                or not all(isinstance(k, str) and _TAB_KEY_RE.match(k) for k in shown):
+            return jsonify({'success': False, 'message': '格式錯誤'}), 400
+        shown = list(dict.fromkeys(shown))
     player = _self_player_doc()
-    Player.set_hidden_tabs(player['_id'], keys)
-    return jsonify({'success': True, 'data': {'hidden_tabs': keys}})
+    Player.set_hidden_tabs(player['_id'], keys, shown)
+    out = {'hidden_tabs': keys}
+    if shown is not None:
+        out['shown_tabs'] = shown
+    return jsonify({'success': True, 'data': out})
 
 
 @app_player.route('/inventory/move-all-home', methods=['POST'])

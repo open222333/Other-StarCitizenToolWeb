@@ -1,6 +1,7 @@
 """後台可直接修改的系統設定（`app_settings` collection，一個設定一筆，_id = 設定名稱）。
 
 - 玩家頁分頁的排列順序（PlayerTabOrder，後台「系統設定」）
+- 玩家頁分頁的開放狀態（PlayerTabAccess：開放／預設不顯示／不開放，後台「系統設定」）
 
 UEX Corp API token：後台「資料同步排程」頁可以直接填，不用再改 `.env`
 重啟容器。後台填的優先；沒填就退回環境變數 `UEX_API_TOKEN`（舊的設定方式照樣能用）。
@@ -93,3 +94,38 @@ class PlayerTabOrder:
         _col().update_one({'_id': PLAYER_TAB_ORDER_ID}, {'$set': {
             'value': keys, 'updated_at': datetime.utcnow(), 'updated_by': updated_by}}, upsert=True)
         return keys
+
+
+PLAYER_TAB_ACCESS_ID = 'player_tab_access'
+#: 分頁開放狀態：open＝開放（預設）、hidden＝預設不顯示（玩家可以在「個人資料」自己打開）、closed＝不開放（玩家看不到也打不開）
+TAB_ACCESS_VALUES = ('open', 'hidden', 'closed')
+#: 一定開放的分頁（玩家要靠它打開其他分頁）
+TAB_ALWAYS_OPEN = ('profile',)
+
+
+class PlayerTabAccess:
+    """玩家頁分頁的開放狀態（後台「系統設定」）。只存不是 open 的分頁：{分頁代號: hidden／closed}。"""
+
+    @staticmethod
+    def get() -> dict:
+        doc = _col().find_one({'_id': PLAYER_TAB_ACCESS_ID}) or {}
+        value = doc.get('value')
+        if not isinstance(value, dict):
+            return {}
+        return {k: v for k, v in value.items()
+                if isinstance(k, str) and v in TAB_ACCESS_VALUES and v != 'open' and k not in TAB_ALWAYS_OPEN}
+
+    @staticmethod
+    def set(access, updated_by=None) -> dict:
+        """access：{分頁代號: open／hidden／closed}；格式不對丟 ValueError。open 的不存。"""
+        if not isinstance(access, dict) or len(access) > TAB_ORDER_MAX:
+            raise ValueError('分頁開放狀態格式錯誤')
+        clean = {}
+        for k, v in access.items():
+            if not (isinstance(k, str) and _TAB_KEY_RE.match(k)) or v not in TAB_ACCESS_VALUES:
+                raise ValueError('分頁開放狀態格式錯誤')
+            if v != 'open' and k not in TAB_ALWAYS_OPEN:
+                clean[k] = v
+        _col().update_one({'_id': PLAYER_TAB_ACCESS_ID}, {'$set': {
+            'value': clean, 'updated_at': datetime.utcnow(), 'updated_by': updated_by}}, upsert=True)
+        return clean

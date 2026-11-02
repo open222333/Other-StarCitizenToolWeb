@@ -65,3 +65,30 @@ def test_tab_order(client, setup, auth_headers):
     assert client.get('/player/me', headers=setup).get_json()['data']['tab_order'] == ['fleet', 'warehouse']
     assert client.put('/player/settings/tab-order', json={'tab_order': ['Bad Key']}, headers=auth_headers).status_code == 400
     assert client.put('/player/settings/tab-order', json={'tab_order': []}, headers=setup).status_code in (401, 403)
+
+
+def test_tab_access(client, setup, auth_headers):
+    """後台設定分頁開放狀態（開放／預設不顯示／不開放）；玩家自己打開「預設不顯示」的分頁存在 shown_tabs。"""
+    data = client.get('/player/settings/tab-order', headers=auth_headers).get_json()['data']
+    assert data['tab_access'] == {}
+    res = client.put('/player/settings/tab-order', json={
+        'tab_order': [], 'tab_access': {'mining': 'hidden', 'gamelog': 'closed', 'fleet': 'open', 'profile': 'closed'}},
+        headers=auth_headers)
+    assert res.status_code == 200
+    assert res.get_json()['data']['tab_access'] == {'mining': 'hidden', 'gamelog': 'closed'}, 'open 不存、個人資料一定開放'
+    me = client.get('/player/me', headers=setup).get_json()['data']
+    assert me['tab_access'] == {'mining': 'hidden', 'gamelog': 'closed'}
+    # 只改順序（沒帶 tab_access）不會清掉開放狀態
+    client.put('/player/settings/tab-order', json={'tab_order': ['fleet']}, headers=auth_headers)
+    assert client.get('/player/me', headers=setup).get_json()['data']['tab_access'] == {'mining': 'hidden', 'gamelog': 'closed'}
+    for bad in [{'mining': 'maybe'}, ['mining'], {'<x>': 'hidden'}]:
+        assert client.put('/player/settings/tab-order', json={'tab_order': [], 'tab_access': bad},
+                          headers=auth_headers).status_code == 400
+
+    res = client.put('/player/me/tabs', json={'hidden_tabs': [], 'shown_tabs': ['mining', 'mining']}, headers=setup)
+    assert res.get_json()['data'] == {'hidden_tabs': [], 'shown_tabs': ['mining']}
+    assert client.get('/player/me', headers=setup).get_json()['data']['shown_tabs'] == ['mining']
+    client.put('/player/me/tabs', json={'hidden_tabs': ['cargo']}, headers=setup)
+    me = client.get('/player/me', headers=setup).get_json()['data']
+    assert me['shown_tabs'] == ['mining'] and me['hidden_tabs'] == ['cargo'], '沒帶 shown_tabs 不改'
+    assert client.put('/player/me/tabs', json={'hidden_tabs': [], 'shown_tabs': 'x'}, headers=setup).status_code == 400

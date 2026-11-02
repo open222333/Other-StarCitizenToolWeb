@@ -248,14 +248,17 @@ class Player:
         return result.matched_count > 0
 
     @classmethod
-    def set_hidden_tabs(cls, player_id: str, keys: list) -> bool:
-        """玩家頁不顯示的分頁（分頁代號清單，空清單＝全部顯示）。呼叫端先驗證格式。"""
+    def set_hidden_tabs(cls, player_id: str, keys: list, shown=None) -> bool:
+        """玩家頁不顯示的分頁（分頁代號清單，空清單＝全部顯示）；shown：後台設成「預設不顯示」、
+        玩家自己打開的分頁（None＝不改）。呼叫端先驗證格式。"""
         try:
             oid = ObjectId(str(player_id))
         except Exception:
             return False
-        result = cls._col().update_one({'_id': oid}, {'$set': {
-            'hidden_tabs': list(keys), 'updated_at': datetime.utcnow()}})
+        fields = {'hidden_tabs': list(keys), 'updated_at': datetime.utcnow()}
+        if shown is not None:
+            fields['shown_tabs'] = list(shown)
+        result = cls._col().update_one({'_id': oid}, {'$set': fields})
         return result.matched_count > 0
 
     @classmethod
