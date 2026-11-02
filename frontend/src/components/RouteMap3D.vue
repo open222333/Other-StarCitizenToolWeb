@@ -29,6 +29,9 @@
         <button type="button" class="btn btn-sm btn-info" aria-label="拉遠" @click="zoomBy(1.6)"><i class="bi bi-dash-lg"></i></button>
         <button type="button" class="btn btn-sm btn-info" :aria-pressed="topView ? 'true' : 'false'" aria-label="俯視"
           @click="toggleTopView"><i class="bi" :class="topView ? 'bi-badge-3d' : 'bi-grid-3x3'"></i></button>
+        <button v-if="startHere" type="button" class="btn btn-sm btn-info" :class="{ active: showDirect }"
+          :aria-pressed="showDirect ? 'true' : 'false'" aria-label="起點直達距離" title="起點直達距離"
+          @click="showDirect = !showDirect"><i class="bi bi-rulers"></i></button>
         <button type="button" class="btn btn-sm btn-info" aria-label="全覽" @click="fit(true)"><i class="bi bi-bullseye"></i></button>
         <button type="button" class="btn btn-sm btn-info" :aria-label="fullscreen ? '離開全螢幕' : '全螢幕'"
           @click="toggleFullscreen"><i class="bi" :class="fullscreen ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen'"></i></button>
@@ -58,6 +61,7 @@
       <button v-for="s in stopsInSystem" :key="s.index" type="button" class="sf-chip rm3d__stop"
         :class="{ 'sf-chip--warn': s.refuel, 'sf-chip--accent': !s.refuel }" @click="flyToStop(s)">
         {{ s.index }} {{ s.label }}<i v-if="s.refuel" class="bi bi-fuel-pump ms-1"></i>
+        <i v-if="s.node.loading_dock" class="bi bi-box-seam ms-1" title="外部貨運" aria-label="外部貨運"></i>
       </button>
     </div>
   </div>
@@ -65,6 +69,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { fmtDist } from '@/utils/navFormat'
 
 const props = defineProps({
   plan: { type: Object, required: true },       // 一個方案（start, legs[].steps[], refuel_stops）
@@ -84,6 +89,8 @@ const hover = ref(null)
 const selected = ref(null)
 const dragging = ref(false)
 const topView = ref(false)
+// 起點到各站的直線距離（虛線＋距離標籤）；起點要在目前顯示的星系
+const showDirect = ref(false)
 const fullscreen = ref(false)
 const scaleLabel = ref('')
 
@@ -153,6 +160,23 @@ const stopsInSystem = computed(() => {
   })
   return out
 })
+
+const startHere = computed(() => stopsInSystem.value.some(s => s.index === 0))
+// 直達線：起點到每個（不重複、不在起點位置的）站點
+const directLines = computed(() => {
+  const st = stopsInSystem.value.find(s => s.index === 0)
+  if (!st) return []
+  const seen = new Set([st.node.id])
+  const out = []
+  for (const s of stopsInSystem.value) {
+    if (seen.has(s.node.id)) continue
+    seen.add(s.node.id)
+    const d = Math.hypot(s.p[0] - st.p[0], s.p[1] - st.p[1], s.p[2] - st.p[2])
+    if (d > 1) out.push({ a: st.p, b: s.p, text: fmtDist(d) })
+  }
+  return out
+})
+watch(showDirect, () => requestDraw())
 
 // ── 鏡頭 ────────────────────────────────────────────────────
 const cam = { target: [0, 0, 0], yaw: 0.6, pitch: 0.95, dist: 1e11 }
@@ -320,6 +344,7 @@ function readColors() {
     accent: v('--sf-accent') || '#38bdf8',
     accentRgb: rgbVar('--sf-accent-rgb') || '56,189,248',
     warnRgb: rgbVar('--bs-warning-rgb') || '245,158,11',
+    okRgb: rgbVar('--bs-success-rgb') || '25,135,84',
   }
 }
 
@@ -538,6 +563,19 @@ function render() {
     hits.push(bodyHit(b, q, Math.max(r, 9)))
   }
 
+  // 起點直達距離：虛線＋中點的距離標籤（畫在航線底下）
+  if (showDirect.value) {
+    ctx.setLineDash([6, 5])
+    ctx.lineWidth = 1.5
+    ctx.strokeStyle = 'rgba(251,191,36,0.85)'
+    for (const d of directLines.value) {
+      const qa = project(d.a), qb = project(d.b)
+      if (!qa || !qb) continue
+      line(ctx, qa, qb)
+    }
+    ctx.setLineDash([])
+  }
+
   // 航線：發光底線＋實線＋流動光點
   const rgb = colors.accentRgb
   for (const [a, b] of segments.value) {
@@ -597,6 +635,24 @@ function render() {
 
   // 站點
   const sel = selected.value?.key
+  // 直達距離標籤（畫在航線上面）：中點放不下就沿線往兩邊找空位
+  if (showDirect.value) {
+    const font = '600 12px system-ui, sans-serif'
+    ctx.font = font
+    const shown = []    // 畫面上同一點（同一群站點）、同樣距離的只標一次
+    for (const d of directLines.value) {
+      const qa = project(d.a), qb = project(d.b)
+      if (!qa || !qb) continue
+      if (shown.some(o => o.text === d.text && Math.hypot(o.q.x - qb.x, o.q.y - qb.y) < 16)) continue
+      shown.push({ text: d.text, q: qb })
+      const w = ctx.measureText(d.text).width
+      for (const t of [0.5, 0.38, 0.62, 0.28, 0.72]) {
+        const x = qa.x + (qb.x - qa.x) * t, y = qa.y + (qb.y - qa.y) * t
+        if (label(ctx, d.text, x - w / 2, y, { font, color: '#fde68a', pill: 'rgba(5,10,20,0.85)', h: 18 }, placed)) break
+      }
+    }
+  }
+
   for (const c of stopClusters) {
     const { q } = c
     const col = c.refuel ? colors.warnRgb : rgb
@@ -618,8 +674,22 @@ function render() {
     ctx.font = 'bold 11px system-ui, sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText(indexes.length > 1 ? `${indexes[0]}+` : String(indexes[0]), q.x, q.y + 0.5)
+    // 有外部貨運的站點：右下角綠色小徽章（右上方是名稱標籤）（箱子圖示）
+    if (c.items.some(x => x.node.loading_dock)) {
+      ctx.beginPath()
+      ctx.arc(q.x + 10, q.y + 10, 7, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${colors.okRgb},1)`
+      ctx.fill()
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = '#07101f'
+      ctx.stroke()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = '9px bootstrap-icons'
+      ctx.textAlign = 'center'
+      ctx.fillText('\uF1C7', q.x + 10, q.y + 10.5)
+    }
     ctx.textAlign = 'left'
-    const subs = c.items.map(x => [x.node.path_zh?.slice(1).join(' › '), x.refuel ? '需補充燃料' : ''].filter(Boolean).join(' · '))
+    const subs = c.items.map(stopSub)
     hits.push({ x: q.x, y: q.y, r: 12, key: `s:${indexes.join(',')}`,
       title: c.items.map(x => `${x.index} ${nameOf(x.node)}`).join('、'),
       sub: [...new Set(subs)].filter(Boolean).join('；'), p: c.p, dist: viewDistFor(c.p) })
@@ -742,9 +812,12 @@ function scaleText() {
   return `畫面寬 ≈ ${Math.round(span / 1000).toLocaleString('en-US')} km`
 }
 
+// 站點說明：位置、外部貨運（裝卸碼頭，外掛貨櫃船能不能裝卸）、要不要補燃料
+const dockText = n => (n.loading_dock ? '有外部貨運' : '無外部貨運')
+const stopSub = s => [s.node.path_zh?.slice(1).join(' › '), dockText(s.node), s.refuel ? '需補充燃料' : '']
+  .filter(Boolean).join(' · ')
 function stopInfo(s) {
-  return { key: `s:${s.index}`, title: `${s.index} ${nameOf(s.node)}`, p: s.p, dist: viewDistFor(s.p),
-    sub: [s.node.path_zh?.slice(1).join(' › '), s.refuel ? '需補充燃料' : ''].filter(Boolean).join(' · ') }
+  return { key: `s:${s.index}`, title: `${s.index} ${nameOf(s.node)}`, p: s.p, dist: viewDistFor(s.p), sub: stopSub(s) }
 }
 
 function tipStyle(t) {
