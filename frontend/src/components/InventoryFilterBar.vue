@@ -34,7 +34,7 @@
               placeholder="全部" block searchable @update:model-value="$emit('update:dismantle', $event)" />
           </div>
 
-          <LocationAreaFilter :names="locationNames" :loc-label="locLabel" col-class="col-12 col-sm-4 col-lg-2"
+          <LocationAreaFilter v-if="showLocations" :names="locationNames" :loc-label="locLabel" col-class="col-12 col-sm-4 col-lg-2"
             :systems="systems" :planets="planets" :locations="locations"
             @update:systems="$emit('update:systems', $event)"
             @update:planets="$emit('update:planets', $event)"
@@ -109,6 +109,8 @@ const props = defineProps({
   dismantle:        { type: Array, default: () => [] },
   dismantleOptions: { type: Array, default: () => [] },
   showBuyable: { type: Boolean, default: false },
+  // 物品資料分頁、新增／異動挑物品用：沒有地點條件
+  showLocations: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['update:q', 'update:types', 'update:systems', 'update:planets', 'update:locations',

@@ -26,11 +26,7 @@
   去問他能不能幫做」。遮蔽是在**後端**做的（見 Player.display_names_by_scid
   與 Blueprint._redact_contact），前端只判斷「有沒有拿到值」，不自己解讀旗標。
 
-  「新增／異動」的**地點是整批共用的一份，放在表單最上面**（stockLocation），送出後
-  刻意不清空 —— 實際上都是「站在某個據點前面一次處理完這裡的東西」，地點只需要選一次。
-  所以 row 身上沒有地點欄位，submitRows 收的是一個 location 字串而不是逐列的 getter。
-  後端沒有帶正負號的 delta API，增減分別是 /player/inventory/add 與 /remove 兩支，
-  逐列由 endpointFor 決定（見 submitRows）。
+  「新增／異動」是跳出視窗（components/StockWizard.vue）：先選地點、再勾物品（數量不限）、最後設定數量送出。
 
   地點的搜尋一律是「星系／行星／地點」三段（utils/locationArea.js、
   components/LocationAreaFilter.vue）。
@@ -48,126 +44,15 @@
   它跟「查詢 › 持有藍圖」的分界是**資料範圍**：這裡是我的、可寫入，
   查詢那邊是全部玩家的、唯讀。
 
-  版面：.scifi-app（滿版）+ sticky 頂端工具列 + 橫向捲動的分頁列 + 下層分頁，
+  版面：.scifi-app（滿版）+ sticky 頂端工具列 + 分頁列（放不下時折行）+ 下層分頁，
   配色由 stores/scifiTheme.js 管，玩家可自行更換（ScifiThemePicker）。
   分頁狀態同步在 URL 的 ?tab= 與 ?sub=。
 -->
 <template>
   <div class="scifi-page scifi-app has-bottom-nav">
-    <!-- ══════════ 頂端工具列（捲動時固定） ══════════ -->
-    <header class="scifi-topbar">
-      <!-- 三欄：左邊空白、中間玩家名稱（置中）、右邊配色與登出 -->
-      <span class="scifi-topbar__side" aria-hidden="true"></span>
-
-      <div class="scifi-topbar__center">
-        <h1 class="scifi-topbar__title">
-          <i class="bi bi-person-badge"></i>
-          <span>{{ player?.nickname || '個人資料' }}</span>
-        </h1>
-        <span v-if="player?.star_citizen_id" class="scifi-topbar__id d-none d-sm-inline">
-          {{ player.star_citizen_id }}
-        </span>
-      </div>
-
-      <div class="scifi-topbar__side scifi-topbar__actions">
-        <ScifiThemePicker />
-        <button class="btn btn-secondary btn-sm" aria-label="登出" title="登出" @click="logout">
-          <i class="bi bi-box-arrow-right"></i>
-          <span class="d-none d-sm-inline ms-1">登出</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- ══════════ 分頁列（放不下時橫向捲動，左右出現箭頭；「個人資料」可以選要顯示哪些分頁） ══════════ -->
-    <nav class="scifi-tabs">
-      <button v-show="tabsOverflow.left" type="button" class="scifi-tabs__arrow scifi-tabs__arrow--left"
-        aria-label="往左捲動分頁" tabindex="-1" @click="scrollTabs(-1)"><i class="bi bi-chevron-left"></i></button>
-      <ul ref="tabsListEl" class="nav nav-tabs" role="tablist" @scroll.passive="updateTabsOverflow" @wheel="onTabsWheel">
-        <li class="nav-item" v-for="tab in visibleTabs" :key="tab.key" role="presentation">
-          <button
-            class="nav-link"
-            :class="{ active: activeTab === tab.key }"
-            role="tab"
-            :aria-selected="activeTab === tab.key"
-            :aria-controls="`panel-${tab.key}`"
-            :id="`tab-${tab.key}`"
-            @click="setTab(tab.key)"
-          >
-            <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
-          </button>
-        </li>
-      </ul>
-      <button v-show="tabsOverflow.right" type="button" class="scifi-tabs__arrow scifi-tabs__arrow--right"
-        aria-label="往右捲動分頁" tabindex="-1" @click="scrollTabs(1)"><i class="bi bi-chevron-right"></i></button>
-    </nav>
-
-    <!-- ══════════ 下層分頁（倉庫／查詢才有） ══════════ -->
-    <nav v-if="subTabsOf(activeTab).length" class="scifi-subtabs">
-      <div class="btn-group" role="tablist">
-        <button
-          v-for="sub in subTabsOf(activeTab)"
-          :key="sub.key"
-          class="btn btn-subtab"
-          :class="{ active: activeSub === sub.key }"
-          role="tab"
-          :aria-selected="activeSub === sub.key"
-          :aria-controls="`panel-${activeTab}-${sub.key}`"
-          :id="`subtab-${activeTab}-${sub.key}`"
-          @click="setSub(sub.key)"
-        >{{ sub.label }}</button>
-      </div>
-    </nav>
-
-    <!-- ══════════ 內容區（滿版） ══════════ -->
-    <div class="scifi-body">
-    <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
-
-    <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
-    <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
-      <button :aria-label="itemDataOpen ? '收起物品資料' : '物品資料'" class="btn btn-sm" :class="itemDataOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="itemDataOpen ? 'true' : 'false'" @click="itemDataOpen = !itemDataOpen">
-        <i class="bi me-1" :class="itemDataOpen ? 'bi-x-lg' : 'bi-database'"></i><span class="sf-btn-text">{{ itemDataOpen ? '收起物品資料' : '物品資料' }}</span>
-      </button>
-      <button :aria-label="stockOpen ? '收起新增／異動' : '新增／異動'" class="btn btn-sm" :class="stockOpen ? 'btn-secondary' : 'btn-success'"
-        :aria-expanded="stockOpen ? 'true' : 'false'" @click="stockOpen = !stockOpen">
-        <i class="bi me-1" :class="stockOpen ? 'bi-x-lg' : 'bi-plus-slash-minus'"></i><span class="sf-btn-text">{{ stockOpen ? '收起新增／異動' : '新增／異動' }}</span>
-      </button>
-      <button :aria-label="historyOpen ? '收起紀錄' : '庫存紀錄'" class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
-        <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i><span class="sf-btn-text">{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}</span>
-      </button>
-      <button :aria-label="commodityOpen ? '收起商品購買地點' : '商品購買地點'" class="btn btn-sm" :class="commodityOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="commodityOpen ? 'true' : 'false'" @click="commodityOpen = !commodityOpen">
-        <i class="bi me-1" :class="commodityOpen ? 'bi-x-lg' : 'bi-cart3'"></i><span class="sf-btn-text">{{ commodityOpen ? '收起商品購買地點' : '商品購買地點' }}</span>
-      </button>
-      <button :aria-label="homeOpen ? '收起定居點' : (homeLocation ? `定居點：${locLabel(homeLocation)}` : '設置定居點')" class="btn btn-sm" :class="homeOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="homeOpen ? 'true' : 'false'" @click="toggleHome">
-        <i class="bi me-1" :class="homeOpen ? 'bi-x-lg' : 'bi-house'"></i><span class="sf-btn-text">{{ homeOpen ? '收起定居點' : (homeLocation ? `定居點：${locLabel(homeLocation)}` : '設置定居點') }}</span>
-      </button>
-      <!-- 停用的按鈕收不到滑鼠事件，提示掛在外層 span 上；觸控裝置看不到 hover 提示，
-           所以還沒設定居點時點這裡直接展開「設置定居點」 -->
-      <span :title="homeLocation ? '' : '無法使用，須先設置定居點'" class="d-inline-block"
-        @click="!homeLocation && !homeOpen && toggleHome()">
-        <button :aria-label="moveAllOpen ? '收起轉移' : '全部物品轉移到定居點'" class="btn btn-sm" :class="moveAllOpen ? 'btn-secondary' : 'btn-primary'" :disabled="!homeLocation"
-          :style="homeLocation ? '' : 'pointer-events: none'" :aria-expanded="moveAllOpen ? 'true' : 'false'"
-          @click="moveAllOpen = !moveAllOpen">
-          <i class="bi me-1" :class="moveAllOpen ? 'bi-x-lg' : 'bi-box-arrow-in-down'"></i><span class="sf-btn-text">{{ moveAllOpen ? '收起轉移' : '全部物品轉移到定居點' }}</span>
-        </button>
-      </span>
-      <button class="btn btn-sm btn-primary" @click="refreshWarehouse" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
-    </div>
-    <!-- 倉庫 › 共用篩選：只有這一張，同時篩「物品庫存」跟展開的「庫存紀錄」 -->
-    <InventoryFilterBar v-show="activeTab === 'warehouse' && !(stockOpen || commodityOpen || homeOpen || moveAllOpen)"
-      :rows="warehouseFilterRows" :known-locations="locations" :counts="warehouseFilterCounts" :loc-label="locLabel"
-      :type-options="itemTypeOptions" v-model:q="stockFilter.q" v-model:types="stockFilter.types"
-      :show-buyable="itemDataOpen" v-model:buyable="stockFilter.buyable" v-model:dismantlable="stockFilter.dismantlable"
-      v-model:dismantle="stockFilter.dismantle" :dismantle-options="dismantleOptions"
-      v-model:systems="stockFilter.systems"
-      v-model:planets="stockFilter.planets" v-model:locations="stockFilter.locations" />
-
-    <!-- ══════════ 倉庫 › 定居點：從可選居住地（/starmap/home-locations）選一個 ══════════ -->
-    <div v-show="activeTab === 'warehouse' && homeOpen" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-house me-1"></i>定居點</h3>
+    <!-- ══════════ 跳出視窗（v-show 一直掛著；登記藍圖／船艦資料的搜尋卡用 Teleport defer 移進來）══════════ -->
+    <!-- 定居點（頂端名字右邊的按鈕）：從可選居住地（/starmap/home-locations）選一個，下面是「全部物品轉移到定居點」 -->
+    <SfModal id="home" v-model:open="homeOpen" title="定居點" icon="bi bi-house">
       <div v-if="homeMessage" :class="['alert', 'py-2', homeMessageType]">{{ homeMessage }}</div>
       <div class="card scifi-card">
         <div class="card-body py-3">
@@ -190,169 +75,152 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- ══════════ 倉庫 › 全部物品轉移到定居點（確認後才送出）══════════ -->
-    <div v-show="activeTab === 'warehouse' && moveAllOpen && homeLocation" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-box-arrow-in-down me-1"></i>全部物品轉移到定居點</h3>
-      <div v-if="moveAllMessage" :class="['alert', 'py-2', moveAllMessageType]">{{ moveAllMessage }}</div>
-      <div v-if="!moveAllPending.length" class="text-muted">所有物品都已經在 {{ locLabel(homeLocation) }}。</div>
-      <template v-else>
-        <div class="mb-2">
-          將 {{ moveAllPending.length }} 筆、共 {{ moveAllUnits }} 件物品（來自 {{ moveAllSources }} 個地點）移到
-          <span class="fw-semibold">{{ locLabel(homeLocation) }}</span>。
+      <div v-if="homeLocation" class="card scifi-card mt-2">
+        <div class="card-body py-3">
+          <h4 class="sf-drawer__title mb-2"><i class="bi bi-box-arrow-in-down me-1"></i>全部物品轉移到定居點</h4>
+          <div v-if="moveAllMessage" :class="['alert', 'py-2', moveAllMessageType]">{{ moveAllMessage }}</div>
+          <div v-if="!moveAllPending.length" class="text-muted">所有物品都已經在 {{ locLabel(homeLocation) }}。</div>
+          <template v-else>
+            <div class="mb-2">
+              將 {{ moveAllPending.length }} 筆、共 {{ moveAllUnits }} 件物品（來自 {{ moveAllSources }} 個地點）移到
+              <span class="fw-semibold">{{ locLabel(homeLocation) }}</span>。
+            </div>
+            <button type="button" class="btn btn-sm btn-primary" :disabled="movingAll" @click="moveAllHome">
+              <span v-if="movingAll" class="spinner-border spinner-border-sm me-1"></span>確定轉移
+            </button>
+          </template>
         </div>
-        <div class="d-flex gap-2">
-          <button type="button" class="btn btn-sm btn-primary" :disabled="movingAll" @click="moveAllHome">
-            <span v-if="movingAll" class="spinner-border spinner-border-sm me-1"></span>確定轉移
+      </div>
+    </SfModal>
+    <!-- 藍圖 › 登記藍圖資料：遊戲藍圖資料庫，點一列看配方與解鎖任務；每列「登記」，或勾選多張一次登記。
+         上方是藍圖分頁的共用搜尋卡（開視窗時用 Teleport 移進來），舊網址 ?tab=blueprints&sub=data|bulk 一進來就打開 -->
+    <SfModal id="bp-data" v-model:open="bpDataOpen" title="登記藍圖資料" icon="bi bi-journal-text" width="1440px">
+      <div id="bp-modal-filters"></div>
+      <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
+        :active="activeTab === 'blueprints' && bpDataOpen" :shared-filters="bpFilters"
+        :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
+    </SfModal>
+    <!-- 任務 › 勢力聲望：勢力的聲望階級與每一階解鎖的任務（見 components/FactionReputation.vue） -->
+    <SfModal id="faction-rep" v-model:open="factionRepOpen" title="勢力聲望" icon="bi bi-award" width="1100px">
+      <FactionReputation :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions' && factionRepOpen"
+        :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
+    </SfModal>
+    <!-- 艦隊 › 登記船艦資料：載具主檔＋官網價／遊戲內購買價／租船價，在這裡登記（單艘或勾選批量，
+         components/VehicleDataBrowser.vue）；上方是艦隊分頁的共用搜尋卡（Teleport 移進來）；舊網址 ?tab=fleet&sub=data|bulk 直接打開 -->
+    <SfModal id="fleet-data" v-model:open="fleetDataOpen" title="登記船艦資料" icon="bi bi-info-circle" width="1440px">
+      <div id="fleet-modal-filters"></div>
+      <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters"
+        :registered-uuids="fleetVehicleUuids" :active="activeTab === 'fleet' && fleetDataOpen"
+        @registered="loadFleet" />
+    </SfModal>
+
+    <!-- ══════════ 頂端工具列（捲動時固定） ══════════ -->
+    <header class="scifi-topbar">
+      <!-- 三欄：左邊空白、中間玩家名稱（置中）、右邊配色與登出 -->
+      <span class="scifi-topbar__side" aria-hidden="true"></span>
+
+      <div class="scifi-topbar__center">
+        <h1 class="scifi-topbar__title">
+          <i class="bi bi-person-badge"></i>
+          <span>{{ player?.nickname || '個人資料' }}</span>
+        </h1>
+        <span v-if="player?.star_citizen_id" class="scifi-topbar__id d-none d-sm-inline">
+          {{ player.star_citizen_id }}
+        </span>
+        <!-- 定居點：設定／清除＋全部物品轉移到定居點，都在跳出的視窗裡 -->
+        <button v-if="player" type="button" class="btn btn-sm btn-success scifi-topbar__home" aria-haspopup="dialog"
+          :aria-label="homeLocation ? `定居點：${locLabel(homeLocation)}` : '設置定居點'" @click="toggleHome">
+          <i class="bi bi-house"></i>
+          <span class="d-none d-md-inline ms-1">{{ homeLocation ? locLabel(homeLocation) : '設置定居點' }}</span>
+        </button>
+      </div>
+
+      <div class="scifi-topbar__side scifi-topbar__actions">
+        <ScifiThemePicker />
+        <button class="btn btn-secondary btn-sm" aria-label="登出" title="登出" @click="logout">
+          <i class="bi bi-box-arrow-right"></i>
+          <span class="d-none d-sm-inline ms-1">登出</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ══════════ 分頁列（放不下時折到下一列；手機改成底部導覽；「個人資料」可以選要顯示哪些分頁） ══════════ -->
+    <nav class="scifi-tabs">
+      <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item" v-for="tab in visibleTabs" :key="tab.key" role="presentation">
+          <button
+            class="nav-link"
+            :class="{ active: activeTab === tab.key }"
+            role="tab"
+            :aria-selected="activeTab === tab.key"
+            :aria-controls="`panel-${tab.key}`"
+            :id="`tab-${tab.key}`"
+            @click="setTab(tab.key)"
+          >
+            <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
           </button>
-          <button type="button" class="btn btn-sm btn-secondary" :disabled="movingAll" @click="moveAllOpen = false">取消</button>
-        </div>
-      </template>
-    </div>
+        </li>
+      </ul>
+    </nav>
 
-    <!-- ══════════ 倉庫 › 物品資料：瀏覽物品主檔（唯讀）══════════
-         名稱＋類型＋「只看買得到」用上面的共用搜尋卡（ItemDataBrowser 吃 filters） -->
-    <div v-show="activeTab === 'warehouse' && itemDataOpen" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-database me-1"></i>物品資料</h3>
+    <!-- ══════════ 下層分頁（倉庫／查詢才有） ══════════ -->
+    <nav v-if="subTabsOf(activeTab).length" class="scifi-subtabs">
+      <div class="btn-group" role="tablist">
+        <button
+          v-for="sub in subTabsOf(activeTab)"
+          :key="sub.key"
+          class="btn btn-subtab"
+          :class="{ active: activeSub === sub.key }"
+          role="tab"
+          :aria-selected="activeSub === sub.key"
+          :aria-controls="`panel-${activeTab}-${sub.key}`"
+          :id="`subtab-${activeTab}-${sub.key}`"
+          @click="setSub(sub.key)"
+        >{{ sub.label }}</button>
+      </div>
+    </nav>
+
+    <!-- ══════════ 內容區（滿版） ══════════ -->
+    <div class="scifi-body">
+    <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
+    <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
+    <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
+      <button aria-label="新增／異動" class="btn btn-sm btn-success" @click="stockWizardRef?.openNew()">
+        <i class="bi bi-plus-slash-minus me-1"></i><span class="sf-btn-text">新增／異動</span>
+      </button>
+      <button :aria-label="historyOpen ? '收起紀錄' : '庫存紀錄'" class="btn btn-sm" :class="historyOpen ? 'btn-secondary' : 'btn-info'"
+        :aria-expanded="historyOpen ? 'true' : 'false'" @click="historyOpen = !historyOpen">
+        <i class="bi me-1" :class="historyOpen ? 'bi-x-lg' : 'bi-clock-history'"></i><span class="sf-btn-text">{{ historyOpen ? '收起紀錄' : '庫存紀錄' }}</span>
+      </button>
+      <button class="btn btn-sm btn-primary" @click="refreshWarehouse" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
+    </div>
+    <!-- 倉庫 › 共用篩選：只有這一張，同時篩「物品庫存」跟展開的「庫存紀錄」 -->
+    <InventoryFilterBar v-show="activeTab === 'warehouse'"
+      :rows="warehouseFilterRows" :known-locations="locations" :counts="warehouseFilterCounts" :loc-label="locLabel"
+      :type-options="itemTypeOptions" v-model:q="stockFilter.q" v-model:types="stockFilter.types"
+      v-model:dismantle="stockFilter.dismantle" :dismantle-options="dismantleOptions"
+      v-model:systems="stockFilter.systems"
+      v-model:planets="stockFilter.planets" v-model:locations="stockFilter.locations" />
+
+
+    <!-- ══════════ 物品 › 物品資料：瀏覽物品主檔（唯讀），自己的搜尋卡（不含地點） ══════════ -->
+    <div v-show="activeTab === 'items' && activeSub === 'data'" id="panel-items-data">
+      <div class="sf-toolbar">
+        <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="itemDataRef?.refresh()">
+          <i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
+      </div>
+      <InventoryFilterBar :rows="[]" :show-locations="false" show-buyable :type-options="itemTypeOptions"
+        v-model:q="itemDataFilter.q" v-model:types="itemDataFilter.types" v-model:buyable="itemDataFilter.buyable"
+        v-model:dismantlable="itemDataFilter.dismantlable" v-model:dismantle="itemDataFilter.dismantle"
+        :dismantle-options="dismantleOptions" />
       <ItemDataBrowser ref="itemDataRef" :fetcher="playerAuth.playerFetch" :filters="itemDataFilters"
-        :active="activeTab === 'warehouse' && itemDataOpen" />
+        :active="activeTab === 'items' && activeSub === 'data'" />
     </div>
 
-    <!-- ══════════ 倉庫 › 商品購買地點（原本在「查詢」）：勾選多種商品，列出全部都買得到的交易終端（UEX 價格表）══════════
-         商品不是倉庫物品，選商品就是這個工具本身，所以保留自己的條件卡（不吃共用搜尋卡） -->
-    <div v-show="activeTab === 'warehouse' && commodityOpen" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-cart3 me-1"></i>商品購買地點</h3>
+    <!-- ══════════ 物品 › 商品購買地點：勾選多種商品，列出全部都買得到的交易終端（UEX 價格表）══════════ -->
+    <div v-show="activeTab === 'items' && activeSub === 'commodities'" id="panel-items-commodities">
       <CommodityBuyFinder :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
-        :active="activeTab === 'warehouse' && commodityOpen" />
-    </div>
-
-    <!-- ══════════ 倉庫 › 新增／異動（原本的「新增物品」與「庫存異動」合併）══════════
-         每列各自選「＋增加」或「－減少」：增加一個還沒登記的物品就是新增；
-         按上方「新增／異動」或列表每一列的「異動」展開 -->
-    <div v-show="activeTab === 'warehouse' && stockOpen"
-         id="panel-warehouse-stock" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-plus-slash-minus me-1"></i>新增／異動</h3>
-      <Transition name="alert-slide">
-        <div v-if="stockSuccess" class="alert alert-success py-2">{{ stockSuccess }}</div>
-      </Transition>
-      <Transition name="alert-slide">
-        <div v-if="stockError" class="alert alert-danger py-2">{{ stockError }}</div>
-      </Transition>
-
-      <!-- 地點是整批共用的一份，放在最上面：通常是「站在某個據點前面，把這裡的東西
-           一次處理完」，地點只需要選一次。送出後刻意**不清空**，方便繼續處理同一個地點。
-           星系／行星只是縮小地點候選，送出的是「地點」欄位的值（可以直接輸入新地點）。 -->
-      <div class="card scifi-card mb-3">
-        <div class="card-body py-3">
-          <div class="row g-2">
-            <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold mb-1" for="stock-system">星系</label>
-              <select id="stock-system" v-model="stockLocation.system" class="form-select form-select-sm"
-                @change="stockLocation.planet = ''">
-                <option value="">全部</option>
-                <option v-for="o in stockPickOptions.systems" :key="o.value" :value="o.value">{{ o.label }}</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold mb-1" for="stock-planet">行星</label>
-              <select id="stock-planet" v-model="stockLocation.planet" class="form-select form-select-sm">
-                <option value="">全部</option>
-                <option v-for="o in stockPickOptions.planets" :key="o.value" :value="o.value">{{ o.label }}</option>
-              </select>
-            </div>
-            <div class="col-12 col-md-6 position-relative">
-              <label class="form-label small fw-semibold mb-1" for="stock-location">地點</label>
-              <input id="stock-location" v-model="stockLocation.location"
-                @input="filterRowLocations(stockLocation)" @focus="filterRowLocations(stockLocation)"
-                @blur="closeRowLocations(stockLocation)"
-                type="text" class="form-control form-control-sm" placeholder="輸入或選擇地點…" autocomplete="off">
-              <ul v-if="stockLocation.locationOpen" class="list-group position-absolute w-100 shadow-sm"
-                  style="z-index: 30; max-height: 220px; overflow-y: auto;">
-                <li v-for="loc in stockLocation.locationResults" :key="loc"
-                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
-                    @mousedown.prevent="pickRowLocation(stockLocation, loc)">
-                  {{ locLabel(loc) }}
-                </li>
-                <li v-if="!stockLocation.locationResults.length"
-                    class="list-group-item py-1 px-2 small text-muted">
-                  沒有符合的地點
-                </li>
-              </ul>
-              <div v-if="stockLocation.location.trim()" class="form-text text-success py-0">
-                <i class="bi bi-geo-alt"></i> 以下 {{ stockRows.length }} 筆都會套用到
-                {{ locLabel(stockLocation.location.trim()) }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-for="(row, idx) in stockRows" :key="row.key" class="card scifi-card mb-2">
-        <div class="card-body py-3">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="d-flex align-items-center gap-2">
-              <span class="badge text-bg-secondary">第 {{ idx + 1 }} 筆</span>
-              <!-- 方向每列各自可選：同一次送出常常是「這個 +5、那個 -2」 -->
-              <div class="btn-group btn-group-sm" role="group" aria-label="增加或減少">
-                <button type="button" class="btn btn-subtab"
-                  :class="{ active: row.direction === 'in' }"
-                  @click="row.direction = 'in'">＋ 增加</button>
-                <button type="button" class="btn btn-subtab"
-                  :class="{ active: row.direction === 'out' }"
-                  @click="row.direction = 'out'">－ 減少</button>
-              </div>
-            </div>
-            <button v-if="stockRows.length > 1" class="btn btn-sm btn-danger"
-              :disabled="stockSubmitting" @click="stockRows.splice(idx, 1)">移除</button>
-          </div>
-
-          <div class="row g-2">
-            <div class="col-12 col-md-9 position-relative">
-              <label class="form-label small fw-semibold mb-1" :for="`stock-row-${idx}-item`">物品</label>
-              <input :id="`stock-row-${idx}-item`" v-model="row.itemQuery" @input="searchRowItems(row)" @focus="searchRowItems(row)"
-                type="text" class="form-control form-control-sm" placeholder="輸入物品名稱…" autocomplete="off">
-              <ul v-if="row.itemResults.length" class="list-group position-absolute w-100 shadow-sm"
-                  style="z-index: 20; max-height: 220px; overflow-y: auto;">
-                <li v-for="it in row.itemResults" :key="it._id"
-                    class="list-group-item list-group-item-action py-1 px-2 small" style="cursor: pointer;"
-                    @click="pickRowItem(row, it)">
-                  {{ it.name }}<span v-if="it.name_zh">（{{ it.name_zh }}）</span>
-                  <span class="text-muted" v-if="it.type">（{{ it.type }}）</span>
-                </li>
-              </ul>
-              <div v-if="row.selectedItem" class="form-text text-success py-0">
-                <i class="bi bi-check-circle"></i> {{ row.selectedItem.name }}
-                <span v-if="row.selectedItem.name_zh">（{{ row.selectedItem.name_zh }}）</span>
-              </div>
-            </div>
-
-            <div class="col-6 col-md-3">
-              <label class="form-label small fw-semibold mb-1" :for="`stock-row-${idx}-qty`">數量</label>
-              <input :id="`stock-row-${idx}-qty`" v-model.number="row.quantity" type="number" min="1" class="form-control form-control-sm">
-            </div>
-
-            <div class="col-12">
-              <label class="form-label small fw-semibold mb-1" :for="`stock-row-${idx}-note`">備註（選填）</label>
-              <input :id="`stock-row-${idx}-note`" v-model="row.note" type="text" class="form-control form-control-sm"
-                :placeholder="row.direction === 'out' ? '例如：分給公會、任務用掉…' : '例如：打怪撿到、盤點補回…'">
-            </div>
-          </div>
-
-          <div v-if="row.error" class="text-danger small mt-2">{{ row.error }}</div>
-        </div>
-      </div>
-
-      <div class="d-flex justify-content-between mb-4">
-        <button class="btn btn-success btn-sm" :disabled="stockSubmitting"
-          @click="stockRows.push(makeRow())">
-          <i class="bi bi-plus-lg me-1"></i>再加一筆
-        </button>
-        <button class="btn btn-primary" :disabled="stockSubmitting" @click="submitStockRows">
-          <span v-if="stockSubmitting" class="spinner-border spinner-border-sm me-1"></span>
-          全部送出
-        </button>
-      </div>
+        :active="activeTab === 'items' && activeSub === 'commodities'" />
     </div>
 
     <!-- ══════════ 查詢 › 工具列：持有物品／持有藍圖／持有船艦／商品購買地點，點開才顯示（比照倉庫／藍圖／艦隊）══════════
@@ -722,7 +590,7 @@
             <td data-label="地點">{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
             <td class="text-end" data-label="數量">{{ row.quantity }}</td>
             <td class="text-end pe-3 sf-stack__actions">
-              <button type="button" class="btn btn-sm btn-info" @click="adjustStockRow(row)">異動</button>
+              <button type="button" class="btn btn-sm btn-info" @click="stockWizardRef?.openAdjust(row)">異動</button>
             </td>
           </tr>
         </tbody>
@@ -735,9 +603,8 @@
 
     <!-- ══════════ 藍圖 › 工具列（同倉庫：開關＋重新整理放最上面）══════════ -->
     <div v-show="activeTab === 'blueprints'" class="sf-toolbar">
-      <button :aria-label="bpDataOpen ? '收起登記' : '登記藍圖資料'" class="btn btn-sm" :class="bpDataOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="bpDataOpen ? 'true' : 'false'" @click="bpDataOpen = !bpDataOpen">
-        <i class="bi me-1" :class="bpDataOpen ? 'bi-x-lg' : 'bi-journal-text'"></i><span class="sf-btn-text">{{ bpDataOpen ? '收起登記' : '登記藍圖資料' }}</span>
+      <button aria-label="登記藍圖資料" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="bpDataOpen = true">
+        <i class="bi bi-journal-text me-1"></i><span class="sf-btn-text">登記藍圖資料</span>
       </button>
       <button class="btn btn-sm btn-primary" @click="loadBlueprints" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
@@ -745,6 +612,7 @@
          展開登記藍圖資料時多一個「只顯示未登記」（預設勾選）。
          預設可用的藍圖視同已登記，兩邊都不列（不需要勾選）。
          名稱打字就即時篩（子字串），同時跳出主檔的候選，點一個就代入名稱 -->
+    <Teleport defer to="#bp-modal-filters" :disabled="!bpDataOpen">
     <div v-show="activeTab === 'blueprints'" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
@@ -788,19 +656,10 @@
         </div>
       </div>
     </div>
-
-    <!-- ══════════ 藍圖 › 登記藍圖資料（原本的「藍圖資料」「批量登記」兩個區塊合併，比照艦隊的登記船艦資料；
-         舊網址 ?tab=blueprints&sub=data|bulk 直接展開）══════════
-         遊戲藍圖資料庫：點一列看配方與解鎖任務；每列「登記」按鈕，或勾選多張一次登記 -->
-    <div v-show="activeTab === 'blueprints' && bpDataOpen" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-journal-text me-1"></i>登記藍圖資料</h3>
-      <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
-        :active="activeTab === 'blueprints' && bpDataOpen" :shared-filters="bpFilters"
-        :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
-    </div>
+    </Teleport>
 
     <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
-    <div v-show="activeTab === 'blueprints' && !bpDataOpen" role="tabpanel"
+    <div v-show="activeTab === 'blueprints'" role="tabpanel"
          id="panel-blueprints" :aria-labelledby="'tab-blueprints'">
       <Transition name="alert-slide">
         <div v-if="blueprintError" class="alert alert-danger py-2">{{ blueprintError }}</div>
@@ -903,20 +762,13 @@
 
     <!-- ══════════ 任務（唯讀任務資料庫；藍圖欄標出自己已登記幾張，見 components/MissionBrowser.vue）══════════ -->
     <div v-show="activeTab === 'missions'" class="sf-toolbar">
-      <button :aria-label="factionRepOpen ? '收起勢力聲望' : '勢力聲望'" class="btn btn-sm" :class="factionRepOpen ? 'btn-secondary' : 'btn-info'"
-        :aria-expanded="factionRepOpen ? 'true' : 'false'" @click="factionRepOpen = !factionRepOpen">
-        <i class="bi me-1" :class="factionRepOpen ? 'bi-x-lg' : 'bi-award'"></i><span class="sf-btn-text">{{ factionRepOpen ? '收起勢力聲望' : '勢力聲望' }}</span>
+      <button aria-label="勢力聲望" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="factionRepOpen = true">
+        <i class="bi bi-award me-1"></i><span class="sf-btn-text">勢力聲望</span>
       </button>
       <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="missionBrowserRef?.reload()"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
-    <!-- 任務 › 勢力聲望：勢力的聲望階級與每一階解鎖的任務（見 components/FactionReputation.vue） -->
-    <div v-show="activeTab === 'missions' && factionRepOpen" class="sf-drawer">
-      <h3 class="sf-drawer__title"><i class="bi bi-award me-1"></i>勢力聲望</h3>
-      <FactionReputation :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions' && factionRepOpen"
-        :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
-    </div>
     <!-- 任務 › 共用搜尋：名稱即時篩；類型／星系／勢力／合法性手機收進「篩選」面板 -->
-    <div v-show="activeTab === 'missions' && !factionRepOpen" class="card scifi-card sf-search mb-3">
+    <div v-show="activeTab === 'missions'" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-4">
@@ -970,7 +822,7 @@
         </div>
       </div>
     </div>
-    <div v-show="activeTab === 'missions' && !factionRepOpen" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
+    <div v-show="activeTab === 'missions'" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
       <MissionBrowser ref="missionBrowserRef" :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions'"
         :filters="msFilter" :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </div>
@@ -984,9 +836,8 @@
 
       <!-- 工具列（同倉庫：開關＋重新整理放最上面） -->
       <div class="sf-toolbar">
-        <button :aria-label="fleetDataOpen ? '收起登記' : '登記船艦資料'" class="btn btn-sm" :class="fleetDataOpen ? 'btn-secondary' : 'btn-info'"
-          :aria-expanded="fleetDataOpen ? 'true' : 'false'" @click="fleetDataOpen = !fleetDataOpen">
-          <i class="bi me-1" :class="fleetDataOpen ? 'bi-x-lg' : 'bi-info-circle'"></i><span class="sf-btn-text">{{ fleetDataOpen ? '收起登記' : '登記船艦資料' }}</span>
+        <button aria-label="登記船艦資料" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="fleetDataOpen = true">
+          <i class="bi bi-info-circle me-1"></i><span class="sf-btn-text">登記船艦資料</span>
         </button>
         <button :aria-label="fleetImportOpen ? '收起匯入' : 'JSON 匯入'" class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
           :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
@@ -995,7 +846,8 @@
         <button class="btn btn-sm btn-primary" @click="loadFleet" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
       </div>
 
-      <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟展開的「登記船艦資料」 -->
+      <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟「登記船艦資料」（開視窗時用 Teleport 移進視窗） -->
+      <Teleport defer to="#fleet-modal-filters" :disabled="!fleetDataOpen">
       <div v-show="!fleetImportOpen" class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
@@ -1069,21 +921,15 @@
         </div>
       </div>
 
-      <!-- 登記船艦資料：載具主檔的基本資訊＋官網價／遊戲內購買價／租船價，並在這裡登記（單艘或勾選批量），
-           原本的「批量登記」併進來（components/VehicleDataBrowser.vue）；舊網址 ?tab=fleet&sub=data|bulk 直接展開 -->
-      <div v-show="fleetDataOpen" class="sf-drawer">
-        <h3 class="sf-drawer__title"><i class="bi bi-info-circle me-1"></i>登記船艦資料</h3>
-        <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters"
-          :registered-uuids="fleetVehicleUuids" :active="activeTab === 'fleet' && fleetDataOpen"
-          @registered="loadFleet" />
-      </div>
+      </Teleport>
+
       <!-- JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue） -->
       <div v-if="fleetImportOpen" class="sf-drawer">
         <h3 class="sf-drawer__title"><i class="bi bi-filetype-json me-1"></i>JSON 匯入</h3>
         <FleetImport :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
       </div>
 
-      <div v-show="!fleetDataOpen && !fleetImportOpen">
+      <div v-show="!fleetImportOpen">
       <div v-if="loadingFleet" class="text-muted small">載入中…</div>
       <div v-else-if="fleetLoaded && !fleet.length" class="text-muted small">還沒有登記任何船／載具。</div>
       <div v-else-if="fleet.length && !filteredFleet.length" class="text-muted small">沒有符合篩選條件的船／載具。</div>
@@ -1396,7 +1242,7 @@
           <div class="tab-prefs">
             <div v-for="tab in orderedTabs" :key="tab.key" class="form-check mb-0">
               <input :id="`tab-show-${tab.key}`" class="form-check-input" type="checkbox"
-                :checked="tab.key === 'profile' || !hiddenTabs.includes(tab.key)"
+                :checked="isTabShown(tab.key)"
                 :disabled="tab.key === 'profile' || savingTabs" @change="toggleTab(tab.key, $event.target.checked)">
               <label class="form-check-label" :for="`tab-show-${tab.key}`">
                 <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
@@ -1473,6 +1319,11 @@
       </div>
     </div>
   </div>
+
+  <!-- 倉庫 › 新增／異動（跳出視窗：地點 → 物品 → 數量） -->
+  <StockWizard ref="stockWizardRef" :fetcher="playerAuth.playerFetch" :locations="locations" :loc-label="locLabel"
+    :loc-zh="locZh" :home-location="homeLocation" :history="history" :type-options="itemTypeOptions"
+    :dismantle-options="dismantleOptions" @done="onStockDone" />
   <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" :registered-uuids="myBlueprintUuids" />
 
   <!-- ══════════ 手機底部導覽列（上方分頁列在手機上藏起來）：常用的四個＋「更多」 ══════════ -->
@@ -1502,7 +1353,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, toRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
 import { PLAYER_LOGIN_PATH } from '@/router'
@@ -1518,12 +1369,14 @@ import { useBreakpoint } from '@/composables/useBreakpoint'
 import SfTreeHead from '@/components/SfTreeHead.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
-import { areaOf, areaOptions, loadLocationAreas, matchArea } from '@/utils/locationArea'
+import { loadLocationAreas, matchArea } from '@/utils/locationArea'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
 import BlueprintQuality from '@/components/BlueprintQuality.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
 import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
 import ItemDataBrowser from '@/components/ItemDataBrowser.vue'
+import StockWizard from '@/components/StockWizard.vue'
+import SfModal from '@/components/SfModal.vue'
 import { itemTypeOption, loadItemTypeZh } from '@/utils/itemType'
 import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { auecPerUsd, fmtAuec, fmtAuecPerUsd, fmtUsd, vehicleInRanges, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
@@ -1603,7 +1456,18 @@ const tabOrder = ref((() => {
     return []
   }
 })())
-const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value))
+// 後台設定的開放狀態（/player/me 的 tab_access：{分頁: hidden（預設不顯示）／closed（不開放）}，沒列到的＝開放）
+const TAB_ACCESS_CACHE = 'sc_player_tab_access'
+const tabAccess = ref((() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(TAB_ACCESS_CACHE) || '{}')
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
+  } catch {
+    return {}
+  }
+})())
+// 不開放的分頁整個拿掉（分頁列、更多、個人資料的勾選都不出現）
+const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value).filter(t => tabAccess.value[t.key] !== 'closed'))
 
 // 手機／平板（方案見專案文件「星際公民工具-玩家頁手機平板UI方案」）：
 // 手機上方分頁列換成底部導覽列，常用四個直接放，其餘收進「更多」
@@ -1611,7 +1475,8 @@ const { isPhone } = useBreakpoint()
 const BOTTOM_TAB_KEYS = ['warehouse', 'blueprints', 'fleet', 'search']
 const BOTTOM_COUNT = 4
 
-// ── 顯示的分頁（個人資料可勾選；存在帳號上 hidden_tabs，這台瀏覽器另存一份避免載入時閃一下）──
+// ── 顯示的分頁（個人資料可勾選；存在帳號上 hidden_tabs／shown_tabs，這台瀏覽器另存一份避免載入時閃一下）──
+// 一般分頁：勾掉的記在 hidden_tabs；後台設成「預設不顯示」的分頁：玩家自己打開的記在 shown_tabs
 const tabsCacheKey = () => `sc_player_hidden_tabs:${playerAuth.starCitizenId || ''}`
 function readTabsCache() {
   try {
@@ -1622,6 +1487,25 @@ function readTabsCache() {
   }
 }
 const hiddenTabs = ref(readTabsCache())
+const shownCacheKey = () => `sc_player_shown_tabs:${playerAuth.starCitizenId || ''}`
+const shownTabs = ref((() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(shownCacheKey()) || '[]')
+    return Array.isArray(v) ? v.filter(k => typeof k === 'string') : []
+  } catch {
+    return []
+  }
+})())
+function applyShownTabs(keys) {
+  shownTabs.value = (keys || []).filter(k => typeof k === 'string')
+  try { localStorage.setItem(shownCacheKey(), JSON.stringify(shownTabs.value)) } catch { /* 存不了就算了 */ }
+}
+/** 這個分頁現在要不要顯示（個人資料一定顯示） */
+function isTabShown(key) {
+  if (key === 'profile') return true
+  if (tabAccess.value[key] === 'hidden') return shownTabs.value.includes(key)
+  return !hiddenTabs.value.includes(key)
+}
 const savingTabs = ref(false)
 const tabsError = ref('')
 function applyHiddenTabs(keys) {
@@ -1629,8 +1513,7 @@ function applyHiddenTabs(keys) {
   try { localStorage.setItem(tabsCacheKey(), JSON.stringify(hiddenTabs.value)) } catch { /* 存不了就算了 */ }
 }
 // 被隱藏的分頁如果正好是目前這頁（例如從舊連結進來），還是照常顯示
-const visibleTabs = computed(() => orderedTabs.value.filter(t => t.key === 'profile' || t.key === activeTab.value
-  || !hiddenTabs.value.includes(t.key)))
+const visibleTabs = computed(() => orderedTabs.value.filter(t => t.key === activeTab.value || isTabShown(t.key)))
 const bottomTabs = computed(() => {
   const shown = visibleTabs.value.filter(t => t.key !== 'profile')
   const first = shown.filter(t => BOTTOM_TAB_KEYS.includes(t.key))   // 照後台排的順序
@@ -1641,57 +1524,27 @@ const moreTabs = computed(() => visibleTabs.value.filter(t => !bottomTabs.value.
 
 async function toggleTab(key, show) {
   if (key === 'profile') return
-  const before = hiddenTabs.value
-  const next = show ? before.filter(k => k !== key) : [...before, key]
+  const before = { hidden: hiddenTabs.value, shown: shownTabs.value }
+  let hidden = before.hidden
+  let shown = before.shown
+  if (tabAccess.value[key] === 'hidden') shown = show ? [...shown.filter(k => k !== key), key] : shown.filter(k => k !== key)
+  else hidden = show ? hidden.filter(k => k !== key) : [...hidden.filter(k => k !== key), key]
   tabsError.value = ''
-  applyHiddenTabs(next)
+  applyHiddenTabs(hidden)
+  applyShownTabs(shown)
   savingTabs.value = true
   const res = await playerAuth.playerFetch('/player/me/tabs', {
-    method: 'PUT', body: JSON.stringify({ hidden_tabs: next }),
+    method: 'PUT', body: JSON.stringify({ hidden_tabs: hidden, shown_tabs: shown }),
   })
   savingTabs.value = false
   const data = res ? await res.json().catch(() => null) : null
   if (!res?.ok || !data?.success) {
-    applyHiddenTabs(before)
+    applyHiddenTabs(before.hidden)
+    applyShownTabs(before.shown)
     tabsError.value = data?.message || '儲存失敗。'
   }
 }
 
-// ── 分頁列放不下時：左右箭頭、滑鼠滾輪橫向捲動、切換分頁時把目前分頁捲進畫面 ──
-const tabsListEl = ref(null)
-const tabsOverflow = reactive({ left: false, right: false })
-function updateTabsOverflow() {
-  const el = tabsListEl.value
-  if (!el) return
-  tabsOverflow.left = el.scrollLeft > 2
-  tabsOverflow.right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
-}
-function scrollTabs(dir) {
-  const el = tabsListEl.value
-  if (el) el.scrollBy({ left: dir * el.clientWidth * 0.7, behavior: 'smooth' })
-}
-function onTabsWheel(event) {
-  const el = tabsListEl.value
-  if (!el || el.scrollWidth <= el.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
-  event.preventDefault()
-  el.scrollLeft += event.deltaY
-}
-function revealActiveTab() {
-  nextTick(() => {
-    const el = tabsListEl.value?.querySelector('.nav-link.active')
-    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    updateTabsOverflow()
-  })
-}
-let tabsResizeObserver = null
-onMounted(() => {
-  if (tabsListEl.value && typeof ResizeObserver !== 'undefined') {
-    tabsResizeObserver = new ResizeObserver(updateTabsOverflow)
-    tabsResizeObserver.observe(tabsListEl.value)
-  }
-  revealActiveTab()
-})
-onBeforeUnmount(() => tabsResizeObserver?.disconnect())
 const moreOpen = ref(false)
 // 「更多」底部面板：Esc 關閉、開啟時焦點移進面板、關閉後回到「更多」按鈕
 const moreSheetEl = ref(null)
@@ -1718,11 +1571,13 @@ function subTabsOf(key) {
 // 而不是直接離開 /me。
 const route = useRoute()
 const validTabs = tabs.map(t => t.key)
-// 舊網址 ?tab=search&sub=commodities：商品購買地點已搬到倉庫
-const legacyCommodities = route.query.tab === 'search' && route.query.sub === 'commodities'
-const activeTab = ref(
-  validTabs.includes(route.query.tab) && !legacyCommodities ? route.query.tab : 'warehouse'
-)
+// 舊網址：商品購買地點（?tab=search|warehouse&sub=commodities、?tab=commodities）、
+// 物品資料（?tab=warehouse&sub=items、?tab=itemdata）改到「物品」分頁的兩個下層分頁
+const legacySub = (['search', 'warehouse'].includes(route.query.tab) && route.query.sub === 'commodities')
+  || route.query.tab === 'commodities' ? 'commodities'
+  : (route.query.tab === 'warehouse' && route.query.sub === 'items') || route.query.tab === 'itemdata' ? 'data' : ''
+const legacyCommodities = !!legacySub
+const activeTab = ref(legacySub ? 'items' : (validTabs.includes(route.query.tab) ? route.query.tab : 'warehouse'))
 
 /** 某個主分頁的預設下層分頁（沒有下層就回 ''）。 */
 function defaultSub(tabKey) {
@@ -1733,9 +1588,14 @@ function validSub(tabKey, sub) {
   return subTabsOf(tabKey).some(t => t.key === sub)
 }
 
-// 物品庫存上方的「新增／異動」（原本的新增物品＋庫存異動合併）。
-// 舊網址 ?tab=warehouse&sub=add|adjust（原本的獨立分頁）直接展開。
-const stockOpen = ref(activeTab.value === 'warehouse' && ['add', 'adjust'].includes(route.query.sub))
+// 倉庫 › 新增／異動：跳出視窗（components/StockWizard.vue）。舊網址 ?tab=warehouse&sub=add|adjust 一進來就打開
+const openStockOnMount = activeTab.value === 'warehouse' && ['add', 'adjust'].includes(route.query.sub)
+const stockWizardRef = ref(null)
+function onStockDone() {
+  loadMyInventory()
+  loadLocations()
+  loadHistory()
+}
 // 艦隊的「登記船艦資料」（?tab=fleet&sub=data 直接展開；原本的批量登記已併進來，舊網址 sub=bulk 也展開它）
 const fleetDataOpen = ref(activeTab.value === 'fleet' && ['data', 'bulk'].includes(route.query.sub))
 // 查詢的三個區塊：點開才顯示、才載入資料（舊網址 ?tab=search&sub=items|blueprints|fleet 直接展開）
@@ -1748,18 +1608,15 @@ const searchOpen = reactive(Object.fromEntries(SEARCH_SECTIONS.map(sec =>
   [sec.key, activeTab.value === 'search' && route.query.sub === sec.key])))
 // 倉庫的庫存紀錄同理（舊網址 ?sub=history 直接展開）
 const historyOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'history')
-// 倉庫的「物品資料」（?sub=items 直接展開）、「商品購買地點」（?sub=commodities，舊的查詢網址也導過來）
-const itemDataOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'items')
-const commodityOpen = ref(activeTab.value === 'warehouse' && (route.query.sub === 'commodities' || legacyCommodities))
 // 藍圖的「登記藍圖資料」（原本的藍圖資料＋批量登記合併；舊網址 sub=data|bulk 都展開它）
 const bpDataOpen = ref(activeTab.value === 'blueprints' && ['data', 'bulk'].includes(route.query.sub))
 const fleetImportOpen = ref(false)
 
-const activeSub = ref(
+const activeSub = ref(legacySub || (
   validSub(activeTab.value, route.query.sub)
     ? route.query.sub
     : defaultSub(activeTab.value)
-)
+))
 
 function syncUrl() {
   const query = { ...route.query, tab: activeTab.value }
@@ -1770,9 +1627,6 @@ function syncUrl() {
   router.replace({ query })
 }
 
-watch(activeTab, revealActiveTab)
-// 放在 activeTab 宣告之後：visibleTabs 用到 activeTab，watch 會立刻求值（TDZ）
-watch(visibleTabs, revealActiveTab)
 
 function setTab(key) {
   if (!validTabs.includes(key)) return
@@ -1781,6 +1635,13 @@ function setTab(key) {
   activeSub.value = defaultSub(key)
   syncUrl()
 }
+
+// 目前的分頁被後台設成「不開放」（例如舊連結、或剛載入到最新設定）：換到第一個看得到的分頁
+watch([activeTab, tabAccess], () => {
+  if (tabAccess.value[activeTab.value] !== 'closed') return
+  const next = orderedTabs.value.find(t => isTabShown(t.key)) || orderedTabs.value[0]
+  if (next) setTab(next.key)
+}, { immediate: true })
 
 function setSub(key) {
   if (!validSub(activeTab.value, key)) return
@@ -1874,6 +1735,9 @@ async function loadPlayer() {
   if (res.ok && data?.success) {
     player.value = data.data
     applyHiddenTabs(data.data.hidden_tabs)
+    applyShownTabs(data.data.shown_tabs)
+    tabAccess.value = data.data.tab_access && typeof data.data.tab_access === 'object' ? data.data.tab_access : {}
+    try { localStorage.setItem(TAB_ACCESS_CACHE, JSON.stringify(tabAccess.value)) } catch { /* 存不了就算了 */ }
     tabOrder.value = Array.isArray(data.data.tab_order) ? data.data.tab_order : []
     try { localStorage.setItem(TAB_ORDER_CACHE, JSON.stringify(tabOrder.value)) } catch { /* 存不了就算了 */ }
     profileForm.nickname     = data.data.nickname || ''
@@ -2036,206 +1900,6 @@ async function loadBlueprintOutputTypes() {
   if (res.ok && data?.success) blueprintOutputTypes.value = data.data || []
 }
 
-// ── 新增／異動（多筆）──────────────────────────────────────────
-//
-// 原本分成「新增物品」（只能增加）跟「庫存異動」（已登記的物品增減）兩張表單，
-// 合併成一張：每列各自選增加或減少。增加一個還沒登記的物品就是新增。
-// 後端沒有帶正負號的 delta API，增減是 /player/inventory/add 與 /remove 兩支，
-// 逐列由 endpointFor 決定（見 submitRows）。
-let rowKeySeq = 0
-function makeRow(direction = 'in') {
-  return {
-    key: ++rowKeySeq,
-    itemQuery: '', itemResults: [], selectedItem: null,
-    quantity: 1,
-    // row 不帶地點欄位：地點是整批共用的一份（stockLocation），放在表單最上面
-    note: '',
-    direction,
-    error: '',
-  }
-}
-const stockRows       = reactive([makeRow()])
-const stockSubmitting = ref(false)
-const stockSuccess    = ref('')
-const stockError      = ref('')
-
-// 共用的地點。刻意做成 location / locationResults / locationOpen 的形狀，
-// filterRowLocations、closeRowLocations、pickRowLocation 三個 helper 才能直接用。
-// system／planet 只是縮小地點候選（「星系／行星／地點」三段，見 utils/locationArea.js）。
-const stockLocation = reactive({ location: '', locationResults: [], locationOpen: false, system: '', planet: '' })
-const stockPickOptions = computed(() => areaOptions(locations.value,
-  { systems: stockLocation.system ? [stockLocation.system] : [],
-    planets: stockLocation.planet ? [stockLocation.planet] : [] },
-  { locLabel, sort: false }))
-
-// 一填了地點就把「請先選地點」的錯誤收掉，不然紅色錯誤跟下面綠色的
-// 「以下 3 筆都會套用到 Area18」會同時出現、互相矛盾。
-watch(() => stockLocation.location, (v) => {
-  if (v.trim()) stockError.value = ''
-})
-
-const searchTimers = new Map()
-
-function searchRowItems(row) {
-  row.selectedItem = null
-  clearTimeout(searchTimers.get(row.key))
-  const q = row.itemQuery.trim()
-  if (!q) { row.itemResults = []; return }
-  searchTimers.set(row.key, setTimeout(async () => {
-    const res = await playerAuth.playerFetch(`/item/search?q=${encodeURIComponent(q)}`)
-    if (!res) return
-    const data = await res.json().catch(() => null)
-    row.itemResults = (res.ok && data?.success) ? (data.data || []) : []
-  }, 300))
-}
-
-function pickRowItem(row, it) {
-  row.selectedItem = it
-  row.itemQuery = it.name
-  row.itemResults = []
-}
-
-// 物品庫存列表某一列按「異動」：打開新增／異動，地點、物品帶好，預設減少。
-// 表單裡已經填了別的列就加在後面，不蓋掉。
-function adjustStockRow(stockRow) {
-  stockOpen.value = true
-  pickRowLocation(stockLocation, stockRow.location || '')
-  const row = makeRow('out')
-  pickRowItem(row, { _id: stockRow.item_id, name: stockRow.item_name, name_zh: stockRow.item_name_zh })
-  const blank = stockRows.length === 1 && !stockRows[0].selectedItem && !stockRows[0].itemQuery
-  if (blank) stockRows.splice(0, 1, row)
-  else stockRows.push(row)
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function filterRowLocations(row) {
-  const q = row.location.trim().toLowerCase()
-  // 有選星系／行星的話只在那底下找
-  const pool = row === stockLocation ? stockPickOptions.value.locations.map(o => o.value) : locations.value
-  // 同時比對英文（loc 本身）跟中文對照（locZh），方便直接打中文搜尋地點
-  row.locationResults = q
-    ? pool.filter(loc =>
-        loc.toLowerCase().includes(q) || locZh(loc).includes(row.location.trim())
-      ).slice(0, 20)
-    : pool.slice(0, 20)
-  row.locationOpen = true
-}
-
-function closeRowLocations(row) {
-  // 延遲關閉，讓點擊選項的 click/mousedown 先觸發（不然 blur 會比 click 早跑，選不到）
-  setTimeout(() => { row.locationOpen = false }, 150)
-}
-
-function pickRowLocation(row, loc) {
-  row.location = loc
-  row.locationResults = []
-  row.locationOpen = false
-  // 選了地點就把星系／行星對上（地點資料庫查不到的就清掉，免得跟地點對不起來）
-  if ('system' in row) {
-    const a = areaOf(loc)
-    row.system = a.system
-    row.planet = a.planet
-  }
-}
-
-// endpointFor 是 function 而不是固定字串：庫存異動同一次送出可能有幾列增加、
-// 幾列減少，端點要逐列決定（後端沒有「帶正負號的 delta」這種 API，
-// 增減是 /player/inventory/add 與 /remove 兩支，見 app/player/view.py）。
-async function submitRows(rows, {
-  endpointFor, verbFor, location, resultRef, submittingRef, withNote, makeNextRow,
-}) {
-  resultRef.value = ''
-  // 地點是整批共用的一份，兩個呼叫端都已經在表單層級擋掉空值
-  // （才不會在每一列都印一次同樣的訊息）。這裡只是不信任呼叫端的保險。
-  if (!location) return
-  let ok = 0
-  const successNames = []
-
-  // 先拍快照再驗證與送出。
-  //
-  // 不拍快照的話 `for...of` 迭代的是 reactive 陣列本身，而迭代器每次 next()
-  // 都重讀 length —— 使用者在某一列還在 await 時按「再加一筆」，那個從未經過
-  // 驗證的空白列會被同一個迴圈掃到，`row.selectedItem._id` 對 null 取屬性丟出
-  // TypeError。而 Vue 3 的 callWithAsyncErrorHandling 會把它 .catch() 掉降級成
-  // console.error，所以畫面上**完全沒有徵兆**：前幾筆其實已經寫進後端了，
-  // 但成功訊息沒出現、列也沒被清掉，使用者幾乎一定會再按一次造成重複入庫。
-  // （下面的按鈕也一併 disabled，這裡的快照是第二道防線。）
-  const batch = [...rows]
-
-  for (const row of batch) {
-    row.error = ''
-    if (!row.selectedItem) { row.error = '請先從搜尋結果選擇物品'; continue }
-    if (!row.quantity || row.quantity <= 0) { row.error = '數量必須大於 0'; continue }
-  }
-  if (batch.some(r => r.error)) return
-
-  submittingRef.value = true
-  try {
-    for (const row of batch) {
-      const body = {
-        item: row.selectedItem._id,
-        quantity: row.quantity,
-        location,
-      }
-      if (withNote) body.note = (row.note || '').trim()
-
-      const res = await playerAuth.playerFetch(endpointFor(row), {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-      if (!res) { row.error = '網路錯誤，請稍後再試'; continue }
-      const data = await res.json().catch(() => null)
-      if (res.ok && data?.success) {
-        ok += 1
-        const d = data.data.delta
-        successNames.push(
-          `${data.data.item_name} ${d > 0 ? '+' : '-'}${Math.abs(d)} @ ${data.data.location}`)
-      } else {
-        row.error = data?.message || `${verbFor(row)}失敗`
-      }
-    }
-  } finally {
-    submittingRef.value = false
-  }
-
-  if (ok) {
-    resultRef.value = `已處理 ${ok} 筆：${successNames.join('；')}`
-    // 只清掉「這一批裡送成功的」，失敗的留著讓玩家修正。
-    //
-    // 判斷條件必須同時看「有沒有在 batch 裡」和「有沒有 error」：只看 error 的話，
-    // 送出期間才被加進來、根本沒被處理過的空白列（error 也是空的）會被當成
-    // 成功而清掉，使用者剛打的東西就這樣消失。
-    const done = new Set(batch.filter(r => !r.error))
-    for (let i = rows.length - 1; i >= 0; i--) {
-      if (done.has(rows[i])) rows.splice(i, 1)
-    }
-    if (!rows.length) rows.push(makeNextRow())
-    loadMyInventory()
-    loadLocations()
-    loadHistory()
-  }
-}
-
-// 倉庫 › 新增／異動：地點整批共用，方向逐列各自選
-function submitStockRows() {
-  stockError.value = ''
-  const loc = stockLocation.location.trim()
-  if (!loc) {
-    stockError.value = '請先在最上面輸入或選擇地點。'
-    return
-  }
-  return submitRows(stockRows, {
-    endpointFor: (row) => row.direction === 'in'
-      ? '/player/inventory/add'
-      : '/player/inventory/remove',
-    verbFor:     (row) => row.direction === 'in' ? '增加' : '減少',
-    location:    loc,
-    // 刻意不清掉 stockLocation，方便繼續處理同一個地點的下一批
-    makeNextRow: () => makeRow(),
-    resultRef: stockSuccess, submittingRef: stockSubmitting, withNote: true,
-  })
-}
-
 // ── 篩選區（倉庫分頁頂端共用一張：同一組條件同時篩物品庫存與庫存紀錄）──────
 // 庫存紀錄已經併成同一頁的展開區塊，上下兩份清單看同一個物品／地點才直覺。
 // '' = 全部。用 item_id 比對而不是名稱，見 InventoryFilterBar 的說明。
@@ -2243,9 +1907,11 @@ function submitStockRows() {
 // 物品名稱比對英文＋中文（含即符合）、物品類型比對 item_type；名稱＋類型也帶給「物品資料」。
 // buyable（只看買得到）只給物品資料用
 const stockFilter   = reactive({ q: '', types: [], systems: [], planets: [], locations: [], buyable: false, dismantlable: false, dismantle: [] })
+// 物品資料分頁自己的搜尋條件（名稱、類型、只看買得到、只看可拆解、拆解材料）
+const itemDataFilter = reactive({ q: '', types: [], buyable: false, dismantlable: false, dismantle: [] })
 const itemDataFilters = computed(() => ({
-  q: stockFilter.q.trim(), types: stockFilter.types, buyable: stockFilter.buyable,
-  dismantlable: stockFilter.dismantlable, dismantle: stockFilter.dismantle }))
+  q: itemDataFilter.q.trim(), types: itemDataFilter.types, buyable: itemDataFilter.buyable,
+  dismantlable: itemDataFilter.dismantlable, dismantle: itemDataFilter.dismantle }))
 
 // 拆解材料：拆解後會回收所選材料的物品 {物品 uuid: [符合的拆解回收]}（後端從藍圖的拆解回收反查）。
 // 物品庫存、庫存紀錄在前端篩，物品資料把條件帶去後端
@@ -2308,7 +1974,6 @@ const warehouseFilterCounts = computed(() => [
 function refreshWarehouse() {
   loadMyInventory()
   if (historyOpen.value) loadHistory()
-  if (itemDataOpen.value) itemDataRef.value?.refresh()
 }
 const itemDataRef = ref(null)
 
@@ -2366,10 +2031,8 @@ async function saveHome(name) {
   homeDraft.value = data.data.home_location || ''
   homeMessageType.value = 'alert-success'
   homeMessage.value = data.data.home_location ? `定居點已設為 ${locLabel(data.data.home_location)}` : '已清除定居點'
-  if (!data.data.home_location) moveAllOpen.value = false
 }
 
-const moveAllOpen = ref(false)
 const movingAll = ref(false)
 const moveAllMessage = ref('')
 const moveAllMessageType = ref('alert-success')
@@ -2378,7 +2041,7 @@ const moveAllPending = computed(() => myInventory.value.filter(r =>
   r.quantity > 0 && !(r.location === homeLocation.value && !r.container)))
 const moveAllUnits = computed(() => moveAllPending.value.reduce((n, r) => n + (r.quantity || 0), 0))
 const moveAllSources = computed(() => new Set(moveAllPending.value.map(r => `${r.location}|${r.container || ''}`)).size)
-watch(moveAllOpen, (v) => { if (v) moveAllMessage.value = '' })
+watch(homeOpen, (v) => { if (v) moveAllMessage.value = '' })
 
 async function moveAllHome() {
   movingAll.value = true
@@ -3378,7 +3041,7 @@ function exclusiveDrawers(refs) {
     if (on) refs.forEach((o, j) => { if (j !== i && o.value) o.value = false })
   }))
 }
-const warehouseDrawers = [itemDataOpen, stockOpen, historyOpen, commodityOpen, homeOpen, moveAllOpen]
+const warehouseDrawers = [historyOpen]
 exclusiveDrawers(warehouseDrawers)
 exclusiveDrawers(SEARCH_SECTIONS.map(sec => toRef(searchOpen, sec.key)))
 exclusiveDrawers([fleetDataOpen, fleetImportOpen])
@@ -3394,7 +3057,8 @@ onMounted(() => {
   loadBlueprints()
   // 直接以 ?tab=blueprints / ?tab=search&sub=blueprints 開場時補載
   loadForTab(activeTab.value, activeSub.value)
-  if (legacyCommodities) syncUrl()   // 舊的 ?tab=search&sub=commodities 改寫成倉庫
+  if (legacyCommodities) syncUrl()   // 舊網址改寫成新的分頁
+  if (openStockOnMount) stockWizardRef.value?.openNew()
 })
 
 onBeforeUnmount(() => {
@@ -3403,6 +3067,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.stock-paste-raw { font-size: 1rem; color: var(--sf-text-muted); }
 /* 持有船艦的蜂巢式下拉（列的樣式在 scifi-theme.css 的 .sf-tree-*） */
 .holder-ship { margin-bottom: .4rem; }
 .myfleet-info {

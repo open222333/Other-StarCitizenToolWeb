@@ -323,17 +323,13 @@
   backdrop-filter: blur(10px);
 }
 .scifi-tabs .nav-tabs {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  scroll-snap-type: x proximity;
-  scroll-padding-inline: 3.25rem;   /* 捲到目前分頁時不要被左右箭頭蓋住 */
+  /* 放不下就折到下一列（置中）；手機上分頁列改成底部導覽，這一列不顯示 */
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .scifi-tabs .nav-tabs::-webkit-scrollbar { display: none; }
 .scifi-tabs .nav-tabs .nav-link {
   white-space: nowrap;
-  scroll-snap-align: start;
   padding: .7rem 1.15rem;
   font-size: 1.1rem;
   font-weight: 600;
@@ -346,23 +342,6 @@
   background: rgba(var(--sf-accent-rgb), .12);
   border-bottom: 3px solid var(--sf-accent);
 }
-/* 放不下時的左右箭頭（MyPlayerView.vue：捲到最左／最右就藏起來） */
-.scifi-tabs__arrow {
-  position: absolute; top: 0; bottom: 1px; z-index: 2; width: 3.25rem;
-  display: flex; align-items: center; justify-content: center;
-  border: 0; padding: 0; color: var(--sf-text-strong); font-size: 1.15rem;
-}
-.scifi-tabs__arrow--left {
-  left: 0; background: linear-gradient(to right, rgba(var(--sf-topbar-rgb, 10, 14, 23), .98) 65%, transparent);
-}
-.scifi-tabs__arrow--right {
-  right: 0; background: linear-gradient(to left, rgba(var(--sf-topbar-rgb, 10, 14, 23), .98) 65%, transparent);
-}
-.scifi-tabs__arrow:hover { color: var(--sf-accent); }
-/* 置中：用頭尾 auto margin 而不是 justify-content: center——
- * 手機上放不下要橫向捲動時，center 會把最左邊的分頁切掉捲不到 */
-.scifi-tabs .nav-tabs .nav-item:first-child { margin-left: auto; }
-.scifi-tabs .nav-tabs .nav-item:last-child { margin-right: auto; }
 
 /* ── 內容區：滿版，但超寬螢幕上仍給一個上限避免行長到難讀 ── */
 .scifi-body {

@@ -22,6 +22,11 @@ export const PLAYER_TABS = [
     key: 'route', label: '航線', icon: 'bi bi-signpost-split',
     subTabs: [{ key: 'plan', label: '航線規劃' }, { key: 'contracts', label: '合約分配' }],
   },
+  // 物品：物品資料（物品主檔，唯讀）、商品購買地點（原本是倉庫上方的展開區塊）
+  {
+    key: 'items', label: '物品', icon: 'bi bi-database',
+    subTabs: [{ key: 'data', label: '物品資料' }, { key: 'commodities', label: '商品購買地點' }],
+  },
   // 貨艙網格：選船、擺貨櫃、3D 檢視（見 components/CargoLoader.vue；資料是 sc-cargo.space 的貨物網格）
   { key: 'cargo', label: '貨艙網格', icon: 'bi bi-boxes' },
   {
