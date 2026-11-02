@@ -130,10 +130,18 @@
                         @click="it[side.key].splice(pi, 1)"><i class="bi bi-trash"></i></button>
                     </div>
                   </div>
-                  <div class="d-flex">
+                  <div class="d-flex flex-wrap align-items-center gap-2">
                     <span class="cp-tag"></span>
-                    <button type="button" class="btn btn-sm btn-success ms-2" :disabled="it[side.key].length >= MAX_POINTS"
+                    <button type="button" class="btn btn-sm btn-success" :disabled="it[side.key].length >= MAX_POINTS"
                       @click="it[side.key].push(newPoint())"><i class="bi bi-plus-lg me-1"></i>加{{ side.label }}點</button>
+                    <button type="button" class="btn btn-sm" :class="fillOpen.has(fillKey(it, side)) ? 'btn-secondary' : 'btn-primary'"
+                      :aria-expanded="fillOpen.has(fillKey(it, side))" @click="toggleFill(it, side)">
+                      <i class="bi bi-stars me-1"></i>依星系填入</button>
+                    <span v-if="fillNotes[fillKey(it, side)]" class="sf-chip sf-chip--warn">{{ fillNotes[fillKey(it, side)] }}</span>
+                  </div>
+                  <div v-if="fillOpen.has(fillKey(it, side))" class="cp-fill mt-1">
+                    <SystemStopsFill :id="`cp-fill-${fillKey(it, side)}`" :places="base.places.value"
+                      @fill="rows => fillPoints(it, side, rows)" />
                   </div>
                 </div>
               </div>
@@ -257,6 +265,7 @@ import PlacePicker from '@/components/PlacePicker.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
+import SystemStopsFill from '@/components/SystemStopsFill.vue'
 import FuelStartInput from '@/components/FuelStartInput.vue'
 import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
@@ -274,9 +283,41 @@ const props = defineProps({
 const MAX_CONTRACTS = 10
 const MAX_ITEMS = 10
 const MAX_SQUADS = 6
-const MAX_POINTS = 10
+const MAX_POINTS = 30
 const SIDES = [{ key: 'pickups', label: '取貨' }, { key: 'dropoffs', label: '送貨' }]
 const STORAGE_KEY = 'sc_contracts_v1'
+
+// 每項貨物的取／送貨「依星系填入」面板（key＝貨物 key-取送）；填入後收起，超過上限的在旁邊提示
+const fillOpen = reactive(new Set())
+const fillNotes = reactive({})
+const fillKey = (it, side) => `${it.key}-${side.key}`
+function toggleFill(it, side) {
+  const k = fillKey(it, side)
+  if (fillOpen.has(k)) fillOpen.delete(k)
+  else fillOpen.add(k)
+  delete fillNotes[k]
+}
+function fillPoints(it, side, rows) {
+  const list = it[side.key]
+  const have = new Set(list.map(pt => pt.place.id).filter(Boolean))
+  let skipped = 0
+  for (const p of rows) {
+    if (have.has(p.id)) continue
+    const place = { id: p.id, text: placeLabel(p) }
+    const blank = list.find(pt => !pt.place.id && !pt.place.text)
+    if (blank) Object.assign(blank.place, place)
+    else if (list.length < MAX_POINTS) list.push(newPoint({ place }))
+    else {
+      skipped++
+      continue
+    }
+    have.add(p.id)
+  }
+  const k = fillKey(it, side)
+  fillOpen.delete(k)
+  if (skipped) fillNotes[k] = `已滿 ${MAX_POINTS} 個，${skipped} 個沒有填入`
+  else delete fillNotes[k]
+}
 
 let keySeq = 0
 const newPlace = (p = {}) => ({ id: p?.id || '', text: p?.text || '' })
@@ -632,6 +673,7 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .cp-index { min-width: 1.5rem; text-align: center; color: var(--sf-text-muted); }
 .cp-tag { min-width: 2.5rem; color: var(--sf-text-muted); }
 .cp-muted { color: var(--sf-text-muted); }
+.cp-fill { margin-left: 3rem; padding: .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
 /* 沒填完的欄位：紅框 */
 .cp-invalid :deep(.form-control) {
   border-color: var(--bs-danger) !important;
