@@ -168,7 +168,10 @@ def _state(dataset: str, doc: dict, override) -> dict:
 
 
 #: auto_reason() 會讀到的其他欄位
-_EXTRA_FIELDS = {'work_in_progress': 1, 'not_for_release': 1, 'key': 1, 'debug_name': 1, 'class_name': 1, 'type': 1}
+#: auto_reason() 會讀到的欄位（apply()／set_override() 只取這些）。auto_reason 新規則用到新欄位時要加在這裡，
+#: 否則讀到的永遠是 None、規則不會生效（tests/test_visibility.py 的 test_apply_items_uses_all_rule_fields 會抓）
+_EXTRA_FIELDS = {'work_in_progress': 1, 'not_for_release': 1, 'key': 1, 'debug_name': 1, 'class_name': 1,
+                 'type': 1, 'size': 1}
 
 STATE_FIELDS = ('player_visible_auto', 'player_hidden_reason', 'player_visible_override', 'player_visible')
 

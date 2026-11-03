@@ -71,6 +71,29 @@ def test_apply_and_override_survive_resync(app):
         V.set_override('nope', 'bp-ok', True)
 
 
+def test_apply_items_uses_all_rule_fields(app):
+    """走 apply() 實際路徑（只讀 projection 裡的欄位）：物品的每條自動規則都要生效。"""
+    col = get_db()['item_master']
+    col.delete_many({})
+    col.insert_many([
+        {'_id': 'ok', 'name': 'M7A Cannon', 'class_name': 'BEHR_LaserCannon_S6', 'type': 'WeaponGun', 'size': 6},
+        {'_id': 'cap', 'name': 'M9A Cannon', 'class_name': 'BEHR_LaserCannon_S7', 'type': 'WeaponGun', 'size': 7},
+        {'_id': 'low', 'name': 'M9A Cannon', 'class_name': 'BEHR_LaserCannon_S7_LowPoly', 'type': 'Cooler', 'size': 1},
+        {'_id': 'tank', 'name': 'Fuel Tank', 'class_name': 'TANK_S1', 'type': 'FuelTank', 'size': 1},
+    ])
+    assert V.apply('items') == 4
+    reasons = {r['_id']: (r['player_visible'], r.get('player_hidden_reason')) for r in col.find()}
+    assert reasons == {
+        'ok': (True, None),
+        'cap': (False, '主力艦武器（S7）'),
+        'low': (False, '遠景低模（BEHR_LaserCannon_S7_LowPoly）'),
+        'tank': (False, '船體內建零件（FuelTank）'),
+    }
+    # 手動改回顯示再取消，回到自動判斷（set_override 也只讀 projection 的欄位）
+    V.set_override('items', 'cap', True, 'admin')
+    assert V.set_override('items', 'cap', None)['player_visible'] is False
+
+
 @pytest.fixture
 def player_headers(client):
     client.post('/player/register', json={'nickname': 'Pilot', 'star_citizen_id': 'Pilot',
