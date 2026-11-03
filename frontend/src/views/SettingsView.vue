@@ -5,6 +5,9 @@
     <!-- 玩家頁分頁順序（全站設定，存在伺服器） -->
     <PlayerTabOrderCard />
 
+    <!-- 物品類型分組（全站設定，存在伺服器） -->
+    <ItemTypeGroupsCard />
+
     <!-- 外觀模式 -->
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body p-4">
@@ -151,6 +154,7 @@
 import { ref, computed } from 'vue'
 import { useThemeStore } from '@/stores/theme'
 import PlayerTabOrderCard from '@/components/PlayerTabOrderCard.vue'
+import ItemTypeGroupsCard from '@/components/ItemTypeGroupsCard.vue'
 
 const theme = useThemeStore()
 
