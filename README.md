@@ -126,6 +126,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 |------|-----|------|
 | **管理後台** | http://localhost:8080/admin/ | 使用者／玩家／藍圖／庫存管理、操作紀錄、資料同步排程、系統設定。需後台帳號登入 |
 | 玩家頁分頁順序與開放 | http://localhost:8080/admin/settings | 後台「系統設定」：拖拉排玩家頁分頁順序，每個分頁選「開放／預設不顯示／不開放」。預設不顯示＝玩家要在「個人資料 › 顯示的分頁」自己打開；不開放＝玩家看不到也打不開；「個人資料」一定開放。存在 `app_settings` 的 `player_tab_order`、`player_tab_access`（只記不是開放的分頁），玩家自己的勾選存在 `players.hidden_tabs`（勾掉的）／`shown_tabs`（自己打開的預設不顯示分頁）。API：`GET／PUT /player/settings/tab-order`（`tab_order`、`tab_access`）、`PUT /player/me/tabs` |
+| 物品類型分組 | http://localhost:8080/admin/settings | 後台「系統設定」：物品類型多選篩選（倉庫、新增／異動、物品頁）的分段，每組有名稱、類型（一個類型只能在一組）、代碼前綴（例如 `Char_Armor_`）；沒對到的歸「其他」，群組標題可整組勾選。存在 `app_settings` 的 `item_type_groups`，沒存＝程式預設（`DEFAULT_ITEM_TYPE_GROUPS`）。API：`GET /item/type-groups`（公開）、`PUT /item/type-groups` |
 | 後台登入 | http://localhost:8080/admin/login | 預設帳號 `admin`，密碼見 `.env` 的 `ADMIN_PASSWORD`（**必須改掉，否則 api 會拒絕啟動**） |
 | 玩家自助註冊 | http://localhost:8090/player/register | 公開，不需登入 |
 | **玩家登入** | http://localhost:8090/player/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
@@ -1055,6 +1056,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 （`src/models/visibility.py`）。同步完會自動判斷：名稱像佔位、開發中、測試用、內部代碼的不顯示；**物品另外依類型判斷
 「船體內建零件」**（`BUILTIN_ITEM_TYPES`：Turret、FlightController、FuelTank、QuantumFuelTank、Armor、SelfDestruct、
 MainThruster、ManneuverThruster、FuelIntake、WeaponDefensive），這些綁在特定船上、不在商店賣、不能放倉庫。
+另外 class_name 含 `_LowPoly` 的（主力艦遠景低模）、尺寸 S7 以上的 WeaponGun（主力艦武器，例如一整批同名的 M9A 加農砲）也不顯示。
 後台各資料庫頁可以逐筆手動改回顯示（存在 `player_visibility`，同步不會蓋掉）。
 
 玩家端的物品類型選單（`/item/types`、`/item/facets`）也只算玩家看得到的物品，選了不會是空的；後台照常看得到全部。
@@ -1081,7 +1083,7 @@ docker compose exec api python -c "from src.models import visibility; print(visi
 | `sync_runs` | run uuid | — | 每輪同步的統計與錯誤 |
 | `sync_jobs` | 同步項目 key（`items`、`missions`…） | 12 | 各資料庫的同步排程與上次結果（cron / enabled / last_*） |
 | `cargo_grid_master` | sc-cargo.space 檔名（例如 `c2_herc`） | ~106 | 飛船貨物網格（每格位置、長寬高、貨櫃大小限制）、對到的載具 `vehicle_uuids` |
-| `app_settings` | 設定名稱 | 少量 | 後台可改的系統設定：`uex_api_token`、`player_tab_order`（玩家頁分頁順序）、`player_tab_access`（分頁開放狀態） |
+| `app_settings` | 設定名稱 | 少量 | 後台可改的系統設定：`uex_api_token`、`player_tab_order`（玩家頁分頁順序）、`player_tab_access`（分頁開放狀態）、`item_type_groups`（物品類型分組） |
 | `player_visibility` | `<資料庫>:<id>` | 少量 | 後台手動設定的「玩家頁面顯示」（蓋過自動判斷，同步不會清掉） |
 | `inventory` | ObjectId | — | 庫存 |
 | `inventory_log` | ObjectId | — | 異動稽核日誌 |
