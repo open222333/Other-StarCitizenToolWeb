@@ -2,6 +2,7 @@
 
 - 玩家頁分頁的排列順序（PlayerTabOrder，後台「系統設定」）
 - 玩家頁分頁的開放狀態（PlayerTabAccess：開放／預設不顯示／不開放，後台「系統設定」）
+- 物品類型分組（ItemTypeGroups：物品類型多選篩選的分段，後台「系統設定」）
 
 UEX Corp API token：後台「資料同步排程」頁可以直接填，不用再改 `.env`
 重啟容器。後台填的優先；沒填就退回環境變數 `UEX_API_TOKEN`（舊的設定方式照樣能用）。
@@ -129,3 +130,81 @@ class PlayerTabAccess:
         _col().update_one({'_id': PLAYER_TAB_ACCESS_ID}, {'$set': {
             'value': clean, 'updated_at': datetime.utcnow(), 'updated_by': updated_by}}, upsert=True)
         return clean
+
+
+ITEM_TYPE_GROUPS_ID = 'item_type_groups'
+#: 物品類型代碼（item_master.type）／前綴的格式
+_ITEM_TYPE_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,63}$')
+ITEM_GROUPS_MAX = 30
+ITEM_GROUP_TYPES_MAX = 300
+ITEM_GROUP_PREFIXES_MAX = 10
+ITEM_GROUP_LABEL_MAX = 20
+#: 預設分組（沒存過、或「恢復預設」時用）。types＝完整代碼，prefixes＝代碼前綴（例如 Char_Armor_ 涵蓋各部位護甲）
+DEFAULT_ITEM_TYPE_GROUPS = [
+    {'label': '艦船組件', 'types': ['QuantumDrive', 'Shield', 'Radar', 'Cooler', 'PowerPlant', 'JumpDrive',
+                                'QuantumInterdictionGenerator', 'LifeSupportGenerator', 'EMP', 'ExternalFuelTank'],
+     'prefixes': []},
+    {'label': '艦船武器', 'types': ['WeaponGun', 'Missile', 'MissileLauncher', 'Bomb', 'BombLauncher',
+                                'GroundVehicleMissileLauncher', 'WeaponDefensive', 'Turret', 'TurretBase'],
+     'prefixes': []},
+    {'label': '採礦／打撈／牽引', 'types': ['WeaponMining', 'MiningModifier', 'SalvageHead', 'SalvageModifier',
+                                     'TractorBeam', 'TowingBeam'], 'prefixes': []},
+    {'label': '個人武器', 'types': ['WeaponPersonal', 'WeaponAttachment', 'Grenade'], 'prefixes': []},
+    {'label': '個人護甲', 'types': ['Suit'], 'prefixes': ['Char_Armor_']},
+    {'label': '服飾', 'types': [], 'prefixes': ['Char_Clothing_', 'Char_Accessory_']},
+    {'label': '消耗品', 'types': ['Food', 'Drink', 'Bottle', 'FPS_Consumable'], 'prefixes': []},
+    {'label': '塗裝／裝飾', 'types': ['Paints'], 'prefixes': ['Flair_']},
+]
+
+
+def _codes(value, limit: int, what: str) -> list:
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > limit \
+            or not all(isinstance(v, str) and _ITEM_TYPE_RE.match(v) for v in value):
+        raise ValueError(f'{what}格式錯誤')
+    return list(dict.fromkeys(value))
+
+
+class ItemTypeGroups:
+    """物品類型分組：多選篩選（frontend MultiSelectFilter）依群組分段、可整組勾選。
+    沒對到任何群組的類型由前端歸「其他」；同一個類型只能在一個群組（前綴重疊時排前面的群組優先）。"""
+
+    @staticmethod
+    def get() -> dict:
+        doc = _col().find_one({'_id': ITEM_TYPE_GROUPS_ID}) or {}
+        value = doc.get('value')
+        if not isinstance(value, list):
+            return {'groups': [dict(g) for g in DEFAULT_ITEM_TYPE_GROUPS], 'custom': False}
+        groups = [{'label': g.get('label'), 'types': list(g.get('types') or []), 'prefixes': list(g.get('prefixes') or [])}
+                  for g in value if isinstance(g, dict) and isinstance(g.get('label'), str)]
+        return {'groups': groups, 'custom': True}
+
+    @staticmethod
+    def set(groups, updated_by=None) -> dict:
+        """groups：[{label, types, prefixes}]；None／空陣列＝恢復預設。格式不對丟 ValueError。"""
+        if not groups:
+            _col().delete_one({'_id': ITEM_TYPE_GROUPS_ID})
+            return ItemTypeGroups.get()
+        if not isinstance(groups, list) or len(groups) > ITEM_GROUPS_MAX:
+            raise ValueError(f'分組最多 {ITEM_GROUPS_MAX} 個')
+        clean, labels, owner = [], set(), {}
+        for i, g in enumerate(groups, start=1):
+            if not isinstance(g, dict):
+                raise ValueError('分組格式錯誤')
+            label = g.get('label').strip() if isinstance(g.get('label'), str) else ''
+            if not label or len(label) > ITEM_GROUP_LABEL_MAX:
+                raise ValueError(f'第 {i} 組：名稱要 1～{ITEM_GROUP_LABEL_MAX} 個字')
+            if label in labels or label == '其他':
+                raise ValueError(f'第 {i} 組：名稱「{label}」重複')
+            labels.add(label)
+            types = _codes(g.get('types'), ITEM_GROUP_TYPES_MAX, f'{label}：類型')
+            for t in types:
+                if t in owner:
+                    raise ValueError(f'類型 {t} 同時在「{owner[t]}」和「{label}」')
+                owner[t] = label
+            prefixes = _codes(g.get('prefixes'), ITEM_GROUP_PREFIXES_MAX, f'{label}：前綴')
+            clean.append({'label': label, 'types': types, 'prefixes': prefixes})
+        _col().update_one({'_id': ITEM_TYPE_GROUPS_ID}, {'$set': {
+            'value': clean, 'updated_at': datetime.utcnow(), 'updated_by': updated_by}}, upsert=True)
+        return {'groups': clean, 'custom': True}

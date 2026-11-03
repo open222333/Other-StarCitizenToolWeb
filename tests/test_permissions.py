@@ -101,6 +101,8 @@ ADMIN_ROUTES = [
     # 玩家頁分頁順序（全站設定）
     ('GET',    '/player/settings/tab-order', READ_ROLES),
     ('PUT',    '/player/settings/tab-order', WRITE_ROLES),
+    # 物品類型分組（全站設定；讀取公開）
+    ('PUT',    '/item/type-groups',   WRITE_ROLES),
     # 稽核日誌
     ('GET',    '/log/',               READ_ROLES),
     # 庫存（寫入端）
@@ -278,6 +280,7 @@ UNGUARDED_ALLOWLIST = {
     'app_item.list_vehicle_size_classes',
     # 遊戲文字翻譯查詢：公開的遊戲在地化＋社群翻譯包，不需要 token（未登入頁面也要用）
     'app_item.lookup_translations',
+    'app_item.get_type_groups',       # 物品類型分組（篩選選單分段），跟翻譯一樣是公開的顯示設定
     'app_item.vehicle_facets',        # 上面幾支合成一次回應＋類型，玩家頁艦隊／持有船艦要用
     'app_item.item_facets',           # 物品篩選選單選項，公開遊戲資料
     'app_item.get_item_uex_prices',   # 物品 UEX 買賣價格與終端，公開遊戲資料

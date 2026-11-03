@@ -17,6 +17,7 @@ from src.models import uex_item_price, uex_vehicle_price
 from src.models.item_stats import describe as describe_item
 from src.models.mission import Faction, Mission
 from src.models.inventory import uscu_to_scu
+from src.models.app_setting import ItemTypeGroups
 from src.models.log import Log
 from src.models.sync_schedule import (JOB_KEYS, SCHEDULE_TZ, SyncJobs, SyncScheduleError,
                                       order_jobs)
@@ -224,6 +225,50 @@ def list_types():
         description: 成功
     """
     return jsonify({'success': True, 'data': ItemMaster.types(visible_only=not viewer_sees_hidden())})
+
+
+@app_item.route('/type-groups', methods=['GET'])
+@limiter.limit('120 per minute')
+def get_type_groups():
+    """物品類型分組（類型多選篩選的分段；沒對到的類型歸「其他」）。公開，跟翻譯查詢一樣不用登入。
+    ---
+    tags: [Item]
+    responses:
+      200:
+        description: 成功，data.groups [{label, types, prefixes}]、data.custom（false＝程式預設）
+    """
+    return jsonify({'success': True, 'data': ItemTypeGroups.get()})
+
+
+@app_item.route('/type-groups', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_type_groups():
+    """設定物品類型分組（後台「系統設定」）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        schema:
+          properties:
+            groups: {type: array, items: {type: object}, description: "[{label, types: [類型代碼], prefixes: [代碼前綴]}]，由上到下；空陣列＝恢復預設"}
+    responses:
+      200:
+        description: 成功，data.groups、data.custom
+      400:
+        description: 格式錯誤
+    """
+    data = request.get_json(silent=True) or {}
+    username = get_jwt_identity()
+    try:
+        result = ItemTypeGroups.set(data.get('groups'), updated_by=username)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    Log.create(username, 'set_item_type_groups', '物品類型分組：' + (
+        '、'.join(f"{g['label']}（{len(g['types']) + len(g['prefixes'])}）" for g in result['groups'])
+        if result['custom'] else '恢復預設'), success=True)
+    return jsonify({'success': True, 'data': result})
 
 
 @app_item.route('/<item_id>', methods=['GET'])
