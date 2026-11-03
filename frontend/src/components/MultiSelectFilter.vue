@@ -26,14 +26,27 @@
       <input v-if="searchable" ref="searchEl" v-model="query" type="search"
         class="form-control form-control-sm mb-1" :aria-label="`篩選${label}選項`">
       <div v-if="!visibleOptions.length" class="small hint px-2 py-2">沒有選項</div>
-      <label v-for="opt in visibleOptions" :key="opt.value" class="multi-select-filter__item">
-        <input
-          type="checkbox" class="form-check-input me-1"
-          :checked="modelValue.includes(opt.value)"
-          @change="toggle(opt.value, $event.target.checked)"
-        >
-        <span class="small">{{ opt.label }}</span>
-      </label>
+      <!-- 選項有 group 時分段：群組標題可整組勾選（部分勾選時顯示半選） -->
+      <template v-for="g in visibleGroups" :key="g.key">
+        <label v-if="g.label" class="multi-select-filter__item multi-select-filter__group">
+          <input
+            type="checkbox" class="form-check-input me-1"
+            :checked="groupState(g) === 'all'" :indeterminate="groupState(g) === 'some'"
+            @change="toggleGroup(g, $event.target.checked)"
+          >
+          <span class="small fw-semibold">{{ g.label }}</span>
+          <span class="small ms-1 multi-select-filter__count">{{ g.options.length }}</span>
+        </label>
+        <label v-for="opt in g.options" :key="opt.value" class="multi-select-filter__item"
+          :class="{ 'multi-select-filter__item--sub': g.label }">
+          <input
+            type="checkbox" class="form-check-input me-1"
+            :checked="modelValue.includes(opt.value)"
+            @change="toggle(opt.value, $event.target.checked)"
+          >
+          <span class="small">{{ opt.label }}</span>
+        </label>
+      </template>
       <div v-if="modelValue.length" class="multi-select-filter__footer">
         <button type="button" class="btn btn-sm btn-warning" @click="clear">清除已選</button>
       </div>
@@ -73,9 +86,42 @@ const visibleOptions = computed(() => {
     `${o.label} ${o.value}`.toLowerCase().includes(q))
 })
 
+// 分段：沒有 group 的選項整批一段（不顯示標題）；有 group 的照 groupIndex（沒給就照出現順序）排
+function groupsOf(options) {
+  const map = new Map()
+  for (const o of options) {
+    const key = o.group || ''
+    if (!map.has(key)) map.set(key, { key: key || '_', label: o.group || '', index: o.groupIndex ?? map.size, options: [] })
+    map.get(key).options.push(o)
+  }
+  const list = [...map.values()]
+  return list.some(g => g.label) ? list.sort((a, b) => a.index - b.index) : list
+}
+const visibleGroups = computed(() => groupsOf(visibleOptions.value))
+function groupState(g) {
+  const n = g.options.filter(o => props.modelValue.includes(o.value)).length
+  return n === 0 ? 'none' : n === g.options.length ? 'all' : 'some'
+}
+function toggleGroup(g, checked) {
+  const next = new Set(props.modelValue)
+  for (const o of g.options) {
+    if (checked) next.add(o.value); else next.delete(o.value)
+  }
+  emit('update:modelValue', Array.from(next))
+}
+
+// 已選摘要：整組都選了就只寫群組名稱
 const selectedSummary = computed(() => {
   const byValue = new Map(normalizedOptions.value.map(o => [o.value, o.label]))
-  return props.modelValue.map(v => byValue.get(v) ?? String(v)).join('、')
+  const selected = new Set(props.modelValue)
+  const parts = []
+  for (const g of groupsOf(normalizedOptions.value)) {
+    if (g.label && g.options.length > 1 && g.options.every(o => selected.has(o.value))) {
+      parts.push(g.label)
+      g.options.forEach(o => selected.delete(o.value))
+    }
+  }
+  return [...parts, ...[...selected].map(v => byValue.get(v) ?? String(v))].join('、')
 })
 
 async function toggleOpen() {
@@ -158,6 +204,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   white-space: nowrap;
   color: inherit;
 }
+.multi-select-filter__group { margin-top: .2rem; border-top: 1px solid var(--bs-border-color); }
+.multi-select-filter__group:first-of-type { margin-top: 0; border-top: 0; }
+.multi-select-filter__item--sub { padding-left: 1.4rem; }
+.multi-select-filter__count { opacity: .7; }
 .multi-select-filter__item:hover { background: var(--sf-popover-hover, var(--bs-tertiary-bg)); }
 
 .multi-select-filter__footer {
