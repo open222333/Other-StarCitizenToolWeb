@@ -88,6 +88,11 @@ BUILTIN_ITEM_TYPES = frozenset({
     'MainThruster', 'ManneuverThruster', 'FuelIntake', 'WeaponDefensive',
 })
 
+#: 遠景低模：主力艦遠距離顯示用的低面數模型（例如 BEHR_LaserCannon_S7_LowPoly），名稱跟本體一樣
+_LOWPOLY_RE = re.compile(r'(^|_)lowpoly(_|$)', re.IGNORECASE)
+#: 船用武器（WeaponGun）這個尺寸以上是主力艦武器：玩家買不到也拆不下來（M9A 等一整批同名的變體）
+CAPITAL_WEAPON_SIZE = 7
+
 
 def unfinished_reason(name) -> Optional[str]:
     """名稱明顯是佔位／開發中／測試用的 → 原因；看起來正常回 None。"""
@@ -110,6 +115,11 @@ def auto_reason(dataset: str, doc: dict) -> Optional[str]:
         return reason
     if dataset == 'items' and doc.get('type') in BUILTIN_ITEM_TYPES:
         return f'船體內建零件（{doc.get("type")}）'
+    if dataset == 'items' and isinstance(doc.get('class_name'), str) and _LOWPOLY_RE.search(doc['class_name']):
+        return f'遠景低模（{doc["class_name"]}）'
+    if dataset == 'items' and doc.get('type') == 'WeaponGun' and isinstance(doc.get('size'), (int, float)) \
+            and doc['size'] >= CAPITAL_WEAPON_SIZE:
+        return f'主力艦武器（S{doc["size"]:g}）'
     code = doc.get(_KEY_FIELDS.get(dataset, ''))
     if isinstance(code, str) and _KEY_UNFINISHED_RE.search(code):
         return f'代碼含測試／範本標記（{code}）'

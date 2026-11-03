@@ -22,6 +22,12 @@ def test_auto_reason_uses_codes_and_flags():
     assert V.auto_reason('mining_deposits', {'deposit_name': 'Shale Deposit', 'key': 'MineableRock_Shale'}) is None
     assert V.auto_reason('vehicles', {'name': 'RSI Meteor', 'class_name': 'RSI_Meteor_TEMP_LaserRepeater'})
     assert V.auto_reason('missions', {'title': 'Bounty', 'work_in_progress': True}) == '上游標記開發中'
+    # 物品：遠景低模、主力艦武器（S7 以上的 WeaponGun）
+    low = {'name': 'M9A Cannon', 'class_name': 'BEHR_LaserCannon_S7_LowPoly', 'type': 'WeaponGun', 'size': 7}
+    assert V.auto_reason('items', low) == '遠景低模（BEHR_LaserCannon_S7_LowPoly）'
+    assert V.auto_reason('items', {**low, 'class_name': 'BEHR_LaserCannon_S7'}) == '主力艦武器（S7）'
+    assert V.auto_reason('items', {**low, 'class_name': 'BEHR_LaserCannon_S6', 'size': 6}) is None
+    assert V.auto_reason('items', {**low, 'class_name': 'KLWE_Shield_S7', 'type': 'Shield'}) is None
     assert V.auto_reason('missions', {'title': 'Bounty', 'not_for_release': True}) == '上游標記不公開'
     assert V.auto_reason('missions', {'title': 'Bounty', 'released': False}) is None
 
