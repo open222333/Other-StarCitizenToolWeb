@@ -135,27 +135,56 @@ def test_single_point_scu_is_optional_and_totals_must_match(haulers):
 
 
 def test_pickup_amounts_can_be_unknown(haulers):
-    # 不知道兩個取貨點各有多少：每個取貨點都要去，平均分（各 7），再依距離配
+    """沒填 SCU 的取貨點有兩個以上：不猜各點有多少，同一隊一趟去完（第一個點就預留全部量）再送。"""
     item = {'cargo': 'Food', 'pickups': [{'place': 'stA'}, {'place': 'stC'}],
             'dropoffs': [{'place': 'outA', 'scu': 8}, {'place': 'stC', 'scu': 6}]}
     res = haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}], contracts=[{'name': 'A', 'items': [item]}])
-    flows = sorted((a['pickup']['id'], a['dropoff']['id'], a['scu']) for a in res['plans'][0]['allocation'])
-    assert flows == [('stA', 'outA', 7), ('stC', 'outA', 1), ('stC', 'stC', 6)]
-    # 遠的取貨點也一定要去
-    far = {'cargo': 'Food', 'pickups': [{'place': 'stA'}, {'place': 'stY'}], 'dropoffs': [{'place': 'stA', 'scu': 4}]}
-    res = haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}], contracts=[{'name': 'A', 'items': [far]}])
-    assert {a['pickup']['id'] for a in res['plans'][0]['allocation']} == {'stA', 'stY'}
+    plan = res['plans'][0]
+    alloc = plan['allocation']
+    assert all(a['unknown'] for a in alloc) and len({a['squad'] for a in alloc}) == 1
+    assert all({p['id'] for p in a['pickups']} == {'stA', 'stC'} for a in alloc)
+    assert sorted((a['dropoff']['id'], a['scu']) for a in alloc) == [('outA', 8), ('stC', 6)]
+    legs = plan['squads'][0]['plan']['legs']
+    picks = [k for k, l in enumerate(legs) if l['action'] == 'pickup']
+    drops = [k for k, l in enumerate(legs) if l['action'] == 'dropoff']
+    assert len(picks) == 2 and max(picks) < min(drops), '取貨點都去完才送'
+    assert all(legs[k]['scu'] is None and legs[k]['scu_unknown'] for k in picks)
+    assert legs[picks[0]]['load_after'] == 14, '第一個取貨點就預留全部量'
+    _check_plan(plan)
+    # 剩下的量很少也一樣每個點都去
     one = {'cargo': 'Food', 'pickups': [{'place': 'stA'}, {'place': 'stY'}], 'dropoffs': [{'place': 'stC', 'scu': 1}]}
-    with pytest.raises(nav.RouteError, match='去不完'):
-        haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}], contracts=[{'name': 'A', 'items': [one]}])
-    # 有填的一定拿完，其餘找沒填的
+    res = haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}], contracts=[{'name': 'A', 'items': [one]}])
+    assert {p['id'] for p in res['plans'][0]['allocation'][0]['pickups']} == {'stA', 'stY'}
+    # 只剩一個沒填的：數量就是剩下的量，照一般任務
     item['pickups'][1]['scu'] = 10
     res = haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}], contracts=[{'name': 'A', 'items': [item]}])
     flows = sorted((a['pickup']['id'], a['dropoff']['id'], a['scu']) for a in res['plans'][0]['allocation'])
     assert sum(f[2] for f in flows if f[0] == 'stC') == 10 and sum(f[2] for f in flows) == 14
+    assert not any(a['unknown'] for a in res['plans'][0]['allocation'])
     item['pickups'][1]['scu'] = 14
     with pytest.raises(nav.RouteError, match='沒有貨可拿'):
         haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}], contracts=[{'name': 'A', 'items': [item]}])
+    # 量不知道就不能拆趟：超過最大貨艙要填數量
+    big = {'cargo': 'Food', 'pickups': [{'place': 'stA'}, {'place': 'stC'}], 'dropoffs': [{'place': 'stY', 'scu': 30}]}
+    with pytest.raises(nav.RouteError, match='超過最大貨艙'):
+        haul.plan_contracts(start_id='stA', squads=[{'ship': 'small'}], contracts=[{'name': 'A', 'items': [big]}])
+
+
+def test_unknown_pickups_in_sequence_and_replan(haulers):
+    st = lambda place, kind, scu=None, unknown=False: {
+        'place': place, 'kind': kind, 'scu': scu, 'cargo': 1, 'contract': 1, 'contract_name': 'C1', 'item': 1,
+        'item_name': 'Ore', **({'scu_unknown': True} if unknown else {})}
+    legs = haul.evaluate_sequence(start_id='stA', ship_id='big', steps=[
+        st('stA', 'pickup', unknown=True), st('stC', 'pickup', unknown=True), st('stY', 'dropoff', 10)])['plan']['legs']
+    assert [l['load_after'] for l in legs] == [10, 10, 0]
+    with pytest.raises(nav.RouteError, match='還沒去完'):
+        haul.evaluate_sequence(start_id='stA', ship_id='big', steps=[
+            st('stA', 'pickup', unknown=True), st('stY', 'dropoff', 10), st('stC', 'pickup', unknown=True)])
+    # 中途重新規劃：已經去過第一個取貨點（整趟已預留在貨艙），還剩一個取貨點
+    legs = haul.replan_squad(start_id='stA', ship_id='big', onboard=['1'],
+                             steps=[st('stC', 'pickup', unknown=True), st('stY', 'dropoff', 10)])['plan']['legs']
+    assert legs[0]['load_before'] == 10 and [l['action'] for l in legs] == ['pickup', 'dropoff']
+    assert legs[-1]['load_after'] == 0
 
 
 def test_external_cargo_needs_loading_dock(haulers):

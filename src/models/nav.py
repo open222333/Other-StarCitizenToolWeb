@@ -58,7 +58,7 @@ HEURISTIC_SECONDS = 1.0
 MAX_CARGO = 8
 CACHE_TTL = 300
 #: 事件帶到航段的額外欄位（合約分配用）
-LEG_EXTRA = ('contract', 'contract_name', 'item', 'item_name', 'item_named')
+LEG_EXTRA = ('contract', 'contract_name', 'item', 'item_name', 'item_named', 'scu_unknown')
 
 PLANS = (
     ('fastest', '最快'),

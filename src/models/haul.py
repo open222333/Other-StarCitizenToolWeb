@@ -3,8 +3,11 @@
 輸入：
   - 合約（最多 MAX_CONTRACTS 份），每份有幾項貨物：{貨物名稱, 取貨點 [{地點, SCU}], 送貨點 [{地點, SCU}]}。
     貨物只能送到「同一份合約」的送貨點（同名貨物、不同合約也不能互相繳交）；
-    同一項貨物有好幾個取貨點、送貨點時，先依距離把取貨點配給送貨點（_pair，近的先配；
-    每個取貨點都一定會去，沒填 SCU 的平均分），變成幾組綁定的取貨→送貨。
+    同一項貨物有好幾個取貨點、送貨點時，先依距離把有填 SCU 的取貨點配給送貨點（_pair，近的先配），
+    變成幾組綁定的取貨→送貨。
+    沒填 SCU 的取貨點（有些任務不會告知各點有多少，但每個點都有貨、至少要去一次）有兩個以上時不猜數量：
+    合成一個「收集任務」——同一隊一趟依序去完這些取貨點（貨艙從第一個點起就預留剩下的全部量，不會超載），
+    再送到還缺貨的送貨點；只有一個沒填的取貨點時數量就是剩下的量，照一般任務處理。
   - 小隊（最多 MAX_SQUADS 隊），各自的船、量子引擎、起點（不填＝共同起點）。
 
 做法：
@@ -56,6 +59,36 @@ def _split(scu: float, parts: int) -> list:
     return [scu / parts] * parts
 
 
+def _stops_of(task: dict, sign: int) -> list:
+    """任務的取貨串（sign > 0）或送貨串 → [(地點, 載貨量變化)]。
+    一般任務各一個點；收集任務（unknown）取貨是好幾個點、量不知道：第一個點就算進整趟的量（預留貨艙），其餘 0。"""
+    if sign > 0:
+        return [(n, task['scu'] if k == 0 else 0.0) for k, n in enumerate(task['pickups'])]
+    return [(n, -amount) for n, amount in task['drops']]
+
+
+def _chain(items: list, distance, node=lambda x: x, after=None) -> list:
+    """一串點的拜訪順序（最近鄰；node 取出地點）：after 有給就從離它最近的開始，
+    否則每個起點都試、取總距離最短的。"""
+    if len(items) <= 1:
+        return list(items)
+
+    def walk(first):
+        order, rest = [first], [i for i in range(len(items)) if i != first]
+        while rest:
+            nxt = min(rest, key=lambda i: distance(node(items[order[-1]]), node(items[i])))
+            order.append(nxt)
+            rest.remove(nxt)
+        return [items[i] for i in order]
+
+    def length(o):
+        return sum(distance(node(a), node(b)) for a, b in zip(o, o[1:]))
+
+    if after is not None:
+        return walk(min(range(len(items)), key=lambda i: distance(after, node(items[i]))))
+    return min((walk(i) for i in range(len(items))), key=length)
+
+
 class _Squad:
     """一個小隊的航線成本計算（插入、整條重算），成本單位看方案：時間（秒）或油量。"""
 
@@ -75,17 +108,18 @@ class _Squad:
         return self._memo[key]
 
     def cost(self, seq: list) -> float:
-        """seq：[(任務, +1 取貨／-1 送貨)]；超過貨艙回 inf。"""
+        """seq：[(任務, +1 取貨／-1 送貨)]；超過貨艙回 inf。
+        任務的取貨、送貨各是一串地點（_stops_of）：取貨在第一個點就加上整趟的量，送貨每個點扣各自的量。"""
         if not seq:
             return 0.0
         cur, load, total = self.start, 0.0, 0.0
         for task, sign in seq:
-            node = task['pickup'] if sign > 0 else task['dropoff']
-            total += self.leg(cur, node, load)
-            load += sign * task['scu']
-            if load > self.cap + 1e-9:
-                return math.inf
-            cur = node
+            for node, delta in _stops_of(task, sign):
+                total += self.leg(cur, node, load)
+                load += delta
+                if load > self.cap + 1e-9:
+                    return math.inf
+                cur = node
         if self.end:
             total += self.leg(cur, self.end, load)
         return total
@@ -95,18 +129,27 @@ class _Squad:
 
         挑位置時用空載的航段成本估「多繞的路」（O(n²)），挑好之後整條用實際載重重算一次。"""
         n, scu, cap = len(seq), task['scu'], self.cap
-        pick, drop = task['pickup'], task['dropoff']
-        nodes, loads, load = [], [], 0.0
+        # 每一段（取貨串／送貨串）的進入點、離開點；串內的路程是固定的
+        enter, leave, loads, load = [], [], [], 0.0
         for t, sign in seq:
-            nodes.append(t['pickup'] if sign > 0 else t['dropoff'])
+            chain = _stops_of(t, sign)
+            enter.append(chain[0][0])
+            leave.append(chain[-1][0])
             load += sign * t['scu']
             loads.append(load)
 
         def leg(a, b):
             return self.leg(a, b, 0.0) if a is not None and b is not None else 0.0
 
+        def inner(chain):
+            return sum(leg(a[0], b[0]) for a, b in zip(chain, chain[1:]))
+
+        picks, drops = _stops_of(task, 1), _stops_of(task, -1)
+        pick_in, pick_out, pick_len = picks[0][0], picks[-1][0], inner(picks)
+        drop_in, drop_out, drop_len = drops[0][0], drops[-1][0], inner(drops)
+
         def around(i):
-            return (self.start if i == 0 else nodes[i - 1]), (nodes[i] if i < n else self.end)
+            return (self.start if i == 0 else leave[i - 1]), (enter[i] if i < n else self.end)
 
         best = (math.inf, None, None)
         for i in range(n + 1):
@@ -114,17 +157,17 @@ class _Squad:
                 continue
             prev, nxt = around(i)
             base = leg(prev, nxt)
-            c = leg(prev, pick) + leg(pick, drop) + leg(drop, nxt) - base
+            c = leg(prev, pick_in) + pick_len + leg(pick_out, drop_in) + drop_len + leg(drop_out, nxt) - base
             if c < best[0]:
                 best = (c, i, i)
-            add_pick = leg(prev, pick) + leg(pick, nxt) - base
+            add_pick = leg(prev, pick_in) + pick_len + leg(pick_out, nxt) - base
             peak = -math.inf
             for j in range(i + 1, n + 1):
                 peak = max(peak, loads[j - 1])
                 if peak + scu > cap + 1e-9:
                     break
                 pj, nj = around(j)
-                c = add_pick + leg(pj, drop) + leg(drop, nj) - leg(pj, nj)
+                c = add_pick + leg(pj, drop_in) + drop_len + leg(drop_out, nj) - leg(pj, nj)
                 if c < best[0]:
                     best = (c, i, j)
         if best[1] is None:
@@ -236,15 +279,23 @@ def _events_of(seq: list) -> list:
     """seq → nav 的事件（取貨／送貨，送貨要先取貨）。"""
     events, pick_index = [], {}
     for task, sign in seq:
-        common = {'cargo': task['id'] + 1, 'scu': task['scu'], 'contract': task['contract'],
+        common = {'cargo': task['id'] + 1, 'contract': task['contract'],
                   'contract_name': task['contract_name'], 'item': task['item'], 'item_name': task['item_name'],
                   'item_named': task['item_named']}
         if sign > 0:
-            pick_index[task['id']] = len(events)
-            events.append({'node': task['pickup'], 'delta': task['scu'], 'need': None, 'kind': 'pickup', **common})
+            # 收集任務：量不知道（scu None、scu_unknown），第一個點預留整趟的量；
+            # 取貨點照順序（後一個要先去前一個，重排時預留的那個點一定最先到，貨艙不會算少）
+            prev = None
+            for node, delta in _stops_of(task, 1):
+                events.append({'node': node, 'delta': delta, 'need': prev, 'kind': 'pickup', **common,
+                               'scu': None if task['unknown'] else task['scu'],
+                               **({'scu_unknown': True} if task['unknown'] else {})})
+                prev = len(events) - 1
+            pick_index[task['id']] = prev
         else:
-            events.append({'node': task['dropoff'], 'delta': -task['scu'], 'need': pick_index[task['id']],
-                           'kind': 'dropoff', **common})
+            for node, delta in _stops_of(task, -1):
+                events.append({'node': node, 'delta': delta, 'need': pick_index[task['id']],
+                               'kind': 'dropoff', **common, 'scu': -delta})
     return events
 
 
@@ -253,6 +304,9 @@ def _polish(squad: _Squad, seq: list) -> list:
     if len(seq) <= 2:
         return seq
     events = _events_of(seq)
+    # 有好幾個點的任務（收集任務）：事件跟 seq 不是一對一，重排結果對不回 seq，不重排
+    if len(events) != len(seq):
+        return seq
     # 事件太多時 nav._order 走近似排序（每次最多 HEURISTIC_SECONDS），三種方案 × 多隊會拖太久；分配搜尋已經排過
     if len(events) > nav.EXACT_LIMIT:
         return seq
@@ -319,20 +373,19 @@ def _item_points(it: dict, label: str, node) -> tuple:
     return supply, demand
 
 
-def _pair(supply: list, demand: list, distance) -> list:
-    """多個取貨點 → 多個送貨點：同一份合約的同一種貨物可以互相送 → [(取貨點, 送貨點, SCU)]。
+def _pair(supply: list, demand: list, distance) -> tuple:
+    """多個取貨點 → 多個送貨點：同一份合約的同一種貨物可以互相送 → (flows, collect)。
 
-    每個取貨點都一定要去：沒填 SCU 的取貨點平均分掉「送貨合計 − 有填的取貨合計」
-    （整數 SCU 拆成整數），所以每個點都至少拿一點；接著每次挑剩下最近的一組，送 min(剩餘取貨, 剩餘需求)。"""
+    flows：[(取貨點, 送貨點, SCU)]，有填 SCU 的取貨點，每次挑剩下最近的一組，送 min(剩餘取貨, 剩餘需求)。
+    collect：沒填 SCU 的取貨點有兩個以上時 {pickups: [取貨點], drops: [(送貨點, 還缺的 SCU)], scu: 合計}，
+    不猜各點有多少（見模組說明）；只有一個沒填的就是剩下的量，併進 flows。沒有沒填的回 None。"""
     left_out = [[n, scu] for n, scu in demand]
     flexible = [n for n, scu in supply if scu is None]
     left_in = [[n, scu] for n, scu in supply if scu is not None]
-    if flexible:
-        rest = sum(scu for _, scu in left_out) - sum(scu for _, scu in left_in)
-        shares = _split(rest, len(flexible))
-        if min(shares) <= 1e-9:
-            raise RouteError(f'沒填 SCU 的取貨點有 {len(flexible)} 個，剩下要取的只有 {rest:g} SCU，每個點都去不完')
-        left_in += [[n, share] for n, share in zip(flexible, shares)]
+    rest = sum(scu for _, scu in left_out) - sum(scu for _, scu in left_in)
+    if len(flexible) == 1:
+        left_in.append([flexible[0], rest])
+        flexible = []
     pairs = sorted((distance(a[0], b[0]), i, j) for i, a in enumerate(left_in) for j, b in enumerate(left_out))
     flows = []
     for _, i, j in pairs:
@@ -342,7 +395,16 @@ def _pair(supply: list, demand: list, distance) -> list:
         flows.append((left_in[i][0], left_out[j][0], amount))
         left_in[i][1] -= amount
         left_out[j][1] -= amount
-    return flows
+    if not flexible:
+        return flows, None
+    need = [(n, scu) for n, scu in left_out if scu > 1e-9]
+    pickups = _chain(flexible, distance)
+    # 方向：取貨串的最後一個點離送貨點近的那頭（另一頭就是出發時先去的）
+    near = lambda n: min(distance(n, d) for d, _ in need)  # noqa: E731
+    if near(pickups[0]) < near(pickups[-1]):
+        pickups.reverse()
+    drops = _chain(need, distance, node=lambda d: d[0], after=pickups[-1])
+    return flows, {'pickups': pickups, 'drops': drops, 'scu': sum(a for _, a in drops)}
 
 
 def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: str = 'none',
@@ -410,19 +472,28 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
             iname = str(it.get('cargo') or '').strip()[:60] or f'貨物 {ii}'
             label = f'{cname} {iname}'
             supply, demand = _item_points(it, label, node)
-            flows = _pair(supply, demand, distance)
+            flows, collect = _pair(supply, demand, distance)
+            common = {'contract': ci, 'contract_name': cname, 'item': ii, 'item_name': iname, 'item_named': named}
             for pickup, dropoff, scu in flows:
                 parts = math.ceil(scu / max_cap - 1e-9)
                 for k, part in enumerate(_split(scu, parts), start=1):
-                    tasks.append({'id': len(tasks), 'contract': ci, 'contract_name': cname, 'item': ii,
-                                  'item_name': iname, 'item_named': named, 'pickup': pickup, 'dropoff': dropoff,
-                                  'scu': part,
-                                  'part': k, 'parts': parts})
+                    tasks.append({'id': len(tasks), **common, 'pickup': pickup, 'dropoff': dropoff,
+                                  'pickups': [pickup], 'drops': [(dropoff, part)], 'unknown': False,
+                                  'scu': part, 'part': k, 'parts': parts})
+            if collect:
+                if collect['scu'] > max_cap + 1e-9:
+                    raise RouteError(f'{label}：{len(collect["pickups"])} 個取貨點沒填 SCU（不知道各點有多少，'
+                                     f'要同一艘船一趟去完），剩下 {collect["scu"]:g} SCU 超過最大貨艙 {max_cap:g} SCU，'
+                                     '請填各取貨點的 SCU 或換大一點的船')
+                tasks.append({'id': len(tasks), **common, 'pickup': collect['pickups'][0],
+                              'dropoff': collect['drops'][0][0], 'pickups': collect['pickups'],
+                              'drops': collect['drops'], 'unknown': True, 'scu': collect['scu'],
+                              'part': 1, 'parts': 1})
     if len(tasks) > MAX_TASKS:
         raise RouteError(f'拆成趟數後共 {len(tasks)} 趟，最多 {MAX_TASKS} 趟，請減少合約或換大一點的船')
     for task in tasks:
         # 外掛貨櫃（Hull 系列）只能在有外部貨運（裝卸碼頭）的站點裝卸（見 nav.World.external_ok）
-        external_ok = w.external_ok(task['pickup']) and w.external_ok(task['dropoff'])
+        external_ok = all(w.external_ok(n) for n in [*task['pickups'], *(d for d, _ in task['drops'])])
         task['eligible'] = [s['index'] for s in squad_infos
                             if s['cap'] + 1e-9 >= task['scu'] and (external_ok or not s['external'])]
         if not task['eligible']:
@@ -450,10 +521,14 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
                                                       for st in leg['steps']}
                 for task, sign in seq:
                     if sign > 0:
-                        allocation.append({k: task[k] for k in ('contract', 'contract_name', 'item', 'item_name',
-                                                               'scu', 'part', 'parts')}
-                                          | {'squad': s['index'], 'pickup': nav.node_brief(task['pickup']),
-                                             'dropoff': nav.node_brief(task['dropoff'])})
+                        # 收集任務每個送貨點一列，取貨點列全部（pickups，各點量不知道）
+                        for dropoff, amount in task['drops']:
+                            allocation.append({k: task[k] for k in ('contract', 'contract_name', 'item', 'item_name',
+                                                                   'part', 'parts', 'unknown')}
+                                              | {'squad': s['index'], 'scu': amount,
+                                                 'pickup': nav.node_brief(task['pickup']),
+                                                 'pickups': [nav.node_brief(n) for n in task['pickups']],
+                                                 'dropoff': nav.node_brief(dropoff)})
             out_squads.append({
                 'index': s['index'], 'name': s['name'],
                 'ship': {k: s['ship'].get(k) for k in SHIP_KEYS},
@@ -496,7 +571,9 @@ def evaluate_sequence(*, start_id: str, ship_id: str, qd_id: str = '', steps: li
                       onboard=()) -> dict:
     """照給定的順序算一個小隊的航線（玩家在結果上拖拉調整順序後重算）。
 
-    steps：[{place, kind: pickup／dropoff／stop（途經）, scu, cargo, contract, contract_name, item, item_name, item_named}]。
+    steps：[{place, kind: pickup／dropoff／stop（途經）, scu, cargo, contract, contract_name, item, item_name, item_named,
+    scu_unknown}]。scu_unknown 的取貨（收集任務，各點量不知道）：同一趟（cargo）第一個取貨點預留這趟送貨的合計，
+    其餘不加；這趟的取貨點都去過了才能送。
     檢查：同一份合約的同一種貨物要先取貨才能送、途中不超過貨艙、外掛貨櫃只停外部貨運站。
     end_id：最後要回去的地點（中途重新規劃過時是原起點），有給就不看 end_mode；
     onboard：出發時貨艙裡已經有的貨 [{contract, item, item_name, scu}]（中途重新規劃過）。"""
@@ -527,6 +604,23 @@ def evaluate_sequence(*, start_id: str, ship_id: str, qd_id: str = '', steps: li
         onboard[key] = onboard.get(key, 0.0) + scu
         load += scu
     initial_load = load
+    preloaded = dict(onboard)
+    # 收集任務（量不知道的取貨）：每一趟的送貨合計、還沒去的取貨點數
+    unknown_total, unknown_left = {}, {}
+    for st in steps:
+        st = st if isinstance(st, dict) else {}
+        c = str(st.get('cargo'))
+        if st.get('kind') == 'pickup' and st.get('scu_unknown'):
+            unknown_left[c] = unknown_left.get(c, 0) + 1
+    for st in steps:
+        st = st if isinstance(st, dict) else {}
+        c = str(st.get('cargo'))
+        if st.get('kind') == 'dropoff' and c in unknown_left:
+            try:
+                unknown_total[c] = unknown_total.get(c, 0.0) + float(st.get('scu') or 0)
+            except (TypeError, ValueError):
+                raise RouteError('SCU 格式錯誤')
+    reserved = set()
     for i, st in enumerate(steps, start=1):
         st = st if isinstance(st, dict) else {}
         kind = st.get('kind')
@@ -535,15 +629,35 @@ def evaluate_sequence(*, start_id: str, ship_id: str, qd_id: str = '', steps: li
             continue
         if kind not in ('pickup', 'dropoff'):
             raise RouteError(f'第 {i} 站：動作不正確')
+        n = node(st.get('place'), f'第 {i} 站')
+        label = f'{st.get("contract_name") or ""} {st.get("item_name") or ""}'.strip()
+        key = (st.get('contract'), str(st.get('item_name') or '').strip().lower(), st.get('item'))
+        cargo = str(st.get('cargo'))
+        if kind == 'pickup' and st.get('scu_unknown'):
+            # 第一個取貨點預留整趟的量（扣掉出發前就在貨艙裡、已經預留過的）
+            amount = 0.0
+            if cargo not in reserved:
+                reserved.add(cargo)
+                amount = max(0.0, unknown_total.get(cargo, 0.0) - preloaded.get(key, 0.0))
+            unknown_left[cargo] -= 1
+            onboard[key] = onboard.get(key, 0.0) + amount
+            load += amount
+            if load > cap + 1e-9:
+                raise RouteError(f'第 {i} 站 {n.get("name_zh") or n["name"]}：載貨 {load:g} SCU 超過貨艙 {cap:g} SCU')
+            if info.get('external_cargo') and not w.external_ok(n):
+                raise RouteError(f'{w.external_rule}：{n.get("name_zh") or n["name"]}')
+            events.append({'node': n, 'delta': amount, 'need': None, 'kind': kind, 'cargo': st.get('cargo') or i,
+                           'scu': None, **{k: st.get(k) for k in nav.LEG_EXTRA}, 'scu_unknown': True})
+            continue
         try:
             scu = float(st.get('scu') or 0)
         except (TypeError, ValueError):
             raise RouteError(f'第 {i} 站：SCU 格式錯誤')
         if scu <= 0:
             raise RouteError(f'第 {i} 站：SCU 要大於 0')
-        n = node(st.get('place'), f'第 {i} 站')
-        label = f'{st.get("contract_name") or ""} {st.get("item_name") or ""}'.strip()
-        key = (st.get('contract'), str(st.get('item_name') or '').strip().lower(), st.get('item'))
+        if kind == 'dropoff' and unknown_left.get(cargo, 0) > 0:
+            raise RouteError(f'第 {i} 站 {n.get("name_zh") or n["name"]}：{label} 的取貨點還沒去完，'
+                             '數量不知道，要全部取完才能送')
         if kind == 'pickup':
             onboard[key] = onboard.get(key, 0.0) + scu
             load += scu
@@ -597,29 +711,34 @@ def replan_squad(*, start_id: str, ship_id: str, qd_id: str = '', steps: list, o
         st = st if isinstance(st, dict) else {}
         if st.get('kind') not in ('pickup', 'dropoff'):
             raise RouteError(f'第 {i} 站：動作不正確')
-        by_cargo.setdefault(str(st.get('cargo')), {})[st['kind']] = st
-    for cargo, pair in by_cargo.items():
-        drop = pair.get('dropoff')
-        if not drop:
-            raise RouteError(f'{pair["pickup"].get("contract_name") or ""} {pair["pickup"].get("item_name") or ""}：'
-                             '缺少送貨站')
+        by_cargo.setdefault(str(st.get('cargo')), {'pickup': [], 'dropoff': []})[st['kind']].append(st)
+    # 同一趟（cargo）：取貨可以好幾個點（收集任務，量不知道）、送貨可以好幾個點；取貨照原本順序，全部取完才送
+    for cargo, group in by_cargo.items():
+        drops, picks = group['dropoff'], group['pickup']
+        if not drops:
+            raise RouteError(f'{picks[0].get("contract_name") or ""} {picks[0].get("item_name") or ""}：缺少送貨站')
         try:
-            scu = float(drop.get('scu') or 0)
+            amounts = [float(d.get('scu') or 0) for d in drops]
         except (TypeError, ValueError):
             raise RouteError('SCU 格式錯誤')
-        extra = {k: drop.get(k) for k in nav.LEG_EXTRA}
+        total = sum(amounts)
+        extra = {k: drops[0].get(k) for k in nav.LEG_EXTRA if k != 'scu_unknown'}
+        unknown = any(p.get('scu_unknown') for p in picks)
         need = None
-        if 'pickup' in pair:
-            pick = node(pair['pickup'].get('place'), '取貨站')
-            need = len(events)
-            events.append({'node': pick, 'delta': scu, 'need': None, 'kind': 'pickup', 'cargo': drop.get('cargo'),
-                           'scu': scu, **extra})
-        elif cargo in onboard:
-            base_load += scu
-        else:
-            raise RouteError(f'{drop.get("contract_name") or ""} {drop.get("item_name") or ""}：還沒取貨，缺少取貨站')
-        events.append({'node': node(drop.get('place'), '送貨站'), 'delta': -scu, 'need': need, 'kind': 'dropoff',
-                       'cargo': drop.get('cargo'), 'scu': scu, **extra})
+        if cargo in onboard:       # 已經取過（收集任務可能還有沒去的取貨點）：整趟的量已經在貨艙
+            base_load += total
+        elif not picks:
+            raise RouteError(f'{drops[0].get("contract_name") or ""} {drops[0].get("item_name") or ""}：'
+                             '還沒取貨，缺少取貨站')
+        for k, p in enumerate(picks):
+            delta = total if k == 0 and cargo not in onboard else 0.0
+            events.append({'node': node(p.get('place'), '取貨站'), 'delta': delta, 'need': need, 'kind': 'pickup',
+                           'cargo': drops[0].get('cargo'), 'scu': None if unknown else total, **extra,
+                           **({'scu_unknown': True} if unknown else {})})
+            need = len(events) - 1
+        for d, amount in zip(drops, amounts):
+            events.append({'node': node(d.get('place'), '送貨站'), 'delta': -amount, 'need': need, 'kind': 'dropoff',
+                           'cargo': d.get('cargo'), 'scu': amount, **extra})
     for sid in stops:
         events.append({'node': node(sid, '插入的站點'), 'delta': 0.0, 'need': None, 'kind': 'stop'})
     if base_load > cap + 1e-9:

@@ -264,6 +264,8 @@ const ACTIONS = { stop: '途經', pickup: '取貨', dropoff: '送貨', end: '終
 const actionClass = a => ({ pickup: 'sf-chip--accent', dropoff: 'sf-chip--ok', end: 'sf-chip--todo', hub: 'sf-chip--todo' }[a] || '')
 function actionLabel(a) {
   const base = ACTIONS[a.action] || a.action
+  // 收集任務的取貨點（合約分配：各點量不知道）
+  if (a.unknown) return `${base}（數量未知）`
   if (a.contract_name) return `${base} ${fmtNum(a.scu)} SCU`
   return a.cargo ? `${base} #${a.cargo} · ${fmtNum(a.scu)} SCU` : base
 }
@@ -322,9 +324,12 @@ const table = computed(() => {
       // 同一份合約裡同名的貨物（例如兩項都是 Waste）也合併
       const key = leg.contract_name ? `${leg.action}|${leg.contract}|${norm(leg.item_name)}` : `${leg.action}|${leg.cargo}|${merged.size}`
       const hit = merged.get(key)
-      if (hit) hit.scu += leg.scu || 0
-      else merged.set(key, { action: leg.action, cargo: leg.cargo, scu: leg.scu || 0, contract: leg.contract,
-        contract_name: leg.contract_name, item_name: leg.item_name, item_named: leg.item_named })
+      if (hit) {
+        hit.scu += leg.scu || 0
+        hit.unknown = hit.unknown && !!leg.scu_unknown
+      } else merged.set(key, { action: leg.action, cargo: leg.cargo, scu: leg.scu || 0, contract: leg.contract,
+        contract_name: leg.contract_name, item_name: leg.item_name, item_named: leg.item_named,
+        unknown: !!leg.scu_unknown })
     }
     row.actions = [...merged.values()]
     // 列的代號（已去過用）：目的地＋做的事，調整順序後還認得
@@ -362,7 +367,9 @@ const table = computed(() => {
       const name = norm(a.item_name)
       if (!onboard.has(name)) onboard.set(name, new Map())
       const byContract = onboard.get(name)
-      byContract.set(a.contract_name, (byContract.get(a.contract_name) || 0) + (a.action === 'pickup' ? a.scu : -a.scu))
+      // 數量未知的取貨也算「貨艙裡有這份合約的貨」
+      const delta = a.action === 'pickup' ? (a.scu || (a.unknown ? 1 : 0)) : -a.scu
+      byContract.set(a.contract_name, (byContract.get(a.contract_name) || 0) + delta)
     }
   }
   // 一開始就在起點做的事（沒有移動）併到起點那一列
