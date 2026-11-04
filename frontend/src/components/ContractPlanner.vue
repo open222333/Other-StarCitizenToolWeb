@@ -241,6 +241,8 @@
           <div v-if="current.key === 'stations'" class="d-flex flex-wrap gap-2 mb-3">
             <span v-for="sq in current.squads" :key="sq.index" class="sf-chip">
               {{ sq.name }}：{{ sq.stations }} 站 · {{ fmtDist(sq.plan?.totals.distance || 0) }}</span>
+            <span v-if="GROUP_MODE_NOTE[current.group_mode]" class="sf-chip sf-chip--warn">
+              {{ GROUP_MODE_NOTE[current.group_mode] }}</span>
             <span v-if="current.groups < current.squads.length" class="sf-chip sf-chip--warn">
               有貨物相連的站點只分成 {{ current.groups }} 組，只能分給 {{ current.groups }} 隊</span>
           </div>
@@ -341,6 +343,12 @@ const MAX_CONTRACTS = 10
 const MAX_ITEMS = 10
 const MAX_SQUADS = 6
 const MAX_POINTS = 30
+// 站點平均：站點太集中時放寬的分組方式（後端 haul._pick_station_groups）
+const GROUP_MODE_NOTE = {
+  pickup: '站點太集中：取貨站由多隊共用',
+  dropoff: '站點太集中：送貨站由多隊共用',
+  task: '站點太集中：每趟貨各自分，同一站可能多隊都去',
+}
 const SIDES = [{ key: 'pickups', label: '取貨' }, { key: 'dropoffs', label: '送貨' }]
 const STORAGE_KEY = 'sc_contracts_v1'
 
