@@ -3,7 +3,8 @@
   送貨點填 SCU，取貨點不知道各拿多少可以不填：不猜數量，同一隊一趟去完這些取貨點再送）分給多個小隊，
   算出每隊載哪些貨、照什麼順序跑（後端 POST /starmap/nav/contracts，演算法見 src/models/haul.py）。
   貨物只能送到同一份合約的送貨地點；同一份合約可以拆給不同小隊，比最大貨艙還多的貨會拆成幾趟。
-  結果三種方案（最快完成／總時間最少／總油量最少）：分配表＋每隊的航段表／3D 星圖。
+  結果四種方案（最快完成／總時間最少／總油量最少／站點平均：每個站點只給一隊、各隊航程平均）：
+  分配表＋每隊的航段表／3D 星圖。
   表單記在這台瀏覽器（localStorage）。
 -->
 <template>
@@ -236,6 +237,13 @@
             <span v-if="current.warnings.includes('fuel_short')" class="sf-chip sf-chip--warn">
               油量不足：有段落單趟就超過油箱</span>
           </div>
+          <!-- 站點平均：各隊站點數、航程；有貨物相連的站點組數比隊數少時，有些隊分不到 -->
+          <div v-if="current.key === 'stations'" class="d-flex flex-wrap gap-2 mb-3">
+            <span v-for="sq in current.squads" :key="sq.index" class="sf-chip">
+              {{ sq.name }}：{{ sq.stations }} 站 · {{ fmtDist(sq.plan?.totals.distance || 0) }}</span>
+            <span v-if="current.groups < current.squads.length" class="sf-chip sf-chip--warn">
+              有貨物相連的站點只分成 {{ current.groups }} 組，只能分給 {{ current.groups }} 隊</span>
+          </div>
 
           <!-- 分配表 -->
           <div style="overflow-x:auto" class="mb-3">
@@ -275,7 +283,7 @@
           <template v-if="squad">
             <div class="d-flex flex-wrap gap-2 mb-2">
               <span class="sf-chip">{{ shipLabel(squad.ship) }}</span>
-              <span class="sf-chip">{{ squad.trips }} 趟 · {{ fmtNum(squad.scu) }} SCU</span>
+              <span class="sf-chip">{{ squad.trips }} 趟 · {{ fmtNum(squad.scu) }} SCU · {{ squad.stations }} 站</span>
               <span v-if="squad.edited" class="sf-chip sf-chip--accent">已手動調整順序</span>
               <span v-if="squad.ctx?.replanned" class="sf-chip sf-chip--accent">
                 已從 {{ placeLabel(squad.plan?.start) }} 重新規劃</span>
