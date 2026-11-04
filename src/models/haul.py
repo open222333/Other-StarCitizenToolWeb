@@ -20,6 +20,9 @@
   3. 每隊最後再用 src/models/nav.py 的 _order（事件少時是精確的動態規劃）重排一次，取比較好的那個。
   4. 方案（OBJECTIVES）：最快完成（最晚完成的那隊越早越好）、總時間最少（各隊時間加總）、
      總油量最少（各隊耗油加總）。時間、油耗、補燃料、載重係數都跟一般航線同一套（nav.Planner）。
+  5. 另外一個「站點平均」方案（STATIONS_KEY，_assign_stations）：每個站點（取貨點、送貨點都算）只給一隊去，
+     各隊航程（距離）盡量一樣、其次總距離短。一筆貨的取、送站點一定同一隊，所以有貨物相連的站點綁成一組
+     （_station_groups）一起分；組數比隊數少時有些隊會分不到。
 """
 
 import math
@@ -177,8 +180,13 @@ class _Squad:
         return self.cost(new), new
 
 
+#: 「站點平均」方案（見模組說明 5）
+STATIONS_KEY = 'stations'
+STATIONS_LABEL = '站點平均'
+
+
 def _score(objective: str, costs: list) -> float:
-    if objective == 'time':
+    if objective in ('time', STATIONS_KEY):
         # 最晚完成的那隊；一樣的話總時間少的好
         return max(costs) + sum(costs) * 1e-6
     return sum(costs)
@@ -273,6 +281,123 @@ def _assign(tasks: list, squads: list, objective: str, deadline: float) -> list:
             break
         order = sorted(tasks, key=lambda t: -t['scu'] * rng.uniform(0.3, 1.0))
     return best[1][0]
+
+
+def _station_ids(task: dict) -> list:
+    return [n['id'] for n in task['pickups']] + [d['id'] for d, _ in task['drops']]
+
+
+def _station_groups(tasks: list) -> list:
+    """有貨物相連（取貨點→送貨點）的站點綁成一組 → [[任務]]，組跟組之間沒有共用的站點。"""
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for t in tasks:
+        ids = _station_ids(t)
+        for other in ids[1:]:
+            parent[find(other)] = find(ids[0])
+    groups = {}
+    for t in tasks:
+        groups.setdefault(find(_station_ids(t)[0]), []).append(t)
+    return list(groups.values())
+
+
+def _assign_stations(groups: list, squads: list, deadline: float) -> list:
+    """站點平均：每組站點整組給一隊（組內任務逐一插進那隊航線），各隊航程（squad 的成本用距離）的最大值越小越好、
+    其次總和；先依組的任務數由多到少貪婪分配，再反覆搬一組到別隊、兩隊互換一組，有改善就接受 → 每隊的 seq。"""
+    n = len(squads)
+
+    def eligible(g, si):
+        return all(si in t['eligible'] for t in g)
+
+    def add(si, seq, g):
+        """把一組任務插進 seq → (新 seq, 成本)；裝不下回 (None, inf)。"""
+        for t in g:
+            _, seq = squads[si].best_insert(seq, t)
+            if seq is None:
+                return None, math.inf
+        return seq, squads[si].cost(seq)
+
+    def remove(si, seq, g):
+        ids = {t['id'] for t in g}
+        seq = [e for e in seq if e[0]['id'] not in ids]
+        return seq, squads[si].cost(seq)
+
+    owned = [[] for _ in range(n)]
+    seqs, costs = [[] for _ in range(n)], [0.0] * n
+    for g in sorted(groups, key=lambda g: (-len(g), -sum(t['scu'] for t in g))):
+        best = None
+        for si in range(n):
+            if not eligible(g, si):
+                continue
+            seq, c = add(si, seqs[si], g)
+            if seq is None:
+                continue
+            trial = costs[:]
+            trial[si] = c
+            score = _score(STATIONS_KEY, trial)
+            if best is None or score < best[0]:
+                best = (score, si, seq, c)
+        if best is None:
+            t = g[0]
+            raise RouteError(f'{t["contract_name"]} {t["item_name"]}：站點平均分配時沒有小隊載得了這組站點的貨')
+        _, si, seq, c = best
+        owned[si].append(g)
+        seqs[si], costs[si] = seq, c
+
+    def try_change(a, b, out_a, in_a, out_b, in_b):
+        """a 隊拿掉 out_a、加 in_a；b 隊拿掉 out_b、加 in_b；整體變好就套用。"""
+        seq_a, ca = remove(a, seqs[a], out_a)
+        if in_a:
+            seq_a, ca = add(a, seq_a, in_a)
+        seq_b, cb = remove(b, seqs[b], out_b) if out_b else (seqs[b], costs[b])
+        if in_b and seq_b is not None:
+            seq_b, cb = add(b, seq_b, in_b)
+        if seq_a is None or seq_b is None:
+            return False
+        trial = costs[:]
+        trial[a], trial[b] = ca, cb
+        if _score(STATIONS_KEY, trial) >= _score(STATIONS_KEY, costs) - 1e-6:
+            return False
+        seqs[a], seqs[b], costs[:] = seq_a, seq_b, trial
+        return True
+
+    improved = True
+    while improved and time.monotonic() < deadline:
+        improved = False
+        # 搬移：a 隊的一組搬到 b 隊
+        for a in range(n):
+            for g in list(owned[a]):
+                for b in range(n):
+                    if time.monotonic() >= deadline:
+                        return seqs
+                    if b != a and eligible(g, b) and try_change(a, b, g, None, None, g):
+                        owned[a].remove(g)
+                        owned[b].append(g)
+                        improved = True
+                        break
+        # 互換：a 隊的一組跟 b 隊的一組對調
+        for a in range(n):
+            for b in range(a + 1, n):
+                for ga in list(owned[a]):
+                    for gb in list(owned[b]):
+                        if time.monotonic() >= deadline:
+                            return seqs
+                        if ga not in owned[a] or gb not in owned[b] or not eligible(ga, b) or not eligible(gb, a):
+                            continue
+                        if try_change(a, b, ga, gb, gb, ga):
+                            owned[a].remove(ga)
+                            owned[a].append(gb)
+                            owned[b].remove(gb)
+                            owned[b].append(ga)
+                            improved = True
+    return seqs
 
 
 def _events_of(seq: list) -> list:
@@ -506,10 +631,18 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
     for key, _ in OBJECTIVES:
         seqs = _assign(tasks, evals[key], key, time.monotonic() + SEARCH_SECONDS)
         found.append([_polish(evals[key][i], seq) for i, seq in enumerate(seqs)])
+    # 站點平均：每個站點只給一隊，各隊航程（距離）平均（見模組說明 5）
+    groups = _station_groups(tasks)
+    station_eval = [_Squad(s, planners[s['index']], 'distance') for s in squad_infos]
+    station_seqs = [_polish(station_eval[i], seq) for i, seq in enumerate(
+        _assign_stations(groups, station_eval, time.monotonic() + SEARCH_SECONDS))]
 
     results, seen, systems = [], {}, set()
-    for key, label in OBJECTIVES:
-        seqs = min(found, key=lambda cand: _score(key, [evals[key][i].cost(seq) for i, seq in enumerate(cand)]))
+    for key, label in [*OBJECTIVES, (STATIONS_KEY, STATIONS_LABEL)]:
+        if key == STATIONS_KEY:
+            seqs = station_seqs
+        else:
+            seqs = min(found, key=lambda cand: _score(key, [evals[key][i].cost(seq) for i, seq in enumerate(cand)]))
         out_squads, allocation = [], []
         for s, seq in zip(squad_infos, seqs):
             plan = None
@@ -535,6 +668,8 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
                 'start': nav.node_brief(s['start'], True),
                 'scu': sum(t['scu'] for t, sign in seq if sign > 0),
                 'trips': sum(1 for _, sign in seq if sign > 0),
+                # 這隊要去的站點數（不重複）
+                'stations': len({sid for t, sign in seq if sign > 0 for sid in _station_ids(t)}),
                 'plan': plan,
             })
         allocation.sort(key=lambda a: (a['contract'], a['item'], a['pickup']['name'], a['dropoff']['name'], a['part']))
@@ -553,6 +688,8 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
             },
             'warnings': sorted({wn for p in plans for wn in p['warnings']}),
             'same_as': seen.get(sig),
+            # 站點平均：有貨物相連而綁在一起的站點組數（比隊數少時有些隊分不到）
+            **({'groups': len(groups)} if key == STATIONS_KEY else {}),
         })
         seen.setdefault(sig, key)
     return {

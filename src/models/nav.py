@@ -550,6 +550,8 @@ class Planner:
         if not steps:
             return 0.0
         total_d = sum(s['distance'] for s in steps)
+        if plan == 'distance':      # 純距離（合約分配的「站點平均」方案）
+            return total_d
         if plan == 'simple':
             jumps = sum(1 for s in steps if s['kind'] == 'qt')
             return jumps * 1e15 + total_d

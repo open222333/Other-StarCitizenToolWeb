@@ -49,7 +49,7 @@ def test_contracts_split_across_squads(haulers):
     squads = [{'name': '一隊', 'ship': 'big'}, {'name': '二隊', 'ship': 'small', 'start': 'stY'}]
     res = haul.plan_contracts(start_id='stA', squads=squads, contracts=contracts)
     assert res['trips'] == 4 and res['total_scu'] == 170
-    assert [p['key'] for p in res['plans']] == ['time', 'total', 'fuel']
+    assert [p['key'] for p in res['plans']] == ['time', 'total', 'fuel', 'stations']
     for plan in res['plans']:
         picked = _check_plan(plan)
         assert len(picked) == 4
@@ -257,3 +257,24 @@ def test_evaluate_sequence_with_onboard_and_end(haulers):
                                          'item_name': 'Ore', 'cargo': 7}])
     legs = res['plan']['legs']
     assert legs[0]['load_before'] == 30 and legs[0]['cargo'] == 7 and legs[-1]['to']['id'] == 'stA'
+
+
+def test_stations_plan_gives_each_station_to_one_squad(haulers):
+    """站點平均方案：每個站點只給一隊；有貨物相連的站點綁在一起分。"""
+    contracts = [_contract('A', ('Ore', 'stA', 'stC', 10)), _contract('B', ('Gold', 'stY', 'outA', 10))]
+    res = haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}, {'ship': 'big'}], contracts=contracts)
+    assert [p['key'] for p in res['plans']][-1] == 'stations'
+    plan = next(p for p in res['plans'] if p['key'] == 'stations')
+    assert plan['label'] == '站點平均' and plan['groups'] == 2
+    _check_plan(plan)
+    seen = {}
+    for sq in plan['squads']:
+        for leg in (sq['plan'] or {}).get('legs', []):
+            if leg['action'] in ('pickup', 'dropoff'):
+                assert seen.setdefault(leg['to']['id'], sq['index']) == sq['index'], '同一個站點只給一隊'
+    assert sorted(sq['stations'] for sq in plan['squads']) == [2, 2], '兩組各給一隊'
+    # 共用取貨點：相連的站點綁成一組，只能給一隊
+    shared = [_contract('A', ('Ore', 'stA', 'stC', 10), ('Tin', 'stA', 'stY', 10))]
+    plan = next(p for p in haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}, {'ship': 'big'}],
+                                                contracts=shared)['plans'] if p['key'] == 'stations')
+    assert plan['groups'] == 1 and sorted(sq['stations'] for sq in plan['squads']) == [0, 3]
