@@ -1,6 +1,6 @@
 <!--
   玩家頁「航線 › 合約分配」：多份運貨合約（最多 10 份，每份幾項貨物；每項貨物的取貨點、送貨點各可以好幾個，
-  送貨點填 SCU，取貨點不知道各拿多少可以不填）分給多個小隊，
+  送貨點填 SCU，取貨點不知道各拿多少可以不填：不猜數量，同一隊一趟去完這些取貨點再送）分給多個小隊，
   算出每隊載哪些貨、照什麼順序跑（後端 POST /starmap/nav/contracts，演算法見 src/models/haul.py）。
   貨物只能送到同一份合約的送貨地點；同一份合約可以拆給不同小隊，比最大貨艙還多的貨會拆成幾趟。
   結果三種方案（最快完成／總時間最少／總油量最少）：分配表＋每隊的航段表／3D 星圖。
@@ -27,16 +27,8 @@
                 <label class="form-check-label fw-semibold" for="cp-common-drop">共同送貨點</label>
               </div>
               <template v-if="commonDrop">
-                <div v-for="(cd, di) in commonDrops" :key="cd.key" class="d-flex gap-2 align-items-center mb-1">
-                  <span class="cp-index">{{ di + 1 }}</span>
-                  <div class="flex-grow-1" :class="{ 'cp-invalid': isBad(`cdrop-${cd.key}`) }">
-                    <PlacePicker :id="`cp-cdrop-${cd.key}`" :label="`共同送貨點 ${di + 1}`" :places="base.places.value"
-                      :model-value="cd.place" @update:model-value="v => Object.assign(cd.place, v)" />
-                  </div>
-                  <button v-if="commonDrops.length > 1" type="button" class="btn btn-sm btn-danger"
-                    :aria-label="`移除共同送貨點 ${di + 1}`" @click="commonDrops.splice(di, 1)"><i class="bi bi-trash"></i></button>
-                </div>
-                <div class="d-flex flex-wrap align-items-center gap-2">
+                <div class="cp-side-head">
+                  <span class="cp-side-label">送貨點</span>
                   <button type="button" class="btn btn-sm btn-success" :disabled="commonDrops.length >= MAX_POINTS"
                     @click="commonDrops.push(newCommonDrop())"><i class="bi bi-plus-lg me-1"></i>加送貨點</button>
                   <button type="button" class="btn btn-sm" :class="fillOpen.has('common') ? 'btn-secondary' : 'btn-primary'"
@@ -44,9 +36,22 @@
                     <i class="bi bi-stars me-1"></i>依星系填入</button>
                   <span v-if="fillNotes.common" class="sf-chip sf-chip--warn">{{ fillNotes.common }}</span>
                 </div>
-                <div v-if="fillOpen.has('common')" class="cp-fill cp-fill--common mt-1">
+                <div v-if="fillOpen.has('common')" class="cp-fill mb-2">
                   <SystemStopsFill id="cp-fill-common" :places="base.places.value"
                     @fill="rows => fillList('common', commonDrops, rows, newCommonDrop)" />
+                </div>
+                <div v-for="(cd, di) in commonDrops" :key="cd.key" class="cp-point" :class="{ 'cp-point--off': !cd.on }">
+                  <span class="cp-index">{{ di + 1 }}</span>
+                  <div class="form-check form-switch mb-0 cp-switch">
+                    <input v-model="cd.on" class="form-check-input" type="checkbox" role="switch"
+                      :aria-label="`共同送貨點 ${di + 1} 加入規劃`">
+                  </div>
+                  <div class="cp-point__place" :class="{ 'cp-invalid': isBad(`cdrop-${cd.key}`) }">
+                    <PlacePicker :id="`cp-cdrop-${cd.key}`" :label="`共同送貨點 ${di + 1}`" :places="base.places.value"
+                      :model-value="cd.place" @update:model-value="v => Object.assign(cd.place, v)" />
+                  </div>
+                  <button v-if="commonDrops.length > 1" type="button" class="btn btn-sm btn-danger"
+                    :aria-label="`移除共同送貨點 ${di + 1}`" @click="commonDrops.splice(di, 1)"><i class="bi bi-trash"></i></button>
                 </div>
               </template>
             </div>
@@ -74,30 +79,28 @@
             <div class="cp-section-title cp-section-title--squad mb-2"><i class="bi bi-people me-1"></i>小隊 {{ squads.length }} / {{ MAX_SQUADS }}</div>
             <ShipFilter id="cp-filter" class="mb-2" fleet-label="我的小隊只看我的機庫" />
             <div v-for="(sq, i) in squads" :key="sq.key" class="cp-box cp-box--squad mb-2">
-              <div class="row g-2 align-items-center mb-1">
-                <div class="col-12 col-md-4">
-                  <input v-model="sq.name" type="text" maxlength="30" class="form-control form-control-sm"
-                    :placeholder="`小隊 ${i + 1}`" :aria-label="`小隊 ${i + 1} 名稱`">
+              <!-- 標題列：編號徽章、隊名、我的小隊／另設起點、刪除 -->
+              <div class="cp-squad-head">
+                <span class="cp-squad-no">{{ i + 1 }}</span>
+                <input v-model="sq.name" type="text" maxlength="30" class="form-control form-control-sm cp-squad-name"
+                  :placeholder="`小隊 ${i + 1}`" :aria-label="`小隊 ${i + 1} 名稱`">
+                <div class="form-check mb-0">
+                  <input :id="`cp-mine-${sq.key}`" v-model="sq.mine" class="form-check-input" type="checkbox">
+                  <label class="form-check-label" :for="`cp-mine-${sq.key}`">我的小隊</label>
                 </div>
-                <div class="col d-flex flex-wrap align-items-center gap-2">
-                  <div class="form-check mb-0">
-                    <input :id="`cp-mine-${sq.key}`" v-model="sq.mine" class="form-check-input" type="checkbox">
-                    <label class="form-check-label" :for="`cp-mine-${sq.key}`">我的小隊</label>
-                  </div>
-                  <div v-if="commonStart" class="form-check mb-0">
-                    <input :id="`cp-own-start-${sq.key}`" v-model="sq.ownStart" class="form-check-input" type="checkbox">
-                    <label class="form-check-label" :for="`cp-own-start-${sq.key}`">另設起點</label>
-                  </div>
-                  <button v-if="squads.length > 1" type="button" class="btn btn-sm btn-danger ms-auto"
-                    :aria-label="`移除${squadName(sq, i)}`" @click="squads.splice(i, 1)"><i class="bi bi-trash"></i></button>
+                <div v-if="commonStart" class="form-check mb-0">
+                  <input :id="`cp-own-start-${sq.key}`" v-model="sq.ownStart" class="form-check-input" type="checkbox">
+                  <label class="form-check-label" :for="`cp-own-start-${sq.key}`">另設起點</label>
                 </div>
+                <button v-if="squads.length > 1" type="button" class="btn btn-sm btn-danger ms-auto"
+                  :aria-label="`移除${squadName(sq, i)}`" @click="squads.splice(i, 1)"><i class="bi bi-trash"></i></button>
               </div>
               <ShipPicker :id="`cp-sq-${sq.key}`" v-model:ship-id="sq.shipId" v-model:ship-text="sq.shipText"
                 :class="{ 'cp-invalid': isBad(`ship-${sq.key}`) }"
                 v-model:qd-id="sq.qdId" :ships="base.ships.value" :quantum-drives="base.quantumDrives.value"
                 :fleet-uuids="fleetUuids" show-cargo :auto-pick="sq.mine" :fleet-filter="sq.mine" />
               <div v-if="usesOwnStart(sq)" class="mt-2">
-                <label class="form-label small fw-semibold mb-1" :for="`cp-sq-start-${sq.key}`">起點</label>
+                <label class="cp-field-label" :for="`cp-sq-start-${sq.key}`"><i class="bi bi-geo-alt me-1"></i>起點</label>
                 <PlacePicker :id="`cp-sq-start-${sq.key}`" :label="`${squadName(sq, i)}起點`" :places="base.places.value"
                   :class="{ 'cp-invalid': isBad(`start-${sq.key}`) }"
                   :model-value="sq.start" @update:model-value="v => Object.assign(sq.start, v)" />
@@ -109,12 +112,18 @@
           <div class="mt-3">
             <div class="d-flex align-items-center gap-2 mb-1">
               <span class="cp-section-title cp-section-title--contract"><i class="bi bi-file-earmark-text me-1"></i>合約 {{ contracts.length }} / {{ MAX_CONTRACTS }}</span>
+              <span v-if="contracts.some(c => !c.on)" class="sf-chip">規劃 {{ contracts.filter(c => c.on).length }} 份</span>
               <button type="button" class="btn btn-sm btn-success ms-auto" :disabled="contracts.length >= MAX_CONTRACTS"
                 @click="contracts.push(newContract())"><i class="bi bi-plus-lg me-1"></i>加合約</button>
             </div>
-            <div v-for="(c, ci) in contracts" :key="c.key" class="cp-box cp-box--contract mb-2">
+            <div v-for="(c, ci) in contracts" :key="c.key" class="cp-box cp-box--contract mb-2" :class="{ 'cp-off': !c.on }">
               <div class="d-flex align-items-center gap-2 mb-2">
                 <span class="cp-index">{{ ci + 1 }}</span>
+                <!-- 開關：關掉＝這次不規劃（內容保留） -->
+                <div class="form-check form-switch mb-0 cp-switch">
+                  <input :id="`cp-on-${c.key}`" v-model="c.on" class="form-check-input" type="checkbox" role="switch"
+                    :aria-label="`${contractName(c, ci)} 加入規劃`">
+                </div>
                 <input v-model="c.name" type="text" maxlength="40" class="form-control form-control-sm"
                   :placeholder="`合約 ${ci + 1}`" :aria-label="`合約 ${ci + 1} 名稱`">
                 <button type="button" class="btn btn-sm btn-success text-nowrap" :disabled="c.items.length >= MAX_ITEMS"
@@ -122,7 +131,7 @@
                 <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除${contractName(c, ci)}`"
                   @click="contracts.splice(ci, 1)"><i class="bi bi-trash"></i></button>
               </div>
-              <div v-for="(it, ii) in c.items" :key="it.key" class="cp-item mb-2">
+              <div v-for="(it, ii) in c.items" v-show="c.on" :key="it.key" class="cp-item mb-2">
                 <div class="d-flex align-items-center gap-2 mb-1">
                   <AutocompleteField :id="`cp-cargo-${it.key}`" v-model="it.cargo" class="cp-cargo"
                     :search="searchCommodities" :get-label="commodityLabel" :get-meta="c => c.code || ''"
@@ -135,44 +144,51 @@
                     :aria-label="`移除${contractName(c, ci)} 貨物 ${ii + 1}`" @click="c.items.splice(ii, 1)">
                     <i class="bi bi-trash"></i></button>
                 </div>
-                <div v-for="side in SIDES" :key="side.key" class="mb-1">
-                  <div v-for="(pt, pi) in it[side.key]" :key="pt.key" class="row g-1 align-items-center mb-1">
-                    <div class="col-12 col-md-9 d-flex gap-2 align-items-center">
-                      <span class="cp-tag">{{ pi === 0 ? side.label : '' }}</span>
-                      <div v-if="locked(side)" class="flex-grow-1 cp-common-place">
-                        {{ pt.place.text || `共同送貨點 ${pi + 1}` }}</div>
-                      <div v-else class="flex-grow-1" :class="{ 'cp-invalid': isBad(`place-${pt.key}`) }">
-                        <PlacePicker :id="`cp-${side.key}-${pt.key}`"
-                          :label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1}`"
-                          :places="base.places.value" :model-value="pt.place"
-                          @update:model-value="v => Object.assign(pt.place, v)" />
-                      </div>
-                    </div>
-                    <div class="col-12 col-md-3 d-flex gap-2 align-items-center">
-                      <span class="cp-tag d-md-none"></span>
-                      <div class="input-group input-group-sm" :class="{ 'cp-invalid': isBad(`scu-${pt.key}`) }">
-                        <input v-model.number="pt.scu" type="number" min="1" step="1" class="form-control"
-                          :placeholder="autoScu(it, side.key) ?? ''"
-                          :aria-label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1} SCU`">
-                        <span class="input-group-text">SCU</span>
-                      </div>
-                      <button v-if="!locked(side) && it[side.key].length > 1" type="button" class="btn btn-sm btn-danger"
-                        :aria-label="`移除${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1}`"
-                        @click="it[side.key].splice(pi, 1)"><i class="bi bi-trash"></i></button>
-                    </div>
+                <div v-for="side in SIDES" :key="side.key" class="cp-side">
+                  <!-- 標題列：取貨點／送貨點＋加點、依星系填入（在清單上方） -->
+                  <div class="cp-side-head">
+                    <span class="cp-side-label" :class="`cp-side-label--${side.key}`">{{ side.label }}點</span>
+                    <template v-if="!locked(side)">
+                      <button type="button" class="btn btn-sm btn-success" :disabled="it[side.key].length >= MAX_POINTS"
+                        @click="it[side.key].push(newPoint())"><i class="bi bi-plus-lg me-1"></i>加{{ side.label }}點</button>
+                      <button type="button" class="btn btn-sm" :class="fillOpen.has(fillKey(it, side)) ? 'btn-secondary' : 'btn-primary'"
+                        :aria-expanded="fillOpen.has(fillKey(it, side))" @click="toggleFill(fillKey(it, side))">
+                        <i class="bi bi-stars me-1"></i>依星系填入</button>
+                      <span v-if="fillNotes[fillKey(it, side)]" class="sf-chip sf-chip--warn">{{ fillNotes[fillKey(it, side)] }}</span>
+                    </template>
+                    <span v-else class="sf-chip">共同送貨點</span>
                   </div>
-                  <div v-if="!locked(side)" class="d-flex flex-wrap align-items-center gap-2">
-                    <span class="cp-tag"></span>
-                    <button type="button" class="btn btn-sm btn-success" :disabled="it[side.key].length >= MAX_POINTS"
-                      @click="it[side.key].push(newPoint())"><i class="bi bi-plus-lg me-1"></i>加{{ side.label }}點</button>
-                    <button type="button" class="btn btn-sm" :class="fillOpen.has(fillKey(it, side)) ? 'btn-secondary' : 'btn-primary'"
-                      :aria-expanded="fillOpen.has(fillKey(it, side))" @click="toggleFill(fillKey(it, side))">
-                      <i class="bi bi-stars me-1"></i>依星系填入</button>
-                    <span v-if="fillNotes[fillKey(it, side)]" class="sf-chip sf-chip--warn">{{ fillNotes[fillKey(it, side)] }}</span>
-                  </div>
-                  <div v-if="!locked(side) && fillOpen.has(fillKey(it, side))" class="cp-fill mt-1">
+                  <div v-if="!locked(side) && fillOpen.has(fillKey(it, side))" class="cp-fill mb-2">
                     <SystemStopsFill :id="`cp-fill-${fillKey(it, side)}`" :places="base.places.value"
                       @fill="rows => fillList(fillKey(it, side), it[side.key], rows, newPoint)" />
+                  </div>
+                  <!-- 每個點一列：序號、地點、SCU、刪除（跟航線規劃的站點同一種格式） -->
+                  <div v-for="(pt, pi) in it[side.key]" :key="pt.key" class="cp-point" :class="{ 'cp-point--off': !isOn(pt) }">
+                    <span class="cp-index">{{ pi + 1 }}</span>
+                    <!-- 開關：關掉＝這次不去這個點（共同送貨點的開關在上方共同送貨點那裡） -->
+                    <div class="form-check form-switch mb-0 cp-switch">
+                      <input v-if="locked(side)" class="form-check-input" type="checkbox" role="switch" :checked="isOn(pt)" disabled
+                        :aria-label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1} 加入規劃`">
+                      <input v-else v-model="pt.on" class="form-check-input" type="checkbox" role="switch"
+                        :aria-label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1} 加入規劃`">
+                    </div>
+                    <div v-if="locked(side)" class="cp-point__place cp-common-place">
+                      {{ pt.place.text || `共同送貨點 ${pi + 1}` }}</div>
+                    <div v-else class="cp-point__place" :class="{ 'cp-invalid': isBad(`place-${pt.key}`) }">
+                      <PlacePicker :id="`cp-${side.key}-${pt.key}`"
+                        :label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1}`"
+                        :places="base.places.value" :model-value="pt.place"
+                        @update:model-value="v => Object.assign(pt.place, v)" />
+                    </div>
+                    <div class="input-group input-group-sm cp-point__scu" :class="{ 'cp-invalid': isBad(`scu-${pt.key}`) }">
+                      <input v-model.number="pt.scu" type="number" min="1" step="1" class="form-control"
+                        :placeholder="autoScu(it, side.key) ?? ''"
+                        :aria-label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1} SCU`">
+                      <span class="input-group-text">SCU</span>
+                    </div>
+                    <button v-if="!locked(side)" type="button" class="btn btn-sm btn-danger" :disabled="it[side.key].length <= 1"
+                      :aria-label="`移除${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1}`"
+                      @click="it[side.key].splice(pi, 1)"><i class="bi bi-trash"></i></button>
                   </div>
                 </div>
               </div>
@@ -237,7 +253,9 @@
                 <tr v-for="(a, i) in current.allocation" :key="i">
                   <td class="ps-3 sf-stack__title">{{ a.contract_name }}</td>
                   <td data-label="貨物">{{ a.item_name }}<span v-if="a.parts > 1" class="cp-muted"> · 第 {{ a.part }}/{{ a.parts }} 趟</span></td>
-                  <td data-label="取貨 → 送貨">{{ placeLabel(a.pickup) }} → {{ placeLabel(a.dropoff) }}</td>
+                  <td data-label="取貨 → 送貨">
+                    <template v-if="a.unknown">{{ (a.pickups || []).map(placeLabel).join('、') }}<span class="cp-muted">（數量未知，一趟取完）</span></template>
+                    <template v-else>{{ placeLabel(a.pickup) }}</template> → {{ placeLabel(a.dropoff) }}</td>
                   <td class="text-end" data-label="SCU">{{ fmtNum(a.scu, 1) }}</td>
                   <td class="pe-3" data-label="小隊">
                     <button type="button" class="btn btn-sm btn-info" @click="squadIndex = a.squad">
@@ -355,7 +373,9 @@ const newSquad = (s = {}, i = -1) => ({ key: ++keySeq, name: s.name || '', shipI
   qdId: s.qdId || '', ownStart: !!s.ownStart, start: reactive(newPlace(s.start)),
   mine: typeof s.mine === 'boolean' ? s.mine : i === 0 })
 const numOrNull = v => (Number(v) > 0 ? Number(v) : null)
-const newPoint = (pt = {}) => ({ key: ++keySeq, place: reactive(newPlace(pt.place)), scu: numOrNull(pt.scu) })
+// on：加入規劃（開關；關掉的點保留內容、不送去分析）
+const newPoint = (pt = {}) => ({ key: ++keySeq, place: reactive(newPlace(pt.place)), scu: numOrNull(pt.scu),
+  on: pt.on !== false })
 // 一項貨物：取貨點、送貨點各可以好幾個（舊格式 {pickup, dropoff, scu} 轉成各一個點）
 function newItem(it = {}) {
   const pickups = Array.isArray(it.pickups) ? it.pickups : [{ place: it.pickup, scu: it.scu }]
@@ -364,7 +384,8 @@ function newItem(it = {}) {
     pickups: (pickups.length ? pickups : [{}]).slice(0, MAX_POINTS).map(newPoint),
     dropoffs: (dropoffs.length ? dropoffs : [{}]).slice(0, MAX_POINTS).map(newPoint) }
 }
-const newContract = (c = {}) => ({ key: ++keySeq, name: c.name || '',
+// on：加入規劃（開關；關掉的合約保留內容、不送去分析、不檢查）
+const newContract = (c = {}) => ({ key: ++keySeq, name: c.name || '', on: c.on !== false,
   items: (Array.isArray(c.items) && c.items.length ? c.items : [{}]).slice(0, MAX_ITEMS).map(newItem) })
 
 function loadSaved() {
@@ -393,7 +414,11 @@ const plain = p => ({ id: p.id, text: p.text })
 
 // 共同送貨點：打開後所有合約的每項貨物都送到這組地點（地點共用同一個物件），各項貨物只各填各點的 SCU；
 // 各項貨物的送貨點用 ck 對到共同送貨點，關掉時各自留一份地點副本
-const newCommonDrop = (d = {}) => ({ key: ++keySeq, place: reactive(newPlace(d.place)) })
+const newCommonDrop = (d = {}) => ({ key: ++keySeq, place: reactive(newPlace(d.place)), on: d.on !== false })
+// 點有沒有加入規劃：共同送貨點帶出來的點（common）跟著共同送貨點的開關
+const isOn = pt => (pt.common ? pt.common.on : pt.on) !== false
+const onPickups = it => it.pickups.filter(isOn)
+const onDropoffs = it => it.dropoffs.filter(isOn)
 const commonDrop = ref(saved.commonDrop === true)
 const commonDrops = reactive((Array.isArray(saved.commonDrops) && saved.commonDrops.length ? saved.commonDrops : [{}])
   .slice(0, MAX_POINTS).map(newCommonDrop))
@@ -409,7 +434,7 @@ function syncDrops() {
       }
       const rows = commonDrops.map(cd => {
         const old = pick(x => x.ck === cd.key) || (cd.place.id ? pick(x => !x.ck && x.place.id === cd.place.id) : null)
-        return { key: old?.key ?? ++keySeq, ck: cd.key, place: cd.place, scu: old?.scu ?? null }
+        return { key: old?.key ?? ++keySeq, ck: cd.key, place: cd.place, scu: old?.scu ?? null, on: true, common: cd }
       })
       it.dropoffs.splice(0, it.dropoffs.length, ...rows)
     }
@@ -420,7 +445,9 @@ function unsyncDrops() {
     for (const it of c.items) {
       it.dropoffs.forEach(d => {
         d.place = reactive(newPlace(plain(d.place)))
+        d.on = isOn(d)
         delete d.ck
+        delete d.common
       })
     }
   }
@@ -432,15 +459,15 @@ watch(dropSig, (sig, old) => {
   else if (old) unsyncDrops()
 }, { immediate: true })
 
-const savePoint = pt => ({ place: plain(pt.place), scu: pt.scu })
+const savePoint = pt => ({ place: plain(pt.place), scu: pt.scu, on: isOn(pt) })
 watch([start, endMode, commonStart, startFuel, squads, contracts, commonDrop, commonDrops], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), endMode: endMode.value, commonStart: commonStart.value, startFuel: startFuel.value,
-      commonDrop: commonDrop.value, commonDrops: commonDrops.map(cd => ({ place: plain(cd.place) })),
+      commonDrop: commonDrop.value, commonDrops: commonDrops.map(cd => ({ place: plain(cd.place), on: cd.on })),
       squads: squads.map(s => ({ name: s.name, shipId: s.shipId, shipText: s.shipText, qdId: s.qdId,
         ownStart: s.ownStart, start: plain(s.start), mine: s.mine })),
-      contracts: contracts.map(c => ({ name: c.name, items: c.items.map(it => ({ cargo: it.cargo,
+      contracts: contracts.map(c => ({ name: c.name, on: c.on, items: c.items.map(it => ({ cargo: it.cargo,
         pickups: it.pickups.map(savePoint), dropoffs: it.dropoffs.map(savePoint) })) })),
     }))
   } catch { /* 存不了就算了 */ }
@@ -485,32 +512,40 @@ const sumScu = list => list.reduce((n, pt) => n + (Number(pt.scu) || 0), 0)
 // 取貨點可以不填（每個取貨點都一定要去，沒填的平均分掉剩下的量），有填的一定拿完
 const filled = pt => Number(pt.scu) > 0
 // 共同送貨點時，SCU 留空的送貨點＝這項貨物不送那裡（至少要填一個；只有一個送貨點時照原規則）
-const dropsOf = it => (commonDrop.value && it.dropoffs.some(filled) ? it.dropoffs.filter(filled) : it.dropoffs)
+// 下面都只算開關打開的點（onPickups／onDropoffs）
+const dropsOf = (it) => {
+  const drops = onDropoffs(it)
+  return commonDrop.value && drops.some(filled) ? drops.filter(filled) : drops
+}
 function demandOf(it) {
-  if (dropsOf(it).every(filled)) return sumScu(dropsOf(it))
-  if (it.dropoffs.length === 1 && it.pickups.every(filled)) return sumScu(it.pickups)
+  const drops = dropsOf(it), picks = onPickups(it)
+  if (!drops.length || !picks.length) return null
+  if (drops.every(filled)) return sumScu(drops)
+  if (onDropoffs(it).length === 1 && picks.every(filled)) return sumScu(picks)
   return null
 }
 function autoScu(it, sideKey) {
+  const picks = onPickups(it)
   if (sideKey === 'dropoffs') {
-    return it.dropoffs.length === 1 && it.pickups.every(filled) ? sumScu(it.pickups) : null
+    return onDropoffs(it).length === 1 && picks.length && picks.every(filled) ? sumScu(picks) : null
   }
-  if (it.pickups.length > 1) return '自動'
+  if (picks.length > 1) return '未知'
   return demandOf(it)
 }
 function mismatch(it) {
   const demand = demandOf(it)
   if (demand == null) return false
-  const known = sumScu(it.pickups.filter(filled))
+  const picks = onPickups(it)
+  const known = sumScu(picks.filter(filled))
   // 有沒填的取貨點時，有填的合計要比送貨少（沒填的點也要拿得到貨）
-  return it.pickups.every(filled) ? Math.abs(known - demand) > 1e-6 : known >= demand - 1e-6
+  return picks.every(filled) ? Math.abs(known - demand) > 1e-6 : known >= demand - 1e-6
 }
 function itemSummary(it) {
   const demand = demandOf(it)
   if (demand == null) return '— SCU'
   if (mismatch(it)) {
-    const known = fmtNum(sumScu(it.pickups.filter(filled)))
-    return it.pickups.every(filled) ? `取 ${known} ≠ 送 ${fmtNum(demand)} SCU` : `已填取貨 ${known} ≥ 送 ${fmtNum(demand)} SCU`
+    const known = fmtNum(sumScu(onPickups(it).filter(filled)))
+    return onPickups(it).every(filled) ? `取 ${known} ≠ 送 ${fmtNum(demand)} SCU` : `已填取貨 ${known} ≥ 送 ${fmtNum(demand)} SCU`
   }
   return `${fmtNum(demand)} SCU`
 }
@@ -523,7 +558,7 @@ const cargoKey = text => {
 }
 const cargoContracts = computed(() => {
   const map = new Map()
-  contracts.forEach((c, ci) => c.items.forEach((it) => {
+  contracts.forEach((c, ci) => c.on && c.items.forEach((it) => {
     const key = cargoKey(it.cargo)
     if (!key) return
     if (!map.has(key)) map.set(key, new Set())
@@ -537,13 +572,15 @@ function sameNameIn(it, ci) {
 }
 
 const filledContracts = computed(() => contracts
-  .map((c, ci) => ({ name: contractName(c, ci),
+  .map((c, ci) => ({ on: c.on, name: contractName(c, ci),
     items: c.items.filter(it => !blankItem(it))
       .map(it => ({ cargo: it.cargo.trim(),
-        pickups: filledPoints(it.pickups).map(pt => ({ place: pt.place.id, scu: numOrNull(pt.scu) })),
+        pickups: filledPoints(onPickups(it)).map(pt => ({ place: pt.place.id, scu: numOrNull(pt.scu) })),
         dropoffs: filledPoints(dropsOf(it)).map(pt => ({ place: pt.place.id, scu: numOrNull(pt.scu) })) })) }))
-  .filter(c => c.items.length))
-const totalScu = computed(() => contracts.reduce((n, c) => n + c.items.reduce((m, it) => m + (demandOf(it) || 0), 0), 0))
+  .filter(c => c.on && c.items.length)
+  .map(({ on, ...c }) => c))
+const totalScu = computed(() => contracts.filter(c => c.on)
+  .reduce((n, c) => n + c.items.reduce((m, it) => m + (demandOf(it) || 0), 0), 0))
 
 // ── 沒填完的欄位：按「分析分配」時列出來並標紅框（bad 是欄位代號）──
 // 整項空白的貨物（沒選地點、沒填 SCU、沒貨物名稱）直接略過，不算沒填
@@ -559,29 +596,34 @@ const problems = computed(() => {
   })
   let items = 0
   contracts.forEach((c, ci) => c.items.forEach((it, ii) => {
-    if (blankItem(it)) return
+    if (!c.on || blankItem(it)) return
     items++
     const where = `${contractName(c, ci)} › ${it.cargo.trim() || `貨物 ${ii + 1}`}`
     for (const side of SIDES) {
+      if (!it[side.key].some(isOn)) {
+        add(`${where}：${side.label}點都關掉了，至少開一個`)
+        continue
+      }
       if (locked(side)) continue
       it[side.key].forEach((pt, pi) => {
-        if (!pt.place.id) add(`${where}：${side.label} ${pi + 1} 未選地點`, `place-${pt.key}`)
+        if (isOn(pt) && !pt.place.id) add(`${where}：${side.label} ${pi + 1} 未選地點`, `place-${pt.key}`)
       })
     }
-    if (demandOf(it) == null && commonDrop.value && it.dropoffs.length > 1) {
-      add(`${where}：送貨 SCU 至少填一個`, ...it.dropoffs.map(pt => `scu-${pt.key}`))
+    if (!onPickups(it).length || !onDropoffs(it).length) return
+    if (demandOf(it) == null && commonDrop.value && onDropoffs(it).length > 1) {
+      add(`${where}：送貨 SCU 至少填一個`, ...onDropoffs(it).map(pt => `scu-${pt.key}`))
     } else if (demandOf(it) == null) {
       it.dropoffs.forEach((pt, pi) => {
-        if (!filled(pt)) add(`${where}：送貨 ${pi + 1} 未填 SCU`, `scu-${pt.key}`)
+        if (isOn(pt) && !filled(pt)) add(`${where}：送貨 ${pi + 1} 未填 SCU`, `scu-${pt.key}`)
       })
     } else if (mismatch(it)) {
-      add(`${where}：${itemSummary(it)}`, `item-${it.key}`, ...it.pickups.filter(filled).map(pt => `scu-${pt.key}`))
+      add(`${where}：${itemSummary(it)}`, `item-${it.key}`, ...onPickups(it).filter(filled).map(pt => `scu-${pt.key}`))
     }
   }))
-  if (!items) add('合約：至少要填一項貨物')
+  if (!items) add(contracts.some(c => c.on) ? '合約：至少要填一項貨物' : '合約：全部都關掉了，至少開一份')
   else if (commonDrop.value) {
     commonDrops.forEach((cd, di) => {
-      if (!cd.place.id) add(`共同送貨點 ${di + 1}：未選地點`, `cdrop-${cd.key}`)
+      if (cd.on && !cd.place.id) add(`共同送貨點 ${di + 1}：未選地點`, `cdrop-${cd.key}`)
     })
   }
   return { list, bad }
@@ -618,7 +660,7 @@ function ctxOf(sq) {
 // 航段 → 後端的站（取貨／送貨／途經）
 const stepOf = l => (l.action === 'stop' ? { place: l.to.id, kind: 'stop' } : {
   place: l.to.id, kind: l.action, scu: l.scu, cargo: l.cargo, contract: l.contract, contract_name: l.contract_name,
-  item: l.item, item_name: l.item_name, item_named: l.item_named })
+  item: l.item, item_name: l.item_name, item_named: l.item_named, ...(l.scu_unknown ? { scu_unknown: true } : {}) })
 const isStep = l => ['pickup', 'dropoff', 'stop'].includes(l.action)
 
 async function reorder(sq, legs) {
@@ -644,11 +686,18 @@ async function reorder(sq, legs) {
 // 中途重新規劃：從目前位置出發，還沒做的取貨／送貨＋還沒去的插入站＋新插入的站重新排
 async function replan(sq, p) {
   const ctx = ctxOf(sq)
-  // 貨艙裡現在有的：原本就在的＋跑完的取貨，扣掉跑完的送貨（用 cargo 號碼配對）
-  const dropped = new Set(p.done.filter(l => l.action === 'dropoff').map(l => String(l.cargo)))
-  const onboard = [...ctx.onboard, ...p.done.filter(l => l.action === 'pickup').map(l => ({
-    cargo: l.cargo, contract: l.contract, item: l.item, item_name: l.item_name, scu: l.scu }))]
-    .filter(o => !dropped.has(String(o.cargo)))
+  // 貨艙裡現在有的：原本就在的＋已經取過的趟（用 cargo 號碼配對），量＝這趟還沒送的合計
+  // （收集任務的取貨量不知道、送貨可能好幾個點，所以看還剩多少要送，不看取了多少）
+  const left = new Map()
+  for (const l of p.remaining) {
+    if (l.action === 'dropoff') left.set(String(l.cargo), (left.get(String(l.cargo)) || 0) + (l.scu || 0))
+  }
+  const byCargo = new Map()
+  for (const o of [...ctx.onboard, ...p.done.filter(l => l.action === 'pickup')]) {
+    byCargo.set(String(o.cargo), { cargo: o.cargo, contract: o.contract, item: o.item, item_name: o.item_name })
+  }
+  const onboard = [...byCargo.entries()].filter(([c]) => left.get(c) > 0)
+    .map(([c, o]) => ({ ...o, scu: left.get(c) }))
   const steps = p.remaining.filter(l => l.action === 'pickup' || l.action === 'dropoff').map(stepOf)
   const stops = [...p.remaining.filter(l => l.action === 'stop').map(l => l.to.id), ...(p.insert ? [p.insert] : [])]
   const fuel = p.fuel != null ? { mode: 'amount', value: p.fuel } : ctx.fuel
@@ -755,11 +804,31 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .cp-section-title--contract { color: var(--sf-accent-text, var(--sf-accent)); }
 .cp-item { background: var(--sf-panel); border: 1px solid var(--sf-border); border-radius: .5rem; padding: .5rem; }
 .cp-index { min-width: 1.5rem; text-align: center; color: var(--sf-text-muted); }
-.cp-tag { min-width: 2.5rem; color: var(--sf-text-muted); }
+.cp-switch { padding-left: 2.5em; }
+.cp-switch .form-check-input { width: 2.2em; height: 1.2em; cursor: pointer; }
+/* 關掉的點：變淡（開關本身保持清楚） */
+.cp-point--off > :not(.cp-switch) { opacity: .45; }
+/* 關掉的合約：只留標題列、變淡 */
+.cp-off { opacity: .6; }
+/* 小隊：標題列（編號徽章＋隊名）與欄位標題 */
+.cp-squad-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: .6rem;
+  padding-bottom: .5rem; border-bottom: 1px solid rgba(var(--sf-accent-2-rgb), .3); }
+.cp-squad-no { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
+  border-radius: 50%; background: var(--sf-accent-2); color: #0b1020; font-weight: 700; flex: 0 0 auto; }
+.cp-squad-name { flex: 1 1 10rem; max-width: 16rem; font-weight: 600; }
+.cp-field-label { display: block; margin: .25rem 0 .3rem; font-weight: 600; color: var(--sf-accent-2-text, var(--sf-accent-2)); }
+/* 取貨點／送貨點：標題列在上（加點、依星系填入），每個點一列 */
+.cp-side { margin-top: .5rem; }
+.cp-side-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin-bottom: .35rem; }
+.cp-side-label { min-width: 4rem; font-weight: 600; }
+.cp-side-label--pickups { color: var(--sf-accent-text, var(--sf-accent)); }
+.cp-side-label--dropoffs { color: var(--bs-success); }
+.cp-point { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin-bottom: .35rem; }
+.cp-point__place { flex: 1 1 18rem; min-width: 0; }
+.cp-point__scu { flex: 0 0 9rem; width: 9rem; }
 .cp-muted { color: var(--sf-text-muted); }
 .cp-common-place { padding: .25rem .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
-.cp-fill { margin-left: 3rem; padding: .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
-.cp-fill--common { margin-left: 0; }
+.cp-fill { padding: .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
 /* 沒填完的欄位：紅框 */
 .cp-invalid :deep(.form-control) {
   border-color: var(--bs-danger) !important;
