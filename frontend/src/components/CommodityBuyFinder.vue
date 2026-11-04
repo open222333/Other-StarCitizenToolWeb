@@ -9,11 +9,12 @@
   商品清單一次載入（兩三百筆），名稱／類別篩選在前端；勾選或星系改了才打後端查地點，
   行星／地點在前端篩查回來的終端（terminal.planet／terminal.place）。
 
+  商品清單是多欄、每項一行（中文名、英文全名、縮寫）；滑鼠移到（或點）哪一項，上方細節區塊就顯示它的完整名稱、類別、地點數。
   結果用蜂巢式下拉（交易終端 → 每種商品的買價／庫存／回報時間），樣式見 scifi-theme.css 的 .sf-tree-*。
   中文：utils/uexCommodity.js（資料庫 sc_translations）。
 -->
 <template>
-  <div>
+  <div ref="rootEl" :style="{ '--cbf-subtabs-h': `${subtabsH}px` }">
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -63,17 +64,30 @@
 
         <SfState :loading="loading" :error="loadFailed ? '讀取商品清單失敗。' : ''" :empty="!commodities.length"
           empty-text="目前沒有商品價格資料。" @retry="loadCommodities">
-        <div class="cbf-list mt-2" role="group" aria-label="商品">
+        <!-- 細節區塊：滑鼠移到（或點、鍵盤聚焦）哪一項就顯示哪一項；往下捲時黏在畫面頂端（在固定的工具列／分頁列下面） -->
+        <div class="cbf-info mt-2" aria-live="polite">
+          <template v-if="hovered">
+            <span class="fw-semibold">{{ commodityLabel(hovered) }}</span>
+            <span v-if="hovered.code" class="sf-tree-chip">{{ hovered.code }}</span>
+            <span v-if="hovered.is_illegal" class="sf-tree-chip cbf-illegal">違禁</span>
+            <span v-if="hovered.kind" class="cbf-info__muted">{{ hovered.kind }}</span>
+            <span class="cbf-info__muted">{{ hovered.terminal_count }} 個地點</span>
+          </template>
+        </div>
+        <div class="cbf-list mt-2" role="group" aria-label="商品" @mouseleave="hoverId = ''">
           <div v-if="!filteredCommodities.length" class="small text-muted px-2 py-2">沒有符合的商品</div>
           <label v-for="c in filteredCommodities" :key="c.id" class="cbf-item"
-            :class="{ 'is-checked': selectedSet.has(c.id) }">
+            :class="{ 'is-checked': selectedSet.has(c.id) }" @mouseenter="hoverId = c.id" @focusin="hoverId = c.id">
             <input type="checkbox" class="form-check-input me-2" :checked="selectedSet.has(c.id)"
               :disabled="!selectedSet.has(c.id) && selected.length >= maxSelected"
               @change="toggle(c.id, $event.target.checked)">
-            <span class="cbf-item__name">{{ commodityLabel(c) }}</span>
-            <span v-if="c.code" class="sf-tree-chip ms-2">{{ c.code }}</span>
-            <span v-if="c.is_illegal" class="sf-tree-chip cbf-illegal ms-1">違禁</span>
-            <span class="cbf-item__meta">{{ c.terminal_count }} 個地點</span>
+            <span class="cbf-item__name">{{ commodityZh(c.name) || c.name }}</span>
+            <!-- 英文全名、縮寫直接顯示 -->
+            <span class="cbf-item__sub">
+              <span v-if="commodityZh(c.name)" class="cbf-item__en">{{ c.name }}</span>
+              <span v-if="c.code" class="sf-tree-chip">{{ c.code }}</span>
+              <span v-if="c.is_illegal" class="sf-tree-chip cbf-illegal">違禁</span>
+            </span>
           </label>
         </div>
         </SfState>
@@ -128,7 +142,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SfFilterSheet from '@/components/SfFilterSheet.vue'
 import SfState from '@/components/SfState.vue'
@@ -202,6 +216,25 @@ const filteredCommodities = computed(() => {
     (!kinds.value.length || kinds.value.includes(c.kind))
     && (!q || [c.name, c.code, commodityZh(c.name)].some(t => (t || '').toLowerCase().includes(q))))
 })
+
+// 細節區塊黏在頂端時要讓出下層分頁列（.scifi-subtabs，也是 sticky）的高度；
+// 工具列、主分頁列的高度由 MyPlayerView 量好放在 --sf-topbar-h／--sf-tabs-h
+const rootEl = ref(null)
+const subtabsH = ref(0)
+let subtabsObserver = null
+onMounted(() => {
+  const el = document.querySelector('.scifi-subtabs')
+  if (!el || typeof ResizeObserver === 'undefined') return
+  const sync = () => { subtabsH.value = Math.round(el.getBoundingClientRect().height) }
+  sync()
+  subtabsObserver = new ResizeObserver(sync)
+  subtabsObserver.observe(el)
+})
+onBeforeUnmount(() => subtabsObserver?.disconnect())
+
+// 上方細節區塊顯示的商品（滑鼠移到／聚焦的那一項）
+const hoverId = ref('')
+const hovered = computed(() => (hoverId.value ? byId.value.get(hoverId.value) || null : null))
 
 function toggle(id, checked) {
   if (checked) {
@@ -321,27 +354,54 @@ defineExpose({ refresh: () => { loadCommodities(); loadLocations() } })
 
 <style scoped>
 .cbf-picked { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+/* 商品格狀清單：寬度自動排欄（手機 2 欄） */
+/* 商品清單：多欄、每項一行（不加外框） */
 .cbf-list {
-  max-height: 18rem;
-  overflow-y: auto;
-  padding: .25rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .1rem .75rem;
+  padding: .35rem;
   background: var(--sf-panel-2);
   border: 1px solid var(--sf-border);
   border-radius: 6px;
 }
+@media (min-width: 768px) {
+  .cbf-list { grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
+}
+.cbf-list > .small { grid-column: 1 / -1; }
 .cbf-item {
+  position: relative;
   display: flex;
   align-items: center;
-  padding: .35rem .5rem;
+  gap: .4rem;
+  min-width: 0;
+  padding: .3rem .45rem;
   border-radius: 4px;
   cursor: pointer;
   font-size: 1rem;
   color: var(--sf-text);
+  white-space: nowrap;
 }
+.cbf-item .form-check-input { margin-right: 0 !important; flex: 0 0 auto; }
 .cbf-item:hover,
-.cbf-item.is-checked { background: rgba(var(--sf-accent-rgb), .12); }
-.cbf-item__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cbf-item__meta { margin-left: auto; padding-left: .75rem; white-space: nowrap; color: var(--sf-text-muted); }
+.cbf-item:focus-within { background: rgba(var(--sf-accent-rgb), .08); }
+.cbf-item.is-checked { background: rgba(var(--sf-accent-rgb), .16); }
+.cbf-item__name { flex: 0 0 auto; }
+.cbf-item__sub { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+/* 英文全名：一行放不下才省略（上方細節區塊有完整名稱） */
+.cbf-item__en { min-width: 0; color: var(--sf-text-muted); overflow: hidden; text-overflow: ellipsis; }
+.cbf-item__sub .sf-tree-chip { flex: 0 0 auto; }
+/* 上方細節區塊：固定高度，換項目時版面不跳；往下捲時黏在固定的工具列＋分頁列＋下層分頁列下面 */
+.cbf-info {
+  position: sticky;
+  top: calc(var(--sf-topbar-h, 52px) + var(--sf-tabs-h, 42px) + var(--cbf-subtabs-h, 0px) + .35rem);
+  z-index: 5;
+  box-shadow: 0 .3rem .6rem rgba(0, 0, 0, .3);
+  display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .6rem;
+  min-height: 2.4rem; padding: .35rem .6rem;
+  border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-panel);
+}
+.cbf-info__muted { color: var(--sf-text-muted); }
 .cbf-illegal { color: var(--sf-accent-2); border-color: rgba(var(--sf-accent-2-rgb), .45); }
 .cbf-terminal { margin-bottom: .4rem; }
 .cbf-meta { overflow: hidden; text-overflow: ellipsis; }
