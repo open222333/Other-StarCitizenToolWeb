@@ -273,8 +273,15 @@ def test_stations_plan_gives_each_station_to_one_squad(haulers):
             if leg['action'] in ('pickup', 'dropoff'):
                 assert seen.setdefault(leg['to']['id'], sq['index']) == sq['index'], '同一個站點只給一隊'
     assert sorted(sq['stations'] for sq in plan['squads']) == [2, 2], '兩組各給一隊'
-    # 共用取貨點：相連的站點綁成一組，只能給一隊
+    assert plan['group_mode'] == 'all'
+    # 共用取貨點：取送站都不共用只綁得出一組，放寬成取貨站可以多隊共用，兩個送貨站各給一隊
     shared = [_contract('A', ('Ore', 'stA', 'stC', 10), ('Tin', 'stA', 'stY', 10))]
     plan = next(p for p in haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}, {'ship': 'big'}],
                                                 contracts=shared)['plans'] if p['key'] == 'stations')
-    assert plan['groups'] == 1 and sorted(sq['stations'] for sq in plan['squads']) == [0, 3]
+    assert plan['group_mode'] == 'pickup' and plan['groups'] == 2
+    assert sorted(sq['stations'] for sq in plan['squads']) == [2, 2]
+    # 同一個取貨站、同一個送貨站（拆成好幾趟）：每趟各自分
+    one = [_contract('A', ('Ore', 'stA', 'stC', 160))]
+    plan = next(p for p in haul.plan_contracts(start_id='stA', squads=[{'ship': 'big'}, {'ship': 'big'}],
+                                                contracts=one)['plans'] if p['key'] == 'stations')
+    assert plan['group_mode'] == 'task' and all(sq['trips'] == 1 for sq in plan['squads'])

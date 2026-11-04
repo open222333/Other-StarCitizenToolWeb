@@ -20,9 +20,11 @@
   3. 每隊最後再用 src/models/nav.py 的 _order（事件少時是精確的動態規劃）重排一次，取比較好的那個。
   4. 方案（OBJECTIVES）：最快完成（最晚完成的那隊越早越好）、總時間最少（各隊時間加總）、
      總油量最少（各隊耗油加總）。時間、油耗、補燃料、載重係數都跟一般航線同一套（nav.Planner）。
-  5. 另外一個「站點平均」方案（STATIONS_KEY，_assign_stations）：每個站點（取貨點、送貨點都算）只給一隊去，
+  5. 另外一個「站點平均」方案（STATIONS_KEY，_assign_stations）：每個站點（取貨點、送貨點都算）盡量只給一隊去，
      各隊航程（距離）盡量一樣、其次總距離短。一筆貨的取、送站點一定同一隊，所以有貨物相連的站點綁成一組
-     （_station_groups）一起分；組數比隊數少時有些隊會分不到。
+     （_station_groups）一起分。站點太集中（例如同一個倉庫取貨、共同送貨點）綁出來的組比隊數少時，
+     依序放寬（_pick_station_groups）：取貨站可以多隊共用 → 送貨站可以多隊共用 → 每趟貨各自分，
+     取第一個分得出足夠組數的。
 """
 
 import math
@@ -287,8 +289,23 @@ def _station_ids(task: dict) -> list:
     return [n['id'] for n in task['pickups']] + [d['id'] for d, _ in task['drops']]
 
 
-def _station_groups(tasks: list) -> list:
-    """有貨物相連（取貨點→送貨點）的站點綁成一組 → [[任務]]，組跟組之間沒有共用的站點。"""
+#: 站點平均的分組方式（_pick_station_groups 依序試）：all＝取送站都不共用、pickup／dropoff＝那一側的站點可以多隊共用、
+#: task＝每趟貨各自分（站點都可以共用）
+STATION_GROUP_MODES = ('all', 'pickup', 'dropoff', 'task')
+
+
+def _station_groups(tasks: list, mode: str = 'all') -> list:
+    """有貨物相連（取貨點→送貨點）的站點綁成一組 → [[任務]]，組跟組之間沒有共用的站點。
+    mode＝pickup：取貨站不綁（可以多隊共用），只看送貨站；dropoff 反過來；task：每個任務自己一組。"""
+    if mode == 'task':
+        return [[t] for t in tasks]
+
+    def ids_of(t):
+        if mode == 'pickup':
+            return [d['id'] for d, _ in t['drops']]
+        if mode == 'dropoff':
+            return [n['id'] for n in t['pickups']]
+        return _station_ids(t)
     parent = {}
 
     def find(x):
@@ -299,13 +316,25 @@ def _station_groups(tasks: list) -> list:
         return x
 
     for t in tasks:
-        ids = _station_ids(t)
+        ids = ids_of(t)
         for other in ids[1:]:
             parent[find(other)] = find(ids[0])
     groups = {}
     for t in tasks:
-        groups.setdefault(find(_station_ids(t)[0]), []).append(t)
+        groups.setdefault(find(ids_of(t)[0]), []).append(t)
     return list(groups.values())
+
+
+def _pick_station_groups(tasks: list, squads: int) -> tuple:
+    """依 STATION_GROUP_MODES 的順序，取第一個組數夠分給每一隊的分組；都不夠就取組數最多的 → (mode, groups)。"""
+    best = None
+    for mode in STATION_GROUP_MODES:
+        groups = _station_groups(tasks, mode)
+        if len(groups) >= squads:
+            return mode, groups
+        if best is None or len(groups) > len(best[1]):
+            best = (mode, groups)
+    return best
 
 
 def _assign_stations(groups: list, squads: list, deadline: float) -> list:
@@ -632,7 +661,7 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
         seqs = _assign(tasks, evals[key], key, time.monotonic() + SEARCH_SECONDS)
         found.append([_polish(evals[key][i], seq) for i, seq in enumerate(seqs)])
     # 站點平均：每個站點只給一隊，各隊航程（距離）平均（見模組說明 5）
-    groups = _station_groups(tasks)
+    group_mode, groups = _pick_station_groups(tasks, len(squad_infos))
     station_eval = [_Squad(s, planners[s['index']], 'distance') for s in squad_infos]
     station_seqs = [_polish(station_eval[i], seq) for i, seq in enumerate(
         _assign_stations(groups, station_eval, time.monotonic() + SEARCH_SECONDS))]
@@ -689,7 +718,8 @@ def plan_contracts(*, start_id: str, squads: list, contracts: list, end_mode: st
             'warnings': sorted({wn for p in plans for wn in p['warnings']}),
             'same_as': seen.get(sig),
             # 站點平均：有貨物相連而綁在一起的站點組數（比隊數少時有些隊分不到）
-            **({'groups': len(groups)} if key == STATIONS_KEY else {}),
+            # group_mode：用了哪種分組（站點太集中時放寬，見 _pick_station_groups）
+            **({'groups': len(groups), 'group_mode': group_mode} if key == STATIONS_KEY else {}),
         })
         seen.setdefault(sig, key)
     return {
