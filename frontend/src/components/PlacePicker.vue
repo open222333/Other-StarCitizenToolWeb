@@ -140,18 +140,33 @@ async function search(q) {
   return [...sortRows(head), ...sortRows(rest)].slice(0, MAX_RESULTS)
 }
 
+// 星系／行星是「選定地點時自動帶出的」還是使用者自己選的：自動帶出的在改地點文字時要放掉，
+// （回到使用者自己選的範圍），不然已選過的欄位再打字只會在原本那顆星體裡找，看起來像自動完成不見了
+let autoScope = false
+let manualScope = { system: '', group: '' }
+const rememberScope = () => { manualScope = { system: system.value, group: group.value } }
+
 function choose(p) {
   // 打字（還沒選定）時 AutocompleteField 會先送 null：清掉 id，文字保留
+  if (!p && autoScope) {
+    autoScope = false
+    system.value = manualScope.system
+    group.value = manualScope.group
+  }
   emit('update:modelValue', { ...props.modelValue, id: p?.id || '', text: p ? optionName(p) : text.value })
 }
 
 function onSystemChange() {
+  autoScope = false
   group.value = ''
+  rememberScope()
   const cur = byId.value.get(props.modelValue.id)
   if (cur && cur.system !== system.value) clearPlace()
 }
 
 function onGroupChange() {
+  autoScope = false
+  rememberScope()
   const cur = byId.value.get(props.modelValue.id)
   if (cur && group.value && groupKey(cur) !== group.value) clearPlace()
 }
@@ -173,6 +188,7 @@ watch(text, v => {
   }
   system.value = ''
   group.value = ''
+  manualScope = { system: '', group: '' }
 })
 
 // 選定的地點（或瀏覽器記住的）→ 帶出星系、行星與欄位文字
@@ -182,6 +198,7 @@ watch([() => props.modelValue.id, byId], () => {
     system.value = p.system || ''
     group.value = groupKey(p)
     text.value = optionName(p)
+    autoScope = true
   }
 }, { immediate: true })
 watch(() => props.modelValue.text, v => { if (!props.modelValue.id && v !== text.value) text.value = v || '' })

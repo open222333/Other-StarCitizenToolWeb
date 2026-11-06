@@ -35,9 +35,13 @@
                     <option value="fixed">指定地點</option>
                   </select>
                 </div>
-                <div v-if="endMode === 'fixed'" class="col-12 col-md-9">
+                <div v-if="endMode === 'fixed'" class="col">
                   <PlacePicker id="rp-end" label="終點" :places="base.places.value" :model-value="endPlace"
                     @update:model-value="v => Object.assign(endPlace, v)" />
+                </div>
+                <div v-if="finishTarget" class="col-auto">
+                  <button type="button" class="btn btn-sm btn-success" aria-label="完成：終點設為起點"
+                    @click="finishRoute"><i class="bi bi-flag-fill me-1"></i>完成</button>
                 </div>
               </div>
             </div>
@@ -436,6 +440,29 @@ async function plan() {
   result.value = body.data
   lastReq = req
   if (!result.value.plans.some(p => p.key === planKey.value)) planKey.value = result.value.plans[0]?.key
+}
+
+// 完成：跑完這趟，把終點（指定地點；最後一站模式就是目前方案的最後一站）設成下一趟的起點，終點重設
+const finishTarget = computed(() => {
+  if (endMode.value === 'fixed') return endPlace.id ? placeById.value.get(endPlace.id) || null : null
+  if (endMode.value === 'none') {
+    const legs = current.value?.legs || []
+    const id = legs[legs.length - 1]?.to?.id
+    return id ? placeById.value.get(id) || null : null
+  }
+  return null
+})
+function finishRoute() {
+  const p = finishTarget.value
+  if (!p) return
+  Object.assign(start, { id: p.id, text: placeLabel(p) })
+  Object.assign(endPlace, { id: '', text: '' })
+  result.value = null
+  planError.value = ''
+  visited.value = []
+  manualOrder.value = false
+  replannedFrom.value = null
+  reorderError.value = ''
 }
 
 function clearForm() {
