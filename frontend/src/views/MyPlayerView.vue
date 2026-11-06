@@ -231,6 +231,26 @@
         :aria-expanded="searchOpen[sec.key] ? 'true' : 'false'" @click="searchOpen[sec.key] = !searchOpen[sec.key]">
         <i class="bi me-1" :class="searchOpen[sec.key] ? 'bi-x-lg' : sec.icon"></i><span class="sf-btn-text">{{ searchOpen[sec.key] ? `收起${sec.label}` : sec.label }}</span>
       </button>
+      <!-- 查詢條件都記在網址裡，複製下來貼給隊友就是同一個查詢 -->
+      <button type="button" class="btn btn-sm btn-primary" aria-label="複製查詢連結" @click="copySearchLink">
+        <i class="bi me-1" :class="linkCopied ? 'bi-check-lg' : 'bi-link-45deg'"></i><span class="sf-btn-text">{{ linkCopied ? '已複製' : '複製連結' }}</span>
+      </button>
+    </div>
+
+    <!-- ══════════ 查詢 › 一個搜尋框：物品／藍圖／船艦名稱或玩家，選了就帶進對應區塊的條件 ══════════ -->
+    <div v-show="activeTab === 'search'" class="card scifi-card sf-search mb-3">
+      <div class="card-body py-3">
+        <label class="form-label fw-semibold mb-1" for="who-any">搜尋</label>
+        <AutocompleteField id="who-any" v-model="anyText" :search="searchAnything" :get-label="anyLabel" :get-meta="anyMeta"
+          aria-label="搜尋物品、藍圖、船艦或玩家" placeholder="物品、藍圖、船艦或玩家…" :min-chars="1" @select="onAnySelect" />
+        <!-- 選的是玩家：三類各有幾筆，按了切到那一區 -->
+        <div v-if="playerFocus" class="d-flex flex-wrap align-items-center gap-2 mt-2">
+          <span class="fw-semibold me-1">{{ playerFocus.label }}</span>
+          <button v-for="sec in playerFocusSections" :key="sec.key" type="button" class="btn btn-sm"
+            :class="searchOpen[sec.key] ? 'btn-primary' : 'btn-info'" :aria-pressed="searchOpen[sec.key] ? 'true' : 'false'"
+            @click="searchOpen[sec.key] = true"><i :class="sec.icon" class="me-1"></i>{{ sec.text }}</button>
+        </div>
+      </div>
     </div>
 
     <!-- ══════════ 查詢 › 持有物品（原「物品庫存」）══════════ -->
@@ -281,10 +301,11 @@
       </div>
 
       <div v-if="loadingWho" class="text-muted small">查詢中…</div>
-      <div v-else-if="hasStockFilter && !whoRows.length" class="text-muted small">
+      <div v-else-if="!whoRows.length" class="text-muted small">
         找不到符合條件的庫存。
       </div>
-      <div v-else-if="hasStockFilter">
+      <div v-else>
+        <div v-if="whoRows.length >= WHO_LIMIT" class="sf-chip sf-chip--warn mb-2">只列出前 {{ WHO_LIMIT }} 筆，加條件可以縮小範圍</div>
         <!-- 列表外觀跟艦隊（我的艦隊）一致：卡片＋hover 表格＋表頭排序；「詳細」展開持有者與放的地點 -->
         <SortSelect v-if="isPhone" class="mb-2" :sort="whoSort" :options="WHO_SORT_OPTIONS" />
         <div class="card scifi-card">
@@ -1703,10 +1724,17 @@ const activeSub = ref(legacySub || (
     : defaultSub(activeTab.value)
 ))
 
+// 「查詢持有資訊」記在網址上的條件（對應見下面 SEARCH_URL_STR／SEARCH_URL_ARR）。
+// 寫成常數放在這裡：syncUrl 可能在 setup 早期就被呼叫，那時下面的對照表還沒宣告
+const SEARCH_URL_KEYS = ['sec', 'i_q', 'i_id', 'i_p', 'i_t', 'i_sys', 'i_pl', 'i_loc',
+  'b_q', 'b_n', 'b_p', 'b_t', 'f_q', 'f_id', 'f_p', 'f_t', 'f_s', 'f_m', 'f_r']
+
 function syncUrl() {
   const query = { ...route.query, tab: activeTab.value }
   if (activeSub.value) query.sub = activeSub.value
   else delete query.sub
+  // 「查詢持有資訊」的條件只留在那個分頁的網址上
+  if (activeTab.value !== 'search') SEARCH_URL_KEYS.forEach(k => delete query[k])
   // replace 而不是 push：切分頁不該在歷史紀錄裡堆一堆項目，
   // 但仍然讓「重新整理後留在同一分頁」成立。
   router.replace({ query })
@@ -1762,7 +1790,10 @@ watch([activeTab, activeSub], ([tab, sub]) => loadForTab(tab, sub))
 function loadSearchSections() {
   if (!Object.values(searchOpen).some(Boolean)) return
   ensureRoster()
-  if (searchOpen.items && !itemTypes.value.length) loadItemTypes()
+  if (searchOpen.items) {
+    if (!itemTypes.value.length) loadItemTypes()
+    if (!whoLoaded) runStockSearch()
+  }
   if (searchOpen.blueprints) {
     if (!blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
     if (!bpHolders.value.length) loadBlueprintHolders()
@@ -2296,14 +2327,24 @@ function showRecipe(bp) {
   recipeFor.value = recipeFor.value === bp._id ? null : bp._id
 }
 
+// 名稱欄打字還沒從候選清單選定時，用打的字當關鍵字篩（停手 350ms 再查）；選定了就用選定的精確值
+const itemsNameQuery = ref('')
+const bpNameQuery    = ref('')
+const flNameQuery    = ref('')
+function typedQuery(textRef, selectedRef, outRef) {
+  let t = null
+  watch([textRef, selectedRef], () => {
+    clearTimeout(t)
+    t = setTimeout(() => { outRef.value = selectedRef.value ? '' : (textRef.value || '').trim() }, 350)
+  })
+}
+
 // ── 查詢 › 持有藍圖：誰登記了這張藍圖 ──────────────────────────
 // 這是藍圖版的 /inventory/where —— 查的是別人的名冊，不是自己的。
 //
-// 5 個欄位（藍圖名稱／藍圖類型／玩家id／玩家暱稱，AND 語意，見
-// Blueprint.find_holders 的說明）都是「選定才算數」的 autocomplete——
-// 純打字不會觸發查詢，只有從候選清單選一個才會。沒有任何欄位選定時預設
-// 瀏覽全部（維持舊版單一輸入框留空＝列出全部的行為），不像物品庫存要求
-// 至少一個篩選條件。
+// 欄位（藍圖名稱／藍圖類型／玩家id／玩家暱稱，AND 語意，見
+// Blueprint.find_holders 的說明）：名稱欄打字就用打的字當關鍵字篩（typedQuery，中英文都比對），
+// 從候選清單選定了就用選定的英文名；玩家欄要選定才算數。沒有任何條件時列出全部（三區都一樣）。
 const bpHolders        = ref([])
 // 手機的排序下拉（表頭在手機上看不到）
 const BP_HOLDER_SORT_OPTIONS = [{ field: 'name', label: '藍圖' }, { field: 'type', label: '類型' },
@@ -2332,7 +2373,7 @@ async function loadBlueprintHolders() {
   clearTree('b|')
   loadingBpHolders.value = true
   const params = new URLSearchParams({ limit: '100' })
-  if (bpSelectedName.value) params.set('q', bpSelectedName.value)
+  if (bpSelectedName.value || bpNameQuery.value) params.set('q', bpSelectedName.value || bpNameQuery.value)
   bpSelectedTypes.value.forEach(t => params.append('output_type', t))
   if (bpPlayerScid.value) params.set('player_id', bpPlayerScid.value)
   const res = await playerAuth.playerFetch(`/blueprint/holders?${params.toString()}`)
@@ -2343,7 +2384,8 @@ async function loadBlueprintHolders() {
   bpHolders.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-watch([bpSelectedName, bpSelectedTypes, bpPlayerScid], loadBlueprintHolders)
+typedQuery(bpNameText, bpSelectedName, bpNameQuery)
+watch([bpSelectedName, bpNameQuery, bpSelectedTypes, bpPlayerScid], loadBlueprintHolders)
 
 async function searchBlueprintNames(q) {
   const res = await playerAuth.playerFetch(`/blueprint/master/search?q=${encodeURIComponent(q)}&limit=20`)
@@ -2465,8 +2507,10 @@ const itemsPlayerIdText       = ref('')
 const itemsPlayerNicknameText = ref('')
 const itemsPlayerScid         = ref('')
 
+typedQuery(itemsNameText, itemsSelectedItemId, itemsNameQuery)
+
 const hasStockFilter = computed(() => !!(
-  itemsSelectedItemId.value || itemsSelectedTypes.value.length ||
+  itemsSelectedItemId.value || itemsNameQuery.value || itemsSelectedTypes.value.length ||
   itemsSelectedSystems.value.length || itemsSelectedPlanets.value.length ||
   itemsSelectedLocations.value.length || itemsPlayerScid.value
 ))
@@ -2474,18 +2518,21 @@ const hasStockFilter = computed(() => !!(
 // 每次搜尋遞增。慢的舊請求回來時若序號已過期就丟掉。
 let whoSeq = 0
 
+// 沒選任何條件時列出全部（all=1，最多 WHO_LIMIT 筆）
+const WHO_LIMIT = 300
+let whoLoaded = false
 async function runStockSearch() {
-  if (!hasStockFilter.value) {
-    whoRows.value = []
-    loadingWho.value = false
-    return
-  }
+  whoLoaded = true
   const seq = ++whoSeq
   clearTree('i|')
   loadingWho.value = true
-  const params = new URLSearchParams({ limit: '200' })
+  const params = new URLSearchParams({ limit: String(WHO_LIMIT) })
+  if (!hasStockFilter.value) params.set('all', '1')
   if (itemsSelectedItemId.value) params.set('item_id', itemsSelectedItemId.value)
-  else itemsSelectedTypes.value.forEach(t => params.append('item_type', t))
+  else {
+    itemsSelectedTypes.value.forEach(t => params.append('item_type', t))
+    if (itemsNameQuery.value) params.set('name', itemsNameQuery.value)
+  }
   itemsSelectedSystems.value.forEach(sys => params.append('star_system', sys))
   itemsSelectedPlanets.value.forEach(p => params.append('planet', p))
   itemsSelectedLocations.value.forEach(loc => params.append('location', loc))
@@ -2498,7 +2545,7 @@ async function runStockSearch() {
   whoRows.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-watch([itemsSelectedItemId, itemsSelectedTypes, itemsSelectedSystems, itemsSelectedPlanets,
+watch([itemsSelectedItemId, itemsNameQuery, itemsSelectedTypes, itemsSelectedSystems, itemsSelectedPlanets,
   itemsSelectedLocations, itemsPlayerScid], runStockSearch)
 
 // 物品名稱／物品類型互斥（見上面的說明）：勾了類型就清掉已選的物品名稱
@@ -2987,8 +3034,8 @@ function toggleHolderGroup(id) {
 }
 //
 // 船艦名稱／類型／尺寸／廠商／角色／玩家id／玩家暱稱，AND 語意，打
-// /player/fleet/holders。跟「持有藍圖」一樣：都沒選定時列出全部人的艦隊，
-// 欄位要從候選清單選定才算數（純打字不觸發查詢）。
+// /player/fleet/holders。跟「持有藍圖」一樣：都沒選定時列出全部人的艦隊；
+// 船艦名稱打字就當關鍵字篩（q），選定了就用那一款（vehicle_id）。
 const fleetHolders        = ref([])
 const vehicleSortAccessors = {
   name: v => v?.name_zh || v?.name, type: v => vehicleTypeLabel(v?.vehicle_type) || null,
@@ -3038,6 +3085,7 @@ async function loadFleetHolders() {
   loadingFleetHolders.value = true
   const params = new URLSearchParams({ limit: '100' })
   if (flSelectedVehicleId.value) params.set('vehicle_id', flSelectedVehicleId.value)
+  else if (flNameQuery.value) params.set('q', flNameQuery.value)
   flSelectedTypes.value.forEach(v => params.append('type', v))
   flSelectedSizes.value.forEach(v => params.append('size_class', v))
   flSelectedMfrs.value.forEach(v => params.append('manufacturer_code', v))
@@ -3051,7 +3099,8 @@ async function loadFleetHolders() {
   fleetHolders.value = (res.ok && data?.success) ? (data.data || []) : []
 }
 
-watch([flSelectedVehicleId, flSelectedTypes, flSelectedSizes, flSelectedMfrs, flSelectedRoles, flPlayerScid],
+typedQuery(flNameText, flSelectedVehicleId, flNameQuery)
+watch([flSelectedVehicleId, flNameQuery, flSelectedTypes, flSelectedSizes, flSelectedMfrs, flSelectedRoles, flPlayerScid],
   loadFleetHolders)
 
 async function searchVehicleNames(q) {
@@ -3103,6 +3152,135 @@ watch([locations, myInventory, history, whoRows], () => {
   ])
 })
 
+// ── 查詢 › 一個搜尋框（物品／藍圖／船艦名稱或玩家）──────────────────────
+// 不另外做一套結果畫面：選了東西就清掉三區的條件、把它帶進對應那一區並打開；
+// 選了玩家就三區的玩家條件都設成他，上面列出三類各有幾筆，按了切到那一區。
+const anyText = ref('')
+const ANY_KINDS = { player: '玩家', item: '物品', bp: '藍圖', vehicle: '船艦' }
+async function searchAnything(q) {
+  const [players, items, bps, vehicles] = await Promise.all([
+    searchPlayersLocal(q), searchItemNames(q), searchBlueprintNames(q), searchVehicleNames(q)])
+  return [
+    ...players.slice(0, 5).map(c => ({ kind: 'player', c })),
+    ...items.slice(0, 6).map(c => ({ kind: 'item', c })),
+    ...bps.slice(0, 6).map(c => ({ kind: 'bp', c })),
+    ...vehicles.slice(0, 6).map(c => ({ kind: 'vehicle', c })),
+  ]
+}
+function anyLabel(x) {
+  if (x.kind === 'player') return holderLabel(x.c.nickname, x.c.player_name, x.c.star_citizen_id)
+  if (x.kind === 'item') return itemNameLabel(x.c)
+  if (x.kind === 'bp') return blueprintNameLabel(x.c)
+  return vehicleNameLabel(x.c.name, x.c.name_zh)
+}
+function anyMeta(x) {
+  const en = x.kind !== 'player' && x.c.name_zh && x.c.name !== x.c.name_zh ? x.c.name : ''
+  return [ANY_KINDS[x.kind], en].filter(Boolean).join(' · ')
+}
+function setPlayerEverywhere(p) {
+  const scid = p.star_citizen_id, nick = p.nickname || p.player_name || ''
+  itemsPlayerScid.value = scid; itemsPlayerIdText.value = scid; itemsPlayerNicknameText.value = nick
+  bpPlayerScid.value = scid;    bpPlayerIdText.value = scid;    bpPlayerNicknameText.value = nick
+  flPlayerScid.value = scid;    flPlayerIdText.value = scid;    flPlayerNicknameText.value = nick
+}
+function onAnySelect(x) {
+  if (!x) return   // 打字中（還沒選定）
+  clearItemsFilters()
+  clearBpFilters()
+  clearFleetFilters()
+  const label = anyLabel(x)
+  if (x.kind === 'player') {
+    setPlayerEverywhere(x.c)
+    if (!Object.values(searchOpen).some(Boolean)) searchOpen.items = true
+  } else if (x.kind === 'item') {
+    itemsNameText.value = label
+    itemsSelectedItemId.value = x.c._id
+    searchOpen.items = true
+  } else if (x.kind === 'bp') {
+    bpNameText.value = label
+    bpSelectedName.value = x.c.name
+    searchOpen.blueprints = true
+  } else {
+    flNameText.value = label
+    flSelectedVehicleId.value = x.c._id
+    searchOpen.fleet = true
+  }
+}
+// 三區的玩家條件都是同一個人＝「查這個人有什麼」
+const playerFocus = computed(() => {
+  const scid = itemsPlayerScid.value
+  if (!scid || bpPlayerScid.value !== scid || flPlayerScid.value !== scid) return null
+  const p = playerRoster.value.find(r => r.star_citizen_id === scid)
+  return { scid, label: p ? holderLabel(p.nickname, p.player_name, scid) : scid }
+})
+const playerFocusSections = computed(() => [
+  { key: 'items', icon: 'bi bi-box-seam', text: `物品 ${loadingWho.value ? '…' : whoTree.value.length} 種` },
+  { key: 'blueprints', icon: 'bi bi-diagram-3', text: `藍圖 ${loadingBpHolders.value ? '…' : bpHolders.value.length} 張` },
+  { key: 'fleet', icon: 'bi bi-rocket-takeoff', text: `船艦 ${loadingFleetHolders.value ? '…' : fleetHolders.value.length} 款` },
+])
+
+// ── 查詢條件記在網址（?tab=search&sec=…&i_q=…），重新整理或貼給隊友都是同一個查詢 ──
+// 字串欄位：名稱欄的文字、選定的 id／英文名、玩家遊戲ID；陣列欄位：多選的類型／地點等
+const SEARCH_URL_STR = {
+  i_q: itemsNameText, i_id: itemsSelectedItemId, i_p: itemsPlayerScid,
+  b_q: bpNameText, b_n: bpSelectedName, b_p: bpPlayerScid,
+  f_q: flNameText, f_id: flSelectedVehicleId, f_p: flPlayerScid,
+}
+const SEARCH_URL_ARR = {
+  i_t: itemsSelectedTypes, i_sys: itemsSelectedSystems, i_pl: itemsSelectedPlanets, i_loc: itemsSelectedLocations,
+  b_t: bpSelectedTypes,
+  f_t: flSelectedTypes, f_s: flSelectedSizes, f_m: flSelectedMfrs, f_r: flSelectedRoles,
+}
+const asArray = v => (v == null ? [] : Array.isArray(v) ? v : [v]).filter(Boolean).map(String)
+
+function applySearchQuery(q) {
+  if (q.tab !== 'search') return
+  for (const [k, r] of Object.entries(SEARCH_URL_ARR)) if (q[k] != null) r.value = asArray(q[k])
+  for (const [k, r] of Object.entries(SEARCH_URL_STR)) if (typeof q[k] === 'string') r.value = q[k]
+  if (SEARCH_SECTIONS.some(sec => sec.key === q.sec)) searchOpen[q.sec] = true
+  // 玩家欄位的顯示文字（id／暱稱）等名單載入後補上
+  const scids = [itemsPlayerScid, bpPlayerScid, flPlayerScid].filter(r => r.value)
+  if (scids.length) {
+    ensureRoster().then(() => {
+      for (const [r, idText, nickText] of [[itemsPlayerScid, itemsPlayerIdText, itemsPlayerNicknameText],
+        [bpPlayerScid, bpPlayerIdText, bpPlayerNicknameText], [flPlayerScid, flPlayerIdText, flPlayerNicknameText]]) {
+        if (!r.value) continue
+        const p = playerRoster.value.find(x => x.star_citizen_id === r.value)
+        idText.value = r.value
+        nickText.value = p ? (p.nickname || p.player_name || '') : ''
+      }
+    })
+  }
+}
+
+function searchUrlQuery() {
+  const out = {}
+  const open = SEARCH_SECTIONS.find(sec => searchOpen[sec.key])
+  if (open) out.sec = open.key
+  for (const [k, r] of Object.entries(SEARCH_URL_STR)) if (r.value) out[k] = String(r.value)
+  for (const [k, r] of Object.entries(SEARCH_URL_ARR)) if (r.value.length) out[k] = [...r.value]
+  return out
+}
+let searchUrlTimer = null
+watch([() => ({ ...searchOpen }), ...Object.values(SEARCH_URL_STR), ...Object.values(SEARCH_URL_ARR)], () => {
+  clearTimeout(searchUrlTimer)
+  searchUrlTimer = setTimeout(() => {
+    if (activeTab.value !== 'search') return
+    const query = { ...route.query }
+    SEARCH_URL_KEYS.forEach(k => delete query[k])
+    router.replace({ query: { ...query, ...searchUrlQuery() } })
+  }, 300)
+}, { deep: true })
+
+const linkCopied = ref(false)
+async function copySearchLink() {
+  try {
+    await navigator.clipboard.writeText(window.location.href)
+    linkCopied.value = true
+    setTimeout(() => { linkCopied.value = false }, 2000)
+  } catch { /* 瀏覽器不給複製就算了 */ }
+}
+
 // ── 工具列的展開區塊：同一個分頁一次只開一個，開了一個就收起其他的 ──
 function exclusiveDrawers(refs) {
   refs.forEach((r, i) => watch(r, on => {
@@ -3112,6 +3290,7 @@ function exclusiveDrawers(refs) {
 const warehouseDrawers = [historyOpen]
 exclusiveDrawers(warehouseDrawers)
 exclusiveDrawers(SEARCH_SECTIONS.map(sec => toRef(searchOpen, sec.key)))
+applySearchQuery(route.query)
 exclusiveDrawers([fleetDataOpen, fleetImportOpen])
 const warehouseDrawerOpen = computed(() => warehouseDrawers.some(r => r.value))
 
