@@ -343,11 +343,11 @@
   border-bottom: 3px solid var(--sf-accent);
 }
 
-/* ── 內容區：滿版，但超寬螢幕上仍給一個上限避免行長到難讀 ── */
+/* ── 內容區：跟著螢幕寬度滿版（不設上限，寬螢幕也撐滿） ── */
 .scifi-body {
   flex: 1 1 auto;
   width: 100%;
-  max-width: var(--sf-content-max, 1600px);
+  max-width: var(--sf-content-max, 100%);
   margin: 0 auto;
   padding: clamp(.75rem, 2vw, 1.5rem);
 }
@@ -374,7 +374,6 @@ html:has(.scifi-page) { color-scheme: dark; }
   padding-top: .25rem; padding-bottom: .25rem;
 }
 :root[data-sf-density='compact'] .scifi-body .card { margin-bottom: .4rem !important; }
-:root[data-sf-density='compact'] { --sf-content-max: 100%; }
 
 /* ── 按鈕的鍵盤 focus 指示 ──────────────────────────────────────────
  * Bootstrap 的 .btn:focus-visible 會設 outline:0，改用
