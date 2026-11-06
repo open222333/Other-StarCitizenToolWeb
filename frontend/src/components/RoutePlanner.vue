@@ -35,15 +35,14 @@
                     <option value="fixed">指定地點</option>
                   </select>
                 </div>
-                <div v-if="endMode === 'fixed'" class="col">
+                <div v-if="endMode === 'fixed'" class="col-12 col-md-9">
                   <PlacePicker id="rp-end" label="終點" :places="base.places.value" :model-value="endPlace"
                     @update:model-value="v => Object.assign(endPlace, v)" />
                 </div>
-                <div v-if="finishTarget" class="col-auto">
-                  <button type="button" class="btn btn-sm btn-success" aria-label="完成：終點設為起點"
-                    @click="finishRoute"><i class="bi bi-flag-fill me-1"></i>完成</button>
-                </div>
               </div>
+              <button v-if="finishTarget" type="button" class="btn btn-sm btn-success mt-2 rp-finish"
+                :aria-label="`完成這趟，把${finishName}設為新起點`" @click="finishRoute">
+                <i class="bi bi-flag-fill me-1"></i>完成這趟：把「{{ finishName }}」設為新起點</button>
             </div>
             <div class="col-12">
               <div class="form-check mb-1">
@@ -452,6 +451,7 @@ const finishTarget = computed(() => {
   }
   return null
 })
+const finishName = computed(() => finishTarget.value ? (finishTarget.value.name_zh || finishTarget.value.name) : '')
 function finishRoute() {
   const p = finishTarget.value
   if (!p) return
@@ -493,4 +493,5 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .rp-cargo { border: 1px solid var(--sf-border); border-radius: .5rem; padding: .5rem; }
 .rp-cargo-tag { min-width: 2.5rem; font-size: 1rem; color: var(--sf-text-muted); }
 .rp-scu { max-width: 9rem; }
+.rp-finish { max-width: 100%; white-space: normal; text-align: left; }
 </style>
