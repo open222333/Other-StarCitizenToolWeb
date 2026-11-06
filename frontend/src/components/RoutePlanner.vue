@@ -208,17 +208,14 @@
               :replannable="!SHOW_CARGO" :replanning="reordering" :places="base.places.value"
               @reorder="reorder" @replan="replan" />
 
-            <!-- 完成：結束這趟（清掉結果），或把終點設成下一趟的起點、終點重設 -->
+            <!-- 完成：兩個選項直接列出來——結束這趟（清掉結果），或把終點設成下一趟的起點、終點重設。
+                 終點就是起點（回到起點）時「設為起點」沒有作用，按鈕停用 -->
             <div class="rp-finish mt-3">
-              <button v-if="!finishOpen" type="button" class="btn btn-sm btn-success" @click="finishOpen = true">
-                <i class="bi bi-flag-fill me-1"></i>完成</button>
-              <template v-else>
-                <button type="button" class="btn btn-sm btn-primary" @click="endTrip">
-                  <i class="bi bi-stop-circle me-1"></i>結束</button>
-                <button v-if="finishTarget" type="button" class="btn btn-sm btn-success" @click="finishRoute">
-                  <i class="bi bi-arrow-repeat me-1"></i>終點「{{ finishName }}」設為起點</button>
-                <button type="button" class="btn btn-sm btn-secondary" @click="finishOpen = false">取消</button>
-              </template>
+              <span class="rp-finish__label"><i class="bi bi-flag-fill me-1"></i>完成</span>
+              <button type="button" class="btn btn-sm btn-primary" @click="endTrip">
+                <i class="bi bi-stop-circle me-1"></i>結束</button>
+              <button type="button" class="btn btn-sm btn-success" :disabled="!finishTarget" @click="finishRoute">
+                <i class="bi bi-arrow-repeat me-1"></i>{{ finishTarget ? `終點「${finishName}」設為起點` : '終點設為起點' }}</button>
             </div>
           </template>
         </div>
@@ -438,7 +435,6 @@ async function reorder(legs) {
 async function plan() {
   if (!canPlan.value) return
   planning.value = true
-  finishOpen.value = false
   if (popupResult.value) resultOpen.value = true
   planError.value = ''
   visited.value = []
@@ -474,7 +470,6 @@ async function plan() {
 
 // 完成：跑完這趟後「結束」（清掉結果）或「終點設為起點」（目前方案最後一站變成下一趟起點，終點重設）。
 // 終點看目前方案實際的最後一站（最後一站／指定地點／中途重新規劃過都對）；回到起點時跟起點一樣就不給這個選項
-const finishOpen = ref(false)
 const finishTarget = computed(() => {
   const legs = current.value?.legs || []
   const id = legs[legs.length - 1]?.to?.id
@@ -489,7 +484,6 @@ function resetResult() {
   manualOrder.value = false
   replannedFrom.value = null
   reorderError.value = ''
-  finishOpen.value = false
   resultOpen.value = false
 }
 function endTrip() {
@@ -531,5 +525,8 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .rp-cargo-tag { min-width: 2.5rem; font-size: 1rem; color: var(--sf-text-muted); }
 .rp-scu { max-width: 9rem; }
 .rp-finish { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem;
-  padding-top: .75rem; border-top: 1px solid var(--sf-border); }
+  align-items: center; padding: .6rem 0; border-top: 1px solid var(--sf-border);
+  /* 貼在視窗（或畫面）底部，航段很多時不用捲到最下面才看得到 */
+  position: sticky; bottom: -1rem; z-index: 2; background: var(--sf-panel); }
+.rp-finish__label { font-weight: 600; color: var(--sf-text-strong); margin-right: auto; }
 </style>
