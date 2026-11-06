@@ -418,9 +418,12 @@ class Blueprint:
         pipeline: list = [{'$match': match}]
         if (query or '').strip():
             import re
-            pipeline.append({'$match': {
-                'name': {'$regex': re.escape(query.strip()), '$options': 'i'},
-            }})
+            # 英文名中綴（玩家登記時存的 name），或主檔中文名含關鍵字的那幾張（「持有藍圖」名稱欄打中文也查得到）
+            zh_uuids = [r['_id'] for r in BlueprintMaster._col().find(
+                {'name_zh': {'$regex': re.escape(query.strip())}}, {'_id': 1}).limit(1000)]
+            name_match = {'name': {'$regex': re.escape(query.strip()), '$options': 'i'}}
+            pipeline.append({'$match': {'$or': [name_match, {'blueprint_uuid': {'$in': zh_uuids}}]}
+                             if zh_uuids else name_match})
 
         pipeline += [
             {'$lookup': {

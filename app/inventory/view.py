@@ -322,6 +322,8 @@ def search_stock():
       - {in: query, name: star_system, type: string, description: "地點所屬星系，可重複帶多個（新版分欄位模式）"}
       - {in: query, name: planet, type: string, description: "地點所屬行星，可重複帶多個（新版分欄位模式）"}
       - {in: query, name: player_id, type: string, description: "精確玩家遊戲ID（新版分欄位模式，來自「玩家id」或「玩家暱稱」欄位自動完成）"}
+      - {in: query, name: name, type: string, description: "物品名稱關鍵字（英文或中文中綴，新版分欄位模式；「物品名稱」欄位打字還沒選定時用，可跟 item_type 一起 AND）"}
+      - {in: query, name: all, type: string, description: "1＝不帶任何條件也列出全部（「持有物品」沒選條件時瀏覽用，受 limit 限制）"}
       - {in: query, name: limit, type: integer, default: 100, description: "最多 300"}
     responses:
       200:
@@ -338,22 +340,29 @@ def search_stock():
         return jsonify({'success': True, 'data': [], 'matched': None})
     locations_exact = locations_exact or []
     player_id = (request.args.get('player_id') or '').strip()
+    name = (request.args.get('name') or '').strip()
+    browse_all = (request.args.get('all') or '').strip().lower() in ('1', 'true')
 
     try:
         limit = int(request.args.get('limit', 100))
     except ValueError:
         limit = 100
 
-    if item_id or item_types or locations_exact or player_id:
+    if item_id or item_types or name or locations_exact or player_id or browse_all:
         item_ids = None
         if item_id:
             item_ids = [item_id]
-        elif item_types:
-            item_ids = ItemMaster.ids_of_type(item_types)
+        else:
+            if item_types:
+                item_ids = ItemMaster.ids_of_type(item_types)
+            # 名稱關鍵字（還沒從候選清單選定時的打字內容）：跟類型取交集
+            if name:
+                by_name = ItemMaster.ids_matching(name, limit=1000)
+                item_ids = by_name if item_ids is None else [i for i in item_ids if i in set(by_name)]
 
         rows = Inventory.search_filtered(
             WMS_SCOPE_ID, item_ids=item_ids, location=locations_exact,
-            player_scid=player_id, limit=limit,
+            player_scid=player_id, limit=limit, browse_all=browse_all,
         )
         _add_holder_info(rows)
         return jsonify({'success': True, 'data': rows, 'matched': None})

@@ -1028,3 +1028,21 @@ def test_item_match_names(client, auth_headers):
     assert got[0]['item']['_id'] == 'qd' and got[1]['item'] is None and got[1]['candidates'] == []
     assert client.post('/item/match', json={'names': 'abc'}, headers=auth_headers).status_code == 400
     assert client.post('/item/match', json={'names': ['a'] * 51}, headers=auth_headers).status_code == 400
+
+
+def test_search_filtered_browse_all(client, auth_headers, seed_search):
+    """all=1：沒有任何條件也列出全部庫存（「持有物品」不選條件時瀏覽）。"""
+    body = _search_filtered(client, auth_headers, all='1')
+    assert {r['item_id'] for r in body['data']} == {'item-big', 'item-small'}
+
+
+def test_search_filtered_by_name_keyword(client, auth_headers, seed_search):
+    """name：物品名稱關鍵字（中綴、不分大小寫），還沒從候選清單選定時用。"""
+    body = _search_filtered(client, auth_headers, name='agri')
+    assert {r['item_id'] for r in body['data']} == {'item-big'}
+
+
+def test_search_filtered_name_and_type_are_anded(client, auth_headers, seed_search):
+    """name='agri'（item-big）AND item_type='Cooler'（item-small）——交集是空的。"""
+    body = _search_filtered(client, auth_headers, name='agri', item_type='Cooler')
+    assert body['data'] == []

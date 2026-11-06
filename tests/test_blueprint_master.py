@@ -517,6 +517,15 @@ def test_holders_filters_by_query(app, three_players_with_blueprints):
     assert groups[0]['name'] == 'Omnisky III Cannon'
 
 
+def test_holders_filters_by_chinese_name(app, seeded_master, three_players_with_blueprints):
+    """名稱欄打中文：比對主檔的 name_zh（玩家登記存的是英文 name）。"""
+    from src.mongo import get_db
+    get_db()['blueprint_master'].update_one(
+        {'_id': API_ROW['uuid']}, {'$set': {'name_zh': '歐姆尼天三型加農炮'}})
+    groups = BlueprintModel.find_holders(query='加農炮')
+    assert [g['name'] for g in groups] == ['Omnisky III Cannon']
+
+
 def test_holders_excludes_soft_deleted_blueprints(app, three_players_with_blueprints):
     """玩家刪掉的藍圖不該出現在別人的查詢結果裡。"""
     ids = three_players_with_blueprints

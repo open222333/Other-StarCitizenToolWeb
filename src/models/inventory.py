@@ -354,7 +354,7 @@ class Inventory:
 
     @classmethod
     def search_filtered(cls, scope_id: str, item_ids=None, location='',
-                        player_scid: str = '', limit: int = 100) -> list:
+                        player_scid: str = '', limit: int = 100, browse_all: bool = False) -> list:
         """分欄位、AND 語意的庫存搜尋——跟 search_any（OR 取聯集）是不同語意，
         給「查詢 › 物品庫存」拆分欄位版用：使用者從各欄位的自動完成候選裡
         選出精確值（物品／地點／玩家），這裡要求全部有填的條件同時成立
@@ -374,11 +374,14 @@ class Inventory:
         條件就代表「查不到」，回全部庫存會讓使用者誤以為自己真的查到了。
 
         location 可以是單一地點或多個地點（「物品地點」欄位可多選，取聯集）。
+
+        browse_all=True 是「持有物品」沒選任何條件時的瀏覽：明確要求才列出全部（受 limit 限制），
+        沒傳的話維持上面「沒條件就回空」的行為。
         """
         locations = [location] if isinstance(location, str) else list(location or [])
         locations = list(dict.fromkeys(loc for loc in locations if loc))
         has_filter = item_ids is not None or bool(locations) or bool(player_scid)
-        if not has_filter:
+        if not has_filter and not browse_all:
             return []
         if item_ids is not None and not item_ids:
             return []
