@@ -944,15 +944,15 @@
           <tr>
             <SortTh :sort="myFleetSort" field="name" class="ps-3">船艦</SortTh>
             <SortTh :sort="myFleetSort" field="type" class="d-none d-md-table-cell">類型</SortTh>
-            <SortTh :sort="myFleetSort" field="size" class="d-none d-md-table-cell">尺寸</SortTh>
+            <SortTh :sort="myFleetSort" field="size" class="d-none d-lg-table-cell">尺寸</SortTh>
             <SortTh :sort="myFleetSort" field="manufacturer" class="d-none d-lg-table-cell">廠商</SortTh>
             <SortTh :sort="myFleetSort" field="role" class="d-none d-lg-table-cell">角色</SortTh>
             <SortTh :sort="myFleetSort" field="cargo" class="text-end">載貨</SortTh>
             <SortTh :sort="myFleetSort" field="usd" class="text-end">美金</SortTh>
             <SortTh :sort="myFleetSort" field="auec" class="text-end">遊戲幣</SortTh>
-            <SortTh :sort="myFleetSort" field="rent" class="text-end">租用</SortTh>
-            <SortTh :sort="myFleetSort" field="ratio" class="text-end">aUEC／美金</SortTh>
-            <SortTh :sort="myFleetSort" field="loadouts" class="text-end d-none d-lg-table-cell">配件網址</SortTh>
+            <SortTh :sort="myFleetSort" field="rent" class="text-end d-none d-xl-table-cell">租用</SortTh>
+            <SortTh :sort="myFleetSort" field="ratio" class="text-end d-none d-xxl-table-cell">aUEC／美金</SortTh>
+            <SortTh :sort="myFleetSort" field="loadouts" class="text-end d-none d-xxl-table-cell">配件網址</SortTh>
             <SortTh :sort="myFleetSort" field="quantity" class="text-end">數量</SortTh>
             <th class="pe-3"></th>
           </tr>
@@ -967,17 +967,17 @@
               <span v-if="row.vehicle && row.vehicle.is_current === false"
                 class="sf-tree-chip ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
             </td>
-            <!-- 手機／平板藏次要欄位（「詳細」裡都看得到） -->
+            <!-- 手機／平板藏次要欄位（「詳細」裡都看得到）；尺寸 ≥992、租用 ≥1200、aUEC／美金與配件網址 ≥1400 才顯示，平板與一般筆電不用橫向捲 -->
             <td class="d-none d-md-table-cell" data-label="類型">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) || '—' }}</td>
-            <td class="d-none d-md-table-cell" data-label="尺寸">{{ vehicleSizeLabel(row.vehicle?.size_class) || '—' }}</td>
+            <td class="d-none d-lg-table-cell" data-label="尺寸">{{ vehicleSizeLabel(row.vehicle?.size_class) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="角色">{{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) || '—' }}</td>
             <td class="text-end text-nowrap" data-label="載貨">{{ scuLabel(row.vehicle?.cargo_capacity_scu) }}</td>
             <td class="text-end text-nowrap" data-label="美金">{{ fmtUsd(row.vehicle?.msrp) }}</td>
             <td class="text-end text-nowrap" data-label="遊戲幣">{{ fmtAuec(row.vehicle?.uex_price?.buy_min) }}</td>
-            <td class="text-end text-nowrap" data-label="租用">{{ fmtAuec(row.vehicle?.uex_price?.rent_min) }}</td>
-            <td class="text-end text-nowrap" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(row.vehicle)) }}</td>
-            <td class="text-end d-none d-lg-table-cell" data-label="配件網址">{{ row.loadout_links?.length || '—' }}</td>
+            <td class="text-end text-nowrap d-none d-xl-table-cell" data-label="租用">{{ fmtAuec(row.vehicle?.uex_price?.rent_min) }}</td>
+            <td class="text-end text-nowrap d-none d-xxl-table-cell" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(row.vehicle)) }}</td>
+            <td class="text-end d-none d-xxl-table-cell" data-label="配件網址">{{ row.loadout_links?.length || '—' }}</td>
             <td class="text-end" data-label="數量">{{ row.quantity }}</td>
             <td class="text-end text-nowrap pe-3 sf-stack__actions">
               <button type="button" class="btn btn-sm btn-info me-2"

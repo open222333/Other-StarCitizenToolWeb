@@ -270,4 +270,9 @@ async function copy() {
 /* 手機上表格維持一般欄寬、改成左右滑，不要把每格擠成一個字一行 */
 .game-text-table { min-width: 40rem; }
 .chat-code-modes .btn { white-space: nowrap; padding: .35rem .75rem; }
+/* 窄螢幕（手機）三個方向按鈕撐滿一整行、平均分寬，不會超出畫面 */
+@media (max-width: 575.98px) {
+  .chat-code-modes { width: 100%; }
+  .chat-code-modes .btn { flex: 1 1 0; min-width: 0; padding: .35rem .4rem; }
+}
 </style>
