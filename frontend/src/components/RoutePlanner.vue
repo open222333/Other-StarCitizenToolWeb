@@ -3,6 +3,7 @@
   起點＋途經站點＋貨運（取貨→送貨、SCU；目前隱藏，見 SHOW_CARGO），可自動排序或照輸入順序，終點可不指定／回到起點／指定地點。
   結果一次給三種方案（最快／最省油／最順路），每一段列出經過的 OM 點、跳躍點（components/RouteLegsTable.vue）；
   可切換成 3D 星圖（components/RouteMap3D.vue）。多份合約分給多個小隊見 components/ContractPlanner.vue。
+  結果預設在跳出視窗（SfModal）裡，可切回原版接在表單下面（popupResult）；結果最下面「完成」可選結束或終點設為起點。
   表單（地點、船、貨運）記在這台瀏覽器（localStorage）。
 -->
 <template>
@@ -40,9 +41,6 @@
                     @update:model-value="v => Object.assign(endPlace, v)" />
                 </div>
               </div>
-              <button v-if="finishTarget" type="button" class="btn btn-sm btn-success mt-2 rp-finish"
-                :aria-label="`完成這趟，把${finishName}設為新起點`" @click="finishRoute">
-                <i class="bi bi-flag-fill me-1"></i>完成這趟：把「{{ finishName }}」設為新起點</button>
             </div>
             <div class="col-12">
               <div class="form-check mb-1">
@@ -149,7 +147,13 @@
               <input id="rp-external" v-model="externalCargo" class="form-check-input" type="checkbox">
               <label class="form-check-label" for="rp-external">外掛貨櫃（只停外部貨運站）</label>
             </div>
+            <div class="form-check form-switch mb-0">
+              <input id="rp-popup" v-model="popupResult" class="form-check-input" type="checkbox" role="switch">
+              <label class="form-check-label" for="rp-popup">結果用跳出視窗</label>
+            </div>
             <div class="ms-auto d-flex gap-2">
+              <button v-if="popupResult && result && !resultOpen" type="button" class="btn btn-sm btn-info"
+                @click="resultOpen = true"><i class="bi bi-window-stack me-1"></i>查看航線</button>
               <button type="button" class="btn btn-sm btn-warning" @click="clearForm">
                 <i class="bi bi-eraser me-1"></i>清除
               </button>
@@ -162,6 +166,12 @@
       </div>
     </div>
 
+    <!-- 規劃結果：預設在跳出視窗裡（popupResult），關掉開關就照原版接在表單下面；同一份內容用 Teleport 換位置 -->
+    <SfModal id="rp-result" v-model:open="resultOpen" title="航線規劃" icon="bi bi-signpost-split" width="1440px">
+      <div id="rp-result-modal"></div>
+    </SfModal>
+    <div id="rp-result-inline"></div>
+    <Teleport defer :to="popupResult ? '#rp-result-modal' : '#rp-result-inline'">
     <SfState v-if="planning || planError || result" :loading="planning" :error="planError" :empty="false"
       loading-text="規劃中…" @retry="plan">
       <div v-if="result" :class="cardClass">
@@ -197,10 +207,24 @@
               :fuel-capacity="result.ship.qt_fuel_capacity" :show-load="SHOW_CARGO" :reorderable="!SHOW_CARGO && !reordering"
               :replannable="!SHOW_CARGO" :replanning="reordering" :places="base.places.value"
               @reorder="reorder" @replan="replan" />
+
+            <!-- 完成：結束這趟（清掉結果），或把終點設成下一趟的起點、終點重設 -->
+            <div class="rp-finish mt-3">
+              <button v-if="!finishOpen" type="button" class="btn btn-sm btn-success" @click="finishOpen = true">
+                <i class="bi bi-flag-fill me-1"></i>完成</button>
+              <template v-else>
+                <button type="button" class="btn btn-sm btn-primary" @click="endTrip">
+                  <i class="bi bi-stop-circle me-1"></i>結束</button>
+                <button v-if="finishTarget" type="button" class="btn btn-sm btn-success" @click="finishRoute">
+                  <i class="bi bi-arrow-repeat me-1"></i>終點「{{ finishName }}」設為起點</button>
+                <button type="button" class="btn btn-sm btn-secondary" @click="finishOpen = false">取消</button>
+              </template>
+            </div>
           </template>
         </div>
       </div>
     </SfState>
+    </Teleport>
   </div>
 </template>
 
@@ -211,6 +235,7 @@ import FuelStartInput from '@/components/FuelStartInput.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
+import SfModal from '@/components/SfModal.vue'
 import SystemStopsFill from '@/components/SystemStopsFill.vue'
 import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
@@ -267,19 +292,23 @@ const fuelParam = () => (startFuel.value.value == null ? null : startFuel.value)
 const hubOn = ref(saved.hubOn === true)
 const hubPlace = reactive(newPlace(saved.hub))
 const hubEvery = ref(Number(saved.hubEvery) >= 1 ? Math.round(Number(saved.hubEvery)) : 3)
+// 結果顯示方式：true＝跳出視窗（預設）、false＝原版（接在表單下面）
+const popupResult = ref(saved.popupResult !== false)
+const resultOpen = ref(false)
+watch(popupResult, (on) => { resultOpen.value = on && !!(result.value || planning.value || planError.value) })
 const hubReady = computed(() => !hubOn.value || (!!hubPlace.id && hubEvery.value >= 1 && hubEvery.value <= MAX_ON))
 
 const plain = p => ({ id: p.id, text: p.text })
 const plainStop = s => ({ ...plain(s), on: s.on, auto: s.auto })
 watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel,
-  hubOn, hubPlace, hubEvery], () => {
+  hubOn, hubPlace, hubEvery, popupResult], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plainStop),
       cargo: cargo.map(c => ({ pickup: plain(c.pickup), dropoff: plain(c.dropoff), scu: c.scu })),
       autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
       externalCargo: externalCargo.value, startFuel: startFuel.value,
-      hubOn: hubOn.value, hub: plain(hubPlace), hubEvery: hubEvery.value,
+      hubOn: hubOn.value, hub: plain(hubPlace), hubEvery: hubEvery.value, popupResult: popupResult.value,
     }))
   } catch { /* 存不了就算了 */ }
 }, { deep: true })
@@ -409,6 +438,8 @@ async function reorder(legs) {
 async function plan() {
   if (!canPlan.value) return
   planning.value = true
+  finishOpen.value = false
+  if (popupResult.value) resultOpen.value = true
   planError.value = ''
   visited.value = []
   manualOrder.value = false
@@ -441,28 +472,35 @@ async function plan() {
   if (!result.value.plans.some(p => p.key === planKey.value)) planKey.value = result.value.plans[0]?.key
 }
 
-// 完成：跑完這趟，把終點（指定地點；最後一站模式就是目前方案的最後一站）設成下一趟的起點，終點重設
+// 完成：跑完這趟後「結束」（清掉結果）或「終點設為起點」（目前方案最後一站變成下一趟起點，終點重設）。
+// 終點看目前方案實際的最後一站（最後一站／指定地點／中途重新規劃過都對）；回到起點時跟起點一樣就不給這個選項
+const finishOpen = ref(false)
 const finishTarget = computed(() => {
-  if (endMode.value === 'fixed') return endPlace.id ? placeById.value.get(endPlace.id) || null : null
-  if (endMode.value === 'none') {
-    const legs = current.value?.legs || []
-    const id = legs[legs.length - 1]?.to?.id
-    return id ? placeById.value.get(id) || null : null
-  }
-  return null
+  const legs = current.value?.legs || []
+  const id = legs[legs.length - 1]?.to?.id
+  if (!id || id === start.id) return null
+  return placeById.value.get(id) || legs[legs.length - 1].to
 })
 const finishName = computed(() => finishTarget.value ? (finishTarget.value.name_zh || finishTarget.value.name) : '')
-function finishRoute() {
-  const p = finishTarget.value
-  if (!p) return
-  Object.assign(start, { id: p.id, text: placeLabel(p) })
-  Object.assign(endPlace, { id: '', text: '' })
+function resetResult() {
   result.value = null
   planError.value = ''
   visited.value = []
   manualOrder.value = false
   replannedFrom.value = null
   reorderError.value = ''
+  finishOpen.value = false
+  resultOpen.value = false
+}
+function endTrip() {
+  resetResult()
+}
+function finishRoute() {
+  const p = finishTarget.value
+  if (!p) return
+  Object.assign(start, { id: p.id, text: placeLabel(p) })
+  Object.assign(endPlace, { id: '', text: '' })
+  resetResult()
 }
 
 function clearForm() {
@@ -473,8 +511,7 @@ function clearForm() {
   Object.assign(hubPlace, newPlace())
   stops.splice(0)
   cargo.splice(0)
-  result.value = null
-  planError.value = ''
+  resetResult()
 }
 
 const current = computed(() => result.value?.plans.find(p => p.key === planKey.value) || null)
@@ -493,5 +530,6 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .rp-cargo { border: 1px solid var(--sf-border); border-radius: .5rem; padding: .5rem; }
 .rp-cargo-tag { min-width: 2.5rem; font-size: 1rem; color: var(--sf-text-muted); }
 .rp-scu { max-width: 9rem; }
-.rp-finish { max-width: 100%; white-space: normal; text-align: left; }
+.rp-finish { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem;
+  padding-top: .75rem; border-top: 1px solid var(--sf-border); }
 </style>
