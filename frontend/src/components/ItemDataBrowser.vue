@@ -1,62 +1,100 @@
 <!--
-  玩家頁「倉庫 › 物品資料」：瀏覽物品主檔（item_master），唯讀。
+  玩家頁「物品 › 物品資料」：瀏覽物品主檔（item_master），唯讀。
 
-  篩選用「倉庫」分頁頂端的共用搜尋卡（MyPlayerView 傳進 filters：{ q, types, buyable, dismantlable, dismantle }），
+  篩選用「物品資料」自己的搜尋卡（MyPlayerView 傳進 filters：{ q, types, buyable, dismantlable, dismantle }），
   dismantlable（「只看可拆解」）＝ dismantlable=1、dismantle（拆解材料）＝ dismantle=…，兩者都會附 dismantle_hits；名稱＋類型跟
   物品庫存同一組條件；buyable（「只看買得到」勾選，物品資料展開時才出現在搜尋卡上）＝ acquire=buy。
   資料是 GET /item/?with_prices=1（後端分頁，玩家只看得到「玩家頁面顯示」的物品），每筆帶 uex_price
   （列表只顯示最低購買價）。點名稱展開詳細資料（components/ItemDetail.vue：基本欄位、遊戲內說明的數值、
   購買地點；玩家頁不顯示收購）。
-  樣式用蜂巢式下拉（scifi-theme.css 的 .sf-tree-*），比照 VehicleDataBrowser。
+  列表外觀跟艦隊（我的艦隊）、任務一樣：卡片＋hover 表格＋表頭排序，點整列展開（手機是底部面板）。
 -->
 <template>
-  <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
+  <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去。
+       列表外觀跟艦隊（我的艦隊）、任務一致：卡片＋hover 表格＋表頭排序（後端排序），點整列展開物品詳細 -->
   <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
-    <SfState :loading="loading && !rows.length" :error="loadFailed ? '讀取物品資料失敗。' : ''" :empty="!rows.length"
-      empty-text="沒有符合條件的物品。" @retry="reload(offset)">
-      <!-- 欄位名稱＋排序（後端排序）；拆解回收欄只有用「拆解材料」或「只看可拆解」篩選時才出現，
-           依所選材料的回收量（SCU 加總）排序 -->
-      <div class="idb-list" :style="{ '--sf-tree-cols': gridCols }">
-      <SfTreeHead :sort="sort" :columns="columns" />
-      <div v-for="it in rows" :key="it._id" class="idb-item">
-        <div class="idb-row">
-          <button type="button" class="sf-tree-row sf-tree-row--ship sf-tree-row--cols idb-main"
-            :aria-expanded="openId === it._id ? 'true' : 'false'" @click="openId = openId === it._id ? '' : it._id">
-            <span class="sf-tree-cell idb-name">
-              <i class="bi me-1" :class="openId === it._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-              <span class="sf-tree-title">{{ it.name_zh || it.name }}</span>
-              <span v-if="it.name_zh" class="text-muted ms-1">{{ it.name }}</span>
-              <!-- 拆解會回收的材料（有選材料時只列那幾種；後端 dismantle_hits） -->
-              <span v-if="it.dismantle_hits?.length" class="d-block small text-muted">
-                拆解回收：{{ dismantleHits(it.dismantle_hits, filters?.dismantle).join('、') }}
-              </span>
-            </span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ itemTypeLabel(it.type, it.sub_type) || '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ it.size !== null && it.size !== undefined ? `S${it.size}` : '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ it.grade ?? '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ it.manufacturer_name || it.manufacturer_code || '—' }}</span>
-            <span v-if="showDismantle" class="sf-tree-cell sf-tree-cell--end">{{ fmtScu(dismantleScu(it)) }}</span>
-            <span class="sf-tree-cell sf-tree-cell--end" :class="{ 'sf-tree-cell--opt': showDismantle }">
-              <template v-if="it.uex_price?.buy_min">{{ fmtAuec(it.uex_price.buy_min) }} 起</template>
-              <template v-else>—</template>
-            </span>
-          </button>
-        </div>
-        <div v-if="openId === it._id" class="sf-tree-level">
-          <ItemDetail :item="it" :fetcher="fetcher" player buy-only />
+    <SortSelect v-if="isPhone" class="mb-2" :sort="sort" :options="sortOptions" />
+    <div class="card scifi-card">
+      <div class="card-body p-0">
+        <div style="overflow-x:auto">
+          <table class="table table-hover align-middle mb-0 sf-stack">
+            <thead class="table-light">
+              <tr>
+                <SortTh :sort="sort" field="name" class="ps-3">物品</SortTh>
+                <SortTh :sort="sort" field="type">類型</SortTh>
+                <SortTh :sort="sort" field="size" class="d-none d-md-table-cell">尺寸</SortTh>
+                <SortTh :sort="sort" field="grade" class="d-none d-md-table-cell">等級</SortTh>
+                <SortTh :sort="sort" field="manufacturer_name" class="d-none d-lg-table-cell">廠商</SortTh>
+                <!-- 拆解回收欄只有用「拆解材料」或「只看可拆解」篩選時才出現，依所選材料的回收量（SCU 加總）排序 -->
+                <SortTh v-if="showDismantle" :sort="sort" field="dismantle_scu" class="text-end">拆解回收</SortTh>
+                <th class="text-end pe-3 text-nowrap">最低價</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loading && !rows.length">
+                <td :colspan="colCount" class="text-center py-4 text-muted">
+                  <span class="spinner-border spinner-border-sm me-2"></span>載入中…
+                </td>
+              </tr>
+              <tr v-else-if="loadFailed">
+                <td :colspan="colCount" class="text-center py-4">
+                  <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>讀取物品資料失敗。</span>
+                  <button type="button" class="btn btn-sm btn-primary ms-1" @click="reload(offset)"><i class="bi bi-arrow-clockwise me-1"></i>重試</button>
+                </td>
+              </tr>
+              <tr v-else-if="!rows.length">
+                <td :colspan="colCount" class="text-center py-4 text-muted">沒有符合條件的物品。</td>
+              </tr>
+              <template v-else>
+                <template v-for="it in rows" :key="it._id">
+                  <tr class="idb-row" role="button" tabindex="0" :aria-expanded="openId === it._id ? 'true' : 'false'"
+                    @click="toggle(it)" @keydown.enter.self="toggle(it)" @keydown.space.self.prevent="toggle(it)">
+                    <td class="ps-3 sf-stack__title">
+                      <i class="bi me-1 small text-muted" :class="openId === it._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+                      <span class="fw-semibold">{{ it.name_zh || it.name }}</span>
+                      <span v-if="it.name_zh" class="small text-muted ms-1">{{ it.name }}</span>
+                      <!-- 拆解會回收的材料（有選材料時只列那幾種；後端 dismantle_hits） -->
+                      <span v-if="it.dismantle_hits?.length" class="d-block small text-muted">
+                        拆解回收：{{ dismantleHits(it.dismantle_hits, filters?.dismantle).join('、') }}
+                      </span>
+                    </td>
+                    <td data-label="類型">{{ itemTypeLabel(it.type, it.sub_type) || '—' }}</td>
+                    <td class="d-none d-md-table-cell" data-label="尺寸">{{ it.size !== null && it.size !== undefined ? `S${it.size}` : '—' }}</td>
+                    <td class="d-none d-md-table-cell" data-label="等級">{{ it.grade ?? '—' }}</td>
+                    <td class="d-none d-lg-table-cell" data-label="廠商">{{ it.manufacturer_name || it.manufacturer_code || '—' }}</td>
+                    <td v-if="showDismantle" class="text-end text-nowrap" data-label="拆解回收">{{ fmtScu(dismantleScu(it)) }}</td>
+                    <td class="text-end text-nowrap pe-3" data-label="最低價">
+                      <template v-if="it.uex_price?.buy_min">{{ fmtAuec(it.uex_price.buy_min) }} 起</template>
+                      <template v-else>—</template>
+                    </td>
+                  </tr>
+                  <tr v-if="openId === it._id" class="sf-stack__detail">
+                    <td :colspan="colCount" class="idb-detail">
+                      <div class="sf-sheet__head sf-stack__sheet-head">
+                        <h3 class="sf-sheet__title">{{ it.name_zh || it.name }}</h3>
+                        <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="openId = ''"><i class="bi bi-x-lg"></i></button>
+                      </div>
+                      <ItemDetail :item="it" :fetcher="fetcher" player buy-only />
+                    </td>
+                  </tr>
+                </template>
+              </template>
+            </tbody>
+          </table>
         </div>
       </div>
-      </div>
-      <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" @page="goPage" />
-    </SfState>
+    </div>
+
+    <SfPager class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" @page="goPage" />
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import SfTreeHead from '@/components/SfTreeHead.vue'
+import SortSelect from '@/components/SortSelect.vue'
+import SortTh from '@/components/SortTh.vue'
 import SfPager from '@/components/SfPager.vue'
-import SfState from '@/components/SfState.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import ItemDetail from '@/components/ItemDetail.vue'
@@ -113,17 +151,20 @@ async function reload(nextOffset = 0) {
 
 // ── 欄位名稱＋排序（後端排序：name／type／size／grade／manufacturer_name／dismantle_scu）──
 const showDismantle = computed(() => !!(props.filters?.dismantle?.length || props.filters?.dismantlable))
-const columns = computed(() => [
-  { label: '物品', field: 'name' },
-  { label: '類型', field: 'type', opt: true },
-  { label: '尺寸', field: 'size', opt: true },
-  { label: '等級', field: 'grade', opt: true },
-  { label: '廠商', field: 'manufacturer_name', opt: true },
-  ...(showDismantle.value ? [{ label: '拆解回收', field: 'dismantle_scu', end: true }] : []),
-  { label: '最低價', end: true, opt: showDismantle.value },
+// 手機沒有表頭，另外給排序下拉（SortSelect）
+const sortOptions = computed(() => [
+  { field: 'name', label: '物品' },
+  { field: 'type', label: '類型' },
+  { field: 'size', label: '尺寸' },
+  { field: 'grade', label: '等級' },
+  { field: 'manufacturer_name', label: '廠商' },
+  ...(showDismantle.value ? [{ field: 'dismantle_scu', label: '拆解回收' }] : []),
 ])
-const gridCols = computed(() => ['minmax(0, 1fr)', '9rem', '3.5rem', '3.5rem', '9rem',
-  ...(showDismantle.value ? ['6.5rem'] : []), '9.5rem'].join(' '))
+const colCount = computed(() => (showDismantle.value ? 7 : 6))
+const { isPhone } = useBreakpoint()
+function toggle(it) {
+  openId.value = openId.value === it._id ? '' : it._id
+}
 const sort = useTableSort(null, { onChange: () => reload(0) })
 
 /** 這個物品拆解回收的 SCU（有選材料時只算那幾種，跟後端 dismantle_scu 排序一致） */
@@ -166,9 +207,6 @@ async function goPage(newOffset) {
 </script>
 
 <style scoped>
-.idb-item { margin-bottom: .4rem; }
-.idb-row { display: flex; align-items: center; gap: .5rem; }
-.idb-main { flex: 1 1 auto; min-width: 0; }
-.idb-name { min-width: 0; }
-.idb-attrs { display: flex; flex-wrap: wrap; gap: .25rem .9rem; color: var(--sf-text); font-size: .95rem; }
+.idb-row { cursor: pointer; }
+.idb-detail { background: var(--sf-inset); }
 </style>
