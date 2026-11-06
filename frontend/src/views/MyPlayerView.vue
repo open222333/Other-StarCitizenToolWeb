@@ -1662,12 +1662,12 @@ function loadForTab(tab) {
   if (tab === 'search') loadSearchSections()
   if ((tab === 'fleet' || tab === 'route' || tab === 'cargo') && !fleetLoaded.value) loadFleet()
   if (tab === 'tools') loadToolLinks()
-  // 倉庫共用搜尋卡的「物品類型」選項（物品主檔的全部類型）
-  if (tab === 'warehouse' && !itemTypes.value.length) loadItemTypes()
+  // 倉庫、物品資料搜尋卡的「物品類型」選項（物品主檔的全部類型）
+  if ((tab === 'warehouse' || tab === 'items') && !itemTypes.value.length) loadItemTypes()
   // 共用搜尋卡的類型選項（主檔全部類型）、艦隊共用搜尋卡的類型／尺寸／廠商／角色選項
   if (tab === 'blueprints' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
-  // 倉庫共用搜尋卡的「拆解材料」選項
-  if (tab === 'warehouse' && !dismantleMaterials.value.length) loadDismantleMaterials()
+  // 倉庫、物品資料搜尋卡的「拆解材料」選項
+  if ((tab === 'warehouse' || tab === 'items') && !dismantleMaterials.value.length) loadDismantleMaterials()
   if (tab === 'fleet' && !vehicleFacetsLoaded) loadVehicleFacets()
 }
 
