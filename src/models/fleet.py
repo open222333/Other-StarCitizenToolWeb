@@ -478,8 +478,8 @@ class Fleet:
 
         player_scid：只看這個人的（比對 players.star_citizen_id）。
 
-        回傳欄位不含 notes（那是玩家寫給自己的備註），Discord 只有本人勾了
-        公開才給，見 src/models/blueprint.py 的 _redact_contact。
+        回傳欄位不含 notes（那是玩家寫給自己的備註）；每一艘的識別名稱（unit_names）與配件網址（unit_loadouts）
+        公開給其他玩家看。Discord 只有本人勾了公開才給，見 src/models/blueprint.py 的 _redact_contact。
         """
         match: dict = {'deleted_at': None}
         if vehicle_uuids is not None:
@@ -513,6 +513,9 @@ class Fleet:
                     'discord_public': '$player.discord_public',
                     # 玩家自己填的配件連結（公開）；沒填過的舊登記給空陣列
                     'loadout_links': {'$ifNull': ['$loadout_links', []]},
+                    # 每一艘的識別名稱與配件網址（公開；查詢持有資訊列成「玩家 · 識別名稱 · 配件碼」）
+                    'unit_names': {'$ifNull': ['$unit_names', []]},
+                    'unit_loadouts': {'$ifNull': ['$unit_loadouts', []]},
                 }},
                 'holder_count': {'$sum': 1},
                 'total_quantity': {'$sum': '$quantity'},

@@ -483,7 +483,7 @@ def test_player_unit_names(client, auth_headers, alice, seed_vehicles):
     bob = _register_player(client, 'Bob', 'Bob')
     group = next(g for g in client.get('/player/fleet/holders', headers=bob).get_json()['data']
                  if g['vehicle_uuid'] == 'v-avenger')
-    assert 'unit_names' not in group['holders'][0], '只有自己看得到'
+    assert group['holders'][0]['unit_names'] == ['a', 'b', 'c', 'd'], '識別名稱公開給查詢持有資訊'
     assert client.put(url, json={'unit_names': []}, headers=bob).status_code == 404
     assert 'unit_names' not in client.get('/item/fleet', headers=auth_headers).get_json()['data'][0]
 
