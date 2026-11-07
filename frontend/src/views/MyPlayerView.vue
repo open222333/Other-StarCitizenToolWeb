@@ -344,7 +344,7 @@
               <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="種類">
                 <button v-for="k in whoKinds" :key="k.key" type="button" class="btn btn-subtab"
                   :class="{ active: whoKind === k.key }" :aria-pressed="whoKind === k.key ? 'true' : 'false'"
-                  @click="whoKind = k.key"><i v-if="k.icon" :class="k.icon" class="me-1"></i>{{ k.label }}
+                  @click="whoKind = k.key"><i v-if="k.icon" :class="[k.icon, `who-kind-icon--${k.key}`]" class="me-1"></i>{{ k.label }}
                   <span class="who-count">{{ k.count }}</span></button>
               </div>
             </div>
@@ -429,7 +429,8 @@
                 <VehicleLoadoutLinks v-for="u in (row.kind === 'fleet' ? holderUnitLoadouts(row.src.holders) : [])" :key="u.key"
                   :links="u.links" :prefix="u.prefix" button-class="btn-loadout" hide-label />
               </td>
-              <td data-label="種類"><span class="sf-chip" :class="`who-kind--${row.kind}`">{{ WHO_KIND_LABEL[row.kind] }}</span></td>
+              <td data-label="種類"><span class="sf-chip who-kind" :class="`who-kind--${row.kind}`">
+                <i :class="WHO_KIND_ICON[row.kind]" class="me-1"></i>{{ WHO_KIND_LABEL[row.kind] }}</span></td>
               <td class="d-none d-md-table-cell" :class="{ 'who-na': !row.typeLabel }" data-label="類型">{{ row.typeLabel }}</td>
               <td class="d-none d-lg-table-cell" :class="{ 'who-na': !row.sizeLabel }" data-label="尺寸">{{ row.sizeLabel }}</td>
               <td class="d-none d-lg-table-cell" :class="{ 'who-na': !row.mfr }" data-label="廠商">{{ row.mfr }}</td>
@@ -2925,6 +2926,7 @@ function clearWhoFilters() {
 }
 // ── 整合列表：物品／藍圖／船艦整理成同一種列，不屬於那一類的欄位留空（null／''）──
 const WHO_KIND_LABEL = { items: '物品', blueprints: '藍圖', fleet: '船艦' }
+const WHO_KIND_ICON = { items: 'bi bi-box-seam', blueprints: 'bi bi-diagram-3', fleet: 'bi bi-rocket-takeoff' }
 const WHO_KIND_ORDER = { items: 0, blueprints: 1, fleet: 2 }
 // 種類：'' ＝全部；選了單一種類才出現它專用的條件，換種類時清掉其他種類的專用條件
 const whoKind = ref('')
@@ -3084,6 +3086,15 @@ onBeforeUnmount(() => {
 .holder-detail { background: var(--sf-panel-2); }
 /* 查詢持有資訊的整合列表：種類按鈕上的數量、種類膠囊 */
 .who-count { margin-left: .35rem; opacity: .75; }
+/* 種類三種顏色，跟著網站配色：物品＝主強調色、船艦＝次要強調色（跟配件網址按鈕同色）、藍圖＝綠色（亮底模式 Bootstrap 自動換深） */
+.who-kind--items, .who-kind-icon--items { --who-kind: var(--sf-accent-rgb); }
+.who-kind--fleet, .who-kind-icon--fleet { --who-kind: var(--sf-accent-2-rgb); }
+.who-kind--blueprints, .who-kind-icon--blueprints { --who-kind: var(--bs-success-rgb); }
+.scifi-page .sf-chip.who-kind {
+  color: var(--sf-text-strong); font-weight: 600;
+  background: rgba(var(--who-kind), .2); border-color: rgba(var(--who-kind), .75);
+}
+.who-kind .bi, [class*="who-kind-icon--"] { color: rgb(var(--who-kind)); }
 /* 手機卡片：不屬於那一類的欄位（空的）整格不顯示，免得只剩標籤 */
 @media (max-width: 767.98px) {
   .scifi-page table.sf-stack.who-table tr:not(.sf-stack__detail) > td.who-na[data-label] { display: none !important; }
