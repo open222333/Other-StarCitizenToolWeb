@@ -640,3 +640,21 @@ def test_player_remove_one_unit(client, alice, seed_vehicles):
     assert client.delete(f'{url}/units/1', headers=alice).status_code == 400, '只剩 1 艘要刪整筆'
     bob = _register_player(client, 'Bob', 'Bob')
     assert client.delete(f'{url}/units/1', headers=bob).status_code == 404
+
+
+def test_private_loadout_hidden_from_holders(client, alice, seed_vehicles):
+    """配件網址可以設成不公開：自己看得到，查詢持有資訊（其他玩家）看不到。"""
+    _bulk(client, alice, ['v-avenger'], quantity=1)
+    row = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    url = f"/player/fleet/{row['_id']}"
+    links = [{'url': 'abcd1234'}, {'url': 'efgh5678', 'private': True}]
+    assert client.put(url, json={'unit_loadout': {'unit': 1, 'links': links}}, headers=alice).status_code == 200
+    mine = client.get('/player/fleet', headers=alice).get_json()['data'][0]
+    assert [l.get('private', False) for l in mine['unit_loadouts'][0]] == [False, True]
+    bob = _register_player(client, 'Bob', 'Bob')
+    group = next(g for g in client.get('/player/fleet/holders', headers=bob).get_json()['data']
+                 if g['vehicle_uuid'] == 'v-avenger')
+    h = group['holders'][0]
+    assert [l['url'] for l in h['unit_loadouts'][0]] == ['https://erkul.games/s/abcd1234']
+    assert all(not l.get('private') for l in h['loadout_links'])
+    assert len(h['loadout_links']) == 1

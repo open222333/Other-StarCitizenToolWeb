@@ -56,7 +56,10 @@ def normalize_loadout_url(value: str) -> str:
 
 
 def clean_loadout_links(links, previous=None) -> list:
-    """驗證並整理配件連結 [{label, url}]，回傳 [{label, url, added_at}]（空清單＝清掉）。
+    """驗證並整理配件連結 [{label, url, private}]，回傳 [{label, url, added_at[, private]}]（空清單＝清掉）。
+
+    private＝true 的不公開：只有本人（我的艦隊）和後台看得到，查詢持有資訊不列（見 find_holders）；
+    預設公開，公開的不存 private 欄位。
 
     網址沒變的保留原本的 added_at——外部配裝計算器的分享連結是當時遊戲版本的配置，
     看加入時間才知道多舊。格式不對丟 ValueError（訊息直接給玩家看）。
@@ -84,8 +87,16 @@ def clean_loadout_links(links, previous=None) -> list:
         if url in seen:
             continue
         seen.add(url)
-        out.append({'label': label or None, 'url': url, 'added_at': added.get(url) or now})
+        row = {'label': label or None, 'url': url, 'added_at': added.get(url) or now}
+        if link.get('private') is True:
+            row['private'] = True
+        out.append(row)
     return out
+
+
+def public_links(links) -> list:
+    """拿掉不公開的配件連結（給其他玩家看的）。"""
+    return [l for l in links or [] if isinstance(l, dict) and not l.get('private')]
 
 
 def clean_unit_names(names, quantity: int) -> list:
@@ -529,5 +540,9 @@ class Fleet:
         for group in groups:
             group['vehicle_uuid'] = group['_id']
             group['holders'] = [_redact_contact(h) for h in group.get('holders') or []]
+            # 不公開的配件網址不給其他玩家看
+            for h in group['holders']:
+                h['loadout_links'] = public_links(h.get('loadout_links'))
+                h['unit_loadouts'] = [public_links(u) for u in h.get('unit_loadouts') or []]
             group['vehicle'] = _vehicle_summary(masters.get(group['_id']))
         return groups
