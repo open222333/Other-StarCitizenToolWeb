@@ -219,7 +219,7 @@
 
       <div class="scifi-topbar__side scifi-topbar__actions">
         <ScifiThemePicker />
-        <button class="btn btn-secondary btn-sm" aria-label="登出" title="登出" @click="logout">
+        <button class="btn btn-danger btn-sm" aria-label="登出" title="登出" @click="logout">
           <i class="bi bi-box-arrow-right"></i>
           <span class="d-none d-sm-inline ms-1">登出</span>
         </button>
