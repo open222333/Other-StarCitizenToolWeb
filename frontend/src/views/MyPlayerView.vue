@@ -14,7 +14,7 @@
     obtained（已取得）。後端與後台管理頁仍保留完整的 UNLOCK_STATUSES，
     管理員設過的非 obtained 狀態在「查詢 › 持有藍圖」還是會標出來。
   - 查詢持有資訊（原「查詢」；別人的東西，唯讀）
-      一個區塊：上方共同條件（名稱、玩家），下面持有物品／持有藍圖／持有船艦三部分各有自己的條件與列表，同時列出
+      一個區塊：一張搜尋卡（名稱、玩家、種類＋單一種類的專用條件）＋一張整合列表（物品／藍圖／船艦，不屬於那一類的欄位留空）
       · 持有物品（公會庫＋所有玩家個人庫，見 app/inventory/view.py 的 search_stock）
       · 持有藍圖：某張藍圖誰登記了
       · 持有船艦：誰有哪款船
@@ -223,8 +223,8 @@
         :active="activeTab === 'items' && activeSub === 'commodities'" />
     </div>
 
-    <!-- ══════════ 查詢持有資訊：上方是共同條件（名稱、玩家），下面依物品／藍圖／船艦分三部分，
-         各自的條件（類型、地點…）放在那部分上面，三個列表都照條件列出 ══════════ -->
+    <!-- ══════════ 查詢持有資訊：一個區塊——一張搜尋卡（共同條件＋種類，選了單一種類才出現它專用的條件），
+         一張整合的列表（物品／藍圖／船艦混在一起，不屬於那一類的欄位留空）══════════ -->
     <div v-show="activeTab === 'search'">
       <div class="sf-toolbar">
         <!-- 查詢條件都記在網址裡，複製下來貼給隊友就是同一個查詢 -->
@@ -239,293 +239,169 @@
             <button type="button" class="btn btn-sm btn-warning" @click="clearWhoFilters">清除全部</button>
           </div>
           <div class="row g-2 align-items-end">
-            <div class="col-12 col-md-8">
+            <div class="col-12 col-md-7">
               <label class="form-label small mb-1" for="who-name">名稱</label>
               <AutocompleteField id="who-name" v-model="whoName" :search="searchWhoNames" :get-label="whoNameLabel"
                 :get-meta="whoNameMeta" aria-label="物品、藍圖或船艦名稱" placeholder="物品、藍圖或船艦名稱…" :min-chars="1"
                 @select="onWhoNameSelect" />
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-5">
               <label class="form-label small mb-1" for="who-player">玩家</label>
               <AutocompleteField id="who-player" v-model="whoPlayerText" :search="searchPlayersLocal"
                 :get-label="c => holderLabel(c.nickname, c.player_name, c.star_citizen_id)"
                 aria-label="玩家id或暱稱" placeholder="點一下看全部玩家…" :min-chars="0" :debounce-ms="0"
                 @select="c => { whoPlayerScid = c ? c.star_citizen_id : '' }" />
             </div>
-          </div>
-          <!-- 三部分各有幾筆，按了捲到那部分 -->
-          <div class="d-flex flex-wrap gap-2 mt-2">
-            <button v-for="sec in whoSections" :key="sec.key" type="button" class="btn btn-sm btn-info"
-              @click="scrollToWho(sec.key)"><i :class="sec.icon" class="me-1"></i>{{ sec.text }}</button>
+            <div class="col-12">
+              <span class="form-label small mb-1 d-block">種類</span>
+              <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="種類">
+                <button v-for="k in whoKinds" :key="k.key" type="button" class="btn btn-subtab"
+                  :class="{ active: whoKind === k.key }" :aria-pressed="whoKind === k.key ? 'true' : 'false'"
+                  @click="whoKind = k.key"><i v-if="k.icon" :class="k.icon" class="me-1"></i>{{ k.label }}
+                  <span class="who-count">{{ k.count }}</span></button>
+              </div>
+            </div>
+            <!-- 選了單一種類才出現它專用的條件（手機收進「篩選」面板） -->
+            <SfFilterSheet v-if="whoKind === 'items'" :count="itemsSheetCount" title="物品篩選" @clear="clearItemsSheet">
+              <div class="col-12 col-md-3">
+                <label class="form-label small mb-1" for="items-type">物品類型</label>
+                <MultiSelectFilter id="items-type" v-model="itemsSelectedTypes" :options="itemTypeOptions"
+                  label="物品類型" placeholder="全部" block searchable />
+              </div>
+              <LocationAreaFilter :names="locations" :loc-label="locLabel" col-class="col-12 col-md-3"
+                v-model:systems="itemsSelectedSystems" v-model:planets="itemsSelectedPlanets"
+                v-model:locations="itemsSelectedLocations" />
+            </SfFilterSheet>
+            <SfFilterSheet v-if="whoKind === 'blueprints'" :count="bpHolderSheetCount" title="藍圖篩選" @clear="clearBpHolderSheet">
+              <div class="col-12 col-md-6">
+                <label class="form-label small mb-1" for="bp-type">藍圖類型</label>
+                <MultiSelectFilter id="bp-type" v-model="bpSelectedTypes" :options="blueprintTypeOptions"
+                  label="藍圖類型" placeholder="全部" block searchable />
+              </div>
+            </SfFilterSheet>
+            <SfFilterSheet v-if="whoKind === 'fleet'" :count="flSheetCount" title="船艦篩選" @clear="clearFlSheet">
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" for="fl-type">類型</label>
+                <MultiSelectFilter id="fl-type" v-model="flSelectedTypes" :options="vehicleFacets.types"
+                  label="類型" placeholder="全部" block />
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" for="fl-size">尺寸</label>
+                <MultiSelectFilter id="fl-size" v-model="flSelectedSizes" :options="vehicleSizeOptions"
+                  label="尺寸" placeholder="全部" block />
+              </div>
+              <div class="col-12 col-md-3">
+                <label class="form-label small mb-1" for="fl-mfr">廠商</label>
+                <MultiSelectFilter id="fl-mfr" v-model="flSelectedMfrs" :options="manufacturerOptions"
+                  label="廠商" placeholder="全部" block searchable />
+              </div>
+              <div class="col-12 col-md-3">
+                <label class="form-label small mb-1" for="fl-role">角色</label>
+                <MultiSelectFilter id="fl-role" v-model="flSelectedRoles" :options="vehicleFacets.roles"
+                  label="角色" placeholder="全部" block searchable />
+              </div>
+            </SfFilterSheet>
           </div>
         </div>
       </div>
 
-      <!-- ── 持有物品 ── -->
-      <section id="who-items" class="who-part">
-        <h3 class="sf-drawer__title"><i class="bi bi-box-seam me-1"></i>持有物品</h3>
-        <div class="card scifi-card sf-search mb-2">
-          <div class="card-body py-2">
-            <div class="row g-2 align-items-end">
-              <SfFilterSheet :count="itemsSheetCount" title="持有物品篩選" @clear="clearItemsSheet">
-                <div class="col-12 col-md-3">
-                  <label class="form-label small mb-1" for="items-type">物品類型</label>
-                  <MultiSelectFilter id="items-type" v-model="itemsSelectedTypes" :options="itemTypeOptions"
-                    label="物品類型" placeholder="全部" block searchable />
+      <div v-if="whoBusy && !whoShown.length" class="text-muted small">查詢中…</div>
+      <div v-else-if="!whoShown.length" class="text-muted small">找不到符合條件的資料。</div>
+      <div v-else>
+        <div v-if="whoRows.length >= WHO_LIMIT && whoKind !== 'blueprints' && whoKind !== 'fleet'" class="sf-chip sf-chip--warn mb-2">
+          物品只列出前 {{ WHO_LIMIT }} 筆，加條件可以縮小範圍</div>
+        <!-- 一張表：物品／藍圖／船艦都在這裡，不屬於那一類的欄位留空；「詳細」展開持有者 -->
+        <SortSelect v-if="isPhone" class="mb-2" :sort="whoSort" :options="WHO_SORT_OPTIONS" />
+        <div class="card scifi-card" :class="{ 'sf-list-loading': whoBusy }">
+        <div class="card-body p-0">
+        <div style="overflow-x: auto">
+        <table class="table table-hover align-middle mb-0 sf-stack who-table">
+          <thead class="table-light">
+            <tr>
+              <SortTh :sort="whoSort" field="name" class="ps-3">名稱</SortTh>
+              <SortTh :sort="whoSort" field="kind">種類</SortTh>
+              <SortTh :sort="whoSort" field="type" class="d-none d-md-table-cell">類型</SortTh>
+              <SortTh :sort="whoSort" field="size" class="d-none d-lg-table-cell">尺寸</SortTh>
+              <SortTh :sort="whoSort" field="mfr" class="d-none d-lg-table-cell">廠商</SortTh>
+              <SortTh :sort="whoSort" field="cargo" class="text-end d-none d-xl-table-cell">載貨</SortTh>
+              <SortTh :sort="whoSort" field="holders" class="text-end">持有人數</SortTh>
+              <SortTh :sort="whoSort" field="qty" class="text-end">數量</SortTh>
+              <th class="pe-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="row in whoSort.sorted.value" :key="row.key">
+            <tr>
+              <td class="ps-3 sf-stack__title">
+                <span class="fw-semibold">{{ row.name_zh || row.name }}</span>
+                <span v-if="row.name_zh && row.name_zh !== row.name" class="small text-muted ms-1">{{ row.name }}</span>
+                <i v-if="row.retired" class="bi bi-exclamation-triangle text-warning ms-1" title="這個物品已在新版本移除"></i>
+                <i v-if="row.freeText" class="bi bi-pencil ms-1" title="自由輸入，沒有對應到遊戲配方"></i>
+                <span v-if="row.note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ row.note }}</span>
+              </td>
+              <td data-label="種類"><span class="sf-chip" :class="`who-kind--${row.kind}`">{{ WHO_KIND_LABEL[row.kind] }}</span></td>
+              <td class="d-none d-md-table-cell" :class="{ 'who-na': !row.typeLabel }" data-label="類型">{{ row.typeLabel }}</td>
+              <td class="d-none d-lg-table-cell" :class="{ 'who-na': !row.sizeLabel }" data-label="尺寸">{{ row.sizeLabel }}</td>
+              <td class="d-none d-lg-table-cell" :class="{ 'who-na': !row.mfr }" data-label="廠商">{{ row.mfr }}</td>
+              <td class="text-end text-nowrap d-none d-xl-table-cell" :class="{ 'who-na': !row.cargo }" data-label="載貨">{{ row.cargo ? scuLabel(row.cargo) : '' }}</td>
+              <td class="text-end" data-label="持有人數">{{ row.holders }}</td>
+              <td class="text-end" :class="{ 'who-na': row.qty == null }" data-label="數量">{{ row.qty ?? '' }}</td>
+              <td class="text-end text-nowrap pe-3 sf-stack__actions">
+                <button type="button" class="btn btn-sm btn-info" :aria-expanded="openTree.has(row.key) ? 'true' : 'false'"
+                  @click="toggleTree(row.key)">
+                  <i class="bi me-1" :class="openTree.has(row.key) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
+                </button>
+              </td>
+            </tr>
+            <tr v-if="openTree.has(row.key)" class="sf-stack__detail">
+              <td colspan="9" class="holder-detail">
+                <div class="sf-sheet__head sf-stack__sheet-head">
+                  <h3 class="sf-sheet__title">{{ row.name_zh || row.name }}</h3>
+                  <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleTree(row.key)"><i class="bi bi-x-lg"></i></button>
                 </div>
-                <LocationAreaFilter :names="locations" :loc-label="locLabel" col-class="col-12 col-md-3"
-                  v-model:systems="itemsSelectedSystems" v-model:planets="itemsSelectedPlanets"
-                  v-model:locations="itemsSelectedLocations" />
-              </SfFilterSheet>
-            </div>
-          </div>
-        </div>
-        <div v-if="loadingWho" class="text-muted small">查詢中…</div>
-        <div v-else-if="!whoRows.length" class="text-muted small">
-          找不到符合條件的庫存。
-        </div>
-        <div v-else>
-          <div v-if="whoRows.length >= WHO_LIMIT" class="sf-chip sf-chip--warn mb-2">只列出前 {{ WHO_LIMIT }} 筆，加條件可以縮小範圍</div>
-          <!-- 列表外觀跟艦隊（我的艦隊）一致：卡片＋hover 表格＋表頭排序；「詳細」展開持有者與放的地點 -->
-          <SortSelect v-if="isPhone" class="mb-2" :sort="whoSort" :options="WHO_SORT_OPTIONS" />
-          <div class="card scifi-card">
-          <div class="card-body p-0">
-          <div style="overflow-x: auto">
-          <table class="table table-hover align-middle mb-0 sf-stack">
-            <thead class="table-light">
-              <tr>
-                <SortTh :sort="whoSort" field="name" class="ps-3">物品</SortTh>
-                <SortTh :sort="whoSort" field="holders" class="text-end">持有人數</SortTh>
-                <SortTh :sort="whoSort" field="total" class="text-end">總數量</SortTh>
-                <th class="pe-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="item in whoSort.sorted.value" :key="item.key">
-              <tr>
-                <td class="ps-3 sf-stack__title">
-                  <span class="fw-semibold">{{ item.name_zh || item.name }}</span>
-                  <span v-if="item.name_zh" class="small text-muted ms-1">{{ item.name }}</span>
-                  <i v-if="item.retired" class="bi bi-exclamation-triangle text-warning ms-1" title="這個物品已在新版本移除"></i>
-                </td>
-                <td class="text-end" data-label="持有人數">{{ item.holders.length }}</td>
-                <td class="text-end" data-label="總數量">{{ item.total }}</td>
-                <td class="text-end text-nowrap pe-3 sf-stack__actions">
-                  <button type="button" class="btn btn-sm btn-info" :aria-expanded="openTree.has(`i|${item.key}`) ? 'true' : 'false'"
-                    @click="toggleTree(`i|${item.key}`)">
-                    <i class="bi me-1" :class="openTree.has(`i|${item.key}`) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="openTree.has(`i|${item.key}`)" class="sf-stack__detail">
-                <td colspan="4" class="holder-detail">
-                  <div class="sf-sheet__head sf-stack__sheet-head">
-                    <h3 class="sf-sheet__title">{{ item.name_zh || item.name }}</h3>
-                    <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleTree(`i|${item.key}`)"><i class="bi bi-x-lg"></i></button>
-                  </div>
-                  <!-- 持有者（含公會共享庫）× 放的地點，一列一個地點 -->
-                  <table class="table align-middle mb-0 holder-sub">
-                    <thead><tr><th>持有者</th><th>地點</th><th class="text-end">數量</th></tr></thead>
-                    <tbody>
-                      <template v-for="h in item.holders" :key="h.key">
-                        <tr v-for="(place, j) in h.places" :key="j">
-                          <td v-if="j === 0" :rowspan="h.places.length">
-                            <span class="fw-semibold">{{ h.guild ? '公會共享庫' : holderLabel(h.row.nickname, h.row.player_name, h.row.player) }}</span>
-                            <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
-                            <div v-if="!h.guild && discordLabel(h.row)" class="text-muted"><i class="bi bi-discord"></i> {{ discordLabel(h.row) }}</div>
-                            <div v-if="h.places.length > 1" class="text-muted">共 {{ h.total }}</div>
-                          </td>
-                          <td>{{ locLabel(place.location) }}<span v-if="place.container" class="text-muted"> / {{ place.container }}</span></td>
-                          <td class="text-end">{{ place.quantity }}</td>
-                        </tr>
-                      </template>
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-              </template>
-            </tbody>
-          </table>
-          </div>
-          </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ── 持有藍圖 ── -->
-      <section id="who-blueprints" class="who-part">
-        <h3 class="sf-drawer__title"><i class="bi bi-diagram-3 me-1"></i>持有藍圖</h3>
-        <div class="card scifi-card sf-search mb-2">
-          <div class="card-body py-2">
-            <div class="row g-2 align-items-end">
-              <SfFilterSheet :count="bpHolderSheetCount" title="持有藍圖篩選" @clear="clearBpHolderSheet">
-                <div class="col-12 col-md-6">
-                  <label class="form-label small mb-1" for="bp-type">藍圖類型</label>
-                  <MultiSelectFilter id="bp-type" v-model="bpSelectedTypes" :options="blueprintTypeOptions"
-                    label="藍圖類型" placeholder="全部" block searchable />
-                </div>
-              </SfFilterSheet>
-            </div>
-          </div>
-        </div>
-        <div v-if="loadingBpHolders" class="text-muted small">查詢中…</div>
-        <div v-else-if="!bpHolders.length" class="text-muted small">
-          沒有人登記符合的藍圖。
-        </div>
-        <div v-else>
-          <!-- 列表外觀跟艦隊（我的艦隊）一致：卡片＋hover 表格＋表頭排序；「詳細」展開持有人 -->
-          <SortSelect v-if="isPhone" class="mb-2" :sort="bpHolderSort" :options="BP_HOLDER_SORT_OPTIONS" />
-          <div class="card scifi-card">
-          <div class="card-body p-0">
-          <div style="overflow-x: auto">
-          <table class="table table-hover align-middle mb-0 sf-stack">
-            <thead class="table-light">
-              <tr>
-                <SortTh :sort="bpHolderSort" field="name" class="ps-3">藍圖</SortTh>
-                <SortTh :sort="bpHolderSort" field="type">類型</SortTh>
-                <SortTh :sort="bpHolderSort" field="holder_count" class="text-end">持有人數</SortTh>
-                <th class="pe-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="group in bpHolderSort.sorted.value" :key="group._id">
-              <tr>
-                <td class="ps-3 sf-stack__title">
-                  <span class="fw-semibold">{{ group.name_zh || group.name }}</span>
-                  <span v-if="group.name_zh" class="small text-muted ms-1">{{ group.name }}</span>
-                  <i v-if="!group.blueprint_uuid" class="bi bi-pencil ms-1" title="自由輸入，沒有對應到遊戲配方"></i>
-                </td>
-                <td data-label="類型">{{ group.output_type ? blueprintTypeLabel(group.output_type) : '—' }}</td>
-                <td class="text-end" data-label="持有人數">{{ group.holder_count }}</td>
-                <td class="text-end text-nowrap pe-3 sf-stack__actions">
-                  <button type="button" class="btn btn-sm btn-info" :aria-expanded="openTree.has(`b|${group._id}`) ? 'true' : 'false'"
-                    @click="toggleTree(`b|${group._id}`)">
-                    <i class="bi me-1" :class="openTree.has(`b|${group._id}`) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="openTree.has(`b|${group._id}`)" class="sf-stack__detail">
-                <td colspan="4" class="holder-detail">
-                  <div class="sf-sheet__head sf-stack__sheet-head">
-                    <h3 class="sf-sheet__title">{{ group.name_zh || group.name }}</h3>
-                    <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleTree(`b|${group._id}`)"><i class="bi bi-x-lg"></i></button>
-                  </div>
-                  <table class="table align-middle mb-0 holder-sub">
-                    <thead><tr><th>持有者</th><th>Discord</th></tr></thead>
-                    <tbody>
-                      <tr v-for="(h, i) in group.holders" :key="i">
-                        <td class="fw-semibold">{{ holderLabel(h.nickname, h.player_name, h.star_citizen_id) }}</td>
-                        <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
-                        <td><template v-if="discordLabel(h)"><i class="bi bi-discord"></i> {{ discordLabel(h) }}</template><span v-else class="text-muted">—</span></td>
+                <!-- 物品：持有者（含公會共享庫）× 放的地點，一列一個地點 -->
+                <table v-if="row.kind === 'items'" class="table align-middle mb-0 holder-sub">
+                  <thead><tr><th>持有者</th><th>地點</th><th class="text-end">數量</th></tr></thead>
+                  <tbody>
+                    <template v-for="h in row.src.holders" :key="h.key">
+                      <tr v-for="(place, j) in h.places" :key="j">
+                        <td v-if="j === 0" :rowspan="h.places.length">
+                          <span class="fw-semibold">{{ h.guild ? '公會共享庫' : holderLabel(h.row.nickname, h.row.player_name, h.row.player) }}</span>
+                          <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
+                          <div v-if="!h.guild && discordLabel(h.row)" class="text-muted"><i class="bi bi-discord"></i> {{ discordLabel(h.row) }}</div>
+                          <div v-if="h.places.length > 1" class="text-muted">共 {{ h.total }}</div>
+                        </td>
+                        <td>{{ locLabel(place.location) }}<span v-if="place.container" class="text-muted"> / {{ place.container }}</span></td>
+                        <td class="text-end">{{ place.quantity }}</td>
                       </tr>
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-              </template>
-            </tbody>
-          </table>
-          </div>
-          </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ── 持有船艦 ── -->
-      <section id="who-fleet" class="who-part">
-        <h3 class="sf-drawer__title"><i class="bi bi-rocket-takeoff me-1"></i>持有船艦</h3>
-        <div class="card scifi-card sf-search mb-2">
-          <div class="card-body py-2">
-            <div class="row g-2 align-items-end">
-              <SfFilterSheet :count="flSheetCount" title="持有船艦篩選" @clear="clearFlSheet">
-                <div class="col-6 col-md-3">
-                  <label class="form-label small mb-1" for="fl-type">類型</label>
-                  <MultiSelectFilter id="fl-type" v-model="flSelectedTypes" :options="vehicleFacets.types"
-                    label="類型" placeholder="全部" block />
-                </div>
-                <div class="col-6 col-md-3">
-                  <label class="form-label small mb-1" for="fl-size">尺寸</label>
-                  <MultiSelectFilter id="fl-size" v-model="flSelectedSizes" :options="vehicleSizeOptions"
-                    label="尺寸" placeholder="全部" block />
-                </div>
-                <div class="col-12 col-md-3">
-                  <label class="form-label small mb-1" for="fl-mfr">廠商</label>
-                  <MultiSelectFilter id="fl-mfr" v-model="flSelectedMfrs" :options="manufacturerOptions"
-                    label="廠商" placeholder="全部" block searchable />
-                </div>
-                <div class="col-12 col-md-3">
-                  <label class="form-label small mb-1" for="fl-role">角色</label>
-                  <MultiSelectFilter id="fl-role" v-model="flSelectedRoles" :options="vehicleFacets.roles"
-                    label="角色" placeholder="全部" block searchable />
-                </div>
-              </SfFilterSheet>
-            </div>
-          </div>
-        </div>
-        <div v-if="loadingFleetHolders" class="text-muted small">查詢中…</div>
-        <div v-else-if="!fleetHolders.length" class="text-muted small">
-          沒有人登記符合條件的船／載具。
-        </div>
-        <div v-else>
-          <!-- 列表外觀跟艦隊（我的艦隊）一致：卡片＋hover 表格＋表頭排序；「詳細」展開船艦資訊、持有者與各自的配件網址 -->
-          <SortSelect v-if="isPhone" class="mb-2" :sort="fleetHolderSort" :options="FLEET_HOLDER_SORT_OPTIONS" />
-          <div class="card scifi-card">
-          <div class="card-body p-0">
-          <div style="overflow-x: auto">
-          <table class="table table-hover align-middle mb-0 sf-stack">
-            <thead class="table-light">
-              <tr>
-                <SortTh :sort="fleetHolderSort" field="name" class="ps-3">船艦</SortTh>
-                <SortTh :sort="fleetHolderSort" field="type" class="d-none d-md-table-cell">類型</SortTh>
-                <SortTh :sort="fleetHolderSort" field="size" class="d-none d-lg-table-cell">尺寸</SortTh>
-                <SortTh :sort="fleetHolderSort" field="manufacturer" class="d-none d-lg-table-cell">廠商</SortTh>
-                <SortTh :sort="fleetHolderSort" field="cargo" class="text-end">載貨</SortTh>
-                <SortTh :sort="fleetHolderSort" field="holder_count" class="text-end">持有人數</SortTh>
-                <SortTh :sort="fleetHolderSort" field="total_quantity" class="text-end">總艘數</SortTh>
-                <th class="pe-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="group in fleetHolderSort.sorted.value" :key="group._id">
-              <tr>
-                <td class="ps-3 sf-stack__title">
-                  <span class="fw-semibold">{{ group.vehicle?.name_zh || group.vehicle?.name || group.name }}</span>
-                  <span v-if="group.vehicle?.name_zh" class="small text-muted ms-1">{{ group.vehicle.name }}</span>
-                  <span v-if="group.vehicle?.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ group.vehicle.system_note }}</span>
-                </td>
-                <td class="d-none d-md-table-cell" data-label="類型">{{ vehicleTypeLabel(group.vehicle?.vehicle_type) || '—' }}</td>
-                <td class="d-none d-lg-table-cell" data-label="尺寸">{{ vehicleSizeLabel(group.vehicle?.size_class) || '—' }}</td>
-                <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) || '—' }}</td>
-                <td class="text-end text-nowrap" data-label="載貨">{{ scuLabel(group.vehicle?.cargo_capacity_scu) }}</td>
-                <td class="text-end" data-label="持有人數">{{ group.holder_count }}</td>
-                <td class="text-end" data-label="總艘數">{{ group.total_quantity }}</td>
-                <td class="text-end text-nowrap pe-3 sf-stack__actions">
-                  <button type="button" class="btn btn-sm btn-info" :aria-expanded="openHolderGroups.has(group._id) ? 'true' : 'false'"
-                    @click="toggleHolderGroup(group._id)">
-                    <i class="bi me-1" :class="openHolderGroups.has(group._id) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="openHolderGroups.has(group._id)" class="sf-stack__detail">
-                <td colspan="8" class="holder-detail">
-                  <div class="sf-sheet__head sf-stack__sheet-head">
-                    <h3 class="sf-sheet__title">{{ group.vehicle?.name_zh || group.vehicle?.name || group.name }}</h3>
-                    <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleHolderGroup(group._id)"><i class="bi bi-x-lg"></i></button>
-                  </div>
+                    </template>
+                  </tbody>
+                </table>
+                <!-- 藍圖：持有者＋Discord -->
+                <table v-else-if="row.kind === 'blueprints'" class="table align-middle mb-0 holder-sub">
+                  <thead><tr><th>持有者</th><th>Discord</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(h, i) in row.src.holders" :key="i">
+                      <td class="fw-semibold">{{ holderLabel(h.nickname, h.player_name, h.star_citizen_id) }}</td>
+                      <td><template v-if="discordLabel(h)"><i class="bi bi-discord"></i> {{ discordLabel(h) }}</template><span v-else class="text-muted">—</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+                <!-- 船艦：船艦資訊＋持有者、Discord、艘數、配件網址 -->
+                <template v-else>
                   <div class="mb-2">
-                    <template v-if="group.vehicle?.cargo_capacity_scu">載貨 {{ scuLabel(group.vehicle.cargo_capacity_scu) }} · </template>
-                    {{ vehicleTypeLabel(group.vehicle?.vehicle_type) }} ·
-                    {{ vehicleSizeLabel(group.vehicle?.size_class) }} ·
-                    {{ manufacturerLabel(group.vehicle?.manufacturer_name, group.vehicle?.manufacturer_code) }} ·
-                    {{ vehicleRoleLabel(group.vehicle?.role, group.vehicle?.role_zh) }}
+                    <template v-if="row.src.vehicle?.cargo_capacity_scu">載貨 {{ scuLabel(row.src.vehicle.cargo_capacity_scu) }} · </template>
+                    {{ vehicleTypeLabel(row.src.vehicle?.vehicle_type) }} ·
+                    {{ vehicleSizeLabel(row.src.vehicle?.size_class) }} ·
+                    {{ manufacturerLabel(row.src.vehicle?.manufacturer_name, row.src.vehicle?.manufacturer_code) }} ·
+                    {{ vehicleRoleLabel(row.src.vehicle?.role, row.src.vehicle?.role_zh) }}
                   </div>
-                  <div v-if="group.vehicle?.note" class="mb-2 vehicle-note">{{ group.vehicle.note }}</div>
+                  <div v-if="row.src.vehicle?.note" class="mb-2 vehicle-note">{{ row.src.vehicle.note }}</div>
                   <table class="table align-middle mb-0 holder-sub">
                     <thead><tr><th>持有者</th><th>Discord</th><th class="text-end">艘數</th><th>配件網址</th></tr></thead>
                     <tbody>
-                      <tr v-for="(h, i) in group.holders" :key="i">
+                      <tr v-for="(h, i) in row.src.holders" :key="i">
                         <td class="fw-semibold">{{ holderLabel(h.nickname, h.player_name, h.star_citizen_id) }}</td>
-                        <!-- 只有本人勾了公開才拿得到值，後端已經先遮蔽過 -->
                         <td><template v-if="discordLabel(h)"><i class="bi bi-discord"></i> {{ discordLabel(h) }}</template><span v-else class="text-muted">—</span></td>
                         <td class="text-end">{{ h.quantity || 1 }}</td>
                         <td>
@@ -535,16 +411,16 @@
                       </tr>
                     </tbody>
                   </table>
-                </td>
-              </tr>
-              </template>
-            </tbody>
-          </table>
-          </div>
-          </div>
-          </div>
+                </template>
+              </td>
+            </tr>
+            </template>
+          </tbody>
+        </table>
         </div>
-      </section>
+        </div>
+        </div>
+      </div>
     </div>
 
     <!-- ══════════ 倉庫 › 庫存紀錄（原本的獨立分頁，改成物品庫存上方按「庫存紀錄」展開；
@@ -1408,7 +1284,7 @@ import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
 import ItemDataBrowser from '@/components/ItemDataBrowser.vue'
 import StockWizard from '@/components/StockWizard.vue'
 import SfModal from '@/components/SfModal.vue'
-import { itemTypeOption, loadItemTypeZh } from '@/utils/itemType'
+import { itemTypeLabel, itemTypeOption, loadItemTypeZh } from '@/utils/itemType'
 import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { auecPerUsd, fmtAuec, fmtAuecPerUsd, fmtUsd, vehicleInRanges, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
@@ -1643,7 +1519,7 @@ const activeSub = ref(legacySub || (
 
 // 「查詢持有資訊」記在網址上的條件（對應見下面 SEARCH_URL_STR／SEARCH_URL_ARR）。
 // 寫成常數放在這裡：syncUrl 可能在 setup 早期就被呼叫，那時下面的對照表還沒宣告
-const SEARCH_URL_KEYS = ['q', 'pk', 'pid', 'pn', 'p', 'i_t', 'i_sys', 'i_pl', 'i_loc',
+const SEARCH_URL_KEYS = ['k', 'q', 'pk', 'pid', 'pn', 'p', 'i_t', 'i_sys', 'i_pl', 'i_loc',
   'b_t', 'f_t', 'f_s', 'f_m', 'f_r']
 
 function syncUrl() {
@@ -2269,12 +2145,6 @@ const flPlayerScid = whoPlayerScid
 // Blueprint.find_holders 的說明）：名稱、玩家是上方共同條件（見 whoName／whoPick），藍圖類型是這部分自己的。
 // 沒有任何條件時列出全部（三部分都一樣）。
 const bpHolders        = ref([])
-// 手機的排序下拉（表頭在手機上看不到）
-const BP_HOLDER_SORT_OPTIONS = [{ field: 'name', label: '藍圖' }, { field: 'type', label: '類型' },
-  { field: 'holder_count', label: '持有人數' }]
-const bpHolderSort = useTableSort(bpHolders, { accessors: {
-  name: g => g.name_zh || g.name, type: g => (g.output_type ? blueprintTypeLabel(g.output_type) : null),
-} })
 const loadingBpHolders = ref(false)
 
 // 「藍圖類型」可多選（取聯集）
@@ -2354,7 +2224,8 @@ const whoTree = computed(() => {
     const itemKey = r.item_id || r.item_name
     if (!items.has(itemKey)) {
       items.set(itemKey, { key: itemKey, name: r.item_name, name_zh: r.item_name_zh,
-        retired: r.item_retired, total: 0, holders: new Map() })
+        retired: r.item_retired, type: r.item_type, sub_type: r.item_sub_type, size: r.item_size,
+        total: 0, holders: new Map() })
     }
     const item = items.get(itemKey)
     item.total += r.quantity || 0
@@ -2367,11 +2238,6 @@ const whoTree = computed(() => {
   }
   return [...items.values()].map(item => ({ ...item, holders: [...item.holders.values()] }))
 })
-const WHO_SORT_OPTIONS = [{ field: 'name', label: '物品' }, { field: 'holders', label: '持有人數' },
-  { field: 'total', label: '總數量' }]
-const whoSort = useTableSort(whoTree, { accessors: {
-  name: i => i.name_zh || i.name, holders: i => i.holders.length,
-} })
 const loadingWho = ref(false)
 
 // 「物品類型」「物品地點」可多選（同一欄位內取聯集，欄位之間 AND）
@@ -2416,6 +2282,7 @@ async function runStockSearch() {
   if (!res) return
   const data = await res.json().catch(() => null)
   whoRows.value = (res.ok && data?.success) ? (data.data || []) : []
+  loadItemTypeZh(whoRows.value.map(r => r.item_type).filter(Boolean), whoRows.value.map(r => r.item_sub_type).filter(Boolean))
 }
 
 watch([itemsSelectedItemId, itemsNameQuery, itemsSelectedTypes, itemsSelectedSystems, itemsSelectedPlanets,
@@ -2839,9 +2706,7 @@ async function removeFleet(row) {
 }
 
 // ── 查詢 › 持有船艦：誰有哪款船 ──────────────────────────────
-// 持有者欄預設收起來，按「N 人」才展開；重新查詢後全部收回去
-const openHolderGroups = reactive(new Set())
-// 物品、持有藍圖的蜂巢式下拉共用：key 前綴 i|（物品）、b|（藍圖），重新查詢時清掉
+// 整合列表「詳細」展開的列：key 前綴 i|（物品）、b|（藍圖）、f|（船艦），各自重新查詢時清掉自己那一類
 const openTree = reactive(new Set())
 function toggleTree(key) {
   if (openTree.has(key)) openTree.delete(key)
@@ -2850,29 +2715,11 @@ function toggleTree(key) {
 function clearTree(prefix) {
   for (const key of [...openTree]) if (key.startsWith(prefix)) openTree.delete(key)
 }
-function toggleHolderGroup(id) {
-  if (openHolderGroups.has(id)) openHolderGroups.delete(id)
-  else openHolderGroups.add(id)
-}
 //
 // 船艦名稱／類型／尺寸／廠商／角色／玩家id／玩家暱稱，AND 語意，打
 // /player/fleet/holders。跟「持有藍圖」一樣：都沒選定時列出全部人的艦隊；
 // 船艦名稱打字就當關鍵字篩（q），選定了就用那一款（vehicle_id）。
 const fleetHolders        = ref([])
-const vehicleSortAccessors = {
-  name: v => v?.name_zh || v?.name, type: v => vehicleTypeLabel(v?.vehicle_type) || null,
-  size: v => v?.size_class, manufacturer: v => manufacturerLabel(v?.manufacturer_name, v?.manufacturer_code) || null,
-  role: v => vehicleRoleLabel(v?.role, v?.role_zh) || null,
-}
-const FLEET_HOLDER_SORT_OPTIONS = [{ field: 'name', label: '船艦' }, { field: 'type', label: '類型' },
-  { field: 'size', label: '尺寸' }, { field: 'manufacturer', label: '廠商' }, { field: 'cargo', label: '載貨' },
-  { field: 'holder_count', label: '持有人數' }, { field: 'total_quantity', label: '總艘數' }]
-const fleetHolderSort = useTableSort(fleetHolders, { accessors: {
-  name: g => vehicleSortAccessors.name(g.vehicle) || g.name,
-  type: g => vehicleSortAccessors.type(g.vehicle), size: g => vehicleSortAccessors.size(g.vehicle),
-  manufacturer: g => vehicleSortAccessors.manufacturer(g.vehicle),
-  cargo: g => g.vehicle?.cargo_capacity_scu || 0,
-} })
 const loadingFleetHolders = ref(false)
 const vehicleFacets       = ref({ size_classes: [], types: [], manufacturers: [], roles: [] })
 let vehicleFacetsLoaded = false
@@ -2898,7 +2745,7 @@ async function loadVehicleFacets() {
 let fleetHolderSeq = 0
 async function loadFleetHolders() {
   const seq = ++fleetHolderSeq
-  openHolderGroups.clear()
+  clearTree('f|')
   loadingFleetHolders.value = true
   const params = new URLSearchParams({ limit: '100' })
   if (flSelectedVehicleId.value) params.set('vehicle_id', flSelectedVehicleId.value)
@@ -2977,19 +2824,61 @@ function clearWhoFilters() {
   whoPick.value = null
   whoPlayerText.value = ''
   whoPlayerScid.value = ''
+  whoKind.value = ''
   clearItemsSheet()
   clearBpHolderSheet()
   clearFlSheet()
 }
-// 三部分各有幾筆（搜尋卡下面的按鈕，按了捲到那部分）
-const whoSections = computed(() => [
-  { key: 'items', icon: 'bi bi-box-seam', text: `物品 ${loadingWho.value ? '…' : whoTree.value.length} 種` },
-  { key: 'blueprints', icon: 'bi bi-diagram-3', text: `藍圖 ${loadingBpHolders.value ? '…' : bpHolders.value.length} 張` },
-  { key: 'fleet', icon: 'bi bi-rocket-takeoff', text: `船艦 ${loadingFleetHolders.value ? '…' : fleetHolders.value.length} 款` },
+// ── 整合列表：物品／藍圖／船艦整理成同一種列，不屬於那一類的欄位留空（null／''）──
+const WHO_KIND_LABEL = { items: '物品', blueprints: '藍圖', fleet: '船艦' }
+const WHO_KIND_ORDER = { items: 0, blueprints: 1, fleet: 2 }
+// 種類：'' ＝全部；選了單一種類才出現它專用的條件，換種類時清掉其他種類的專用條件
+const whoKind = ref('')
+watch(whoKind, (k) => {
+  if (k !== 'items') clearItemsSheet()
+  if (k !== 'blueprints') clearBpHolderSheet()
+  if (k !== 'fleet') clearFlSheet()
+})
+const whoAll = computed(() => [
+  ...whoTree.value.map(i => ({
+    kind: 'items', key: `i|${i.key}`, name: i.name, name_zh: i.name_zh, retired: i.retired,
+    typeLabel: itemTypeLabel(i.type, i.sub_type) || '', sizeLabel: i.size != null ? `S${i.size}` : '', sizeSort: i.size ?? null,
+    mfr: '', cargo: null, holders: i.holders.length, qty: i.total, src: i,
+  })),
+  ...bpHolders.value.map(g => ({
+    kind: 'blueprints', key: `b|${g._id}`, name: g.name, name_zh: g.name_zh, freeText: !g.blueprint_uuid,
+    typeLabel: g.output_type ? blueprintTypeLabel(g.output_type) : '', sizeLabel: '', sizeSort: null,
+    mfr: '', cargo: null, holders: g.holder_count, qty: null, src: g,
+  })),
+  ...fleetHolders.value.map(g => ({
+    kind: 'fleet', key: `f|${g._id}`, name: g.vehicle?.name || g.name, name_zh: g.vehicle?.name_zh, note: g.vehicle?.system_note,
+    typeLabel: vehicleTypeLabel(g.vehicle?.vehicle_type) || '', sizeLabel: vehicleSizeLabel(g.vehicle?.size_class) || '',
+    sizeSort: g.vehicle?.size_class ?? null,
+    mfr: manufacturerLabel(g.vehicle?.manufacturer_name, g.vehicle?.manufacturer_code) || '',
+    cargo: g.vehicle?.cargo_capacity_scu || null, holders: g.holder_count, qty: g.total_quantity, src: g,
+  })),
 ])
-function scrollToWho(key) {
-  document.getElementById(`who-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
+const whoShown = computed(() => (whoKind.value ? whoAll.value.filter(r => r.kind === whoKind.value) : whoAll.value))
+const whoBusy = computed(() => loadingWho.value || loadingBpHolders.value || loadingFleetHolders.value)
+// 種類按鈕上的數量
+const whoKinds = computed(() => {
+  const n = k => (whoAll.value.filter(r => r.kind === k).length)
+  return [
+    { key: '', label: '全部', count: whoAll.value.length },
+    { key: 'items', label: '物品', icon: 'bi bi-box-seam', count: loadingWho.value ? '…' : n('items') },
+    { key: 'blueprints', label: '藍圖', icon: 'bi bi-diagram-3', count: loadingBpHolders.value ? '…' : n('blueprints') },
+    { key: 'fleet', label: '船艦', icon: 'bi bi-rocket-takeoff', count: loadingFleetHolders.value ? '…' : n('fleet') },
+  ]
+})
+// 空值（不屬於那一類）一律排最後，見 useTableSort
+const whoSort = useTableSort(whoShown, { accessors: {
+  name: r => r.name_zh || r.name, kind: r => WHO_KIND_ORDER[r.kind], type: r => r.typeLabel || null,
+  size: r => r.sizeSort, mfr: r => r.mfr || null, cargo: r => r.cargo, holders: r => r.holders, qty: r => r.qty,
+} })
+// 手機的排序下拉（表頭在手機上看不到）
+const WHO_SORT_OPTIONS = [{ field: 'name', label: '名稱' }, { field: 'kind', label: '種類' }, { field: 'type', label: '類型' },
+  { field: 'size', label: '尺寸' }, { field: 'mfr', label: '廠商' }, { field: 'cargo', label: '載貨' },
+  { field: 'holders', label: '持有人數' }, { field: 'qty', label: '數量' }]
 
 // ── 查詢條件記在網址（?tab=search&q=…&p=…），重新整理或貼給隊友都是同一個查詢 ──
 // q：名稱欄文字；pk／pid／pn：選定的候選（類別、id、英文名）；p：玩家遊戲ID；其餘是三部分各自的多選條件
@@ -3002,6 +2891,7 @@ const asArray = v => (v == null ? [] : Array.isArray(v) ? v : [v]).filter(Boolea
 
 function applySearchQuery(q) {
   if (q.tab !== 'search') return
+  if (WHO_KIND_LABEL[q.k]) whoKind.value = q.k
   for (const [k, r] of Object.entries(SEARCH_URL_ARR)) if (q[k] != null) r.value = asArray(q[k])
   if (typeof q.q === 'string') {
     whoName.value = q.q
@@ -3021,6 +2911,7 @@ function applySearchQuery(q) {
 
 function searchUrlQuery() {
   const out = {}
+  if (whoKind.value) out.k = whoKind.value
   if (whoName.value.trim()) out.q = whoName.value.trim()
   if (whoPick.value) {
     out.pk = whoPick.value.kind
@@ -3032,7 +2923,7 @@ function searchUrlQuery() {
   return out
 }
 let searchUrlTimer = null
-watch([whoName, whoPick, whoPlayerScid, ...Object.values(SEARCH_URL_ARR)], () => {
+watch([whoKind, whoName, whoPick, whoPlayerScid, ...Object.values(SEARCH_URL_ARR)], () => {
   clearTimeout(searchUrlTimer)
   searchUrlTimer = setTimeout(() => {
     if (activeTab.value !== 'search') return
@@ -3097,8 +2988,12 @@ onBeforeUnmount(() => {
 .myfleet-detail { background: var(--sf-panel-2); }
 /* 查詢持有資訊的「詳細」：持有者小表（底色跟我的艦隊的詳細一樣） */
 .holder-detail { background: var(--sf-panel-2); }
-/* 查詢持有資訊的三部分（物品／藍圖／船艦）之間留距離；按上面的數量按鈕捲過來時不要被固定的分頁列蓋住 */
-.who-part { margin-bottom: 2rem; scroll-margin-top: 8rem; }
+/* 查詢持有資訊的整合列表：種類按鈕上的數量、種類膠囊 */
+.who-count { margin-left: .35rem; opacity: .75; }
+/* 手機卡片：不屬於那一類的欄位（空的）整格不顯示，免得只剩標籤 */
+@media (max-width: 767.98px) {
+  .scifi-page table.sf-stack.who-table tr:not(.sf-stack__detail) > td.who-na[data-label] { display: none !important; }
+}
 .holder-sub { --bs-table-bg: transparent; }
 .holder-sub > :not(caption) > * > * { padding: .4rem .6rem; }
 .holder-sub td[rowspan] { vertical-align: top; }
