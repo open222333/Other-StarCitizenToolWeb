@@ -1046,3 +1046,9 @@ def test_search_filtered_name_and_type_are_anded(client, auth_headers, seed_sear
     """name='agri'（item-big）AND item_type='Cooler'（item-small）——交集是空的。"""
     body = _search_filtered(client, auth_headers, name='agri', item_type='Cooler')
     assert body['data'] == []
+
+
+def test_search_filtered_returns_item_type(client, auth_headers, seed_search):
+    """整合列表要顯示類型：分欄位模式的每一列帶 item_type。"""
+    body = _search_filtered(client, auth_headers, item_id='item-small')
+    assert {r['item_type'] for r in body['data']} == {'Cooler'}

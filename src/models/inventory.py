@@ -411,6 +411,10 @@ class Inventory:
                 'item_name': {'$ifNull': ['$item.name', '$_id.item_id']},
                 'item_name_zh': '$item.name_zh',
                 'item_retired': {'$eq': [{'$ifNull': ['$item.is_current', True]}, False]},
+                # 「查詢持有資訊」的整合列表要顯示類型／尺寸
+                'item_type': '$item.type',
+                'item_sub_type': '$item.sub_type',
+                'item_size': '$item.size',
             }},
             {'$sort': {'item_name': ASCENDING, 'quantity': DESCENDING}},
             {'$limit': max(1, min(limit, 300))},
@@ -423,6 +427,9 @@ class Inventory:
             'item_name':     row.get('item_name'),
             'item_name_zh':  row.get('item_name_zh'),
             'item_retired':  row.get('item_retired', False),
+            'item_type':     row.get('item_type'),
+            'item_sub_type': row.get('item_sub_type'),
+            'item_size':     row.get('item_size'),
         } for row in rows]
 
     @classmethod
