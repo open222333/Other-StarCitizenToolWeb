@@ -138,7 +138,7 @@
         <button type="button" class="btn btn-sm btn-primary text-nowrap" :disabled="savingFleetId === row._id"
           @click="saveUnitNameFromInput(row, n)">設置識別名稱</button>
         <VehicleLoadoutLinks v-if="loadoutEditId !== `${row._id}:${n}` && row.unit_loadouts?.[n - 1]?.length"
-          :links="row.unit_loadouts[n - 1]" button-class="btn-info" hide-label />
+          :links="row.unit_loadouts[n - 1]" button-class="btn-loadout" hide-label />
         <span class="ms-auto"></span>
         <!-- 設置按鈕放最右、用綠色，跟左邊已設好的網址按鈕（主題色）區分 -->
         <button type="button" class="btn btn-sm btn-success text-nowrap"
@@ -169,12 +169,17 @@
             placeholder="標籤（選填）" maxlength="50" :aria-label="`第 ${i + 1} 條標籤`">
           <input v-model="link.url" type="text" class="form-control form-control-sm loadout-url-input"
             placeholder="abcd1234 或 https://erkul.games/s/abcd1234" :aria-label="`第 ${i + 1} 條配件網址`">
+          <!-- 預設公開（查詢持有資訊看得到）；關掉就只有自己看得到 -->
+          <div class="form-check form-switch mb-0 align-self-center text-nowrap">
+            <input :id="`loadout-public-${i}`" v-model="link.public" class="form-check-input" type="checkbox" role="switch">
+            <label class="form-check-label" :for="`loadout-public-${i}`">公開</label>
+          </div>
           <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除第 ${i + 1} 條`"
             @click="loadoutDraft.splice(i, 1)"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
           <button v-if="loadoutDraft.length < 10" type="button" class="btn btn-sm btn-success"
-            @click="loadoutDraft.push({ label: '', url: '' })"><i class="bi bi-plus-lg me-1"></i>新增</button>
+            @click="loadoutDraft.push({ label: '', url: '', public: true })"><i class="bi bi-plus-lg me-1"></i>新增</button>
           <button type="button" class="btn btn-sm btn-primary" :disabled="savingFleetId === row._id"
             @click="saveLoadouts(row, n)">儲存</button>
           <button type="button" class="btn btn-sm btn-secondary" @click="loadoutEditId = ''">取消</button>
@@ -422,7 +427,7 @@
                 <span v-if="row.note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ row.note }}</span>
                 <!-- 船艦：每位持有者每一艘的配件網址，按鈕標「玩家 · 識別名稱 · 配件碼」 -->
                 <VehicleLoadoutLinks v-for="u in (row.kind === 'fleet' ? holderUnitLoadouts(row.src.holders) : [])" :key="u.key"
-                  :links="u.links" :prefix="u.prefix" button-class="btn-info" hide-label />
+                  :links="u.links" :prefix="u.prefix" button-class="btn-loadout" hide-label />
               </td>
               <td data-label="種類"><span class="sf-chip" :class="`who-kind--${row.kind}`">{{ WHO_KIND_LABEL[row.kind] }}</span></td>
               <td class="d-none d-md-table-cell" :class="{ 'who-na': !row.typeLabel }" data-label="類型">{{ row.typeLabel }}</td>
@@ -491,7 +496,7 @@
                         <td class="text-end">{{ h.quantity || 1 }}</td>
                         <td>
                           <VehicleLoadoutLinks v-for="u in holderUnitLoadouts([h], false)" :key="u.key" :links="u.links"
-                            :prefix="u.prefix" button-class="btn-info" hide-label />
+                            :prefix="u.prefix" button-class="btn-loadout" hide-label />
                           <span v-if="!holderUnitLoadouts([h], false).length" class="text-muted">—</span>
                         </td>
                       </tr>
@@ -954,7 +959,7 @@
                 class="sf-tree-chip ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
               <!-- 配件網址直接列在船名下面（好幾艘時按鈕前面標是哪一艘） -->
               <VehicleLoadoutLinks v-for="u in fleetUnitLoadouts(row)" :key="u.n" :links="u.links" :prefix="u.prefix"
-                button-class="btn-info" hide-label />
+                button-class="btn-loadout" hide-label />
             </td>
             <!-- 手機／平板藏次要欄位（「詳細」裡都看得到）；尺寸 ≥992、租用 ≥1200、aUEC／美金 ≥1400 才顯示，平板與一般筆電不用橫向捲 -->
             <td class="d-none d-md-table-cell" data-label="類型">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) || '—' }}</td>
@@ -2752,14 +2757,14 @@ function toggleLoadoutEdit(row, n) {
     return
   }
   loadoutEditId.value = key
-  loadoutDraft.value = (row.unit_loadouts?.[n - 1] || []).map(l => ({ label: l.label || '', url: l.url }))
-  if (!loadoutDraft.value.length) loadoutDraft.value.push({ label: '', url: '' })
+  loadoutDraft.value = (row.unit_loadouts?.[n - 1] || []).map(l => ({ label: l.label || '', url: l.url, public: !l.private }))
+  if (!loadoutDraft.value.length) loadoutDraft.value.push({ label: '', url: '', public: true })
 }
 
 async function saveLoadouts(row, n) {
   // 整列都空白的直接略過
   const links = loadoutDraft.value
-    .map(l => ({ label: (l.label || '').trim(), url: (l.url || '').trim() }))
+    .map(l => ({ label: (l.label || '').trim(), url: (l.url || '').trim(), private: l.public === false }))
     .filter(l => l.url || l.label)
   savingFleetId.value = row._id
   const res = await playerAuth.playerFetch(`/player/fleet/${row._id}`, {

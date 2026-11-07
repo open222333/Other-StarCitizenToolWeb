@@ -684,7 +684,22 @@ html:has(.scifi-page) { color-scheme: dark; }
 }
 .scifi-page .btn-primary:hover:not(:disabled) { box-shadow: 0 0 12px rgba(var(--sf-accent-rgb), .5); }
 
-.scifi-page .btn-info {           /* 查看／編輯：藍圖名稱、材料、配件網址 → 主強調色淡底 */
+/* 配件網址（外部配裝計算器的連結）：次要強調色、比一般淡底按鈕鮮明，跟其他按鈕一眼分得出來 */
+.scifi-page .btn-loadout {
+  --bs-btn-bg: rgba(var(--sf-accent-2-rgb), .24);
+  --bs-btn-border-color: var(--sf-accent-2);
+  --bs-btn-color: var(--sf-text-strong);
+  --bs-btn-hover-bg: rgba(var(--sf-accent-2-rgb), .42);
+  --bs-btn-hover-border-color: var(--sf-accent-2);
+  --bs-btn-hover-color: var(--sf-text-strong);
+  --bs-btn-active-bg: rgba(var(--sf-accent-2-rgb), .5);
+  --bs-btn-active-border-color: var(--sf-accent-2);
+  --bs-btn-active-color: var(--sf-text-strong);
+  box-shadow: 0 0 .5rem rgba(var(--sf-accent-2-rgb), .25);
+  font-weight: 600;
+}
+.scifi-page .btn-loadout .bi { color: var(--sf-accent-2); }
+.scifi-page .btn-info {           /* 查看／編輯：藍圖名稱、材料 → 主強調色淡底 */
   --bs-btn-bg: rgba(var(--sf-accent-rgb), .16);
   --bs-btn-border-color: rgba(var(--sf-accent-rgb), .6);
   --bs-btn-color: var(--sf-text-strong);

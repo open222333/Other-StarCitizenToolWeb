@@ -10,7 +10,7 @@
     <a v-for="(link, i) in links" :key="link.url" :href="link.url" target="_blank" rel="noopener noreferrer"
       class="btn btn-sm" :class="buttonClass || 'btn-primary px-2'"
       :title="`${link.url}${link.added_at ? `（${fmtDate(link.added_at)} 加入）` : ''}`">
-      <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i><span v-if="prefix" class="loadout-links__prefix">{{ prefix }}</span>{{ linkLabel(link, i) }}
+      <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i><span v-if="prefix" class="loadout-links__prefix">{{ prefix }}</span>{{ linkLabel(link, i) }}<i v-if="link.private" class="bi bi-lock-fill ms-1" title="不公開：只有自己看得到" aria-label="不公開"></i>
     </a>
   </div>
 </template>
