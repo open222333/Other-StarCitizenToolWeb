@@ -1003,3 +1003,32 @@ html:has(.scifi-page) { color-scheme: dark; }
 .scifi-page .sf-popover .sf-popover__item:hover { background: var(--sf-popover-hover); }
 .scifi-page .sf-popover .sf-popover__item.is-active,
 .scifi-page .sf-popover .sf-popover__item[aria-selected='true'] { background: var(--sf-popover-active); color: var(--sf-text-strong); }
+
+/* ── 超寬螢幕（21:9 這類，視窗寬高比 ≥ 2.2 且夠寬）：搜尋卡放左邊、列表放右邊 ──────────
+ * 套在 .sf-split 容器上（.scifi-body 本身，以及艦隊／物品資料／查詢持有資訊這幾個把搜尋卡包在裡面的區塊）：
+ * 直接子層的搜尋卡（.sf-search，不含只有一排的 --inline）放左欄、黏在畫面上，其他東西（工具列、列表、展開區塊）都在右欄。
+ * 沒有搜尋卡的分頁左欄是 0 寬，照常滿版。搜尋卡在窄欄裡欄位一律一欄一個，不照 Bootstrap 的 col-md-* 並排。
+ * 16:9 螢幕把瀏覽器開滿約 2.0，不會觸發。 */
+@media (min-aspect-ratio: 11/5) and (min-width: 1800px) {
+  .scifi-page .sf-split {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 0;
+    align-items: start;
+  }
+  .scifi-page .sf-split > * { grid-column: 2; min-width: 0; }
+  .scifi-page .sf-split > .sf-search:not(.sf-search--inline) {
+    grid-column: 1;
+    grid-row: 1 / span 40;
+    width: 24rem;
+    margin-right: 1.25rem;
+    position: sticky;
+    top: calc(var(--sf-topbar-h, 52px) + var(--sf-tabs-h, 42px) + .75rem);
+  }
+  .scifi-page .sf-split > .sf-search:not(.sf-search--inline) .row > * {
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+

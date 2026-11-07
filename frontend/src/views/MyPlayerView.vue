@@ -263,7 +263,7 @@
     </nav>
 
     <!-- ══════════ 內容區（滿版） ══════════ -->
-    <div class="scifi-body">
+    <div class="scifi-body sf-split">
     <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
@@ -286,7 +286,7 @@
 
 
     <!-- ══════════ 物品 › 物品資料：瀏覽物品主檔（唯讀），自己的搜尋卡（不含地點） ══════════ -->
-    <div v-show="activeTab === 'items' && activeSub === 'data'" id="panel-items-data">
+    <div v-show="activeTab === 'items' && activeSub === 'data'" id="panel-items-data" class="sf-split">
       <div class="sf-toolbar">
         <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="itemDataRef?.refresh()">
           <i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
@@ -307,7 +307,7 @@
 
     <!-- ══════════ 查詢持有資訊：一個區塊——一張搜尋卡（共同條件＋種類，選了單一種類才出現它專用的條件），
          一張整合的列表（物品／藍圖／船艦混在一起，不屬於那一類的欄位留空）══════════ -->
-    <div v-show="activeTab === 'search'">
+    <div v-show="activeTab === 'search'" class="sf-split">
       <div class="sf-toolbar">
         <!-- 查詢條件都記在網址裡，複製下來貼給隊友就是同一個查詢 -->
         <button type="button" class="btn btn-sm btn-primary" aria-label="複製查詢連結" @click="copySearchLink">
@@ -819,7 +819,7 @@
 
     <!-- ══════════ 個人資料 ══════════ -->
     <!-- ══════════ 艦隊（我的艦隊＋登記船艦資料／JSON 匯入） ══════════ -->
-    <div v-show="activeTab === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'">
+    <div v-show="activeTab === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'" class="sf-split">
       <Transition name="alert-slide">
         <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
       </Transition>

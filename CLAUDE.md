@@ -63,6 +63,9 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
   （手機上由 `scifi-theme.css` 固定在底部；元件不要再對它設 `position`／`bottom`／`z-index`）。
   自己做的底部面板（`.sf-sheet`，例如「更多」）用 `composables/useSheet.js` 的 `useSheet(openRef, sheetElRef)`
   （Esc 關閉、開啟時焦點移進面板、關閉後回到按鈕；面板加 `role="dialog" aria-modal="true" tabindex="-1"`）。
+- **玩家頁超寬螢幕（21:9）**：視窗寬高比 ≥ 2.2 且寬 ≥ 1800px 時，`.sf-split` 容器（`.scifi-body` 本身，以及把搜尋卡包在裡面的
+  區塊：艦隊、物品資料、查詢持有資訊）直接子層的搜尋卡（`.sf-search`，不含 `--inline`）放左欄（24rem、黏在畫面上、欄位一欄一個），
+  工具列和列表在右欄（樣式在 `scifi-theme.css`）。新分頁的搜尋卡要是 `.sf-split` 的直接子層才吃得到；包在別的容器裡就給那個容器加 `.sf-split`。
 - **玩家頁共用元件／class**（樣式在 `scifi-theme.css`，不要各頁另寫）：
   - 狀態：`SfState`（`loading`／`error`／`empty`／`emptyText`／`loadingText`，`@retry`）——文字一律「載入中…」「重試」。
   - 分頁：`SfPager`（`total`／`offset`／`limit`／`loading`，`@page(newOffset)`；後台頁加 `admin` 變 outline 樣式）。
