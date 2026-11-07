@@ -35,7 +35,7 @@
   物品那張的 nickname 是後端 /inventory/where 補的 ——
   inventory.player 只存 RSI handle，沒有暱稱（見 Player.display_names_by_scid）。
 
-  畫面上不放固定的使用說明（CLAUDE.md 介面文字原則；FieldHint 只留給工具網站的連結描述）。
+  畫面上不放固定的使用說明（CLAUDE.md 介面文字原則；工具網站的連結描述直接顯示在卡片上）。
   會隨狀態變的訊息（「以下 3 筆都會登記到
   Area18」、「顯示 2 / 3 筆」、選中物品的綠色勾勾）留在原地常駐顯示。
 
@@ -1059,41 +1059,68 @@
     <div v-show="activeTab === 'tools'" role="tabpanel" id="panel-tools" :aria-labelledby="'tab-tools'">
       <SfState :loading="loadingToolLinks && !toolLinks.length" :error="toolLinksError" :empty="!toolLinks.length"
         empty-text="目前沒有工具網站。" @retry="loadToolLinks">
-      <div>
-        <!-- 搜尋：標題、網址、說明、標籤；標籤可以多選 -->
-        <div class="sf-search sf-search--inline d-flex flex-wrap align-items-center gap-2 mb-2">
-          <input v-model="toolQuery" type="search" class="form-control form-control-sm" style="max-width: 18rem"
-            placeholder="搜尋名稱、網址、說明、標籤…" aria-label="搜尋工具網站">
-          <MultiSelectFilter v-model="toolSelectedTags" label="標籤" :options="toolTagOptions" searchable />
-          <button v-if="toolQuery || toolSelectedTags.length" type="button" class="btn btn-sm btn-warning"
-            @click="toolQuery = ''; toolSelectedTags = []">清除全部</button>
+      <div class="sf-split">
+        <!-- 搜尋卡：關鍵字（名稱、網址、說明、標籤）＋標籤快速篩選（按鈕，可多選，上面有數量） -->
+        <div class="card scifi-card sf-search mb-3">
+          <div class="card-body py-3">
+            <div class="row g-2 align-items-end">
+              <div class="col-12 col-md-6 col-xl-4">
+                <label class="form-label small mb-1" for="tool-q">搜尋</label>
+                <input id="tool-q" v-model="toolQuery" type="search" class="form-control form-control-sm"
+                  placeholder="名稱、網址、說明、標籤…" aria-label="搜尋工具網站">
+              </div>
+              <div class="col-12">
+                <span class="form-label small mb-1 d-block">標籤</span>
+                <div class="d-flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-sm btn-subtab" :class="{ active: !toolSelectedTags.length }"
+                    :aria-pressed="!toolSelectedTags.length ? 'true' : 'false'" @click="toolSelectedTags = []">
+                    全部<span class="tool-count">{{ toolLinks.length }}</span></button>
+                  <button v-for="t in toolTagCounts" :key="t.tag" type="button" class="btn btn-sm btn-subtab"
+                    :class="{ active: toolSelectedTags.includes(t.tag) }"
+                    :aria-pressed="toolSelectedTags.includes(t.tag) ? 'true' : 'false'" @click="toggleToolTag(t.tag)">
+                    {{ t.tag }}<span class="tool-count">{{ t.count }}</span></button>
+                </div>
+              </div>
+            </div>
+            <div v-if="toolQuery || toolSelectedTags.length" class="d-flex justify-content-end mt-2">
+              <button type="button" class="btn btn-sm btn-warning" @click="toolQuery = ''; toolSelectedTags = []">清除全部</button>
+            </div>
+          </div>
         </div>
-        <div v-if="!toolLinkGroups.length" class="text-muted">沒有符合的工具網站。</div>
-        <!-- 依標籤分組（後台設定的順序，沒有標籤的排最後）；一個網址有好幾個標籤就出現在每一組，
-             標籤列按了可以收起來 -->
-        <div v-for="group in toolLinkGroups" :key="group.name" class="holder-ship">
-          <button type="button" class="sf-tree-row sf-tree-row--ship"
-            :aria-expanded="collapsedToolGroups.has(group.name) ? 'false' : 'true'"
-            @click="toggleToolGroup(group.name)">
-            <i class="bi" :class="collapsedToolGroups.has(group.name) ? 'bi-chevron-right' : 'bi-chevron-down'"></i>
-            <span class="sf-tree-title">{{ group.name || '未分類' }}</span>
-            <span class="sf-tree-meta">{{ group.links.length }}</span>
-          </button>
-          <div v-if="!collapsedToolGroups.has(group.name)" class="sf-tree-level">
-            <div class="row g-2">
-              <div v-for="link in group.links" :key="link._id" class="col-12 col-md-6 col-xl-4">
-                <div class="card scifi-card h-100">
-                  <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
-                    <a :href="link.url" target="_blank" rel="noopener noreferrer"
-                      class="btn btn-sm btn-primary fw-semibold text-truncate tool-link">
-                      <i class="bi bi-box-arrow-up-right me-1 small"></i>{{ link.title }}
-                    </a>
-                    <FieldHint v-if="link.description" :text="link.description" />
+
+        <div>
+          <div v-if="!toolLinkGroups.length" class="text-muted">沒有符合的工具網站。</div>
+          <!-- 依標籤分組（後台設定的順序，沒有標籤的排最後）；一個網址有好幾個標籤就出現在每一組，分組標題按了可以收起來 -->
+          <section v-for="group in toolLinkGroups" :key="group.name" class="tool-group">
+            <button type="button" class="tool-group__head" :aria-expanded="collapsedToolGroups.has(group.name) ? 'false' : 'true'"
+              @click="toggleToolGroup(group.name)">
+              <i class="bi" :class="collapsedToolGroups.has(group.name) ? 'bi-chevron-right' : 'bi-chevron-down'"></i>
+              <span>{{ group.name || '未分類' }}</span>
+              <span class="sf-chip">{{ group.links.length }}</span>
+            </button>
+            <div v-if="!collapsedToolGroups.has(group.name)" class="row g-3">
+              <div v-for="link in group.links" :key="link._id" class="col-12 col-md-6 col-xl-4 col-xxl-3">
+                <div class="card scifi-card h-100 tool-card">
+                  <div class="card-body d-flex flex-column gap-2">
+                    <div class="d-flex align-items-start gap-2">
+                      <span class="tool-card__icon" aria-hidden="true">{{ toolInitial(link) }}</span>
+                      <div class="flex-grow-1 min-w-0">
+                        <div class="tool-card__title">{{ link.title }}</div>
+                        <div class="tool-card__host">{{ toolHost(link.url) }}</div>
+                      </div>
+                      <a :href="link.url" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary text-nowrap"
+                        :aria-label="`開啟 ${link.title}`"><i class="bi bi-box-arrow-up-right me-1"></i>開啟</a>
+                    </div>
+                    <p v-if="link.description" class="tool-card__desc mb-0">{{ link.description }}</p>
+                    <div v-if="link.tags?.length" class="d-flex flex-wrap gap-1 mt-auto">
+                      <button v-for="t in link.tags" :key="t" type="button" class="sf-chip tool-card__tag"
+                        :class="{ 'sf-chip--accent': toolSelectedTags.includes(t) }" @click="toggleToolTag(t)">{{ t }}</button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </section>
         </div>
       </div>
       </SfState>
@@ -1309,7 +1336,6 @@ import FactionReputation from '@/components/FactionReputation.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetImport from '@/components/FleetImport.vue'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
-import FieldHint from '@/components/FieldHint.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
@@ -2406,6 +2432,19 @@ const toolLinkGroups = computed(() => {
   }
   return [...groups.values(), untagged].filter(g => g.links.length)
 })
+// 標籤快速篩選按鈕上的數量（後台設定的順序）
+const toolTagCounts = computed(() => toolTags.value
+  .map(tag => ({ tag, count: toolLinks.value.filter(l => (l.tags || []).includes(tag)).length }))
+  .filter(t => t.count))
+function toggleToolTag(tag) {
+  const i = toolSelectedTags.value.indexOf(tag)
+  toolSelectedTags.value = i >= 0 ? toolSelectedTags.value.filter(t => t !== tag) : [...toolSelectedTags.value, tag]
+}
+function toolHost(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
+}
+// 卡片左上角的字母圖示（不去抓外站的 favicon）
+const toolInitial = link => ((link.title || toolHost(link.url) || '?').trim()[0] || '?').toUpperCase()
 const collapsedToolGroups = reactive(new Set())
 function toggleToolGroup(name) {
   if (collapsedToolGroups.has(name)) collapsedToolGroups.delete(name)
@@ -3032,6 +3071,26 @@ onBeforeUnmount(() => {
 .vehicle-note { white-space: pre-line; }
 
 .tool-link { min-width: 0; }
+/* 工具網站：分組標題、卡片 */
+.tool-count { margin-left: .4rem; opacity: .7; }
+.tool-group { margin-bottom: 1.5rem; }
+.tool-group__head {
+  display: flex; align-items: center; gap: .5rem; width: 100%; margin-bottom: .6rem; padding: .35rem 0;
+  background: none; border: 0; border-bottom: 1px solid var(--sf-border);
+  color: var(--sf-text-strong); font-size: 1.1rem; font-weight: 700; text-align: left;
+}
+.tool-card { transition: border-color .15s, transform .15s; }
+.tool-card:hover { border-color: var(--sf-accent); transform: translateY(-1px); }
+.tool-card__icon {
+  flex: 0 0 2.4rem; height: 2.4rem; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: .5rem; font-weight: 700; font-size: 1.1rem;
+  color: var(--sf-accent); background: rgba(var(--sf-accent-rgb), .14); border: 1px solid rgba(var(--sf-accent-rgb), .35);
+}
+.tool-card__title { font-weight: 700; font-size: 1.05rem; color: var(--sf-text-strong); overflow-wrap: anywhere; }
+.tool-card__host { font-size: .9rem; color: var(--sf-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-card__desc { font-size: .95rem; color: var(--sf-text); }
+.tool-card__tag { cursor: pointer; font: inherit; font-size: .9rem; }
+.min-w-0 { min-width: 0; }
 /* 配件網址編輯列：窄螢幕折行，網址欄可以縮（不撐破 390px） */
 .loadout-label-input { flex: 1 1 8rem; max-width: 10rem; min-width: 0; width: auto; }
 .loadout-url-input { flex: 1 1 12rem; min-width: 0; width: auto; }
