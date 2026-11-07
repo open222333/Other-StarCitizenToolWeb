@@ -105,6 +105,84 @@
       <FactionReputation :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions' && factionRepOpen"
         :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </SfModal>
+    <!-- 艦隊 › 編輯：數量（多艘同款）、每一艘的識別名稱與配件網址 -->
+    <SfModal id="fleet-edit" v-model:open="fleetEditOpen" :title="fleetEditRow ? `編輯 ${fleetEditRow.vehicle?.name_zh || fleetEditRow.name}` : '編輯'"
+      icon="bi bi-pencil-square" width="960px">
+      <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
+      <template v-for="row in (fleetEditRow ? [fleetEditRow] : [])" :key="row._id">
+      <!-- 數量：－／＋ 一次加減 1，也可以直接輸入數字 -->
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <label class="mb-0" :for="`fleet-qty-${row._id}`">數量</label>
+        <div class="input-group input-group-sm myfleet-qty">
+          <button type="button" class="btn btn-secondary" aria-label="減少 1 艘"
+            :disabled="savingFleetId === row._id || row.quantity <= 1"
+            @click="setFleetQuantity(row, row.quantity - 1)"><i class="bi bi-dash-lg"></i></button>
+          <input :id="`fleet-qty-${row._id}`" type="number" min="1" :max="fleetMaxQuantity"
+            class="form-control text-center" :value="row.quantity"
+            :disabled="savingFleetId === row._id" @change="updateFleetQuantity(row, $event)">
+          <button type="button" class="btn btn-success" aria-label="增加 1 艘"
+            :disabled="savingFleetId === row._id || row.quantity >= fleetMaxQuantity"
+            @click="setFleetQuantity(row, row.quantity + 1)"><i class="bi bi-plus-lg"></i></button>
+        </div>
+      </div>
+      <!-- 每一艘一列：區別名稱只存在自己的登記上，不給其他玩家、後台看；
+           配件網址設在每一艘上（「設置配件網址」），公開給其他玩家（互查看到的是所有艘的合併） -->
+      <template v-for="n in row.quantity" :key="n">
+      <div class="sf-tree-leaf">
+        <span class="sf-tree-title text-nowrap">第 {{ n }} 艘</span>
+        <input :id="`unit-name-${row._id}-${n}`" type="text" class="form-control form-control-sm" style="max-width: 18rem"
+          maxlength="50" placeholder="識別名稱" :value="row.unit_names?.[n - 1] || ''"
+          :aria-label="`${row.vehicle?.name_zh || row.name} 第 ${n} 艘的識別名稱`"
+          :disabled="savingFleetId === row._id" @keydown.enter="saveUnitName(row, n - 1, $event)">
+        <!-- 輸入後按這個（或 Enter）才存 -->
+        <button type="button" class="btn btn-sm btn-primary text-nowrap" :disabled="savingFleetId === row._id"
+          @click="saveUnitNameFromInput(row, n)">設置識別名稱</button>
+        <VehicleLoadoutLinks v-if="loadoutEditId !== `${row._id}:${n}` && row.unit_loadouts?.[n - 1]?.length"
+          :links="row.unit_loadouts[n - 1]" button-class="btn-info" hide-label />
+        <span class="ms-auto text-muted" title="識別名稱只有自己看得到"><i class="bi bi-lock"></i></span>
+        <!-- 設置按鈕放最右、用綠色，跟左邊已設好的網址按鈕（主題色）區分 -->
+        <button type="button" class="btn btn-sm btn-success text-nowrap"
+          :aria-expanded="loadoutEditId === `${row._id}:${n}` ? 'true' : 'false'"
+          @click="toggleLoadoutEdit(row, n)">
+          <i class="bi me-1" :class="loadoutEditId === `${row._id}:${n}` ? 'bi-x-lg' : 'bi-gear'"></i>設置配件網址
+        </button>
+        <!-- 好幾艘時可以只刪這一艘（只剩 1 艘時用船名右邊的刪除） -->
+        <template v-if="row.quantity > 1 && confirmDeleteKey === `unit:${row._id}:${n}`">
+          <span class="text-nowrap">確定刪除第 {{ n }} 艘？</span>
+          <button type="button" class="btn btn-sm btn-danger text-nowrap" :aria-label="`確定刪除第 ${n} 艘`"
+            :disabled="savingFleetId === row._id || deletingKey === `unit:${row._id}:${n}`" @click="removeFleetUnit(row, n)">
+            <span v-if="deletingKey === `unit:${row._id}:${n}`" class="spinner-border spinner-border-sm me-1"></span>刪除
+          </button>
+          <button type="button" class="btn btn-sm btn-secondary text-nowrap"
+            :disabled="deletingKey === `unit:${row._id}:${n}`" @click="confirmDeleteKey = ''">取消</button>
+        </template>
+        <button v-else-if="row.quantity > 1" type="button" class="btn btn-sm btn-danger text-nowrap"
+          :aria-label="`刪除第 ${n} 艘`" :disabled="savingFleetId === row._id"
+          @click="confirmDeleteKey = `unit:${row._id}:${n}`">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+      <div v-if="loadoutEditId === `${row._id}:${n}`" class="sf-tree-leaf d-block">
+        <div class="mb-1">第 {{ n }} 艘的配件網址</div>
+        <div v-for="(link, i) in loadoutDraft" :key="i" class="d-flex flex-wrap gap-2 mb-1">
+          <input v-model="link.label" type="text" class="form-control form-control-sm loadout-label-input"
+            placeholder="標籤（選填）" maxlength="50" :aria-label="`第 ${i + 1} 條標籤`">
+          <input v-model="link.url" type="text" class="form-control form-control-sm loadout-url-input"
+            placeholder="abcd1234 或 https://erkul.games/s/abcd1234" :aria-label="`第 ${i + 1} 條配件網址`">
+          <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除第 ${i + 1} 條`"
+            @click="loadoutDraft.splice(i, 1)"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+          <button v-if="loadoutDraft.length < 10" type="button" class="btn btn-sm btn-success"
+            @click="loadoutDraft.push({ label: '', url: '' })"><i class="bi bi-plus-lg me-1"></i>新增</button>
+          <button type="button" class="btn btn-sm btn-primary" :disabled="savingFleetId === row._id"
+            @click="saveLoadouts(row, n)">儲存</button>
+          <button type="button" class="btn btn-sm btn-secondary" @click="loadoutEditId = ''">取消</button>
+        </div>
+      </div>
+      </template>
+      </template>
+    </SfModal>
     <!-- 艦隊 › 登記船艦資料：載具主檔＋官網價／遊戲內購買價／租船價，在這裡登記（單艘或勾選批量，
          components/VehicleDataBrowser.vue）；上方是艦隊分頁的共用搜尋卡（Teleport 移進來）；舊網址 ?tab=fleet&sub=data|bulk 直接打開 -->
     <SfModal id="fleet-data" v-model:open="fleetDataOpen" title="登記船艦資料" icon="bi bi-info-circle" width="1440px">
@@ -860,7 +938,6 @@
             <SortTh :sort="myFleetSort" field="auec" class="text-end">遊戲幣</SortTh>
             <SortTh :sort="myFleetSort" field="rent" class="text-end d-none d-xl-table-cell">租用</SortTh>
             <SortTh :sort="myFleetSort" field="ratio" class="text-end d-none d-xxl-table-cell">aUEC／美金</SortTh>
-            <SortTh :sort="myFleetSort" field="loadouts" class="text-end d-none d-xxl-table-cell">配件網址</SortTh>
             <SortTh :sort="myFleetSort" field="quantity" class="text-end">數量</SortTh>
             <th class="pe-3"></th>
           </tr>
@@ -874,8 +951,11 @@
               <span v-if="row.vehicle?.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ row.vehicle.system_note }}</span>
               <span v-if="row.vehicle && row.vehicle.is_current === false"
                 class="sf-tree-chip ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
+              <!-- 配件網址直接列在船名下面（好幾艘時按鈕前面標是哪一艘） -->
+              <VehicleLoadoutLinks v-for="u in fleetUnitLoadouts(row)" :key="u.n" :links="u.links" :prefix="u.prefix"
+                button-class="btn-info" hide-label />
             </td>
-            <!-- 手機／平板藏次要欄位（「詳細」裡都看得到）；尺寸 ≥992、租用 ≥1200、aUEC／美金與配件網址 ≥1400 才顯示，平板與一般筆電不用橫向捲 -->
+            <!-- 手機／平板藏次要欄位（「詳細」裡都看得到）；尺寸 ≥992、租用 ≥1200、aUEC／美金 ≥1400 才顯示，平板與一般筆電不用橫向捲 -->
             <td class="d-none d-md-table-cell" data-label="類型">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="尺寸">{{ vehicleSizeLabel(row.vehicle?.size_class) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) || '—' }}</td>
@@ -885,9 +965,12 @@
             <td class="text-end text-nowrap" data-label="遊戲幣">{{ fmtAuec(row.vehicle?.uex_price?.buy_min) }}</td>
             <td class="text-end text-nowrap d-none d-xl-table-cell" data-label="租用">{{ fmtAuec(row.vehicle?.uex_price?.rent_min) }}</td>
             <td class="text-end text-nowrap d-none d-xxl-table-cell" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(row.vehicle)) }}</td>
-            <td class="text-end d-none d-xxl-table-cell" data-label="配件網址">{{ row.loadout_links?.length || '—' }}</td>
             <td class="text-end" data-label="數量">{{ row.quantity }}</td>
             <td class="text-end text-nowrap pe-3 sf-stack__actions">
+              <button type="button" class="btn btn-sm btn-info me-2"
+                :aria-label="`編輯 ${row.vehicle?.name_zh || row.name}`" @click="openFleetEdit(row)">
+                <i class="bi bi-pencil-square me-1"></i>編輯
+              </button>
               <button type="button" class="btn btn-sm btn-info me-2"
                 :aria-expanded="openMyFleet.has(row._id) ? 'true' : 'false'" @click="toggleMyFleet(row._id)">
                 <i class="bi me-1" :class="openMyFleet.has(row._id) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
@@ -907,8 +990,8 @@
             </td>
           </tr>
           <tr v-if="openMyFleet.has(row._id)" class="sf-stack__detail">
-            <!-- colspan 要跟 thead 的欄數一致（13）；手機上這一列變成底部面板 -->
-            <td colspan="13" class="myfleet-detail">
+            <!-- colspan 要跟 thead 的欄數一致（12）；手機上這一列變成底部面板。數量、識別名稱、配件網址改在「編輯」視窗 -->
+            <td colspan="12" class="myfleet-detail">
                 <div class="sf-sheet__head sf-stack__sheet-head">
                   <h3 class="sf-sheet__title">{{ row.vehicle?.name_zh || row.name }}</h3>
                   <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="toggleMyFleet(row._id)"><i class="bi bi-x-lg"></i></button>
@@ -921,77 +1004,6 @@
                   </div>
                 </div>
                 <div v-if="row.vehicle?.note" class="sf-tree-info vehicle-note">{{ row.vehicle.note }}</div>
-                <!-- 數量：－／＋ 一次加減 1，也可以直接輸入數字 -->
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                  <label class="mb-0" :for="`fleet-qty-${row._id}`">數量</label>
-                  <div class="input-group input-group-sm myfleet-qty">
-                    <button type="button" class="btn btn-secondary" aria-label="減少 1 艘"
-                      :disabled="savingFleetId === row._id || row.quantity <= 1"
-                      @click="setFleetQuantity(row, row.quantity - 1)"><i class="bi bi-dash-lg"></i></button>
-                    <input :id="`fleet-qty-${row._id}`" type="number" min="1" :max="fleetMaxQuantity"
-                      class="form-control text-center" :value="row.quantity"
-                      :disabled="savingFleetId === row._id" @change="updateFleetQuantity(row, $event)">
-                    <button type="button" class="btn btn-success" aria-label="增加 1 艘"
-                      :disabled="savingFleetId === row._id || row.quantity >= fleetMaxQuantity"
-                      @click="setFleetQuantity(row, row.quantity + 1)"><i class="bi bi-plus-lg"></i></button>
-                  </div>
-                </div>
-                <!-- 每一艘一列：區別名稱只存在自己的登記上，不給其他玩家、後台看；
-                     配件網址設在每一艘上（「設置配件網址」），公開給其他玩家（互查看到的是所有艘的合併） -->
-                <template v-for="n in row.quantity" :key="n">
-                <div class="sf-tree-leaf">
-                  <span class="sf-tree-title text-nowrap">第 {{ n }} 艘</span>
-                  <input :id="`unit-name-${row._id}-${n}`" type="text" class="form-control form-control-sm" style="max-width: 18rem"
-                    maxlength="50" placeholder="識別名稱" :value="row.unit_names?.[n - 1] || ''"
-                    :aria-label="`${row.vehicle?.name_zh || row.name} 第 ${n} 艘的識別名稱`"
-                    :disabled="savingFleetId === row._id" @keydown.enter="saveUnitName(row, n - 1, $event)">
-                  <!-- 輸入後按這個（或 Enter）才存 -->
-                  <button type="button" class="btn btn-sm btn-primary text-nowrap" :disabled="savingFleetId === row._id"
-                    @click="saveUnitNameFromInput(row, n)">設置識別名稱</button>
-                  <VehicleLoadoutLinks v-if="loadoutEditId !== `${row._id}:${n}` && row.unit_loadouts?.[n - 1]?.length"
-                    :links="row.unit_loadouts[n - 1]" button-class="btn-info" hide-label />
-                  <span class="ms-auto text-muted" title="識別名稱只有自己看得到"><i class="bi bi-lock"></i></span>
-                  <!-- 設置按鈕放最右、用綠色，跟左邊已設好的網址按鈕（主題色）區分 -->
-                  <button type="button" class="btn btn-sm btn-success text-nowrap"
-                    :aria-expanded="loadoutEditId === `${row._id}:${n}` ? 'true' : 'false'"
-                    @click="toggleLoadoutEdit(row, n)">
-                    <i class="bi me-1" :class="loadoutEditId === `${row._id}:${n}` ? 'bi-x-lg' : 'bi-gear'"></i>設置配件網址
-                  </button>
-                  <!-- 好幾艘時可以只刪這一艘（只剩 1 艘時用船名右邊的刪除） -->
-                  <template v-if="row.quantity > 1 && confirmDeleteKey === `unit:${row._id}:${n}`">
-                    <span class="text-nowrap">確定刪除第 {{ n }} 艘？</span>
-                    <button type="button" class="btn btn-sm btn-danger text-nowrap" :aria-label="`確定刪除第 ${n} 艘`"
-                      :disabled="savingFleetId === row._id || deletingKey === `unit:${row._id}:${n}`" @click="removeFleetUnit(row, n)">
-                      <span v-if="deletingKey === `unit:${row._id}:${n}`" class="spinner-border spinner-border-sm me-1"></span>刪除
-                    </button>
-                    <button type="button" class="btn btn-sm btn-secondary text-nowrap"
-                      :disabled="deletingKey === `unit:${row._id}:${n}`" @click="confirmDeleteKey = ''">取消</button>
-                  </template>
-                  <button v-else-if="row.quantity > 1" type="button" class="btn btn-sm btn-danger text-nowrap"
-                    :aria-label="`刪除第 ${n} 艘`" :disabled="savingFleetId === row._id"
-                    @click="confirmDeleteKey = `unit:${row._id}:${n}`">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </div>
-                <div v-if="loadoutEditId === `${row._id}:${n}`" class="sf-tree-leaf d-block">
-                  <div class="mb-1">第 {{ n }} 艘的配件網址</div>
-                  <div v-for="(link, i) in loadoutDraft" :key="i" class="d-flex flex-wrap gap-2 mb-1">
-                    <input v-model="link.label" type="text" class="form-control form-control-sm loadout-label-input"
-                      placeholder="標籤（選填）" maxlength="50" :aria-label="`第 ${i + 1} 條標籤`">
-                    <input v-model="link.url" type="text" class="form-control form-control-sm loadout-url-input"
-                      placeholder="abcd1234 或 https://erkul.games/s/abcd1234" :aria-label="`第 ${i + 1} 條配件網址`">
-                    <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除第 ${i + 1} 條`"
-                      @click="loadoutDraft.splice(i, 1)"><i class="bi bi-x-lg"></i></button>
-                  </div>
-                  <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
-                    <button v-if="loadoutDraft.length < 10" type="button" class="btn btn-sm btn-success"
-                      @click="loadoutDraft.push({ label: '', url: '' })"><i class="bi bi-plus-lg me-1"></i>新增</button>
-                    <button type="button" class="btn btn-sm btn-primary" :disabled="savingFleetId === row._id"
-                      @click="saveLoadouts(row, n)">儲存</button>
-                    <button type="button" class="btn btn-sm btn-secondary" @click="loadoutEditId = ''">取消</button>
-                  </div>
-                </div>
-                </template>
             </td>
           </tr>
           </template>
@@ -2618,7 +2630,28 @@ function fleetInfoFields(v) {
   ]
 }
 
-// ── 我的艦隊：蜂巢式下拉（船艦 → 每一艘）＋每艘的區別名稱（只有自己看得到）──
+// ── 我的艦隊：列上直接顯示每一艘的配件網址；「編輯」跳出視窗設數量、每艘識別名稱與配件網址 ──
+/** 列上要顯示的配件網址：每艘一組，好幾艘時按鈕前面標「識別名稱」或「第 n 艘」（舊資料只有 loadout_links 的算第 1 艘） */
+function fleetUnitLoadouts(row) {
+  const units = row.unit_loadouts?.length ? row.unit_loadouts : (row.loadout_links?.length ? [row.loadout_links] : [])
+  return units.map((links, i) => ({
+    n: i + 1, links: links || [],
+    prefix: row.quantity > 1 ? (row.unit_names?.[i] || `第 ${i + 1} 艘`) : '',
+  })).filter(u => u.links.length)
+}
+const fleetEditId = ref('')
+const fleetEditRow = computed(() => fleet.value.find(r => r._id === fleetEditId.value) || null)
+const fleetEditOpen = computed({
+  get: () => !!fleetEditRow.value,
+  set: (v) => { if (!v) { fleetEditId.value = ''; loadoutEditId.value = '' } },
+})
+function openFleetEdit(row) {
+  loadoutEditId.value = ''
+  confirmDeleteKey.value = ''
+  fleetEditId.value = row._id
+}
+
+// 「詳細」展開的列（船艦資訊）
 const openMyFleet = reactive(new Set())
 function toggleMyFleet(id) {
   if (openMyFleet.has(id)) openMyFleet.delete(id)

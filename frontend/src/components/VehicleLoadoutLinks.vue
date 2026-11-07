@@ -10,7 +10,7 @@
     <a v-for="(link, i) in links" :key="link.url" :href="link.url" target="_blank" rel="noopener noreferrer"
       class="btn btn-sm" :class="buttonClass || 'btn-primary px-2'"
       :title="`${link.url}${link.added_at ? `（${fmtDate(link.added_at)} 加入）` : ''}`">
-      <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>{{ linkLabel(link, i) }}
+      <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i><span v-if="prefix" class="loadout-links__prefix">{{ prefix }}</span>{{ linkLabel(link, i) }}
     </a>
   </div>
 </template>
@@ -21,6 +21,8 @@ defineProps({
   // 按鈕樣式（預設實心藍）；玩家頁傳 btn-info（查看類按鈕，見 CLAUDE.md）
   buttonClass: { type: String, default: '' },
   hideLabel: { type: Boolean, default: false },
+  // 按鈕文字前面加的標示（我的艦隊好幾艘同款時標是哪一艘）
+  prefix: { type: String, default: '' },
 })
 
 function linkLabel(link, i) {
@@ -44,4 +46,6 @@ function fmtDate(value) {
 
 <style scoped>
 .loadout-links a { word-break: break-all; }
+.loadout-links__prefix { opacity: .75; }
+.loadout-links__prefix::after { content: '·'; margin: 0 .35rem; }
 </style>
