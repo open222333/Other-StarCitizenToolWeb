@@ -3,6 +3,7 @@
   起點＋途經站點＋貨運（取貨→送貨、SCU；目前隱藏，見 SHOW_CARGO），可自動排序或照輸入順序，終點可不指定／回到起點／指定地點。
   結果一次給三種方案（最快／最省油／最順路），每一段列出經過的 OM 點、跳躍點（components/RouteLegsTable.vue）；
   可切換成 3D 星圖（components/RouteMap3D.vue）。多份合約分給多個小隊見 components/ContractPlanner.vue。
+  超寬螢幕（21:9）表單分左右兩欄（左：船／油量／起點／終點，右：途經站點）。
   結果預設在跳出視窗（SfModal）裡，可切回原版接在表單下面（popupResult）；結果最下面「完成」可選結束或終點設為起點。
   表單（地點、船、貨運）記在這台瀏覽器（localStorage）。
 -->
@@ -12,6 +13,9 @@
       <div class="card-body">
         <SfState :loading="base.loading.value" :error="base.error.value"
           :empty="base.loaded.value && !base.places.value.length" empty-text="尚無地點座標資料。" @retry="base.load">
+          <!-- 超寬螢幕（21:9）：同一張卡片裡左邊放船／油量／起點／終點，右邊放途經站點，欄位不會被拉得太長 -->
+          <div class="rp-split">
+          <div class="rp-split__left">
           <ShipFilter id="rp-filter" class="mb-2" />
           <ShipPicker id="rp" v-model:ship-id="shipId" v-model:ship-text="shipText" v-model:qd-id="qdId"
             :ships="base.ships.value" :quantum-drives="base.quantumDrives.value" :fleet-uuids="fleetUuids"
@@ -64,7 +68,9 @@
             </div>
           </div>
 
-          <div class="mt-3">
+          </div>
+          <div class="rp-split__right">
+          <div class="mt-3 rp-stops">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <span class="small fw-semibold">途經站點</span>
               <span v-if="stops.length" class="sf-chip" :class="{ 'sf-chip--warn': onCount >= MAX_ON }">
@@ -144,7 +150,10 @@
             </div>
           </div>
 
-          <div class="d-flex flex-wrap align-items-center gap-3 mt-2">
+          </div>
+          </div>
+
+          <div class="d-flex flex-wrap align-items-center gap-3 mt-2 rp-actions">
             <div class="form-check mb-0">
               <input id="rp-auto" v-model="autoOrder" class="form-check-input" type="checkbox">
               <label class="form-check-label" for="rp-auto">自動排序</label>
@@ -532,6 +541,13 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .rp-cargo { border: 1px solid var(--sf-border); border-radius: .5rem; padding: .5rem; }
 .rp-cargo-tag { min-width: 2.5rem; font-size: 1rem; color: var(--sf-text-muted); }
 .rp-scu { max-width: 9rem; }
+/* 超寬螢幕（跟 scifi-theme.css 的 .sf-split 同一組條件）：表單分左右兩欄，中間一條分隔線 */
+@media (min-aspect-ratio: 11/5) and (min-width: 1800px) {
+  .rp-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 2rem; align-items: start; }
+  .rp-split__right { border-left: 1px solid var(--sf-border); padding-left: 2rem; min-height: 100%; }
+  .rp-split__right > .rp-stops { margin-top: 0 !important; }
+  .rp-actions { border-top: 1px solid var(--sf-border); padding-top: .75rem; margin-top: 1rem !important; }
+}
 .rp-fill { padding: .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
 .rp-finish { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem;
   align-items: center; padding: .6rem 0; border-top: 1px solid var(--sf-border);
