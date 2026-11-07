@@ -125,8 +125,8 @@
             @click="setFleetQuantity(row, row.quantity + 1)"><i class="bi bi-plus-lg"></i></button>
         </div>
       </div>
-      <!-- 每一艘一列：區別名稱只存在自己的登記上，不給其他玩家、後台看；
-           配件網址設在每一艘上（「設置配件網址」），公開給其他玩家（互查看到的是所有艘的合併） -->
+      <!-- 每一艘一列：識別名稱公開在「查詢持有資訊」（玩家 · 識別名稱 · 配件碼），後台列表不放；
+           配件網址設在每一艘上（「設置配件網址」），一樣公開給其他玩家 -->
       <template v-for="n in row.quantity" :key="n">
       <div class="sf-tree-leaf">
         <span class="sf-tree-title text-nowrap">第 {{ n }} 艘</span>
@@ -139,7 +139,7 @@
           @click="saveUnitNameFromInput(row, n)">設置識別名稱</button>
         <VehicleLoadoutLinks v-if="loadoutEditId !== `${row._id}:${n}` && row.unit_loadouts?.[n - 1]?.length"
           :links="row.unit_loadouts[n - 1]" button-class="btn-info" hide-label />
-        <span class="ms-auto text-muted" title="識別名稱只有自己看得到"><i class="bi bi-lock"></i></span>
+        <span class="ms-auto"></span>
         <!-- 設置按鈕放最右、用綠色，跟左邊已設好的網址按鈕（主題色）區分 -->
         <button type="button" class="btn btn-sm btn-success text-nowrap"
           :aria-expanded="loadoutEditId === `${row._id}:${n}` ? 'true' : 'false'"
@@ -420,6 +420,9 @@
                 <i v-if="row.retired" class="bi bi-exclamation-triangle text-warning ms-1" title="這個物品已在新版本移除"></i>
                 <i v-if="row.freeText" class="bi bi-pencil ms-1" title="自由輸入，沒有對應到遊戲配方"></i>
                 <span v-if="row.note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ row.note }}</span>
+                <!-- 船艦：每位持有者每一艘的配件網址，按鈕標「玩家 · 識別名稱 · 配件碼」 -->
+                <VehicleLoadoutLinks v-for="u in (row.kind === 'fleet' ? holderUnitLoadouts(row.src.holders) : [])" :key="u.key"
+                  :links="u.links" :prefix="u.prefix" button-class="btn-info" hide-label />
               </td>
               <td data-label="種類"><span class="sf-chip" :class="`who-kind--${row.kind}`">{{ WHO_KIND_LABEL[row.kind] }}</span></td>
               <td class="d-none d-md-table-cell" :class="{ 'who-na': !row.typeLabel }" data-label="類型">{{ row.typeLabel }}</td>
@@ -487,8 +490,9 @@
                         <td><template v-if="discordLabel(h)"><i class="bi bi-discord"></i> {{ discordLabel(h) }}</template><span v-else class="text-muted">—</span></td>
                         <td class="text-end">{{ h.quantity || 1 }}</td>
                         <td>
-                          <VehicleLoadoutLinks v-if="h.loadout_links?.length" :links="h.loadout_links" button-class="btn-info" hide-label />
-                          <span v-else class="text-muted">—</span>
+                          <VehicleLoadoutLinks v-for="u in holderUnitLoadouts([h], false)" :key="u.key" :links="u.links"
+                            :prefix="u.prefix" button-class="btn-info" hide-label />
+                          <span v-if="!holderUnitLoadouts([h], false).length" class="text-muted">—</span>
                         </td>
                       </tr>
                     </tbody>
@@ -2674,6 +2678,22 @@ function fleetUnitLoadouts(row) {
     n: i + 1, links: links || [],
     prefix: row.quantity > 1 ? (row.unit_names?.[i] || `第 ${i + 1} 艘`) : '',
   })).filter(u => u.links.length)
+}
+/** 查詢持有資訊：持有者每一艘的配件網址，按鈕前面標「玩家 · 識別名稱（沒填就第 n 艘）」；
+ *  withPlayer＝false 時不標玩家（詳細裡的持有者表已經有玩家欄）。舊資料只有 loadout_links 的算第 1 艘 */
+function holderUnitLoadouts(holders, withPlayer = true) {
+  const out = []
+  for (const h of holders || []) {
+    const units = h.unit_loadouts?.length ? h.unit_loadouts : (h.loadout_links?.length ? [h.loadout_links] : [])
+    const player = (h.nickname || h.player_name || h.star_citizen_id || '').trim()
+    units.forEach((links, i) => {
+      if (!links?.length) return
+      const unit = (h.unit_names?.[i] || '').trim() || ((h.quantity || 1) > 1 ? `第 ${i + 1} 艘` : '')
+      out.push({ key: `${h.star_citizen_id}|${i}`, links,
+        prefix: [withPlayer ? player : '', unit].filter(Boolean).join(' · ') })
+    })
+  }
+  return out
 }
 const fleetEditId = ref('')
 const fleetEditRow = computed(() => fleet.value.find(r => r._id === fleetEditId.value) || null)
