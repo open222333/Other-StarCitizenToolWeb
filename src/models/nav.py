@@ -37,6 +37,10 @@ PLACE_EXCLUDE_TYPES = ('Asteroid',)
 #: 上層是這些類型的地點是「站內設施」（太空站／城市裡的診所、醫院、競技場、跳躍點閘門…），
 #: 不能單獨量子定位，不列入地點選單（航線計算照樣用得到，例如跳躍點）
 FACILITY_PARENT_TYPES = ('Manmade', 'Manmade_VisibleOnInteraction', 'LandingZone')
+#: 暫時的特例：名稱是這些開頭的地點一律當成有補給（Vehicle Services）。
+#: 尼克斯的人民服務站（People's Service Station Alpha／Delta／Lambda／Theta）遊戲裡可以補給、加油，
+#: 但 scunpacked-data 的 starmap.json 設施清單（Amenities）是空的。之後來源資料補上了就把這裡拿掉。
+SERVICE_NAME_PREFIXES = ("people's service station",)
 #: 地表判定：離所屬星體中心 ≤ 半徑 × 這個倍數
 SURFACE_RATIO = 1.06
 #: 星體本身的實心半徑（判斷直線是否穿過星體）
@@ -127,7 +131,7 @@ class World:
                 'named': bool(r.get('is_named', bool(r.get('name')))),
                 'facility': (by_id.get(r.get('parent_uuid')) or {}).get('type') in FACILITY_PARENT_TYPES,
                 # 有「Vehicle Services」設施（可以補量子燃料）
-                'services': bool(r.get('has_vehicle_services')),
+                'services': bool(r.get('has_vehicle_services')) or _service_by_name(r.get('name')),
                 # 外部貨運（裝卸碼頭）：外掛貨櫃（Hull 系列）只能在這種站點裝卸；
                 # 星圖設施「Loading Dock」或 UEX 交易終端的 has_loading_dock（見 Starmap.apply_uex_terminals）
                 'loading_dock': bool(r.get('has_loading_dock') or r.get('uex_has_loading_dock')),
@@ -215,6 +219,12 @@ class World:
 
 _cache: dict = {}
 _lock = threading.Lock()
+
+
+def _service_by_name(name) -> bool:
+    """SERVICE_NAME_PREFIXES 的特例（名稱裡的彎引號 ’ 當成直引號 ' 比對）。"""
+    n = (name or '').strip().lower().replace('\u2019', "'")
+    return any(n.startswith(p) for p in SERVICE_NAME_PREFIXES)
 
 
 def world(visible_only: bool = False) -> World:

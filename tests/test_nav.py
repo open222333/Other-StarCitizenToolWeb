@@ -344,3 +344,16 @@ def test_hub_every_n_stops(world_data):
 def test_places_have_positions(world_data):
     row = next(p for p in nav.places() if p['id'] == 'stY')
     assert row['p'] == [10 * GM, 5 * GM, 0] and row['system_key'] == 'stanton'
+
+
+def test_peoples_service_station_counts_as_services():
+    """暫時特例：人民服務站來源資料沒有 Vehicle Services，名稱開頭比對當成有補給（nav.SERVICE_NAME_PREFIXES）。"""
+    w = nav.World([
+        _loc('nyx', 'Nyx', 'Star', None, (0, 0, 0)),
+        _loc('pss', "People's Service Station Alpha", 'Manmade', 'nyx', (1e9, 0, 0)),
+        _loc('pss2', 'People’s Service Station Delta', 'Manmade', 'nyx', (2e9, 0, 0)),
+        _loc('brk', 'QV Breaker Station BRK-127', 'Manmade', 'nyx', (3e9, 0, 0)),
+    ])
+    assert w.nodes['pss']['services'] and w.nodes['pss2']['services']
+    assert not w.nodes['brk']['services']
+
