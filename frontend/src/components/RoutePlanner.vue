@@ -78,9 +78,15 @@
                   <i class="bi bi-eraser me-1"></i>清空站點</button>
                 <button type="button" class="btn btn-sm btn-success" :disabled="stops.length >= MAX_STOPS"
                   @click="stops.push(newStop({ on: onCount < MAX_ON }))"><i class="bi bi-plus-lg me-1"></i>加站點</button>
+                <!-- 跟合約分配一樣：按了才展開依星系填入，填入後收起 -->
+                <button type="button" class="btn btn-sm" :class="fillOpen ? 'btn-secondary' : 'btn-primary'"
+                  :aria-expanded="fillOpen ? 'true' : 'false'" @click="fillOpen = !fillOpen">
+                  <i class="bi bi-stars me-1"></i>依星系填入</button>
               </div>
             </div>
-            <SystemStopsFill id="rp-fill" :places="base.places.value" @fill="fillStops" />
+            <div v-if="fillOpen" class="rp-fill mb-2">
+              <SystemStopsFill id="rp-fill" :places="base.places.value" @fill="fillStops" />
+            </div>
             <div v-if="fillNote" class="sf-chip sf-chip--warn mb-2">{{ fillNote }}</div>
             <div v-for="(s, i) in stops" :key="s.key" class="d-flex gap-2 mb-2 align-items-center"
               :class="{ 'rp-off': !s.on }">
@@ -352,7 +358,9 @@ function setAllOn(on) {
 
 // 依星系填入：已經在清單上的跳過；開關打開到上限為止，其餘先關著
 const fillNote = ref('')
+const fillOpen = ref(false)
 function fillStops(rows) {
+  fillOpen.value = false
   const have = new Set(stops.map(s => s.id).filter(Boolean))
   let on = onCount.value, added = 0, skipped = 0
   for (const p of rows) {
@@ -524,6 +532,7 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .rp-cargo { border: 1px solid var(--sf-border); border-radius: .5rem; padding: .5rem; }
 .rp-cargo-tag { min-width: 2.5rem; font-size: 1rem; color: var(--sf-text-muted); }
 .rp-scu { max-width: 9rem; }
+.rp-fill { padding: .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
 .rp-finish { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem;
   align-items: center; padding: .6rem 0; border-top: 1px solid var(--sf-border);
   /* 貼在視窗（或畫面）底部，航段很多時不用捲到最下面才看得到 */
