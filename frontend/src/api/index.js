@@ -15,7 +15,8 @@ export async function apiFetch(path, options = {}, _retry = true) {
     res = await fetch(path, {
       ...rest,
       headers: {
-        'Content-Type': 'application/json',
+        // 上傳檔案（FormData）讓瀏覽器自己帶 multipart 的 Content-Type（含 boundary）
+        ...(rest.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         'Authorization': `Bearer ${auth.token}`,
         ...(extraHeaders || {}),
       },

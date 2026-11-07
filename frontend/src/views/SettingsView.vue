@@ -8,6 +8,9 @@
     <!-- 物品類型分組（全站設定，存在伺服器） -->
     <ItemTypeGroupsCard />
 
+    <!-- 資料備份：匯出／匯入還原不是同步排程抓來的資料（只有 admin） -->
+    <BackupCard v-if="auth.isAdmin" />
+
     <!-- 外觀模式 -->
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body p-4">
@@ -155,8 +158,11 @@ import { ref, computed } from 'vue'
 import { useThemeStore } from '@/stores/theme'
 import PlayerTabOrderCard from '@/components/PlayerTabOrderCard.vue'
 import ItemTypeGroupsCard from '@/components/ItemTypeGroupsCard.vue'
+import BackupCard from '@/components/BackupCard.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const theme = useThemeStore()
+const auth = useAuthStore()
 
 const BG_SWATCHES = [
   { hex: '#f5f6fa', name: '藍白（深色預設）' },
