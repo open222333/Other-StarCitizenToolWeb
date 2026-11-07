@@ -127,6 +127,7 @@ docker compose exec api git log --oneline -1 2>/dev/null || docker compose exec 
 | **管理後台** | http://localhost:8080/admin/ | 使用者／玩家／藍圖／庫存管理、操作紀錄、資料同步排程、系統設定。需後台帳號登入 |
 | 玩家頁分頁順序與開放 | http://localhost:8080/admin/settings | 後台「系統設定」：拖拉排玩家頁分頁順序，每個分頁選「開放／預設不顯示／不開放」。預設不顯示＝玩家要在「個人資料 › 顯示的分頁」自己打開；不開放＝玩家看不到也打不開；「個人資料」一定開放。存在 `app_settings` 的 `player_tab_order`、`player_tab_access`（只記不是開放的分頁），玩家自己的勾選存在 `players.hidden_tabs`（勾掉的）／`shown_tabs`（自己打開的預設不顯示分頁）。API：`GET／PUT /player/settings/tab-order`（`tab_order`、`tab_access`）、`PUT /player/me/tabs` |
 | 物品類型分組 | http://localhost:8080/admin/settings | 後台「系統設定」：物品類型多選篩選（倉庫、新增／異動、物品頁）的分段，每組有名稱、類型（一個類型只能在一組）、代碼前綴（例如 `Char_Armor_`）；沒對到的歸「其他」，群組標題可整組勾選。存在 `app_settings` 的 `item_type_groups`，沒存＝程式預設（`DEFAULT_ITEM_TYPE_GROUPS`）。API：`GET /item/type-groups`（公開）、`PUT /item/type-groups` |
+| 資料備份 | http://localhost:8080/admin/settings | 後台「系統設定」（只有 admin）：匯出／匯入還原不是同步排程抓來的資料——後台帳號、會員、會員的倉庫／藍圖／艦隊、系統設定、工具網站，可選操作日誌與庫存異動紀錄（`src/backup.py`、`/data/backup/*`）。檔案是 gzip 壓縮的 JSON，含密碼雜湊與 UEX token，要自己保管；還原＝勾選的資料表整個換成檔案內容（先寫暫存表再一次換掉，之後重建索引），還原後台帳號時檔案裡必須有目前登入的帳號 |
 | 後台登入 | http://localhost:8080/admin/login | 預設帳號 `admin`，密碼見 `.env` 的 `ADMIN_PASSWORD`（**必須改掉，否則 api 會拒絕啟動**） |
 | 玩家自助註冊 | http://localhost:8090/player/register | 公開，不需登入 |
 | **玩家登入** | http://localhost:8090/player/login | 跟後台是分開的身分體系（players 集合＋遊戲ID，不是後台 users） |
