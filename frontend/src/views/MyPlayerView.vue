@@ -183,6 +183,10 @@
       </template>
       </template>
     </SfModal>
+    <!-- 艦隊 › JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue）；每次打開都是新的匯入 -->
+    <SfModal id="fleet-import" v-model:open="fleetImportOpen" title="JSON 匯入" icon="bi bi-filetype-json" width="960px">
+      <FleetImport v-if="fleetImportOpen" :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
+    </SfModal>
     <!-- 艦隊 › 登記船艦資料：載具主檔＋官網價／遊戲內購買價／租船價，在這裡登記（單艘或勾選批量，
          components/VehicleDataBrowser.vue）；上方是艦隊分頁的共用搜尋卡（Teleport 移進來）；舊網址 ?tab=fleet&sub=data|bulk 直接打開 -->
     <SfModal id="fleet-data" v-model:open="fleetDataOpen" title="登記船艦資料" icon="bi bi-info-circle" width="1440px">
@@ -825,16 +829,15 @@
         <button aria-label="登記船艦資料" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="fleetDataOpen = true">
           <i class="bi bi-info-circle me-1"></i><span class="sf-btn-text">登記船艦資料</span>
         </button>
-        <button :aria-label="fleetImportOpen ? '收起匯入' : 'JSON 匯入'" class="btn btn-sm" :class="fleetImportOpen ? 'btn-secondary' : 'btn-success'"
-          :aria-expanded="fleetImportOpen ? 'true' : 'false'" @click="fleetImportOpen = !fleetImportOpen">
-          <i class="bi me-1" :class="fleetImportOpen ? 'bi-x-lg' : 'bi-filetype-json'"></i><span class="sf-btn-text">{{ fleetImportOpen ? '收起匯入' : 'JSON 匯入' }}</span>
+        <button aria-label="JSON 匯入" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="fleetImportOpen = true">
+          <i class="bi bi-filetype-json me-1"></i><span class="sf-btn-text">JSON 匯入</span>
         </button>
         <button class="btn btn-sm btn-primary" @click="loadFleet" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
       </div>
 
       <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟「登記船艦資料」（開視窗時用 Teleport 移進視窗） -->
       <Teleport defer to="#fleet-modal-filters" :disabled="!fleetDataOpen">
-      <div v-show="!fleetImportOpen" class="card scifi-card sf-search mb-3">
+      <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
             <div class="col col-md-6">
@@ -909,13 +912,7 @@
 
       </Teleport>
 
-      <!-- JSON 匯入：HangarXPLOR 匯出的機庫船單（見 components/FleetImport.vue） -->
-      <div v-if="fleetImportOpen" class="sf-drawer">
-        <h3 class="sf-drawer__title"><i class="bi bi-filetype-json me-1"></i>JSON 匯入</h3>
-        <FleetImport :fetcher="playerAuth.playerFetch" card-class="card scifi-card" @imported="onFleetImported" />
-      </div>
-
-      <div v-show="!fleetImportOpen">
+      <div>
       <div v-if="loadingFleet" class="text-muted small">載入中…</div>
       <div v-else-if="fleetLoaded && !fleet.length" class="text-muted small">還沒有登記任何船／載具。</div>
       <div v-else-if="fleet.length && !filteredFleet.length" class="text-muted small">沒有符合篩選條件的船／載具。</div>
