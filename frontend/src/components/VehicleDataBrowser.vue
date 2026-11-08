@@ -11,7 +11,7 @@
   已經在我的艦隊裡的標「已登記」且不能再勾／再登記——要多登記幾艘請到我的艦隊改數量；
   後端也會再擋一次（Fleet.bulk_create_for_player）。已登記清單由父層傳進來（registeredUuids，
   就是我的艦隊的 vehicle_uuid），登記完 emit('registered') 讓父層重抓艦隊。
-  樣式用蜂巢式下拉（scifi-theme.css 的 .sf-tree-*）。
+  列表外觀跟「我的艦隊」一致：卡片＋hover 表格＋表頭排序，「詳細」展開船艦資訊與價格（手機是底部面板）。
 -->
 <template>
   <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
@@ -20,63 +20,89 @@
 
     <SfState :loading="loading && !rows.length" :error="loadFailed ? '讀取船艦資料失敗。' : ''" :empty="!rows.length"
       empty-text="沒有符合條件的船艦。" @retry="reload(offset)">
-      <!-- 欄位名稱列：全選本頁＋欄位名稱（船名、尺寸、價格可以排序，後端排序）＋跟「登記」一樣寬的空位 -->
-      <div class="vdb-row vdb-headrow" style="--sf-tree-cols: minmax(0, 1fr) 5rem 4.5rem 7rem 7rem 6rem 5.5rem 7.5rem 6.5rem 6.5rem">
-        <input class="form-check-input vdb-check" type="checkbox" aria-label="全選本頁"
-          :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
-          :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
-        <SfTreeHead class="vdb-main" :sort="sort" :columns="COLUMNS" />
-        <button type="button" class="btn btn-sm btn-success vdb-action invisible" tabindex="-1" aria-hidden="true">
-          <i class="bi bi-plus-lg me-1"></i>登記
-        </button>
+      <!-- 列表外觀跟「我的艦隊」一致：卡片＋hover 表格＋表頭排序（後端排序）；第一欄勾選（批量登記），最後一欄「詳細」「登記」 -->
+      <SortSelect v-if="isPhone" class="mb-2" :sort="sort" :options="SORT_OPTIONS" />
+      <div class="card scifi-card">
+      <div class="card-body p-0">
+      <div style="overflow-x: auto">
+      <table class="table table-hover align-middle mb-0 sf-stack">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3 vdb-check-col">
+              <input class="form-check-input" type="checkbox" aria-label="全選本頁"
+                :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
+                :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
+            </th>
+            <SortTh :sort="sort" field="name">船艦</SortTh>
+            <th class="d-none d-md-table-cell">類型</th>
+            <SortTh :sort="sort" field="size_class" class="d-none d-lg-table-cell">尺寸</SortTh>
+            <th class="d-none d-lg-table-cell">廠商</th>
+            <th class="d-none d-xl-table-cell">角色</th>
+            <SortTh :sort="sort" field="cargo_capacity_scu" class="text-end">載貨</SortTh>
+            <SortTh :sort="sort" field="msrp" class="text-end">美金</SortTh>
+            <SortTh :sort="sort" field="auec" class="text-end">遊戲幣</SortTh>
+            <SortTh :sort="sort" field="rent" class="text-end d-none d-xl-table-cell">租用</SortTh>
+            <SortTh :sort="sort" field="auec_per_usd" class="text-end d-none d-xxl-table-cell">aUEC／美金</SortTh>
+            <th class="pe-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-for="v in rows" :key="v._id">
+          <tr :class="{ 'is-registered': isRegistered(v) }">
+            <td class="ps-3 sf-stack__check vdb-check-col">
+              <input class="form-check-input" type="checkbox" :checked="selected.has(v._id)"
+                :disabled="isRegistered(v)" :aria-label="`勾選 ${v.name_zh || v.name}`"
+                @change="toggleOne(v._id, $event.target.checked)">
+            </td>
+            <td class="sf-stack__title">
+              <span class="fw-semibold">{{ v.name_zh || v.name }}</span>
+              <span v-if="v.name_zh" class="small text-muted ms-1">{{ v.name }}</span>
+              <span v-if="v.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
+              <span v-if="isRegistered(v)" class="sf-chip sf-chip--ok ms-1">已登記</span>
+            </td>
+            <!-- 手機／平板藏次要欄位（「詳細」裡都看得到；手機卡片照樣顯示） -->
+            <td class="d-none d-md-table-cell text-nowrap" data-label="類型">{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</td>
+            <td class="d-none d-lg-table-cell" data-label="尺寸">{{ vehicleSizeLabel(v.size_class) || '—' }}</td>
+            <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' }}</td>
+            <td class="d-none d-xl-table-cell" data-label="角色">{{ vehicleRoleLabel(v.role, v.role_zh) || '—' }}</td>
+            <td class="text-end text-nowrap" data-label="載貨">{{ v.cargo_capacity_scu ? `${fmtNum(v.cargo_capacity_scu)} SCU` : '—' }}</td>
+            <td class="text-end text-nowrap" data-label="美金">{{ fmtUsd(v.msrp) }}</td>
+            <td class="text-end text-nowrap" data-label="遊戲幣">{{ fmtAuec(v.uex_price?.buy_min) }}</td>
+            <td class="text-end text-nowrap d-none d-xl-table-cell" data-label="租用">{{ fmtAuec(v.uex_price?.rent_min) }}</td>
+            <td class="text-end text-nowrap d-none d-xxl-table-cell" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(v)) }}</td>
+            <td class="text-end text-nowrap pe-3 sf-stack__actions">
+              <button type="button" class="btn btn-sm btn-info me-2" :aria-expanded="openId === v._id ? 'true' : 'false'"
+                @click="openId = openId === v._id ? '' : v._id">
+                <i class="bi me-1" :class="openId === v._id ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
+              </button>
+              <button v-if="!isRegistered(v)" type="button" class="btn btn-sm btn-success"
+                :disabled="submitting" :aria-label="`登記 ${v.name_zh || v.name} 到我的艦隊`" @click="register([v._id], 1)">
+                <i class="bi bi-plus-lg me-1"></i>登記
+              </button>
+            </td>
+          </tr>
+          <tr v-if="openId === v._id" class="sf-stack__detail">
+            <!-- colspan 跟 thead 欄數一致（12）；手機上這一列變成底部面板 -->
+            <td colspan="12" class="vdb-detail">
+              <div class="sf-sheet__head sf-stack__sheet-head">
+                <h3 class="sf-sheet__title">{{ v.name_zh || v.name }}</h3>
+                <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="openId = ''"><i class="bi bi-x-lg"></i></button>
+              </div>
+              <div class="vdb-grid">
+                <div v-for="f in infoFields(v)" :key="f.label" class="vdb-field">
+                  <span class="vdb-field__label">{{ f.label }}</span>
+                  <span class="vdb-field__value">{{ f.value }}</span>
+                </div>
+              </div>
+              <div v-if="v.note" class="sf-tree-info vdb-note">{{ v.note }}</div>
+              <VehiclePriceDetail :vehicle-uuid="v._id" :fetcher="fetcher" player />
+            </td>
+          </tr>
+          </template>
+        </tbody>
+      </table>
       </div>
-      <div v-for="v in rows" :key="v._id" class="vdb-ship" :class="{ 'is-registered': isRegistered(v) }">
-        <div class="vdb-row">
-          <input class="form-check-input vdb-check" type="checkbox" :checked="selected.has(v._id)"
-            :disabled="isRegistered(v)" :aria-label="`勾選 ${v.name_zh || v.name}`"
-            @change="toggleOne(v._id, $event.target.checked)">
-          <button type="button" class="sf-tree-row sf-tree-row--ship sf-tree-row--cols vdb-main"
-            style="--sf-tree-cols: minmax(0, 1fr) 5rem 4.5rem 7rem 7rem 6rem 5.5rem 7.5rem 6.5rem 6.5rem"
-            :aria-expanded="openId === v._id ? 'true' : 'false'" @click="openId = openId === v._id ? '' : v._id">
-            <span class="sf-tree-cell sf-tree-cell--main">
-              <i class="bi" :class="openId === v._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-              <span class="sf-tree-title">{{ v.name_zh || v.name }}</span>
-              <span v-if="v.name_zh" class="text-muted">{{ v.name }}</span>
-              <span v-if="v.system_note" class="sf-tree-chip" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
-              <!-- 手機上載貨欄藏起來，改在船名旁邊顯示 -->
-              <span v-if="v.cargo_capacity_scu" class="sf-tree-chip vdb-scu-sm">{{ fmtNum(v.cargo_capacity_scu) }} SCU</span>
-              <span v-if="v.msrp" class="sf-tree-chip vdb-scu-sm">{{ fmtUsd(v.msrp) }}</span>
-              <span v-if="v.uex_price?.buy_min" class="sf-tree-chip vdb-scu-sm">{{ fmtAuec(v.uex_price.buy_min) }}</span>
-              <span v-if="v.uex_price?.rent_min" class="sf-tree-chip vdb-scu-sm">租 {{ fmtAuec(v.uex_price.rent_min) }}</span>
-              <span v-if="auecPerUsd(v)" class="sf-tree-chip vdb-scu-sm">{{ fmtAuecPerUsd(auecPerUsd(v)) }}</span>
-            </span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleSizeLabel(v.size_class) || '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--opt">{{ vehicleRoleLabel(v.role, v.role_zh) || '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ v.cargo_capacity_scu ? `${fmtNum(v.cargo_capacity_scu)} SCU` : '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ fmtUsd(v.msrp) }}</span>
-            <!-- 欄寬有限：欄位裡只放數字，單位在欄名 -->
-            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ v.uex_price?.buy_min ? fmtNum(v.uex_price.buy_min) : '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ v.uex_price?.rent_min ? fmtNum(v.uex_price.rent_min) : '—' }}</span>
-            <span class="sf-tree-cell sf-tree-cell--end sf-tree-cell--opt">{{ auecPerUsd(v) ? fmtNum(auecPerUsd(v)) : '—' }}</span>
-          </button>
-          <span v-if="isRegistered(v)" class="sf-tree-chip vdb-action">已登記</span>
-          <button v-else type="button" class="btn btn-sm btn-success vdb-action"
-            :disabled="submitting" :aria-label="`登記 ${v.name_zh || v.name} 到我的艦隊`" @click="register([v._id], 1)">
-            <i class="bi bi-plus-lg me-1"></i>登記
-          </button>
-        </div>
-        <div v-if="openId === v._id" class="sf-tree-level">
-          <div class="vdb-grid">
-            <div v-for="f in infoFields(v)" :key="f.label" class="vdb-field">
-              <span class="vdb-field__label">{{ f.label }}</span>
-              <span class="vdb-field__value">{{ f.value }}</span>
-            </div>
-          </div>
-          <div v-if="v.note" class="sf-tree-info vdb-note">{{ v.note }}</div>
-          <VehiclePriceDetail :vehicle-uuid="v._id" :fetcher="fetcher" player />
-        </div>
+      </div>
       </div>
       <SfPager v-if="total !== null" class="mt-2" :total="total" :offset="offset" :limit="limit" :loading="loading" @page="goPage" />
       <!-- 總數未知（只打關鍵字時）SfPager 算不出下一頁，用自己的 -->
@@ -120,7 +146,9 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { scrollToListTop } from '@/utils/scrollAnchor'
-import SfTreeHead from '@/components/SfTreeHead.vue'
+import SortSelect from '@/components/SortSelect.vue'
+import SortTh from '@/components/SortTh.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import SfPager from '@/components/SfPager.vue'
 import SfState from '@/components/SfState.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
@@ -247,18 +275,13 @@ function infoFields(v) {
 }
 
 // 欄位名稱＋排序（後端 /item/vehicles 的 sort_by：船名、尺寸、貨艙、美金、遊戲幣、租用、aUEC／美金）
-const COLUMNS = [
-  { label: '船艦', field: 'name' },
-  { label: '類型', opt: true },
-  { label: '尺寸', field: 'size_class', opt: true },
-  { label: '廠商', opt: true },
-  { label: '角色', opt: true },
-  { label: '載貨', field: 'cargo_capacity_scu', end: true, opt: true },
-  { label: '美金', field: 'msrp', end: true, opt: true },
-  { label: '遊戲幣 aUEC', field: 'auec', end: true, opt: true },
-  { label: '租用 aUEC', field: 'rent', end: true, opt: true },
-  { label: 'aUEC／美金', field: 'auec_per_usd', end: true, opt: true },
+// 手機沒有表頭，另外給排序下拉（後端排序欄位）
+const SORT_OPTIONS = [
+  { field: 'name', label: '船艦' }, { field: 'size_class', label: '尺寸' }, { field: 'cargo_capacity_scu', label: '載貨' },
+  { field: 'msrp', label: '美金' }, { field: 'auec', label: '遊戲幣' }, { field: 'rent', label: '租用' },
+  { field: 'auec_per_usd', label: 'aUEC／美金' },
 ]
+const { isPhone } = useBreakpoint()
 const sort = useTableSort(null, { onChange: () => reload(0) })
 
 let seq = 0
@@ -318,14 +341,9 @@ async function goPage(newOffset) {
 </script>
 
 <style scoped>
-.vdb-headrow { margin-bottom: .2rem; }
-.vdb-headrow .sf-tree-head { margin-bottom: 0; }
-.vdb-ship { margin-bottom: .4rem; }
-.vdb-row { display: flex; align-items: center; gap: .5rem; }
-.vdb-check { flex: 0 0 auto; margin: 0 0 0 .2rem; }
-.vdb-main { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
-.vdb-action { flex: 0 0 auto; white-space: nowrap; }
-.is-registered .vdb-main { opacity: .7; }
+.vdb-check-col { width: 2.5rem; }
+.is-registered > td:not(.sf-stack__actions) { opacity: .7; }
+.vdb-detail { background: var(--sf-panel-2); }
 .vdb-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
@@ -341,6 +359,4 @@ async function goPage(newOffset) {
   .vdb-submit { position: sticky; bottom: .5rem; z-index: 10; }
 }
 .vdb-pager-info { font-size: .95rem; color: var(--bs-secondary-color); }
-.vdb-scu-sm { display: none; }
-@media (max-width: 767.98px) { .vdb-scu-sm { display: inline-block; } }
 </style>
