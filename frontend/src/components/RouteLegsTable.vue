@@ -11,7 +11,7 @@
   發 reorder（新順序的 plan.legs），由上層重算。
   起點那一列、終點那一列不能移動。
   replannable 時表格下面有「中途插入站點」＋「重新規劃未完成的行程」：最後一個勾了「已去過」的站之前都算跑完了，
-  發 replan（目前位置、目前油量、跑完的／還沒跑的 plan.legs、要插入的地點 id），由上層重算。
+  發 replan（目前位置、目前油量、跑完的／還沒跑的 plan.legs、要插入的地點 id 清單 inserts），由上層重算。可以插入好幾個站。
 -->
 <template>
   <div style="overflow-x:auto">
@@ -145,12 +145,20 @@
         <span v-if="progress.fuel != null && fuelCapacity" class="sf-chip">
           油量 {{ fmtNum(progress.fuel) }}（{{ Math.round(progress.fuel / fuelCapacity * 100) }}%）</span>
       </div>
-      <div class="d-flex flex-wrap align-items-center gap-2">
+      <!-- 可以插入好幾個站：每個一列，右邊移除；全部跟還沒去的站一起重新排序 -->
+      <div v-for="(ins, i) in inserts" :key="ins.key" class="d-flex align-items-center gap-2 mb-1">
+        <span class="rlt-replan__no">{{ i + 1 }}</span>
         <div class="flex-grow-1 rlt-replan__place">
-          <PlacePicker :id="`${uid}-insert`" label="插入站點" :places="places" :model-value="insert"
-            @update:model-value="v => Object.assign(insert, v)" />
+          <PlacePicker :id="`${uid}-insert-${ins.key}`" :label="`插入站點 ${i + 1} `" :places="places" :model-value="ins"
+            @update:model-value="v => Object.assign(ins, v)" />
         </div>
-        <button type="button" class="btn btn-sm btn-primary" :disabled="replanning" @click="replan">
+        <button v-if="inserts.length > 1 || ins.id || ins.text" type="button" class="btn btn-sm btn-danger"
+          :aria-label="`移除插入站點 ${i + 1}`" @click="removeInsert(i)"><i class="bi bi-trash"></i></button>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+        <button type="button" class="btn btn-sm btn-success" :disabled="inserts.length >= MAX_INSERTS"
+          @click="inserts.push(newInsert())"><i class="bi bi-plus-lg me-1"></i>加插入站點</button>
+        <button type="button" class="btn btn-sm btn-primary ms-auto" :disabled="replanning" @click="replan">
           <i class="bi bi-arrow-repeat me-1"></i>重新規劃未完成的行程
         </button>
       </div>
@@ -202,7 +210,14 @@ const emit = defineEmits(['update:visited', 'reorder', 'replan'])
 const uid = `rlt-${Math.random().toString(36).slice(2, 8)}`
 
 // ── 中途重新規劃：最後一個勾了「已去過」的站（含）之前都算跑完 ──
-const insert = reactive({ id: '', text: '' })
+const MAX_INSERTS = 10
+let insertSeq = 0
+const newInsert = () => ({ key: ++insertSeq, id: '', text: '' })
+const inserts = reactive([newInsert()])
+function removeInsert(i) {
+  inserts.splice(i, 1)
+  if (!inserts.length) inserts.push(newInsert())
+}
 const progress = computed(() => {
   const rows = table.value.rows
   let last = -1
@@ -217,10 +232,11 @@ const progress = computed(() => {
   return { current: row ? row.to : props.plan.start, fuel: fuel ?? null, done, remaining }
 })
 function replan() {
-  emit('replan', { ...progress.value, insert: insert.id || '' })
+  const ids = [...new Set(inserts.map(x => x.id).filter(Boolean))]
+  emit('replan', { ...progress.value, inserts: ids })
 }
 // 換了一份航線（重新規劃成功）就清掉插入的站點
-watch(() => props.plan, () => Object.assign(insert, { id: '', text: '' }))
+watch(() => props.plan, () => inserts.splice(0, inserts.length, newInsert()))
 
 // ── 已去過 ──
 const START_KEY = 'start'
@@ -476,6 +492,7 @@ function fuelLeft(row) {
 .sf-chip.rlt-trait--dock { --trait: 255, 163, 26; }
 .sf-chip.rlt-trait--docking { --trait: 24, 201, 230; }
 .rlt-replan { border: 1px dashed var(--sf-border); border-radius: .5rem; padding: .5rem .75rem; }
+.rlt-replan__no { min-width: 1.25rem; text-align: center; color: var(--sf-text-muted); }
 .rlt-replan__place { min-width: min(100%, 20rem); }
 .rlt-grip { color: var(--sf-text-muted); cursor: grab; }
 tr[draggable="true"] { cursor: grab; }

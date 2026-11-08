@@ -715,7 +715,7 @@ async function replan(sq, p) {
   const onboard = [...byCargo.entries()].filter(([c]) => left.get(c) > 0)
     .map(([c, o]) => ({ ...o, scu: left.get(c) }))
   const steps = p.remaining.filter(l => l.action === 'pickup' || l.action === 'dropoff').map(stepOf)
-  const stops = [...p.remaining.filter(l => l.action === 'stop').map(l => l.to.id), ...(p.insert ? [p.insert] : [])]
+  const stops = [...new Set([...p.remaining.filter(l => l.action === 'stop').map(l => l.to.id), ...(p.inserts || [])])]
   const fuel = p.fuel != null ? { mode: 'amount', value: p.fuel } : ctx.fuel
   reordering.value = true
   reorderError.value = ''

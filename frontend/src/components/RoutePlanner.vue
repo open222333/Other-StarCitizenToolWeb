@@ -405,7 +405,7 @@ let lastReq = null
 const replannedFrom = ref(null)
 async function replan(p) {
   const waypoints = p.remaining.filter(l => l.action === 'stop').map(l => l.to.id)
-  if (p.insert) waypoints.push(p.insert)
+  for (const id of p.inserts || []) if (!waypoints.includes(id)) waypoints.push(id)
   // 原本的終點（回到起點＝原起點）
   const endId = lastReq?.end_mode === 'start' ? lastReq.start : lastReq?.end_mode === 'fixed' ? lastReq.end : ''
   if (!waypoints.length && !endId) {
