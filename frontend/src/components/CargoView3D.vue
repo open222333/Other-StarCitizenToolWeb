@@ -67,7 +67,7 @@ function resetView() {
   draw()
 }
 // 整個場景放得進畫面的距離（直立的畫面寬度比較窄，要退遠一點）
-const fitDist = () => scene.radius * (size.w < size.h ? 2.4 : 1.8)
+const fitDist = () => scene.radius * (size.w < size.h ? 3 : 1.8)
 function topView() {
   cam.pitch = 1.45
   cam.yaw = 0
@@ -121,6 +121,53 @@ function poly(ctx, pts) {
   ctx.closePath()
 }
 
+// 兩個不重疊的箱子誰在後面：找一個把兩個分開的軸（a 整個在 b 的某一側），鏡頭在 b 那一側＝a 在後面。
+// 回傳 -1：a 先畫；1：b 先畫；0：這個方向分不出來（鏡頭夾在兩個中間，看別的軸）
+const EPS = 1e-6
+function behind(a, b, eye) {
+  for (let k = 0; k < 3; k++) {
+    if (a.max[k] <= b.min[k] + EPS) {
+      if (eye[k] >= b.min[k]) return -1
+      if (eye[k] <= a.max[k]) return 1
+    } else if (b.max[k] <= a.min[k] + EPS) {
+      if (eye[k] >= a.min[k]) return 1
+      if (eye[k] <= b.max[k]) return -1
+    }
+  }
+  return 0
+}
+// 依「誰擋住誰」排出畫的順序（拓撲排序）；同時可以畫的先畫比較遠的。萬一有循環就挑最遠的先畫。
+function boxOrder(boxes, eye) {
+  const n = boxes.length
+  const dist = boxes.map(o => {
+    const d = sub(o.min.map((v, i) => (v + o.max[i]) / 2), eye)
+    return dot(d, d)
+  })
+  const after = Array.from({ length: n }, () => [])
+  const indeg = new Array(n).fill(0)
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const r = behind(boxes[i], boxes[j], eye)
+      if (r < 0) { after[i].push(j); indeg[j]++ } else if (r > 0) { after[j].push(i); indeg[i]++ }
+    }
+  }
+  const done = new Array(n).fill(false)
+  const out = []
+  for (let step = 0; step < n; step++) {
+    let pick = -1
+    for (let i = 0; i < n; i++) {
+      if (!done[i] && indeg[i] === 0 && (pick < 0 || dist[i] > dist[pick])) pick = i
+    }
+    if (pick < 0) {   // 循環：挑剩下最遠的
+      for (let i = 0; i < n; i++) if (!done[i] && (pick < 0 || dist[i] > dist[pick])) pick = i
+    }
+    done[pick] = true
+    out.push(boxes[pick])
+    for (const j of after[pick]) indeg[j]--
+  }
+  return out
+}
+
 function draw() {
   const cv = canvas.value
   if (!cv) return
@@ -165,19 +212,24 @@ function draw() {
     }
   }
 
-  // 貨櫃的面：由遠到近畫
-  const faces = []
+  // 貨櫃：一個一個箱子由後往前畫（boxOrder），每個箱子只畫朝向鏡頭的面。
+  // 以前是把所有箱子的面混在一起依「面中心的距離」排序，長條箱子跟旁邊的小箱子常排錯，前後蓋反（破圖）。
+  const boxes = []
   for (const s of scene.ships) {
     for (const b of s.boxes || []) {
-      for (const [pts, n, k] of cuboidFaces(b.x + s.dx, b.y, b.z, b.w, b.h, b.l)) {
-        const center = pts.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0])
-        if (dot(n, sub(c.eye, center)) <= 0) continue
-        const d = sub(center, c.eye)
-        faces.push({ pts, k, size: b.size, top: n[1] === 1, depth: dot(d, d) })
-      }
+      const x = b.x + s.dx
+      boxes.push({ b, x, min: [x, b.y, b.z], max: [x + b.w, b.y + b.h, b.z + b.l] })
     }
   }
-  faces.sort((a, b) => b.depth - a.depth)
+  const faces = []
+  for (const box of boxOrder(boxes, c.eye)) {
+    const { b, x } = box
+    for (const [pts, n, k] of cuboidFaces(x, b.y, b.z, b.w, b.h, b.l)) {
+      const center = pts.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0])
+      if (dot(n, sub(c.eye, center)) <= 0) continue
+      faces.push({ pts, k, size: b.size, top: n[1] === 1 })
+    }
+  }
   ctx.lineWidth = 1
   ctx.font = '600 12px system-ui, sans-serif'
   ctx.textAlign = 'center'
