@@ -11,6 +11,9 @@
     <!-- 資料備份：匯出／匯入還原不是同步排程抓來的資料（只有 admin） -->
     <BackupCard v-if="auth.isAdmin" />
 
+    <!-- AI 問答（Discord /ask）：供應商 key、輪換順序、每人限流、測試（只有 admin） -->
+    <AiSettingsCard v-if="auth.isAdmin" />
+
     <!-- 外觀模式 -->
     <div class="card border-0 shadow-sm mb-3">
       <div class="card-body p-4">
@@ -159,6 +162,7 @@ import { useThemeStore } from '@/stores/theme'
 import PlayerTabOrderCard from '@/components/PlayerTabOrderCard.vue'
 import ItemTypeGroupsCard from '@/components/ItemTypeGroupsCard.vue'
 import BackupCard from '@/components/BackupCard.vue'
+import AiSettingsCard from '@/components/AiSettingsCard.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const theme = useThemeStore()
