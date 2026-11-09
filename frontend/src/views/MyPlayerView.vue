@@ -438,6 +438,8 @@
               <td class="text-end" data-label="持有人數">{{ row.holders }}</td>
               <td class="text-end" :class="{ 'who-na': row.qty == null }" data-label="數量">{{ row.qty ?? '' }}</td>
               <td class="text-end text-nowrap pe-3 sf-stack__actions">
+                <CargoGridButton v-if="row.kind === 'fleet'" :fetcher="playerAuth.playerFetch" :vehicle-uuid="row.src._id"
+                  :name="row.name_zh || row.name" button-class="me-2" />
                 <button type="button" class="btn btn-sm btn-info" :aria-expanded="openTree.has(row.key) ? 'true' : 'false'"
                   @click="toggleTree(row.key)">
                   <i class="bi me-1" :class="openTree.has(row.key) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
@@ -974,6 +976,9 @@
             <td class="text-end text-nowrap d-none d-xxl-table-cell" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(row.vehicle)) }}</td>
             <td class="text-end" data-label="數量">{{ row.quantity }}</td>
             <td class="text-end text-nowrap pe-3 sf-stack__actions">
+              <!-- 有貨物網格資料的船：跳出視窗看 3D 貨艙網格 -->
+              <CargoGridButton :fetcher="playerAuth.playerFetch" :vehicle-uuid="row.vehicle_uuid"
+                :name="row.vehicle?.name_zh || row.name" button-class="me-2" />
               <button type="button" class="btn btn-sm btn-info me-2"
                 :aria-label="`編輯 ${row.vehicle?.name_zh || row.name}`" @click="openFleetEdit(row)">
                 <i class="bi bi-pencil-square me-1"></i>編輯
@@ -1346,6 +1351,7 @@ import FactionReputation from '@/components/FactionReputation.vue'
 import BlueprintMasterBrowser from '@/components/BlueprintMasterBrowser.vue'
 import FleetImport from '@/components/FleetImport.vue'
 import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
+import CargoGridButton from '@/components/CargoGridButton.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
