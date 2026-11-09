@@ -202,6 +202,8 @@ def ensure_indexes():
     db['uex_vehicles'].create_index('uuid')
     # 登入失敗紀錄（src/models/login_guard.py）：1 天後自動清掉
     db['login_failures'].create_index('at', expireAfterSeconds=86400)
+    # AI 問答紀錄（src/ai/ask.py），留 30 天
+    db['ai_logs'].create_index('created_at', expireAfterSeconds=30 * 86400)
     db['login_failures'].create_index([('scope', ASCENDING), ('account', ASCENDING), ('at', DESCENDING)])
     db['login_failures'].create_index([('ip', ASCENDING), ('at', DESCENDING)])
     db['uex_vehicles_purchases'].create_index('id_vehicle')

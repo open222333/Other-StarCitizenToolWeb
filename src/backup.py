@@ -29,10 +29,11 @@ BACKUP_SETS = [
     {'key': 'players', 'label': '會員', 'collections': ['players', 'discord_bindings'], 'default': True},
     {'key': 'player_data', 'label': '會員資料（倉庫、藍圖、艦隊）', 'collections': ['inventory', 'blueprints', 'fleet'],
      'default': True},
-    {'key': 'settings', 'label': '系統設定（分頁設定、物品類型分組、同步排程、玩家頁面顯示、礦物手動關聯、UEX token）',
+    {'key': 'settings', 'label': '系統設定（分頁設定、物品類型分組、同步排程、玩家頁面顯示、礦物手動關聯、UEX token、AI 問答設定）',
      'collections': ['app_settings', 'sync_schedule', 'player_visibility', 'mineral_uex_links'], 'default': True},
     {'key': 'tool_links', 'label': '工具網站', 'collections': ['tool_links', 'tool_link_tags'], 'default': True},
-    {'key': 'logs', 'label': '紀錄（操作日誌、庫存異動紀錄）', 'collections': ['logs', 'inventory_log'], 'default': False},
+    {'key': 'logs', 'label': '紀錄（操作日誌、庫存異動紀錄、AI 問答紀錄）', 'collections': ['logs', 'inventory_log', 'ai_logs'],
+     'default': False},
 ]
 SETS_BY_KEY = {s['key']: s for s in BACKUP_SETS}
 

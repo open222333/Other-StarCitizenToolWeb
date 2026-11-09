@@ -7,6 +7,7 @@ from flask import Blueprint, Response, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
 from src import backup
+from src.ai import ask as ai_ask, config as ai_config, router as ai_router
 from src.models import data_browser
 from src.models.log import Log
 from src.permissions import READ_ROLES, admin_api
@@ -177,4 +178,104 @@ def backup_import():
         return jsonify({'success': False, 'message': str(exc)}), 400
     Log.create(get_jwt_identity(), 'backup_import', detail=json.dumps(counts, ensure_ascii=False))
     return jsonify({'success': True, 'data': {'restored': counts}})
+
+
+# ═══════════════════════════════════════════
+#  AI 問答設定（Discord /ask，見 src/ai/），只有 admin 可以用
+# ═══════════════════════════════════════════
+
+@app_data.route('/ai/config', methods=['GET'])
+@admin_api('admin')
+def ai_config_get():
+    """AI 問答設定（API key 只給末 4 碼）＋各家目前狀態（冷卻、今天次數、最後錯誤）。
+    ---
+    tags: [Data]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: {enabled, order, user_per_minute, user_per_day, providers: [...], runtime: {key: {...}}}"
+    """
+    return jsonify({'success': True, 'data': {**ai_config.status(), 'runtime': ai_router.runtime_status()}})
+
+
+@app_data.route('/ai/config', methods=['PUT'])
+@admin_api('admin')
+def ai_config_put():
+    """更新 AI 問答設定（部分更新；api_key 沒帶＝不動、空字串＝清掉）。
+    ---
+    tags: [Data]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            enabled: {type: boolean}
+            order: {type: array, items: {type: string}}
+            user_per_minute: {type: integer}
+            user_per_day: {type: integer}
+            providers: {type: object, description: "{gemini: {enabled, model, api_key}, groq: {...}}"}
+    responses:
+      200:
+        description: 更新後的設定
+      400:
+        description: 格式錯誤
+    """
+    try:
+        data = ai_config.update(request.get_json(silent=True) or {}, updated_by=get_jwt_identity())
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    # 不記 key 內容
+    Log.create(get_jwt_identity(), 'ai_config_update')
+    return jsonify({'success': True, 'data': {**data, 'runtime': ai_router.runtime_status()}})
+
+
+@app_data.route('/ai/test', methods=['POST'])
+@admin_api('admin')
+def ai_test():
+    """後台測試問答（不受「啟用」與每人限流影響）。
+    ---
+    tags: [Data]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        schema: {type: object, properties: {question: {type: string}}}
+    responses:
+      200:
+        description: "data: {answer, providers, tools, ms}"
+      400:
+        description: 問題是空的、太長，或所有供應商都不能用
+    """
+    question = ((request.get_json(silent=True) or {}).get('question') or '')
+    try:
+        result = ai_ask.ask(question, asker=f'admin:{get_jwt_identity()}', source='admin')
+    except ai_ask.AskError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    return jsonify({'success': True, 'data': result})
+
+
+@app_data.route('/ai/logs', methods=['GET'])
+@admin_api('admin')
+def ai_logs():
+    """最近的 AI 問答紀錄。
+    ---
+    tags: [Data]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: limit, type: integer, default: 30}
+    responses:
+      200:
+        description: "data: [{question, asker, source, providers, tools, ok, error, answer, ms, created_at}]"
+    """
+    try:
+        limit = int(request.args.get('limit', 30))
+    except ValueError:
+        limit = 30
+    return jsonify({'success': True, 'data': ai_ask.recent_logs(limit)})
 
