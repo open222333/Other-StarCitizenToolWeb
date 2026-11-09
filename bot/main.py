@@ -10,6 +10,7 @@
   /capacity  算佔用 SCU（可比對船艙）  /price   查 UEX 價格
   /add       入庫                     /remove  出庫           /move    移庫
   /history   最近異動紀錄
+  /ask       用 AI 問公會資料（後台「系統設定 › AI 問答」設定）
 
 庫存邏輯共用 src/models/inventory.py，與 Web API 同一份資料（WMS_SCOPE_ID 決定範圍）。
 
@@ -29,7 +30,7 @@ from bot.ui import error_embed
 from src import DISCORD_GUILD_ID, DISCORD_TOKEN, LOG_LEVEL, WMS_SCOPE_ID
 from src.models.inventory import StockError
 
-COGS = ('bot.cogs.binding', 'bot.cogs.inventory', 'bot.cogs.stock', 'bot.cogs.prices')
+COGS = ('bot.cogs.binding', 'bot.cogs.inventory', 'bot.cogs.stock', 'bot.cogs.prices', 'bot.cogs.ask')
 
 log = logging.getLogger('sc-bot')
 
