@@ -3096,7 +3096,7 @@ onBeforeUnmount(() => {
 .who-kind--items, .who-kind-icon--items { --who-kind: var(--sf-accent-rgb); }
 .who-kind--fleet, .who-kind-icon--fleet { --who-kind: var(--sf-accent-2-rgb); }
 .who-kind--blueprints, .who-kind-icon--blueprints { --who-kind: var(--bs-success-rgb); }
-.scifi-page .sf-chip.who-kind {
+.scifi-page .sf-chip.who-kind { white-space: nowrap;
   color: var(--sf-text-strong); font-weight: 600;
   background: rgba(var(--who-kind), .2); border-color: rgba(var(--who-kind), .75);
 }
