@@ -76,10 +76,6 @@
               <span v-if="stops.length" class="sf-chip" :class="{ 'sf-chip--warn': onCount >= MAX_ON }">
                 規劃 {{ onCount }} / {{ MAX_ON }}</span>
               <div class="ms-auto d-flex flex-wrap gap-2">
-                <button v-if="stops.length > 1" type="button" class="btn btn-sm btn-info" @click="setAllOn(true)">
-                  <i class="bi bi-toggle-on me-1"></i>全部開啟</button>
-                <button v-if="stops.length > 1" type="button" class="btn btn-sm btn-info" @click="setAllOn(false)">
-                  <i class="bi bi-toggle-off me-1"></i>全部關閉</button>
                 <button v-if="stops.length > 1" type="button" class="btn btn-sm btn-warning" @click="stops.splice(0)">
                   <i class="bi bi-eraser me-1"></i>清空站點</button>
                 <button type="button" class="btn btn-sm btn-success" :disabled="stops.length >= MAX_STOPS"
@@ -94,6 +90,16 @@
               <SystemStopsFill id="rp-fill" :places="base.places.value" @fill="fillStops" />
             </div>
             <div v-if="fillNote" class="sf-chip sf-chip--warn mb-2">{{ fillNote }}</div>
+            <!-- 總開關：跟每列開關對齊放在列表最上方，全開時關閉全部，否則開到上限 -->
+            <div v-if="stops.length > 1" class="d-flex gap-2 mb-2 align-items-center rp-all">
+              <span class="rp-index"></span>
+              <div class="form-check form-switch mb-0 rp-switch">
+                <input id="rp-on-all" class="form-check-input" type="checkbox" role="switch"
+                  :checked="allOnState === 'all'" :indeterminate.prop="allOnState === 'some'"
+                  aria-label="全部站點加入規劃" @change="setAllOn(allOnState !== 'all')">
+              </div>
+              <label for="rp-on-all" class="small fw-semibold mb-0 rp-all-label">全部</label>
+            </div>
             <div v-for="(s, i) in stops" :key="s.key" class="d-flex gap-2 mb-2 align-items-center"
               :class="{ 'rp-off': !s.on }">
               <span class="rp-index">{{ i + 1 }}</span>
@@ -357,6 +363,13 @@ function directDist(s) {
   return fmtDist(Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1], a.p[2] - b.p[2]))
 }
 
+// 總開關狀態：all＝能開的都開了（全開或已到上限）、some＝部分、none＝全關
+const allOnState = computed(() => {
+  const n = onCount.value
+  if (!n) return 'none'
+  return n === stops.length || n >= MAX_ON ? 'all' : 'some'
+})
+
 function setAllOn(on) {
   let n = 0
   for (const s of stops) {
@@ -537,6 +550,8 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
   border: 1px solid var(--sf-border); border-radius: .375rem; background: var(--sf-chip-bg); }
 .rp-path { font-size: 1rem; color: var(--sf-text-muted); }
 .rp-off .rp-auto, .rp-off .rp-index { opacity: .5; }
+.rp-all { padding-bottom: .4rem; border-bottom: 1px dashed var(--sf-border); }
+.rp-all-label { cursor: pointer; }
 .min-w-0 { min-width: 0; }
 .rp-cargo { border: 1px solid var(--sf-border); border-radius: .5rem; padding: .5rem; }
 .rp-cargo-tag { min-width: 2.5rem; font-size: 1rem; color: var(--sf-text-muted); }
