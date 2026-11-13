@@ -21,7 +21,7 @@ from src.models.app_setting import ItemTypeGroups
 from src.models.log import Log
 from src.models.sync_schedule import (JOB_KEYS, SCHEDULE_TZ, SyncJobs, SyncScheduleError,
                                       order_jobs)
-from src.permissions import (READ_ROLES, WRITE_ROLES, admin_api, require_role, viewer_sees_hidden,
+from src.permissions import (READ_ROLES, WRITE_ROLES, admin_api, public_api, require_role, viewer_sees_hidden,
                              visibility_arg)
 from src.models.translation import DEFAULT_LANG
 from src.sc_zh import LOOKUPS, blueprint_type_names, known_location_names
@@ -45,7 +45,7 @@ def _paging() -> tuple:
 
 
 @app_item.route('/', methods=['GET'])
-@jwt_required()
+@public_api
 def list_items():
     """物品主檔列表（後台「物品」、玩家頁「倉庫 › 物品資料」）。
 
@@ -130,7 +130,7 @@ def list_items():
 
 
 @app_item.route('/facets', methods=['GET'])
-@jwt_required()
+@public_api
 def item_facets():
     """物品篩選選單的選項一次拿齊：類型、子類型、製造商、尺寸、等級。
     ---
@@ -148,7 +148,7 @@ def item_facets():
 
 
 @app_item.route('/search', methods=['GET'])
-@jwt_required()
+@public_api
 def search_items():
     """物品名稱搜尋（供前端 autocomplete 使用）。
     ---
@@ -213,7 +213,7 @@ def match_items():
 
 
 @app_item.route('/types', methods=['GET'])
-@jwt_required()
+@public_api
 def list_types():
     """有資料的物品類型（玩家只算玩家頁面顯示的物品）。
     ---
@@ -272,7 +272,7 @@ def set_type_groups():
 
 
 @app_item.route('/<item_id>', methods=['GET'])
-@jwt_required()
+@public_api
 def get_item(item_id):
     """單一物品完整資料（含 raw 原始 API 回應）。
     ---
@@ -302,7 +302,7 @@ def get_item(item_id):
 
 
 @app_item.route('/<item_id>/uex-prices', methods=['GET'])
-@jwt_required()
+@public_api
 def get_item_uex_prices(item_id):
     """物品在哪買得到／哪裡收（UEX，aUEC），附交易終端（地點路徑、星系、行星）與回報時間。
 
@@ -324,7 +324,7 @@ def get_item_uex_prices(item_id):
 
 
 @app_item.route('/<item_id>/prices', methods=['GET'])
-@jwt_required()
+@public_api
 def get_item_prices(item_id):
     """物品在哪買賣、價格多少。
 
@@ -388,7 +388,7 @@ PRICE_SORTS = {
 
 
 @app_item.route('/vehicles', methods=['GET'])
-@jwt_required()
+@public_api
 def list_vehicles():
     """載具主檔列表（太空船＋地面載具＋懸浮載具，含 SCU 貨艙容量）。
 
@@ -490,7 +490,7 @@ def list_vehicles():
 
 
 @app_item.route('/vehicles/<vehicle_id>/prices', methods=['GET'])
-@jwt_required()
+@public_api
 def get_vehicle_prices(vehicle_id):
     """載具的遊戲內購買價／租船價（UEX，aUEC），各自依價格由低到高，附交易終端與回報時間。
 
@@ -611,7 +611,7 @@ def list_player_fleet():
 
 
 @app_item.route('/vehicles/careers', methods=['GET'])
-@jwt_required()
+@public_api
 def list_vehicle_careers():
     """所有載具 career 值（後台篩選下拉用）。
     ---
@@ -626,7 +626,7 @@ def list_vehicle_careers():
 
 
 @app_item.route('/vehicles/roles', methods=['GET'])
-@jwt_required()
+@public_api
 def list_vehicle_roles():
     """所有載具 role 值（後台篩選下拉用）。
     ---
@@ -641,7 +641,7 @@ def list_vehicle_roles():
 
 
 @app_item.route('/vehicles/manufacturers', methods=['GET'])
-@jwt_required()
+@public_api
 def list_vehicle_manufacturers():
     """所有載具製造商（代碼＋全名，後台篩選下拉用）。
     ---
@@ -656,7 +656,7 @@ def list_vehicle_manufacturers():
 
 
 @app_item.route('/vehicles/size-classes', methods=['GET'])
-@jwt_required()
+@public_api
 def list_vehicle_size_classes():
     """所有載具尺寸等級（後台篩選下拉用）。
     ---
@@ -671,7 +671,7 @@ def list_vehicle_size_classes():
 
 
 @app_item.route('/vehicles/facets', methods=['GET'])
-@jwt_required()
+@public_api
 def vehicle_facets():
     """載具篩選選單的選項一次拿齊：類型、尺寸、廠商、角色、career。
 
@@ -743,7 +743,7 @@ def lookup_translations():
 
 
 @app_item.route('/commodities', methods=['GET'])
-@jwt_required()
+@public_api
 def list_commodities():
     """商品主檔列表（含可用箱體規格）。
     ---

@@ -71,7 +71,6 @@
       </template>
     </AdminSearchCard>
 
-    <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
 
     <div :class="cardClass">
       <div class="card-body p-0">
@@ -275,6 +274,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import { apiFetch } from '@/api'
@@ -355,8 +355,6 @@ const isRegistered = bp => registeredSet.value.has(bp._id)
 const selected = reactive(new Set())
 const acquisitionMethod = ref('')
 const submitting = ref(false)
-const message = ref('')
-const messageType = ref('alert-success')
 const selectableRows = computed(() => rows.value.filter(bp => !isRegistered(bp)))
 const allSelectableChecked = computed(() =>
   selectableRows.value.length > 0 && selectableRows.value.every(bp => selected.has(bp._id)))
@@ -384,13 +382,8 @@ watch(registeredSet, (set) => {
   }
 })
 
-let flashTimer = null
-function flash(text, type = 'alert-success') {
-  message.value = text
-  messageType.value = type
-  clearTimeout(flashTimer)
-  flashTimer = setTimeout(() => { message.value = '' }, 6000)
-}
+// 登記結果用全站的 toast（utils/toast.js）
+const flash = (text, type = 'success') => toast(text, type)
 
 async function register(uuids, method = '') {
   if (!uuids.length || submitting.value) return
@@ -562,7 +555,7 @@ watch(nameQuery, () => {
   if (nameQuery.value.trim() === lastName) return   // 清除篩選時已經重查過
   nameTimer = setTimeout(() => reload(0), 300)
 })
-onBeforeUnmount(() => { clearTimeout(sharedTimer); clearTimeout(flashTimer); clearTimeout(nameTimer) })
+onBeforeUnmount(() => { clearTimeout(sharedTimer); clearTimeout(nameTimer) })
 
 // 上一頁／下一頁：載入後把列表頂端捲回畫面（不然會停在最下方的分頁按鈕，見 utils/scrollAnchor.js）
 const rootEl = ref(null)

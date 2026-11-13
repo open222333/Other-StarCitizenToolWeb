@@ -61,7 +61,8 @@
                     <td class="d-none d-md-table-cell" data-label="星系">{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</td>
                     <td class="text-end text-nowrap" data-label="報酬">{{ rewardLabel(m) }}</td>
                     <td class="text-end text-nowrap pe-3" data-label="藍圖">
-                      <span v-if="bp.poolSize" class="fw-semibold"
+                      <span v-if="bp.poolSize && registeredUuids === null">{{ bp.poolSize }} 種</span>
+                      <span v-else-if="bp.poolSize" class="fw-semibold"
                         :class="bp.regCount === bp.poolSize ? 'text-success' : 'fr-count'">{{ bp.regCount }} / {{ bp.poolSize }}</span>
                       <span v-else class="text-muted">—</span>
                     </td>
@@ -72,7 +73,7 @@
                         <h3 class="sf-sheet__title">{{ m.title_zh || m.title }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="openMission = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladderMap" full :fetcher="fetcher" @registered="$emit('registered')" />
+                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladderMap" full :fetcher="canRegister ? fetcher : null" @registered="$emit('registered')" />
                     </td>
                   </tr>
                   </template>
@@ -102,6 +103,8 @@ const props = defineProps({
   active: { type: Boolean, default: true },
   /** 我的藍圖的 blueprint_uuid（預設可用的視同已登記） */
   registeredUuids: { type: Array, default: () => [] },
+  /** 能不能在任務細節直接登記藍圖（沒登入＝false） */
+  canRegister: { type: Boolean, default: true },
 })
 
 const factions = ref([])
@@ -134,7 +137,7 @@ function factionName(f) {
 function typeLabel(s) { return translate('mission_type', s) || s }
 function systemLabel(s) { return translate('location', s) || s }
 
-const registered = computed(() => new Set(props.registeredUuids))
+const registered = computed(() => new Set(props.registeredUuids || []))
 
 // 沒門檻 → 各階級（依階級表順序）→ 門檻對不到階級表的
 const groups = computed(() => {

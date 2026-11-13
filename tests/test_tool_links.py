@@ -72,9 +72,10 @@ def test_rejects_invalid_input(client, auth_headers):
                       json={'title': 'x'}).status_code == 404
 
 
-def test_player_listing_requires_player_token(client, auth_headers):
-    assert client.get('/player/tool-links').status_code == 401
-    assert client.get('/player/tool-links', headers=auth_headers).status_code == 403
+def test_player_listing_is_public(client, auth_headers):
+    # 玩家頁「工具網站」不登入也能看（@public_api）
+    assert client.get('/player/tool-links').status_code == 200
+    assert client.get('/player/tool-links', headers=auth_headers).status_code == 200
 
 
 # ═══════════════════════════════════════════════════════════

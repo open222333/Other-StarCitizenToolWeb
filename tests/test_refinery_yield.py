@@ -99,7 +99,7 @@ def test_refinery_capacities_api(client, auth_headers):
     _seed_capacities()
     body = client.get('/mining/refinery-capacities', headers=auth_headers).get_json()
     assert body['success'] and len(body['data']) == 2
-    assert client.get('/mining/refinery-capacities').status_code == 401
+    assert client.get('/mining/refinery-capacities').status_code == 200  # 不登入也能用（@public_api）
 
 
 def test_method_ratings_candidates(app):

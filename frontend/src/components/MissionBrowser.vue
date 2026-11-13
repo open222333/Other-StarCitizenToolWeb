@@ -66,7 +66,8 @@
                     </td>
                     <td class="text-end text-nowrap" data-label="冷卻">{{ fmtCooldown(m.cooldown_seconds) }}</td>
                     <td class="text-end pe-3 text-nowrap" data-label="藍圖">
-                      <span v-if="poolSize" class="fw-semibold"
+                      <span v-if="poolSize && registeredUuids === null">{{ poolSize }} 種</span>
+                      <span v-else-if="poolSize" class="fw-semibold"
                         :class="regCount === poolSize ? 'text-success' : 'ms-count'">
                         {{ regCount }} / {{ poolSize }}
                       </span>
@@ -79,7 +80,7 @@
                         <h3 class="sf-sheet__title">{{ m.title_zh || m.title }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="expandedId = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladders" :fetcher="fetcher" @registered="$emit('registered')" />
+                      <MissionDetail :mission="m" :registered-uuids="registeredUuids" :ladders="ladders" :fetcher="canRegister ? fetcher : null" @registered="$emit('registered')" />
                     </td>
                   </tr>
                 </template>
@@ -117,6 +118,8 @@ const props = defineProps({
   filters: { type: Object, required: true },
   /** 我的藍圖的 blueprint_uuid（預設可用的視同已登記） */
   registeredUuids: { type: Array, default: () => [] },
+  /** 能不能在任務細節直接登記藍圖（沒登入＝false） */
+  canRegister: { type: Boolean, default: true },
 })
 
 const SORT_OPTIONS = [{ field: 'title_zh', label: '任務' }, { field: 'reward_scope', label: '類型' },
@@ -132,7 +135,7 @@ const loading = ref(false)
 const loadFailed = ref(false)
 const expandedId = ref('')
 
-const registered = computed(() => new Set(props.registeredUuids))
+const registered = computed(() => new Set(props.registeredUuids || []))
 // 類型、星系的中文從翻譯資料庫查（mission_type 是人工條目、星系走 location），查不到顯示英文
 function typeLabel(s) { return translate('mission_type', s) || s }
 function systemLabel(s) { return translate('location', s) || s }

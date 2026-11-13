@@ -78,13 +78,16 @@ export const usePlayerAuthStore = defineStore('playerAuth', () => {
         ...rest,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token.value}`,
+          // 沒登入（訪客用不需登入的工具）就不帶 Authorization
+          ...(token.value ? { Authorization: `Bearer ${token.value}` } : {}),
           ...(extraHeaders || {}),
         },
       })
     } catch {
       return null
     }
+    // 訪客打到要登入的 API：照原樣回 401，不用換 token、也沒有登入狀態可清
+    if (res.status === 401 && !token.value) return res
     if (res.status === 401 && _retry) {
       const ok = await tryRefresh()
       if (ok) return playerFetch(path, options, false)

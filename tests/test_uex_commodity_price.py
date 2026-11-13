@@ -96,7 +96,7 @@ def test_player_api(client, app):
     assert [loc['terminal']['name'] for loc in res.get_json()['data']['locations']] == ['Ruin Station']
     too_many = '&'.join(f'id={i}' for i in range(MAX_SELECTED + 1))
     assert client.get(f'/player/commodities/buy-locations?{too_many}', headers=headers).status_code == 400
-    assert client.get('/player/commodities/buyable').status_code == 401
+    assert client.get('/player/commodities/buyable').status_code == 200  # 不登入也能用（@public_api）
 
 
 def test_admin_api(client, auth_headers, app):
@@ -174,4 +174,4 @@ def test_sell_prices_api(client, auth_headers, app):
     assert body['success'] and set(body['data']) == {'1', '2'}
     too_many = '&'.join(f'id={i}' for i in range(MAX_SELECTED + 1))
     assert client.get(f'/mining/sell-prices?{too_many}', headers=auth_headers).status_code == 400
-    assert client.get('/mining/sell-prices?id=1').status_code == 401
+    assert client.get('/mining/sell-prices?id=1').status_code == 200  # 不登入也能用（@public_api）

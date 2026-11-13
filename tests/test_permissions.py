@@ -247,6 +247,16 @@ UNGUARDED_ALLOWLIST = {
     'app_device.register_device',
     'app_device.unregister_device',
 
+    # ── 玩家頁不登入也能用的工具（@public_api；唯讀、沒有個人或公會私有資料）──
+    'app_player.chat_code_dictionary',   # 中文轉碼字典
+    'app_player.search_game_text',       # 遊戲文字代碼查詢（翻譯表）
+    'app_player.list_buyable_commodities',   # 商品購買地點（UEX 價格）
+    'app_player.commodity_buy_locations',
+    'app_player.list_tool_links',        # 工具網站連結（後台設為公開的）
+    'app_player.get_tab_config',         # 分頁順序與開放狀態（全站設定）
+    # 戰術小隊分配表的分享連結：建立者開了分享才有分享碼（22 字元隨機），只回白名單欄位
+    'app_squad.shared_squad_board',
+
     # ── 遊戲參考資料（唯讀）─────────────────────────────────
     # 來源是公開的 Star Citizen Wiki / UEX API，不是公會私有資料。
     # /item/search 是玩家端 MyPlayerView.vue 的物品自動完成在用，
@@ -266,6 +276,10 @@ UNGUARDED_ALLOWLIST = {
     'app_starmap.nav_sequence',
     'app_starmap.nav_replan',
     'app_starmap.nav_cargo_grids',
+    # 配裝模擬（玩家頁「配裝模擬」）：公開的艦船掛點與配件數值（scunpacked-data），唯讀
+    'app_loadout.loadout_ships',
+    'app_loadout.loadout_ship',
+    'app_loadout.loadout_items',
     'app_item.search_items',
     'app_item.match_items',          # 倉庫「貼上清單」一次比對多個物品名稱（@jwt_required）
     'app_item.list_types',
@@ -572,3 +586,39 @@ def test_uex_token_admin_only(client, viewer_headers, operator_headers, player_h
     for headers in (viewer_headers, operator_headers, player_headers):
         resp = _call(client, method, '/item/sync-uex-token', headers)
         assert resp.status_code == 403, resp.status_code
+
+
+# ═══════════════════════════════════════════════════════════
+#  不登入可用的玩家頁工具（@public_api）
+# ═══════════════════════════════════════════════════════════
+
+PUBLIC_TOOL_GETS = [
+    '/item/', '/item/vehicles', '/item/loadout/ships', '/mining/systems', '/mission/', '/mission/factions',
+    '/blueprint/master', '/blueprint/master/types', '/starmap/nav/places', '/starmap/nav/ships',
+    '/player/tool-links', '/player/tab-config', '/player/commodities/buyable',
+]
+MEMBER_ONLY_GETS = [
+    '/player/me', '/player/inventory', '/player/blueprints', '/player/fleet', '/player/fleet/holders',
+    '/blueprint/holders?q=x', '/inventory/search?q=x', '/player/search?q=x',
+]
+
+
+@pytest.mark.parametrize('path', PUBLIC_TOOL_GETS)
+def test_public_tools_without_token(client, path):
+    assert client.get(path).status_code == 200, f'{path} 應該不用登入'
+
+
+@pytest.mark.parametrize('path', MEMBER_ONLY_GETS)
+def test_member_features_still_need_login(client, path):
+    assert client.get(path).status_code == 401, f'{path} 應該要登入'
+
+
+def test_public_api_rejects_broken_token(client):
+    # 有帶 token 就要驗證：壞掉的 token 不能被當成訪客放行
+    resp = client.get('/item/', headers={'Authorization': 'Bearer not-a-jwt'})
+    assert resp.status_code in (401, 422)
+
+
+def test_tab_config(client):
+    body = client.get('/player/tab-config').get_json()
+    assert body['success'] and set(body['data']) == {'tab_order', 'tab_access'}

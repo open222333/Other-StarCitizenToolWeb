@@ -9,9 +9,9 @@
 """
 
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt_identity
 
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden
+from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, public_api
 
 from src.models.log import Log
 from src.models.mining import MiningDeposit, MiningLocation
@@ -23,7 +23,7 @@ app_mining = Blueprint('app_mining', __name__)
 
 
 @app_mining.route('/deposits', methods=['GET'])
-@jwt_required()
+@public_api
 def list_deposits():
     """礦床成分機率參考表（全部，不分頁）。
     ---
@@ -38,7 +38,7 @@ def list_deposits():
 
 
 @app_mining.route('/locations', methods=['GET'])
-@jwt_required()
+@public_api
 def list_locations():
     """星系/地點的礦床出現機率參考表（全部，不分頁）。
     ---
@@ -53,7 +53,7 @@ def list_locations():
 
 
 @app_mining.route('/systems', methods=['GET'])
-@jwt_required()
+@public_api
 def list_systems():
     """所有出現過的星系名稱（給地點篩選下拉選單用）。
     ---
@@ -68,7 +68,7 @@ def list_systems():
 
 
 @app_mining.route('/refinery-yields', methods=['GET'])
-@jwt_required()
+@public_api
 def list_refinery_yields():
     """精煉站產量加成（UEX，每個精煉站對每種礦物的 %）。玩家頁礦物訊號參考用 base 對礦物名稱。
     ---
@@ -83,7 +83,7 @@ def list_refinery_yields():
 
 
 @app_mining.route('/refinery-capacities', methods=['GET'])
-@jwt_required()
+@public_api
 def list_refinery_capacities():
     """精煉站估算容量（UEX refineries_capacities，百分比估算值，不是 SCU）。玩家頁用終端名稱對上精煉站。
     ---
@@ -98,7 +98,7 @@ def list_refinery_capacities():
 
 
 @app_mining.route('/refinery-methods', methods=['GET'])
-@jwt_required()
+@public_api
 def list_refinery_methods():
     """精煉方式清單＋依礦物×方式彙整的玩家精煉紀錄（UEX refineries_audits，最新遊戲版本）。
     ---
@@ -114,7 +114,7 @@ def list_refinery_methods():
 
 
 @app_mining.route('/sell-prices', methods=['GET'])
-@jwt_required()
+@public_api
 def list_sell_prices():
     """礦物卡片「售價」：指定的 UEX 商品（原礦／精煉品）能賣的終端，賣價高的在前。
     ---

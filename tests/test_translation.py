@@ -339,7 +339,7 @@ def test_search_game_text(client):
     assert T.search('a.(b', mode='en')[0] == [], '正則字元要跳脫'
 
     url = '/player/game-text'
-    assert client.get(url + '?q=x').status_code == 401
+    assert client.get(url + '?q=x').status_code == 200  # 不登入也能用（@public_api）
     player = _register_player(client, 'TextPilot', 'Text')
     body = client.get(url, query_string={'q': '泰坦'}, headers=player).get_json()
     assert body['mode'] == 'zh' and body['data'][0]['key'] == 'vehicle_NameAEGS_Avenger_Titan'

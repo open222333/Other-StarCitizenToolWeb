@@ -28,7 +28,7 @@ from src.models.mission import Mission
 from src.models.player import ROSTER_MAX, Player, PlayerError
 from src.models.tool_link import ToolLink
 from src.models.chat_code import ChatCodeError, get_dictionary as get_chat_code_dictionary
-from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api
+from src.permissions import PLAYER_CLAIM, READ_ROLES, WRITE_ROLES, admin_api, public_api
 from app._shared import attach_item_names
 
 app_player = Blueprint('app_player', __name__)
@@ -437,7 +437,7 @@ def search_players():
 
 
 @app_player.route('/chat-code/dictionary', methods=['GET'])
-@player_required
+@public_api
 def chat_code_dictionary():
     """玩家頁「中文轉碼」：聊天輸入用的中文 ↔ @xxx 代碼表原文（社群 chsc-tw 的 textinput.txt）。
 
@@ -459,7 +459,7 @@ def chat_code_dictionary():
 
 
 @app_player.route('/game-text', methods=['GET'])
-@player_required
+@public_api
 @limiter.limit('60 per minute')
 def search_game_text():
     """玩家頁「中文轉碼 › 遊戲文字代碼」：遊戲文字代碼（localization key）⇄ 中文，也可以用英文找。
@@ -482,7 +482,7 @@ def search_game_text():
 
 
 @app_player.route('/commodities/buyable', methods=['GET'])
-@player_required
+@public_api
 def list_buyable_commodities():
     """玩家頁「查詢 › 商品購買地點」：至少在一個交易終端買得到的商品（UEX 價格表），附終端數。
     ---
@@ -500,7 +500,7 @@ def list_buyable_commodities():
 
 
 @app_player.route('/commodities/buy-locations', methods=['GET'])
-@player_required
+@public_api
 @limiter.limit('60 per minute')
 def commodity_buy_locations():
     """玩家頁「查詢 › 商品購買地點」：勾選的商品「全部」都買得到的交易終端。
@@ -528,7 +528,7 @@ def commodity_buy_locations():
 
 
 @app_player.route('/tool-links', methods=['GET'])
-@player_required
+@public_api
 def list_tool_links():
     """玩家頁「工具網站」分頁：後台維護的外部工具網站連結（見 app/links/view.py）。
     ---
@@ -540,6 +540,21 @@ def list_tool_links():
         description: 成功
     """
     return jsonify({'success': True, 'data': ToolLink.list_public(), 'tags': ToolLink.tags()})
+
+
+@app_player.route('/tab-config', methods=['GET'])
+@public_api
+def get_tab_config():
+    """玩家頁的分頁順序與開放狀態（後台的全站設定），沒登入的訪客也要照這份排分頁。
+    登入後 /player/me 也會帶同樣兩個欄位。
+    ---
+    tags: [Player]
+    responses:
+      200:
+        description: "data: {tab_order: [分頁…], tab_access: {分頁: hidden|closed}}"
+    """
+    return jsonify({'success': True, 'data': {'tab_order': PlayerTabOrder.get(),
+                                              'tab_access': PlayerTabAccess.get()}})
 
 
 @app_player.route('/me', methods=['GET'])

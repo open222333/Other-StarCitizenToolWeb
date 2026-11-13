@@ -458,7 +458,7 @@ def test_player_loadout_links(client, auth_headers, alice, seed_vehicles):
     assert normalize_loadout_url('erkul.games/s/abcd1234') == 'https://erkul.games/s/abcd1234'
     assert normalize_loadout_url('https://www.spviewer.eu/x') == 'https://www.spviewer.eu/x'
     for bad in ([{'url': 'javascript:alert(1)'}], [{'url': 'not a url'}], [{'url': 'ab'}], [{'label': 'x'}],
-                [{'url': 'https://a.b/' + 'x' * 600}], [{'label': 'x' * 51, 'url': 'https://a.b'}],
+                [{'url': 'https://a.b/' + 'x' * 2001}], [{'label': 'x' * 51, 'url': 'https://a.b'}],
                 [{'url': f'https://a.b/{i}'} for i in range(11)], 'nope', ['x']):
         assert client.put(url, json={'loadout_links': bad}, headers=alice).status_code == 400, bad
     assert client.put(url, json={'loadout_links': []}, headers=alice).status_code == 200

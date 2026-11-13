@@ -6,14 +6,14 @@
 """
 
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt_identity
 
 from src.limiter import limiter
 from src.models.log import Log
 from src.models.sorting import sort_args
 from src.models.starmap import FEATURE_KEYS, MAX_LIMIT, Starmap
 from src.models import haul, nav
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg
+from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg, public_api
 
 app_starmap = Blueprint('app_starmap', __name__)
 
@@ -113,7 +113,7 @@ def home_locations():
 
 
 @app_starmap.route('/nav/places', methods=['GET'])
-@jwt_required()
+@public_api
 def nav_places():
     """航線規劃可選的地點（有座標、有名稱，玩家看不到後台設為不顯示的）。
     ---
@@ -128,7 +128,7 @@ def nav_places():
 
 
 @app_starmap.route('/nav/ships', methods=['GET'])
-@jwt_required()
+@public_api
 def nav_ships():
     """有量子引擎的太空船（量子速度、啟動時間、油箱、可達距離、貨艙）。
     ---
@@ -143,7 +143,7 @@ def nav_ships():
 
 
 @app_starmap.route('/nav/quantum-drives', methods=['GET'])
-@jwt_required()
+@public_api
 def nav_quantum_drives():
     """量子引擎清單（尺寸、速度、啟動時間、每 Gm 油耗），航線規劃換引擎用。
     ---
@@ -158,7 +158,7 @@ def nav_quantum_drives():
 
 
 @app_starmap.route('/nav/route', methods=['POST'])
-@jwt_required()
+@public_api
 @limiter.limit('30 per minute')
 def nav_route():
     """規劃量子航線（最快／最省油／最順路三種方案），見 src/models/nav.py。
@@ -220,7 +220,7 @@ def nav_route():
 
 
 @app_starmap.route('/nav/commodities', methods=['GET'])
-@jwt_required()
+@public_api
 def nav_commodities():
     """合約分配的貨物選單：商品資料庫（UEX 商品）的商品（含縮寫、中文名稱）。
     ---
@@ -235,7 +235,7 @@ def nav_commodities():
 
 
 @app_starmap.route('/nav/cargo-grids', methods=['GET'])
-@jwt_required()
+@public_api
 def nav_cargo_grids():
     """玩家頁「貨艙網格」、航線選船時的貨櫃最大量：每艘船的貨物網格（sc-cargo.space，「貨物網格」同步項目），見 src/models/nav.py 的 cargo_grids。
     ---
@@ -250,7 +250,7 @@ def nav_cargo_grids():
 
 
 @app_starmap.route('/nav/contracts', methods=['POST'])
-@jwt_required()
+@public_api
 @limiter.limit('10 per minute')
 def nav_contracts():
     """合約分配：多份運貨合約分給多個小隊，各隊的航線（最快完成／總時間最少／總油量最少），見 src/models/haul.py。
@@ -293,7 +293,7 @@ def nav_contracts():
 
 
 @app_starmap.route('/nav/sequence', methods=['POST'])
-@jwt_required()
+@public_api
 @limiter.limit('60 per minute')
 def nav_sequence():
     """照給定的順序重算一個小隊的航線（合約分配結果拖拉調整順序後），見 src/models/haul.py 的 evaluate_sequence。
@@ -339,7 +339,7 @@ def nav_sequence():
 
 
 @app_starmap.route('/nav/replan', methods=['POST'])
-@jwt_required()
+@public_api
 @limiter.limit('30 per minute')
 def nav_replan():
     """中途重新規劃一個小隊還沒跑完的行程（可插入站點），見 src/models/haul.py 的 replan_squad。

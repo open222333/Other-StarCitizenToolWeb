@@ -8,9 +8,8 @@ token 都可以）：玩家頁點藍圖名稱看「解鎖任務」要打 /missio
 """
 
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import jwt_required
 
-from src.permissions import viewer_sees_hidden, visibility_arg
+from src.permissions import viewer_sees_hidden, visibility_arg, public_api
 
 from src.models.sorting import sort_args
 from src.models.mission import MAX_LIMIT, Faction, Mission
@@ -35,7 +34,7 @@ def _multi(name: str) -> list:
 
 
 @app_mission.route('/', methods=['GET'])
-@jwt_required()
+@public_api
 def list_missions():
     """任務列表（分頁）。
     ---
@@ -83,7 +82,7 @@ def list_missions():
 
 
 @app_mission.route('/facets', methods=['GET'])
-@jwt_required()
+@public_api
 def mission_facets():
     """任務篩選下拉的選項：類型、星系、勢力（含任務數）。
     ---
@@ -98,7 +97,7 @@ def mission_facets():
 
 
 @app_mission.route('/for-blueprint/<blueprint_uuid>', methods=['GET'])
-@jwt_required()
+@public_api
 def missions_for_blueprint(blueprint_uuid):
     """會給這張藍圖的任務（含掉落機率），玩家頁點藍圖名稱用。
     ---
@@ -116,7 +115,7 @@ def missions_for_blueprint(blueprint_uuid):
 
 
 @app_mission.route('/factions', methods=['GET'])
-@jwt_required()
+@public_api
 def list_factions():
     """全部勢力（不分頁，附任務數）。
     ---
@@ -131,7 +130,7 @@ def list_factions():
 
 
 @app_mission.route('/factions/ladders', methods=['GET'])
-@jwt_required()
+@public_api
 def faction_ladders():
     """每個勢力的聲望階級（名稱＋門檻），玩家頁任務說明顯示「聲望門檻」用。
     ---
@@ -146,7 +145,7 @@ def faction_ladders():
 
 
 @app_mission.route('/factions/<faction_id>/reputation', methods=['GET'])
-@jwt_required()
+@public_api
 def faction_reputation(faction_id):
     """勢力的聲望階級，每一階要這個階級才能接的任務（玩家頁「任務 › 勢力聲望」）。
     ---
@@ -168,7 +167,7 @@ def faction_reputation(faction_id):
 
 
 @app_mission.route('/factions/<faction_id>', methods=['GET'])
-@jwt_required()
+@public_api
 def get_faction(faction_id):
     """單一勢力＋它發布的任務。
     ---
@@ -190,7 +189,7 @@ def get_faction(faction_id):
 
 
 @app_mission.route('/<mission_id>', methods=['GET'])
-@jwt_required()
+@public_api
 def get_mission(mission_id):
     """單一任務。
     ---

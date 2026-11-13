@@ -46,6 +46,8 @@
         </div>
         <div class="text-center mt-2">
           <RouterLink :to="PLAYER_HELP_PATH" class="btn btn-sm btn-info"><i class="bi bi-book me-1"></i>使用說明</RouterLink>
+          <!-- 遊戲資料與工具不用登入就能用 -->
+          <RouterLink :to="PLAYER_HOME" class="btn btn-sm btn-secondary ms-1"><i class="bi bi-tools me-1"></i>不登入使用工具</RouterLink>
         </div>
 
         <!-- 刻意不放「前往後台登入」的入口：後台登入頁不對玩家公開，管理員自己記網址 -->

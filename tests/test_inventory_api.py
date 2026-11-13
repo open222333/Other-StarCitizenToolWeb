@@ -39,7 +39,8 @@ def viewer_token(client, seed_admin):
 # ─────────────────────────────────────────────────────── 認證
 
 def test_endpoints_require_jwt(client):
-    for method, path in [('get', '/inventory/'), ('get', '/item/'),
+    # /item/（物品主檔）是玩家頁「物品」分頁不登入也能看的資料（@public_api），不在這裡
+    for method, path in [('get', '/inventory/'),
                          ('post', '/inventory/add'), ('get', '/inventory/capacity')]:
         resp = getattr(client, method)(path, json={})
         assert resp.status_code == 401, f'{method.upper()} {path} 應該要求 JWT'

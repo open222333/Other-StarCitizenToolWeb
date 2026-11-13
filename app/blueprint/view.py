@@ -21,7 +21,7 @@ from src.models.blueprint import Blueprint as BlueprintModel
 from src.models.sorting import sort_args
 from src.models.item import BlueprintMaster
 from src.models.mission import Mission
-from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg
+from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, visibility_arg, public_api
 
 app_blueprint = Blueprint('app_blueprint', __name__)
 
@@ -162,7 +162,7 @@ def _my_registered_uuids() -> set:
 
 
 @app_blueprint.route('/master', methods=['GET'])
-@jwt_required()
+@public_api
 def list_master():
     """製造藍圖主檔列表。
     ---
@@ -208,7 +208,7 @@ def list_master():
 
 
 @app_blueprint.route('/master/dismantle-materials', methods=['GET'])
-@jwt_required()
+@public_api
 def master_dismantle_materials():
     """拆解回收會拿到的所有材料名稱（倉庫「拆解材料」篩選的選項）。
     ---
@@ -223,7 +223,7 @@ def master_dismantle_materials():
 
 
 @app_blueprint.route('/master/dismantle-items', methods=['GET'])
-@jwt_required()
+@public_api
 def master_dismantle_items():
     """拆解後會回收所選材料的物品：`{物品 uuid: [符合的拆解回收]}`（倉庫「拆解材料」篩選物品庫存／庫存紀錄用）。
     ---
@@ -241,7 +241,7 @@ def master_dismantle_items():
 
 
 @app_blueprint.route('/master/search', methods=['GET'])
-@jwt_required()
+@public_api
 def search_master():
     """藍圖名稱搜尋（給前端 autocomplete 用，中英文都比對）。
     ---
@@ -268,7 +268,7 @@ def search_master():
 
 
 @app_blueprint.route('/master/types', methods=['GET'])
-@jwt_required()
+@public_api
 def master_output_types():
     """所有產出物類型（前端篩選下拉用）。
     ---
@@ -283,7 +283,7 @@ def master_output_types():
 
 
 @app_blueprint.route('/master/for-item/<item_uuid>', methods=['GET'])
-@jwt_required()
+@public_api
 def master_for_item(item_uuid):
     """做出這個物品的所有配方（物品詳細頁的「怎麼做出來」）。
     ---
@@ -344,7 +344,7 @@ def blueprint_holders():
 
 
 @app_blueprint.route('/master/<blueprint_uuid>/quality', methods=['GET'])
-@jwt_required()
+@public_api
 def get_master_quality(blueprint_uuid):
     """藍圖的品質試算資料：每個部位放什麼材料、最低品質、品質 0–1000 對哪些屬性加成多少。
     ---
@@ -367,7 +367,7 @@ def get_master_quality(blueprint_uuid):
 
 
 @app_blueprint.route('/master/<blueprint_uuid>', methods=['GET'])
-@jwt_required()
+@public_api
 def get_master(blueprint_uuid):
     """單一藍圖的完整配方（ingredients / dismantle_returns / 產出物）。
     ---

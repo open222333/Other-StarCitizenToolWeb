@@ -16,7 +16,6 @@
 <template>
   <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
   <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
-    <div v-if="message" :class="['alert', 'py-2', messageType]">{{ message }}</div>
 
     <SfState :loading="loading && !rows.length" :error="loadFailed ? '讀取船艦資料失敗。' : ''" :empty="!rows.length"
       empty-text="沒有符合條件的船艦。" @retry="reload(offset)">
@@ -28,12 +27,12 @@
       <table class="table table-hover align-middle mb-0 sf-stack">
         <thead class="table-light">
           <tr>
-            <th class="ps-3 vdb-check-col">
+            <th v-if="canRegister" class="ps-3 vdb-check-col">
               <input class="form-check-input" type="checkbox" aria-label="全選本頁"
                 :checked="allSelectableChecked" :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
                 :disabled="!selectableRows.length" @change="togglePage($event.target.checked)">
             </th>
-            <SortTh :sort="sort" field="name">船艦</SortTh>
+            <SortTh :sort="sort" field="name" :class="{ 'ps-3': !canRegister }">船艦</SortTh>
             <th class="d-none d-md-table-cell">類型</th>
             <SortTh :sort="sort" field="size_class" class="d-none d-lg-table-cell">尺寸</SortTh>
             <th class="d-none d-lg-table-cell">廠商</th>
@@ -49,12 +48,12 @@
         <tbody>
           <template v-for="v in rows" :key="v._id">
           <tr :class="{ 'is-registered': isRegistered(v) }">
-            <td class="ps-3 sf-stack__check vdb-check-col">
+            <td v-if="canRegister" class="ps-3 sf-stack__check vdb-check-col">
               <input class="form-check-input" type="checkbox" :checked="selected.has(v._id)"
                 :disabled="isRegistered(v)" :aria-label="`勾選 ${v.name_zh || v.name}`"
                 @change="toggleOne(v._id, $event.target.checked)">
             </td>
-            <td class="sf-stack__title">
+            <td class="sf-stack__title" :class="{ 'ps-3': !canRegister }">
               <span class="fw-semibold">{{ v.name_zh || v.name }}</span>
               <span v-if="v.name_zh" class="small text-muted ms-1">{{ v.name }}</span>
               <span v-if="v.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
@@ -76,7 +75,7 @@
                 @click="openId = openId === v._id ? '' : v._id">
                 <i class="bi me-1" :class="openId === v._id ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
               </button>
-              <button v-if="!isRegistered(v)" type="button" class="btn btn-sm btn-success"
+              <button v-if="canRegister && !isRegistered(v)" type="button" class="btn btn-sm btn-success"
                 :disabled="submitting" :aria-label="`登記 ${v.name_zh || v.name} 到我的艦隊`" @click="register([v._id], 1)">
                 <i class="bi bi-plus-lg me-1"></i>登記
               </button>
@@ -120,7 +119,7 @@
 
     <!-- ── 批量登記列（有勾選才出現；勾選跨頁保留）──────────────── -->
     <!-- sf-sticky-bar：手機上固定在畫面底部 -->
-    <div v-if="selected.size" class="card scifi-card sf-search mt-3 vdb-submit sf-sticky-bar">
+    <div v-if="canRegister && selected.size" class="card scifi-card sf-search mt-3 vdb-submit sf-sticky-bar">
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="fw-semibold">已選 {{ selected.size }} 款</span>
@@ -145,6 +144,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import SortSelect from '@/components/SortSelect.vue'
@@ -167,6 +167,8 @@ const props = defineProps({
   registeredUuids: { type: Array, default: () => [] },
   /** 點開才載入（玩家頁用 v-show 一直掛著） */
   active: { type: Boolean, default: true },
+  /** 能不能登記到我的艦隊（沒登入＝false：沒有勾選欄與「登記」按鈕，只能瀏覽） */
+  canRegister: { type: Boolean, default: true },
 })
 const emit = defineEmits(['registered'])
 
@@ -194,8 +196,6 @@ const isRegistered = v => registeredSet.value.has(v._id)
 const selected = reactive(new Set())
 const quantity = ref(1)
 const submitting = ref(false)
-const message = ref('')
-const messageType = ref('alert-success')
 
 const selectableRows = computed(() => rows.value.filter(v => !isRegistered(v)))
 const allSelectableChecked = computed(() =>
@@ -217,13 +217,8 @@ function togglePage(checked) {
 // 別處（JSON 匯入、我的艦隊刪除）改了艦隊，已登記的就不該還勾著
 watch(registeredSet, (set) => { for (const id of [...selected]) if (set.has(id)) selected.delete(id) })
 
-let flashTimer = null
-function flash(text, type = 'alert-success') {
-  message.value = text
-  messageType.value = type
-  clearTimeout(flashTimer)
-  flashTimer = setTimeout(() => { message.value = '' }, 6000)
-}
+// 登記結果用全站的 toast（utils/toast.js）
+const flash = (text, type = 'success') => toast(text, type)
 
 async function register(uuids, qtyInput) {
   if (!uuids.length || submitting.value) return
@@ -330,7 +325,7 @@ watch(() => props.filters, () => {
   clearTimeout(timer)
   timer = setTimeout(() => reload(0), 300)
 }, { deep: true })
-onBeforeUnmount(() => { clearTimeout(timer); clearTimeout(flashTimer) })
+onBeforeUnmount(() => { clearTimeout(timer) })
 
 defineExpose({ refresh: () => { if (loaded) reload(offset.value) } })
 

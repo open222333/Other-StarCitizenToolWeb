@@ -42,8 +42,7 @@ def test_count_entries():
 def test_dictionary_endpoint(client, auth_headers, monkeypatch):
     from tests.test_fleet import _register_player
     url = '/player/chat-code/dictionary'
-    assert client.get(url).status_code == 401
-    assert client.get(url, headers=auth_headers).status_code in (401, 403), '後台身分不是玩家'
+    # 不登入也能用（@public_api），這裡先不打：沒 mock 下載會真的去抓字典
     player = _register_player(client, 'CodePilot', 'Code')
 
     monkeypatch.setattr(chat_code, '_download', lambda: (_ for _ in ()).throw(RuntimeError('x')))

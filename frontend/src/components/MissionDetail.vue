@@ -50,8 +50,8 @@
     </div>
     <div class="col-lg-6">
       <div class="md-sub text-muted mb-1">
-        獎勵藍圖<template v-if="pool.length">：{{ pool.length }} 種 · 已登記
-          <span class="fw-semibold" :class="registeredCount === pool.length ? 'text-success' : 'md-count'">{{ registeredCount }} / {{ pool.length }}</span></template>
+        獎勵藍圖<template v-if="pool.length">：{{ pool.length }} 種<template v-if="tracking"> · 已登記
+          <span class="fw-semibold" :class="registeredCount === pool.length ? 'text-success' : 'md-count'">{{ registeredCount }} / {{ pool.length }}</span></template></template>
         <button v-if="fetcher && unregistered.length > 1" type="button" class="btn btn-sm btn-success ms-2"
           :disabled="registering" @click="register(unregistered.map(bpUuid))">
           <i class="bi bi-plus-lg me-1"></i>登記全部未登記（{{ unregistered.length }}）
@@ -65,9 +65,9 @@
           <span v-if="(p.items || []).length > 1" class="text-muted fw-normal">（{{ p.items.length }} 張抽一張）</span>
         </div>
         <span v-for="(it, j) in p.items || []" :key="it.blueprint_uuid || j" class="sf-chip"
-          :class="isRegistered(it) ? 'sf-chip--ok' : 'sf-chip--todo'">
-          <i class="bi me-1" :class="isRegistered(it) ? 'bi-check-circle-fill' : 'bi-circle'"></i>{{ it.name_zh || it.name }}
-          <span class="sf-chip__state">{{ bpStateLabel(it, registered) }}</span>
+          :class="tracking ? (isRegistered(it) ? 'sf-chip--ok' : 'sf-chip--todo') : ''">
+          <i v-if="tracking" class="bi me-1" :class="isRegistered(it) ? 'bi-check-circle-fill' : 'bi-circle'"></i>{{ it.name_zh || it.name }}
+          <span v-if="tracking" class="sf-chip__state">{{ bpStateLabel(it, registered) }}</span>
           <button v-if="fetcher && !isRegistered(it)" type="button" class="btn btn-sm btn-success sf-chip__btn"
             :disabled="registering" :aria-label="`登記 ${it.name_zh || it.name}`" @click="register([bpUuid(it)])">登記</button>
         </span>
@@ -84,7 +84,7 @@ import { bpStateLabel, bpUuid, isBpRegistered, missionPool, registeredInPool } f
 
 const props = defineProps({
   mission: { type: Object, required: true },
-  /** 我的藍圖的 blueprint_uuid（預設可用的視同已登記） */
+  /** 我的藍圖的 blueprint_uuid（預設可用的視同已登記）；null＝沒登入，不顯示登記狀態 */
   registeredUuids: { type: Array, default: () => [] },
   /** {faction_uuid: [{name, min_reputation}]} */
   ladders: { type: Object, default: () => ({}) },
@@ -96,7 +96,8 @@ const props = defineProps({
 const emit = defineEmits(['registered'])
 
 const m = computed(() => props.mission)
-const registered = computed(() => new Set(props.registeredUuids))
+const tracking = computed(() => props.registeredUuids !== null)
+const registered = computed(() => new Set(props.registeredUuids || []))
 const isRegistered = it => isBpRegistered(it, registered.value)
 const pool = computed(() => missionPool(m.value))
 const registeredCount = computed(() => registeredInPool(m.value, registered.value))

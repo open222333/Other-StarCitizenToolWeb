@@ -99,3 +99,18 @@ def admin_api(*roles):
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def public_api(fn):
+    """不登入也能用的 API（玩家頁的遊戲資料與工具：物品、任務、礦物、航線、配裝…）。
+
+    有帶 token 就照常驗證（過期或壞掉的 token 還是回 401，前端會換新 token），
+    沒帶就當訪客；端點裡用 get_jwt() 判斷身分的地方會拿到空 dict。
+    只能掛在唯讀、不含個人或公會私有資料的端點上；會耗運算的端點另外加 @limiter.limit。
+    新增時記得在 tests/test_permissions.py 的 UNGUARDED_ALLOWLIST 註明。
+    """
+    @wraps(fn)
+    @jwt_required(optional=True)
+    def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return wrapper

@@ -313,7 +313,7 @@ def test_player_can_see_missions_for_blueprint(client, player_headers, missions)
     resp = client.get('/mission/for-blueprint/bp-a', headers=player_headers)
     assert resp.status_code == 200
     assert [r['_id'] for r in resp.get_json()['data']] == ['m1', 'm2']
-    assert client.get('/mission/for-blueprint/bp-a').status_code == 401
+    assert client.get('/mission/for-blueprint/bp-a').status_code == 200  # 不登入也能用（@public_api）
 
 
 def test_player_cannot_see_hidden_mission_or_its_facets(client, player_headers, auth_headers, missions):
