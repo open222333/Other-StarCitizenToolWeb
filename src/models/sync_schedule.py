@@ -202,6 +202,8 @@ SYNC_JOBS = [
     ('uex_refinery', 'UEX 精煉', DEFAULT_CRON),
     # 飛船貨物網格（sc-cargo.space，見 tasks/scdata_sync.py 的 _sync_cargo_grids）
     ('cargo_grids', '貨物網格', DEFAULT_CRON),
+    # 配裝模擬（scunpacked-data ship-items.json＋ships.json，見 src/scdata_loadout.py）
+    ('loadout', '配裝', DEFAULT_CRON),
 ]
 JOB_KEYS = [k for k, _, _ in SYNC_JOBS]
 JOB_LABELS = {k: label for k, label, _ in SYNC_JOBS}
@@ -398,6 +400,7 @@ class SyncJobs:
         'uex': ('uex_items', {}),
         'uex_refinery': ('uex_refinery_yields', {}),
         'cargo_grids': ('cargo_grid_master', {'is_current': True}),
+        'loadout': ('ship_loadout_master', {'is_current': True}),
     }
 
     @classmethod

@@ -339,6 +339,9 @@ def test_map_mining_location():
     # "Ship Graveyard" 翻譯包沒有這個獨立詞條（只在別的長句子裡出現過），
     # 查不到要回 None，不能讓整筆同步掛掉，前端會退回顯示英文。
     assert doc['location_name_zh'] is None
+    assert doc['location_type'] is None, "Type 是 unknown 就當沒有"
+    assert scdata.map_mining_location({**MINING_LOCATION, 'Locations': [
+        {'System': 'Stanton', 'Name': 'Daymar', 'Type': 'moon'}]})['location_type'] == 'moon'
     assert len(doc['groups']) == 1
     group = doc['groups'][0]
     assert group['group_name'] == 'Salvage_FreshDerelicts'
@@ -454,7 +457,7 @@ def test_blueprint_quality_endpoint(client, auth_headers):
     assert body['success'] and body['data']['slots'][0]['modifiers'][0]['at_max'] == 1.075
     assert 'name_zh' in body['data']['slots'][0]
     assert client.get('/blueprint/master/nope/quality', headers=auth_headers).status_code == 404
-    assert client.get('/blueprint/master/bp-rifle/quality').status_code == 401
+    assert client.get('/blueprint/master/bp-rifle/quality').status_code == 200  # 不登入也能用（@public_api）
 
 
 def test_build_client_counts_requests_and_429():

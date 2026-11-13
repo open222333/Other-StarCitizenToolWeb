@@ -34,6 +34,8 @@ CATALOG = [
         ('uex_vehicles_purchases', 'UEX 載具購買價'),
         ('uex_vehicles_rentals', 'UEX 租船價'),
         ('cargo_grid_master', '貨物網格（sc-cargo.space）'),
+        ('ship_loadout_master', '艦船掛點（配裝模擬）'),
+        ('ship_item_master', '艦船配件數值（配裝模擬）'),
     ]),
     ('地點', [
         ('starmap_master', '地點主檔'),

@@ -5,13 +5,15 @@
   - Star Citizen Wiki API：物品、載具、商品規格。免費、無 token、按 patch 版本分版。
   - UEX Corp API 2.0：價格、終端與商店位置。需要免費 token（後台「資料同步排程」頁設定，或 UEX_API_TOKEN 環境變數）。
 
-本模組只負責「抓取與欄位映射」，寫入資料庫由 tasks/scdata_sync.py 負責。
-這樣抓取邏輯可以不碰 MongoDB 單獨測試。
+本模組只負責「抓取與欄位映射」，寫入主檔由 tasks/scdata_sync.py 負責。
+例外：靜態 JSON 檔（scunpacked-data 等）抓下來會存進資料庫快取（src/scdata_cache.py），
+沒變動就不重新下載。
 
 Unofficial Star Citizen fan tool. Not affiliated with the Cloud Imperium group of companies.
 """
 
 import logging
+import tempfile
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -39,6 +41,9 @@ from src.sc_zh import (
     starmap_name_zh,
     starmap_type_zh,
 )
+
+from src import scdata_cache  # noqa: E402
+from src.scdata_loadout import map_ship_item, map_ship_loadout  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -423,11 +428,15 @@ def iter_translation_entries(english: dict, ini_text: str, lang: str):
 
 
 def fetch_json_url(client: httpx.Client, url: str, expect: type = list, label: str = ''):
-    """抓一個靜態 JSON（GitHub raw／GitHub API，單一請求、無分頁、無 token）。
+    """抓一個靜態 JSON（GitHub raw／GitHub API，單一請求、無分頁、無 token），存進資料庫快取。
 
     這批檔案的回應是「裸陣列」（`[...]`），不是 Wiki API 那種 `{"data": [...]}`
     包裝，跟 get_json() 預期回傳 dict 的假設不同，所以另外寫一支；重試邏輯
     （429 / 5xx / 連線錯誤都重試）照抄 get_json()。
+
+    內容存在資料庫（src/scdata_cache.py）：帶上次的 ETag 問上游，回 304 就直接讀資料庫、不下載；
+    有新版才串流下載到暫存檔、一筆一筆解析寫進資料庫。陣列回傳 JsonRows（len()、迭代跟 list 一樣，
+    用游標讀，大檔案不會整份放進記憶體），物件回傳 dict。
 
     :param url: 完整網址；label 是 log 用的名稱（沒給就用網址）
     :param expect: 預期的最外層型別；大部分檔案是陣列，labels.json（遊戲英文在地化表）是物件
@@ -435,35 +444,45 @@ def fetch_json_url(client: httpx.Client, url: str, expect: type = list, label: s
     path = label or url
     delay = 1.0
     last_err = None
+    cached = scdata_cache.meta(url)
+    use_etag = bool(cached and cached.get('etag'))
 
     for attempt in range(1, SCDATA_MAX_RETRIES + 1):
         try:
-            resp = client.get(url)
+            headers = {'If-None-Match': cached['etag']} if use_etag else {}
+            with client.stream('GET', url, headers=headers) as resp:
+                if resp.status_code == 304:
+                    rows = scdata_cache.load(url, expect)
+                    if rows is not None:
+                        scdata_cache.touch(url)
+                        logger.info('scdata: %s 沒有變動（304），用資料庫裡的版本', path)
+                        return rows
+                    # 資料庫那份不完整：下一輪不帶 ETag 重抓
+                    use_etag = False
+                    last_err = '304 但資料庫裡的版本不完整'
+                    continue
 
-            if resp.status_code == 429:
-                wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
-                last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
-                logger.warning('scdata: scunpacked %s 429 rate limited, 等 %.1fs 重試 (%d/%d)',
-                               path, wait, attempt, SCDATA_MAX_RETRIES)
-                time.sleep(wait)
-                delay = min(delay * 2, 60)
-                continue
+                if resp.status_code == 429:
+                    wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
+                    last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
+                    logger.warning('scdata: scunpacked %s 429 rate limited, 等 %.1fs 重試 (%d/%d)',
+                                   path, wait, attempt, SCDATA_MAX_RETRIES)
+                    time.sleep(wait)
+                    delay = min(delay * 2, 60)
+                    continue
 
-            if resp.status_code >= 500:
-                last_err = f'HTTP {resp.status_code}'
-                logger.warning('scdata: scunpacked %s HTTP %d, 等 %.1fs 重試 (%d/%d)',
-                               path, resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
-                time.sleep(delay)
-                delay = min(delay * 2, 60)
-                continue
+                if resp.status_code >= 500:
+                    last_err = f'HTTP {resp.status_code}'
+                    logger.warning('scdata: scunpacked %s HTTP %d, 等 %.1fs 重試 (%d/%d)',
+                                   path, resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
+                    time.sleep(delay)
+                    delay = min(delay * 2, 60)
+                    continue
 
-            resp.raise_for_status()
-            payload = resp.json()
-            if not isinstance(payload, expect):
-                raise ValueError(f'預期 JSON {expect.__name__}，收到 {type(payload).__name__}')
-            return payload
+                resp.raise_for_status()
+                return _store_response(url, resp.iter_bytes(), resp.headers.get('ETag', ''), expect, path)
 
-        # ValueError 涵蓋 json.JSONDecodeError 與上面自己拋的格式檢查——
+        # ValueError 涵蓋 JSON 解析失敗與最外層型別不對——
         # 跟 get_json() 同樣道理，這兩種情況也要重試而不是直接讓整輪同步掛掉。
         except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as err:
             last_err = err
@@ -473,6 +492,14 @@ def fetch_json_url(client: httpx.Client, url: str, expect: type = list, label: s
             delay = min(delay * 2, 60)
 
     raise ScDataError(f'{path} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {last_err}')
+
+
+def _store_response(url: str, chunks, etag: str, expect: type, label: str):
+    """回應內容先串流寫到暫存檔，再交給 scdata_cache.store() 一筆一筆解析存進資料庫。"""
+    with tempfile.TemporaryFile() as fp:
+        for chunk in chunks:
+            fp.write(chunk)
+        return scdata_cache.store(url, fp, expect, etag=etag, label=label)
 
 
 def fetch_scunpacked_rows(client: httpx.Client, path: str, expect: type = list):
@@ -874,6 +901,8 @@ def map_mining_location(doc: dict) -> Optional[dict]:
                   locations[0] if locations else {})
     system = picked.get('System')
     location_name = picked.get('Name') or provider.get('Name') or ''
+    # 地點類型：planet／moon／lagrange／belt／cluster／cave…（資料庫「礦物資料」顯示用）
+    location_type = picked.get('Type') if picked.get('Type') not in (None, '', 'unknown') else None
 
     return {
         '_id': provider_uuid,
@@ -882,6 +911,7 @@ def map_mining_location(doc: dict) -> Optional[dict]:
         'location_name': location_name,
         'location_name_lower': location_name.lower(),
         'location_name_zh': location_name_zh(location_name),
+        'location_type': location_type,
         'groups': groups,
         'raw': doc,
     }
@@ -1295,12 +1325,16 @@ SCUNPACKED_RESOURCES: dict = {
     'ship_nav': ('ship_nav_master', 'ships.json', map_ship_nav),
     # 藍圖的品質試算資料（部位、品質加成），跟著「藍圖」同步項目一起更新
     'blueprint_quality': ('blueprint_quality_master', 'blueprints.json', map_blueprint_quality),
+    # 配裝模擬：艦船配件數值、每艘船的掛點樹（見 src/scdata_loadout.py、src/models/loadout.py）
+    'ship_items': ('ship_item_master', 'ship-items.json', map_ship_item),
+    'ship_loadouts': ('ship_loadout_master', 'ships.json', map_ship_loadout),
 }
 
 #: 同步項目 → 它包含的 scunpacked 資源（見 src/models/sync_schedule.py 的 SYNC_JOBS）
 SCUNPACKED_JOBS: dict = {
     'mining': ['mining_deposits', 'mining_locations'],
     'locations': ['starmap', 'ship_nav'],
+    'loadout': ['ship_items', 'ship_loadouts'],
 }
 
 #: 掛在 Wiki 同步項目後面一起跑的 scunpacked 資源（例如藍圖品質試算資料只有 scunpacked 有）
