@@ -14,7 +14,6 @@
     </div>
 
     <Transition name="alert-slide">
-      <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
     </Transition>
 
     <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；玩家、物品、容器打字停 300ms 就查 -->
@@ -174,6 +173,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { Modal } from 'bootstrap'
 import { useAuthStore } from '@/stores/auth'
@@ -231,10 +231,8 @@ const hasActiveFilters = computed(() => !!(
   || selectedLocations.value.length || selectedSystems.value.length || selectedPlanets.value.length
   || containerQuery.value.trim() || nameQuery.value.trim()))
 
-const msg = ref(''); const msgType = ref('success')
 function flash(text, type = 'danger') {
-  msg.value = text; msgType.value = type
-  setTimeout(() => { msg.value = '' }, 3000)
+  toast(text, type)
 }
 
 function onLocationsChange(values) {

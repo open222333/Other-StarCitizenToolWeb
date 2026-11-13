@@ -12,7 +12,6 @@
     </div>
 
     <Transition name="alert-slide">
-      <div v-if="usersMsg" :class="`alert alert-${usersMsgType} py-2 mb-3`">{{ usersMsg }}</div>
     </Transition>
 
     <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；前端即時過濾 -->
@@ -107,7 +106,6 @@
 
     <template v-if="tmplOpen">
       <Transition name="alert-slide">
-        <div v-if="tmplMsg" :class="`alert alert-${tmplMsgType} py-2 mb-3`">{{ tmplMsg }}</div>
       </Transition>
 
       <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；前端即時過濾 -->
@@ -187,6 +185,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { userApi } from '@/api'
@@ -213,13 +212,9 @@ const userModalRef     = ref(null)
 const templateModalRef = ref(null)
 const confirmModalRef  = ref(null)
 
-// ── Alert state ──────────────────────────────────────────────────
-const usersMsg     = ref(''); const usersMsgType = ref('success')
-const tmplMsg      = ref(''); const tmplMsgType  = ref('success')
-
-function flash(msgRef, typeRef, msg, type = 'danger') {
-  msgRef.value = msg; typeRef.value = type
-  setTimeout(() => { msgRef.value = '' }, 3000)
+// ── 操作結果提示：全站的 toast（utils/toast.js）──────────────────
+function flash(msg, type = 'danger') {
+  toast(msg, type)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -358,7 +353,7 @@ async function onUserSaved() { await loadAll() }
 async function onTemplateSaved(syncedUsers) {
   await loadAll()
   if (syncedUsers !== undefined)
-    flash(tmplMsg, tmplMsgType, `已同步 ${syncedUsers} 位使用者的角色`, 'success')
+    flash(`已同步 ${syncedUsers} 位使用者的角色`, 'success')
 }
 
 async function handleDeleteUser(u) {
@@ -370,7 +365,7 @@ async function handleDeleteUser(u) {
   if (!res) return
   const data = await res.json()
   if (data.success) loadUsers()
-  else flash(usersMsg, usersMsgType, data.message || '刪除失敗')
+  else flash(data.message || '刪除失敗')
 }
 
 async function handleDeleteTemplate(t) {
@@ -382,7 +377,7 @@ async function handleDeleteTemplate(t) {
   if (!res) return
   const data = await res.json()
   if (data.success) loadTemplates()
-  else flash(tmplMsg, tmplMsgType, data.message || '刪除失敗')
+  else flash(data.message || '刪除失敗')
 }
 
 function escHtml(str) {

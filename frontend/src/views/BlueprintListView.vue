@@ -25,7 +25,6 @@
 
     <div v-show="tab === 'owned'">
       <Transition name="alert-slide">
-        <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
       </Transition>
 
       <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；名稱、地點打字停 300ms 就查 -->
@@ -119,6 +118,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { usePlayerStore } from '@/stores/player'
 import { blueprintApi } from '@/api'
@@ -166,7 +166,6 @@ const loading     = ref(false)
 const loadFailed  = ref(false)
 const bpModalRef       = ref(null)
 const confirmModalRef  = ref(null)
-const msg = ref(''); const msgType = ref('success')
 
 const methodOptions = METHOD_OPTIONS
 const statusOptions = STATUS_OPTIONS
@@ -192,8 +191,7 @@ function playerName(id) {
 }
 
 function flash(text, type = 'danger') {
-  msg.value = text; msgType.value = type
-  setTimeout(() => { msg.value = '' }, 3000)
+  toast(text, type)
 }
 
 // 跟 LogsView.vue 同一個理由：明確的 change handler 一次做完

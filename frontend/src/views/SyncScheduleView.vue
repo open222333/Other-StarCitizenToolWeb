@@ -26,7 +26,6 @@
     </div>
 
     <Transition name="alert-slide">
-      <div v-if="message" :class="`alert alert-${messageType} py-2 mb-3`">{{ message }}</div>
     </Transition>
 
     <!-- 進行中（即時） -->
@@ -295,6 +294,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { itemApi } from '@/api'
@@ -365,12 +365,9 @@ const drafts = reactive({})
 const errors = reactive({})
 const saving = reactive({})
 const triggering = ref(false)
-const message = ref('')
-const messageType = ref('success')
 let pollTimer = null
 let tickTimer = null
 let wasActive = false
-let messageTimer = null
 // 伺服器時間 − 本機時間（毫秒），「已執行多久」用伺服器時間算
 let clockOffset = 0
 const now = ref(Date.now())
@@ -417,10 +414,7 @@ function triggeredByLabel(job) {
 }
 
 function flash(text, type = 'success') {
-  message.value = text
-  messageType.value = type
-  clearTimeout(messageTimer)
-  messageTimer = setTimeout(() => { message.value = '' }, 4000)
+  toast(text, type)
 }
 
 function syncDraft(job, force = false) {
@@ -650,7 +644,6 @@ onMounted(() => {
 onUnmounted(() => {
   stopPolling()
   clearInterval(tickTimer)
-  clearTimeout(messageTimer)
   document.removeEventListener('visibilitychange', onVisibility)
 })
 </script>

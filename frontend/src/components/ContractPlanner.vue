@@ -318,6 +318,7 @@
 </template>
 
 <script setup>
+import { scrollBehavior } from '@/utils/motion'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import PlacePicker from '@/components/PlacePicker.vue'
@@ -754,7 +755,7 @@ async function plan() {
   if (problems.value.list.length) {
     showProblems.value = true
     // 捲到第一個沒填的欄位
-    nextTick(() => document.querySelector('.cp-invalid')?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+    nextTick(() => document.querySelector('.cp-invalid')?.scrollIntoView({ block: 'center', behavior: scrollBehavior() }))
     return
   }
   showProblems.value = false

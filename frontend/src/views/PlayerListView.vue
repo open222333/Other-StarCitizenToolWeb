@@ -11,7 +11,6 @@
     </div>
 
     <Transition name="alert-slide">
-      <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
     </Transition>
 
     <!-- 搜尋卡：條件照列表欄位排（見 components/AdminSearchCard.vue）；前端即時過濾 -->
@@ -93,6 +92,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { ref, computed, onMounted } from 'vue'
 import { adminPath } from '@/router'
 import { useRouter } from 'vue-router'
@@ -112,7 +112,6 @@ const keyword = ref('')
 
 const playerModalRef  = ref(null)
 const confirmModalRef = ref(null)
-const msg = ref(''); const msgType = ref('success')
 
 const filtered = computed(() => {
   if (!keyword.value) return store.players
@@ -135,8 +134,7 @@ function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-TW') : '—'
 function goDetail(id) { router.push(adminPath(`/players/${id}`)) }
 
 function flash(text, type = 'danger') {
-  msg.value = text; msgType.value = type
-  setTimeout(() => { msg.value = '' }, 3000)
+  toast(text, type)
 }
 
 async function onSaved() { await store.load() }

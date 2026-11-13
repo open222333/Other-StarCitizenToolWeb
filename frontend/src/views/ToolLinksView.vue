@@ -31,7 +31,6 @@
     </div>
 
     <Transition name="alert-slide">
-      <div v-if="msg" :class="`alert alert-${msgType} py-2 mb-3`">{{ msg }}</div>
     </Transition>
 
     <!-- JSON 批量匯入 -->
@@ -201,6 +200,8 @@
 </template>
 
 <script setup>
+import { scrollBehavior } from '@/utils/motion'
+import { toast } from '@/utils/toast'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { toolLinkApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -217,8 +218,6 @@ const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator
 const links   = ref([])
 const loading = ref(false)
 const saving  = ref(false)
-const msg     = ref('')
-const msgType = ref('success')
 const confirmModalRef = ref(null)
 const editingId = ref('')
 const form = reactive({ title: '', url: '', description: '', sort_order: 0, tags: '' })
@@ -383,12 +382,8 @@ async function doImport() {
   }
 }
 
-let msgTimer = null
 function flash(text, type = 'success') {
-  msg.value = text
-  msgType.value = type
-  clearTimeout(msgTimer)
-  msgTimer = setTimeout(() => { msg.value = '' }, 5000)
+  toast(text, type)
 }
 
 async function readJson(res) {
@@ -418,7 +413,7 @@ function edit(link) {
     tags: (link.tags || []).join(', '), title: link.title, url: link.url,
     description: link.description || '', sort_order: link.sort_order ?? 0,
   })
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  window.scrollTo({ top: 0, behavior: scrollBehavior() })
 }
 
 async function submit() {

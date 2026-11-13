@@ -44,6 +44,18 @@
   --sf-inset:          rgba(255, 255, 255, .02);
   --sf-shadow:         rgba(0, 0, 0, .55);
   --sf-text-strong:    #ffffff;                     /* 對比最高的文字 */
+
+  /* ── 字級與行高（玩家頁統一用這 6 級，不要再寫 .95rem、1.08rem 這種零碎值）──
+   * xs 輔助說明、徽章　sm 次要文字、表單標籤　base 內文　md 小標、卡片標題
+   * lg 區塊標題、頁首名稱　xl 頁面標題。內文行高 1.5（字級的 1.4～1.6 倍）。 */
+  --sf-fs-xs:   .8rem;
+  --sf-fs-sm:   .9rem;
+  --sf-fs-base: 1rem;
+  --sf-fs-md:   1.1rem;
+  --sf-fs-lg:   1.35rem;
+  --sf-fs-xl:   1.6rem;
+  --sf-lh-body:  1.5;
+  --sf-lh-tight: 1.25;
 }
 
 .scifi-page {
@@ -53,6 +65,7 @@
   min-height: 100dvh;
   padding: 1rem;
   color: var(--sf-text);
+  line-height: var(--sf-lh-body);
   background:
     radial-gradient(ellipse 60% 50% at 15% 10%, rgba(var(--sf-accent-rgb), .10), transparent 60%),
     radial-gradient(ellipse 50% 40% at 90% 90%, rgba(var(--sf-accent-2-rgb), .06), transparent 60%),
@@ -201,7 +214,7 @@
   font-weight: 700;
   letter-spacing: .04em;
   text-transform: uppercase;
-  font-size: .85rem;
+  font-size: var(--sf-fs-sm);
   transition: box-shadow .15s, transform .15s;
 }
 .btn-scifi:hover:not(:disabled) {
@@ -293,7 +306,7 @@
 }
 .scifi-topbar__title {
   display: flex; align-items: center; gap: .5rem;
-  font-size: 1.35rem; font-weight: 700; margin: 0;
+  font-size: var(--sf-fs-lg); font-weight: 700; margin: 0;
   min-width: 0;
   color: var(--sf-text-strong);
   letter-spacing: .03em;
@@ -306,12 +319,23 @@
 .scifi-topbar__id {
   padding: .15rem .65rem;
   border-radius: 999px;
-  font-size: .95rem; font-weight: 600;
+  font-size: var(--sf-fs-base); font-weight: 600;
   color: var(--sf-accent-text, var(--sf-accent));
   background: rgba(var(--sf-accent-rgb), .12);
   border: 1px solid rgba(var(--sf-accent-rgb), .45);
   white-space: nowrap;
 }
+
+/* 名字＋遊戲ID 是一顆按鈕：點了打開「個人資料」視窗（齒輪圖示提示可以點） */
+.scifi-topbar__me {
+  display: inline-flex; align-items: center; gap: .5rem; min-width: 0; max-width: 100%;
+  padding: .2rem .55rem; margin: -.2rem 0; border: 1px solid transparent; border-radius: .5rem;
+  background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer;
+}
+.scifi-topbar__me:hover { border-color: var(--sf-border-hi); background: var(--sf-hover-bg); }
+.scifi-topbar__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.scifi-topbar__me-gear { font-size: var(--sf-fs-sm); color: var(--sf-text-muted) !important; transition: transform .2s; }
+.scifi-topbar__me:hover .scifi-topbar__me-gear { color: var(--sf-accent) !important; transform: rotate(45deg); }
 
 /* ── 分頁列：手機上改成橫向捲動的一列，不要折成 2-3 排 ── */
 .scifi-tabs {
@@ -331,7 +355,7 @@
 .scifi-tabs .nav-tabs .nav-link {
   white-space: nowrap;
   padding: .7rem 1.15rem;
-  font-size: 1.1rem;
+  font-size: var(--sf-fs-md);
   font-weight: 600;
   border-bottom: 3px solid transparent;
 }
@@ -441,7 +465,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   .scifi-scroll::after {
     content: '← 左右滑動查看更多 →';
     display: block;
-    font-size: .7rem;
+    font-size: var(--sf-fs-xs);
     color: var(--sf-text-dim);
     text-align: center;
     padding: .25rem 0 0;
@@ -532,7 +556,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   background: var(--sf-panel);
   color: var(--sf-text-muted);
   font-weight: 600;
-  font-size: 1.05rem;
+  font-size: var(--sf-fs-md);
   padding: .45rem 1.2rem;
 }
 .btn-subtab:hover:not(.active) {
@@ -561,7 +585,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   display: flex; align-items: center; gap: .5rem;
   width: 100%; text-align: left;
   padding: .55rem .8rem;
-  font-size: 1rem; line-height: 1.35;
+  font-size: var(--sf-fs-base); line-height: 1.35;
   color: var(--sf-text);
   background: var(--sf-panel);
   border: 1px solid var(--sf-border);
@@ -577,7 +601,7 @@ html:has(.scifi-page) { color-scheme: dark; }
 .sf-tree-row:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
 .sf-tree-row .sf-tree-title { font-weight: 700; color: var(--sf-text-strong); }
 .sf-tree-row .sf-tree-meta { margin-left: auto; white-space: nowrap; color: var(--sf-text-muted); }
-.sf-tree-row--ship { font-size: 1.08rem; }
+.sf-tree-row--ship { font-size: var(--sf-fs-md); }
 .sf-tree-row--player {
   background: var(--sf-panel-2);
   border-left-color: var(--sf-accent-2);
@@ -605,7 +629,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   padding: .25rem .8rem .3rem calc(.8rem + 3px);
   margin-bottom: .3rem;
   border-bottom: 1px solid var(--sf-border);
-  font-size: .95rem; font-weight: 700; color: var(--sf-text-muted);
+  font-size: var(--sf-fs-base); font-weight: 700; color: var(--sf-text-muted);
 }
 .sf-tree-cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sf-tree-cell--main { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; overflow: visible; }
@@ -628,12 +652,12 @@ html:has(.scifi-page) { color-scheme: dark; }
   padding-left: .7rem;
   border-left: 2px solid var(--sf-border);
 }
-.sf-tree-info { font-size: .95rem; color: var(--sf-text-muted); margin-bottom: .35rem; }
+.sf-tree-info { font-size: var(--sf-fs-base); color: var(--sf-text-muted); margin-bottom: .35rem; }
 /* 最內層、不能再展開的一列（例如持有藍圖的玩家、物品放的地點） */
 .sf-tree-leaf {
   display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
   padding: .4rem .8rem; margin-top: .3rem;
-  font-size: 1rem; color: var(--sf-text);
+  font-size: var(--sf-fs-base); color: var(--sf-text);
   background: var(--sf-panel-2);
   border: 1px solid var(--sf-border);
   border-radius: 6px;
@@ -642,7 +666,7 @@ html:has(.scifi-page) { color-scheme: dark; }
 .sf-tree-leaf .sf-tree-meta { margin-left: auto; white-space: nowrap; color: var(--sf-text-muted); }
 .sf-tree-chip {
   display: inline-block; padding: .05rem .5rem; border-radius: 999px;
-  font-size: .85rem; font-weight: 600;
+  font-size: var(--sf-fs-sm); font-weight: 600;
   background: var(--sf-chip-bg); color: var(--sf-accent);
   border: 1px solid rgba(var(--sf-accent-rgb), .45);
 }
@@ -651,7 +675,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   background: rgba(var(--sf-accent-rgb), .14);
   border: 1px solid rgba(var(--sf-accent-rgb), .55);
   color: var(--sf-text-strong);
-  font-size: .95rem;
+  font-size: var(--sf-fs-base);
 }
 .btn-sf-link:hover {
   background: rgba(var(--sf-accent-rgb), .28);
@@ -783,14 +807,14 @@ html:has(.scifi-page) { color-scheme: dark; }
 .scifi-page .sf-search--inline { padding: .6rem .75rem; }
 .scifi-page .sf-search .form-label,
 .scifi-page .sf-search .form-check-label {
-  font-size: .98rem;
+  font-size: var(--sf-fs-base);
   font-weight: 600;
   color: var(--sf-text-strong);
 }
 .scifi-page .sf-search .form-control,
 .scifi-page .sf-search .form-select,
 .scifi-page .sf-search .multi-select-filter__btn {
-  font-size: 1rem;
+  font-size: var(--sf-fs-base);
   min-height: 2.25rem;
   padding-top: .38rem;
   padding-bottom: .38rem;
@@ -848,7 +872,7 @@ html:has(.scifi-page) { color-scheme: dark; }
 .scifi-page .sf-sheet:focus { outline: none; }   /* useSheet 開啟時沒有可聚焦元素會把焦點放在面板本身 */
 .scifi-page .sf-sheet__grip { width: 44px; height: 5px; border-radius: 3px; background: var(--sf-border-hi); margin: 4px auto 12px; }
 .scifi-page .sf-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .75rem; }
-.scifi-page .sf-sheet__title { font-size: 1.15rem; font-weight: 700; color: var(--sf-text-strong); margin: 0; }
+.scifi-page .sf-sheet__title { font-size: var(--sf-fs-md); font-weight: 700; color: var(--sf-text-strong); margin: 0; }
 .scifi-page .sf-count-badge {
   display: inline-block; min-width: 1.4rem; margin-left: .3rem; padding: 0 .35rem; border-radius: 999px;
   background: var(--sf-text-strong); color: var(--sf-bg-1); font-size: .78rem; font-weight: 700; line-height: 1.4rem;
@@ -866,7 +890,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   }
   .scifi-page .sf-bottom-nav__item {
     flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 2px; padding: 0; border: 0; background: none; color: var(--sf-text-muted); font-size: .8rem;
+    gap: 2px; padding: 0; border: 0; background: none; color: var(--sf-text-muted); font-size: var(--sf-fs-xs);
   }
   .scifi-page .sf-bottom-nav__item .bi { font-size: 1.35rem; }
   .scifi-page .sf-bottom-nav__item.active { color: var(--sf-accent); }
@@ -876,7 +900,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   }
   .scifi-page .sf-more-list button {
     display: flex; align-items: center; gap: .75rem; width: 100%; padding: .9rem .25rem; text-align: left;
-    font-size: 1.05rem; color: var(--sf-text); background: none; border: 0; border-bottom: 1px solid var(--sf-border);
+    font-size: var(--sf-fs-md); color: var(--sf-text); background: none; border: 0; border-bottom: 1px solid var(--sf-border);
   }
   .scifi-page .sf-more-list button:last-child { border-bottom: 0; }
   .scifi-page .sf-more-list button > .bi:first-child { font-size: 1.3rem; width: 1.6rem; color: var(--sf-accent); }
@@ -898,9 +922,9 @@ html:has(.scifi-page) { color-scheme: dark; }
   /* 平板才藏的次要欄位，手機卡片裡照樣顯示（卡片有空間放「標籤：值」） */
   .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.d-none[data-label] { display: block !important; }
   .scifi-page table.sf-stack td[data-label]::before {
-    content: attr(data-label); margin-right: .5rem; font-size: .88rem; color: var(--sf-text-dim);
+    content: attr(data-label); margin-right: .5rem; font-size: var(--sf-fs-sm); color: var(--sf-text-dim);
   }
-  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.sf-stack__title { flex-basis: 100%; font-size: 1.05rem; margin-bottom: .25rem; }
+  .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.sf-stack__title { flex-basis: 100%; font-size: var(--sf-fs-md); margin-bottom: .25rem; }
   .scifi-page table.sf-stack td.sf-stack__title::before { content: none; }
   .scifi-page table.sf-stack tr:not(.sf-stack__detail) > td.sf-stack__actions {
     flex-basis: 100%; display: flex !important; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: .5rem;
@@ -943,7 +967,7 @@ html:has(.scifi-page) { color-scheme: dark; }
   margin-bottom: 1.25rem;
 }
 .scifi-page .sf-drawer__title {
-  font-size: 1.05rem; font-weight: 700; margin: 0 0 .7rem;
+  font-size: var(--sf-fs-md); font-weight: 700; margin: 0 0 .7rem;
   color: var(--sf-accent-text, var(--sf-accent));
 }
 
@@ -969,7 +993,7 @@ html:has(.scifi-page) { color-scheme: dark; }
  * .sf-popover         自訂下拉／浮出面板（AutocompleteField、MultiSelectFilter、FieldHint 用同一組變數） */
 .scifi-page .sf-chip {
   display: inline-block; margin: 0 .35rem .35rem 0; padding: .2rem .65rem;
-  font-size: .9rem; line-height: 1.4; color: var(--sf-text-muted);
+  font-size: var(--sf-fs-sm); line-height: 1.4; color: var(--sf-text-muted);
   background: var(--sf-chip-bg); border: 1px solid var(--sf-border-hi); border-radius: 999px;
   vertical-align: middle;
 }
@@ -1047,3 +1071,51 @@ html:has(.scifi-page) { color-scheme: dark; }
   }
 }
 
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * 可用性與無障礙（全站；說明見 CLAUDE.md「UI 規則」）
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 鍵盤 focus：所有可以操作的東西都有同一種外框（主強調色 2px）──────
+ * 只在鍵盤操作時出現（:focus-visible），滑鼠點擊不會。輸入框原本的 focus 光暈保留。
+ * 後台用 :where() 把權重壓到 0，各元件自己的 focus 樣式優先。 */
+:where(a, button, [role='button'], [role='tab'], [tabindex]:not([tabindex='-1']), summary):focus-visible {
+  outline: 2px solid var(--bs-primary, #0d6efd);
+  outline-offset: 2px;
+}
+.scifi-page :is(a, button, .btn, .nav-link, .btn-subtab, [role='tab'], [role='button'],
+  [tabindex]:not([tabindex='-1']), summary, .form-check-input):focus-visible {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 2px;
+}
+.scifi-page :is(.form-control, .form-select):focus-visible {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 1px;
+}
+
+/* ── 觸控裝置：可以點的東西至少 44×44px（手指好點、不容易點錯）────────
+ * 只在 pointer: coarse（手機、平板）生效，桌機維持原本的密度。 */
+@media (pointer: coarse) {
+  .scifi-page :is(.btn, .btn-subtab, .nav-link, .page-link) { min-height: 44px; }
+  .scifi-page :is(.btn:has(> .bi:only-child), .sf-toolbar .btn) { min-width: 44px; }
+  .scifi-page :is(.form-control, .form-select):not(textarea) { min-height: 44px; }
+  .scifi-page .sf-search :is(.form-control, .form-select, .multi-select-filter__btn):not(textarea) { min-height: 44px; }
+  .scifi-page .btn-close { min-width: 44px; min-height: 44px; background-position: center; }
+  .scifi-page .btn-group-sm > .btn { min-width: 44px; }
+}
+
+/* ── 系統設定「減少動態效果」：關掉動畫、轉場與平滑捲動（JS 的捲動見 utils/motion.js）── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── 全站提示（components/SfToaster.vue）：手機上玩家頁有底部導覽列時，浮在導覽列上面 ── */
+@media (max-width: 767.98px) {
+  body:has(.scifi-page.has-bottom-nav) .sf-toaster { bottom: calc(76px + env(safe-area-inset-bottom)); }
+}
