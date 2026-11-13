@@ -14,7 +14,8 @@
   中文：utils/uexCommodity.js（資料庫 sc_translations）。
 -->
 <template>
-  <div ref="rootEl" :style="{ '--cbf-subtabs-h': `${subtabsH}px` }">
+  <!-- sf-split：超寬螢幕搜尋卡放左邊、列表放右邊（跟資料庫其他子分頁一致，見 scifi-theme.css） -->
+  <div ref="rootEl" class="sf-split" :style="{ '--cbf-subtabs-h': `${subtabsH}px` }">
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
         <div class="d-flex align-items-center justify-content-between mb-2">

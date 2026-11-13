@@ -9,7 +9,8 @@
   打撈、殘骸、化石、戰利品箱這些群組不列。
 -->
 <template>
-  <div>
+  <!-- sf-split：超寬螢幕搜尋卡放左邊、列表放右邊（跟資料庫其他子分頁一致，見 scifi-theme.css） -->
+  <div class="sf-split">
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">

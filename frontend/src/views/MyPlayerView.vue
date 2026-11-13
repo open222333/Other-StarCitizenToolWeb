@@ -464,8 +464,8 @@
 
     <!-- ══════════ 資料庫 › 藍圖：遊戲藍圖資料庫（不登入也能看；登入後每列多「登記」）。
          搜尋卡跟「我的 › 藍圖」共用（Teleport 移進來）══════════ -->
-    <div v-show="itemsBpActive" id="panel-items-bpdata">
-      <div id="items-bp-filters"></div>
+    <div v-show="itemsBpActive" id="panel-items-bpdata" class="sf-split">
+      <div id="items-bp-filters" class="sf-split__side"></div>
       <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
         :active="itemsBpActive" :shared-filters="itemsBpFilters"
         :registered-uuids="isGuest ? null : myBlueprintUuids" @registered="onBulkRegistered" />
@@ -473,8 +473,8 @@
 
     <!-- ══════════ 資料庫 › 艦船：載具主檔＋價格（不登入也能看；登入後可以登記到我的艦隊）。
          搜尋卡跟「我的 › 艦隊」共用（Teleport 移進來）══════════ -->
-    <div v-show="itemsVehActive" id="panel-items-vehicles">
-      <div id="items-veh-filters"></div>
+    <div v-show="itemsVehActive" id="panel-items-vehicles" class="sf-split">
+      <div id="items-veh-filters" class="sf-split__side"></div>
       <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters" :can-register="!isGuest"
         :registered-uuids="fleetVehicleUuids" :active="itemsVehActive" @registered="loadFleet" />
     </div>
