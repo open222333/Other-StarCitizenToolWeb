@@ -35,7 +35,7 @@ export const ADMIN_HOME = adminPath(PLAYER_BUILD ? '/players' : '/users')
 // 所以任何人打開 https://<玩家網域>/ 都會被 guard 丟到**後台登入頁**。
 // 玩家站的訪客十個有九個是玩家，讓他們第一眼看到管理員登入畫面是錯的
 // （這也是 README 先前標註的待修 UX 問題）。
-// 現在：未登入的玩家 → /player/me → requiresPlayerAuth → 玩家登入頁（/player/login）；
+// 現在：未登入的玩家 → /player/me（不登入可用遊戲資料與工具分頁，會員功能分頁顯示登入提示）；
 //       管理員請直接走 /admin/login（兩個登入頁互相有連結）。
 const HOME_REDIRECT = PLAYER_BUILD ? PLAYER_HOME : '/users'
 
@@ -101,11 +101,19 @@ const router = createRouter({
     },
 
     {
+      // 戰術小隊分配表的分享連結（公開、唯讀；分享碼由建立者在「工具箱 › 戰術小隊」開啟，見 src/models/squad.py）
+      path: playerPath('/squad/:token'),
+      name: 'squad-shared',
+      component: () => import('@/views/SquadSharedView.vue'),
+    },
+
+    {
       // 玩家個人頁，需要玩家自己登入（不是後台 admin/operator/viewer 登入）
       path: PLAYER_HOME,
       name: 'my-player',
       component: () => import('@/views/MyPlayerView.vue'),
-      meta: { requiresPlayerAuth: true },
+      // 不登入也能進：遊戲資料與工具分頁公開，倉庫／藍圖／艦隊／查詢持有資訊／個人資料
+      // 在頁面裡顯示「登入後才能使用」（見 utils/playerTabs.js 的 member）
     },
 
     {

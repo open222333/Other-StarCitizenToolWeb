@@ -34,7 +34,8 @@ PLAYER_MAX = 1000
 #: 配件連結（例如 erkul.games 的分享連結）：玩家在自己的艦隊登記上填，公開給其他玩家看
 LOADOUT_MAX_LINKS = 10
 LOADOUT_LABEL_MAX = 50
-LOADOUT_URL_MAX = 500
+#: 配件網址上限（本站「配裝模擬」的分享連結把換過的格子編在網址裡，換很多格時會比較長）
+LOADOUT_URL_MAX = 2000
 #: 每艘船自己看的區別名稱（同一款船有好幾艘時用），只回給登記者本人
 UNIT_NAME_MAX = 50
 _URL_RE = re.compile(r'^https?://[^\s/]+\.[^\s]+$', re.IGNORECASE)
@@ -172,6 +173,7 @@ def _vehicle_summary(master: dict | None) -> dict | None:
         'role_zh': master.get('role_zh'),
         'career': master.get('career'),
         'cargo_capacity_scu': master.get('cargo_capacity_scu'),   # 貨艙（SCU）
+        'crew_max': master.get('crew_max'),   # 建議乘員（戰術小隊顯示「3 / 6 人」）
         'msrp': master.get('msrp'),   # 官網現金價（美金）
         'is_current': master.get('is_current'),
         'note': master.get('note'),   # 後台手寫的說明

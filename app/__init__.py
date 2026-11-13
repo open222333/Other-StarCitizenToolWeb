@@ -19,11 +19,13 @@ from app.device.view import app_device
 from app.item.view import app_item
 from app.inventory.view import app_inventory
 from app.player.view import app_player
+from app.player.squad_view import app_squad
 from app.blueprint.view import app_blueprint
 from app.mining.view import app_mining
 from app.mission.view import app_mission
 from app.starmap.view import app_starmap
 from app.data.view import app_data
+from app.loadout.view import app_loadout
 from app.links.view import app_links
 from src import FLASK_JSON_PATH
 from src.limiter import limiter
@@ -186,8 +188,11 @@ def create_app(config_object=None):
     app.register_blueprint(blueprint=app_device, url_prefix='/device')
     app.register_blueprint(blueprint=app_docs, url_prefix='/docs')
     app.register_blueprint(blueprint=app_item, url_prefix='/item')
+    # 配裝模擬：放在 /item 底下，不用新增 nginx／vite 的 API 前綴
+    app.register_blueprint(blueprint=app_loadout, url_prefix='/item/loadout')
     app.register_blueprint(blueprint=app_inventory, url_prefix='/inventory')
     app.register_blueprint(blueprint=app_player, url_prefix='/player')
+    app.register_blueprint(blueprint=app_squad, url_prefix='/player/squads')
     app.register_blueprint(blueprint=app_blueprint, url_prefix='/blueprint')
     app.register_blueprint(blueprint=app_mining, url_prefix='/mining')
     app.register_blueprint(blueprint=app_mission, url_prefix='/mission')

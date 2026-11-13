@@ -27,7 +27,8 @@ BACKUP_VERSION = 1
 BACKUP_SETS = [
     {'key': 'accounts', 'label': '後台帳號', 'collections': ['users', 'user_templates', 'device_tokens'], 'default': True},
     {'key': 'players', 'label': '會員', 'collections': ['players', 'discord_bindings'], 'default': True},
-    {'key': 'player_data', 'label': '會員資料（倉庫、藍圖、艦隊）', 'collections': ['inventory', 'blueprints', 'fleet'],
+    {'key': 'player_data', 'label': '會員資料（倉庫、藍圖、艦隊、戰術小隊分配表）',
+     'collections': ['inventory', 'blueprints', 'fleet', 'squad_boards'],
      'default': True},
     {'key': 'settings', 'label': '系統設定（分頁設定、物品類型分組、同步排程、玩家頁面顯示、礦物手動關聯、UEX token、AI 問答設定）',
      'collections': ['app_settings', 'sync_schedule', 'player_visibility', 'mineral_uex_links'], 'default': True},

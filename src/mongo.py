@@ -184,6 +184,11 @@ def ensure_indexes():
     db['starmap_master'].create_index('parent_uuid')
     db['starmap_master'].create_index('type')
     db['ship_nav_master'].create_index('name_lower')
+    # 靜態 JSON 檔快取（src/scdata_cache.py）
+    db['scdata_json_rows'].create_index([('url', ASCENDING), ('gen', ASCENDING), ('i', ASCENDING)])
+    # 配裝模擬（scunpacked-data，見 src/models/loadout.py）
+    db['ship_loadout_master'].create_index('name_lower')
+    db['ship_item_master'].create_index([('type', ASCENDING), ('size', ASCENDING)])
     for name in ('item_master_versions', 'vehicle_master_versions',
                  'commodity_master_versions', 'blueprint_master_versions',
                  'mission_master_versions'):
@@ -252,6 +257,12 @@ def ensure_indexes():
     db['fleet'].create_index('player_id')
     db['fleet'].create_index('vehicle_uuid')
     _ensure_fleet_unique_index(db)
+
+    # ── 戰術小隊分配表（見 src/models/squad.py）──────────────────────
+    db['squad_boards'].create_index('share_token', unique=True,
+                                    partialFilterExpression={'share_token': {'$type': 'string'}})
+    db['squad_boards'].create_index('owner_scid')
+    db['squad_boards'].create_index([('updated_at', DESCENDING)])
 
     # ── 製造藍圖主檔（API 同步，見 src/scdata.py 的 map_blueprint）──
     # 「做出這個物品的所有配方」是主要查詢路徑
