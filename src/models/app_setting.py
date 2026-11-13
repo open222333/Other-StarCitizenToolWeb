@@ -68,9 +68,11 @@ class UexToken:
 
 
 PLAYER_TAB_ORDER_ID = 'player_tab_order'
-#: 分頁代號的格式（實際有哪些分頁由前端 frontend/src/utils/playerTabs.js 決定，後端只擋格式、數量）
-_TAB_KEY_RE = re.compile(r'^[a-z][a-z0-9_]{0,19}$')
-TAB_ORDER_MAX = 30
+#: 分頁代號的格式（實際有哪些分頁由前端 frontend/src/utils/playerTabs.js 決定，後端只擋格式、數量）。
+#: 下層分頁（子功能）寫成「主分頁.下層分頁」，例如 items.data、toolbox.loadout：
+#: 順序跟主分頁存在同一個清單裡，開放狀態也在同一個 dict（下層分頁前端只用 open／closed）。
+_TAB_KEY_RE = re.compile(r'^[a-z][a-z0-9_]{0,19}(\.[a-z][a-z0-9_]{0,19})?$')
+TAB_ORDER_MAX = 120
 
 
 class PlayerTabOrder:

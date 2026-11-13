@@ -7,8 +7,9 @@
 <template>
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body p-4">
-      <h6 class="fw-semibold mb-3"><i class="bi bi-database-down me-1"></i>資料備份</h6>
-      <div v-if="message" class="alert py-2" :class="messageType === 'danger' ? 'alert-danger' : 'alert-success'">{{ message }}</div>
+      <h6 class="fw-semibold mb-1"><i class="bi bi-database-down me-1"></i>資料備份</h6>
+      <p class="text-body-secondary small mb-3">匯出／還原不是同步排程抓來的資料（帳號、會員與會員資料、系統設定、工具網站，可選紀錄）。還原會把勾選的資料表整個換成檔案內容，不是合併。</p>
+      <div v-if="message && messageType === 'danger'" class="alert alert-danger py-2">{{ message }}</div>
       <div v-if="loading" class="text-muted small">載入中…</div>
       <div v-else class="row g-4">
         <!-- 匯出 -->
@@ -60,13 +61,21 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { toast } from '@/utils/toast'
+import { onMounted, ref, watch } from 'vue'
 import { apiFetch } from '@/api'
 
 const sets = ref([])
 const loading = ref(true)
 const message = ref('')
 const messageType = ref('success')
+// 錯誤留在卡片裡（要修的地方）；成功改用全站的 toast（utils/toast.js），不把卡片內容往下推
+watch([message, messageType], ([m, t]) => {
+  if (m && t !== 'danger') {
+    toast(m, t)
+    message.value = ''
+  }
+})
 const exportKeys = ref([])
 const exporting = ref(false)
 

@@ -92,3 +92,19 @@ def test_tab_access(client, setup, auth_headers):
     me = client.get('/player/me', headers=setup).get_json()['data']
     assert me['shown_tabs'] == ['mining'] and me['hidden_tabs'] == ['cargo'], '沒帶 shown_tabs 不改'
     assert client.put('/player/me/tabs', json={'hidden_tabs': [], 'shown_tabs': 'x'}, headers=setup).status_code == 400
+
+
+def test_sub_tab_order_and_access(client, setup, auth_headers):
+    """下層分頁（子功能）寫成「主分頁.下層分頁」，跟主分頁存在同一份設定裡。"""
+    res = client.put('/player/settings/tab-order', json={
+        'tab_order': ['items', 'toolbox', 'items.vehicles', 'items.data', 'toolbox.squads'],
+        'tab_access': {'items.missions': 'closed', 'toolbox.gamelog': 'closed', 'items': 'open'}},
+        headers=auth_headers)
+    assert res.status_code == 200
+    data = res.get_json()['data']
+    assert data['tab_order'] == ['items', 'toolbox', 'items.vehicles', 'items.data', 'toolbox.squads']
+    assert data['tab_access'] == {'items.missions': 'closed', 'toolbox.gamelog': 'closed'}
+    assert client.get('/player/tab-config').get_json()['data']['tab_access'] == data['tab_access']
+    for bad in (['items.'], ['.data'], ['items.data.x'], ['Items.data']):
+        assert client.put('/player/settings/tab-order', json={'tab_order': bad},
+                          headers=auth_headers).status_code == 400

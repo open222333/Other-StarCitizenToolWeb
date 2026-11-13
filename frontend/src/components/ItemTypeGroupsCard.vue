@@ -7,8 +7,9 @@
 <template>
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body p-4">
-      <h6 class="fw-semibold mb-3"><i class="bi bi-collection me-1"></i>物品類型分組</h6>
-      <div v-if="message" class="alert py-2" :class="messageType === 'danger' ? 'alert-danger' : 'alert-success'">{{ message }}</div>
+      <h6 class="fw-semibold mb-1"><i class="bi bi-collection me-1"></i>物品類型分組</h6>
+      <p class="text-body-secondary small mb-3">倉庫、新增／異動、物品頁的「物品類型」篩選照這裡分段，可以整組勾選。前綴（例如 Char_Armor_）會把之後新增的同前綴類型自動歸進來；沒對到的歸「其他」。</p>
+      <div v-if="message && messageType === 'danger'" class="alert alert-danger py-2">{{ message }}</div>
       <div v-if="loading" class="text-muted small">載入中…</div>
       <template v-else>
         <ol class="itg list-unstyled mb-3">
@@ -19,11 +20,13 @@
                 :disabled="!canWrite" :aria-label="`第 ${i + 1} 組名稱`" @input="message = ''">
               <span class="badge text-bg-secondary">{{ matchedOf(g).length }} 種</span>
               <template v-if="canWrite">
-                <button type="button" class="btn btn-sm btn-info ms-auto" :disabled="i === 0"
-                  :aria-label="`第 ${i + 1} 組往前`" @click="move(i, i - 1)"><i class="bi bi-arrow-up"></i></button>
-                <button type="button" class="btn btn-sm btn-info" :disabled="i === rows.length - 1"
-                  :aria-label="`第 ${i + 1} 組往後`" @click="move(i, i + 1)"><i class="bi bi-arrow-down"></i></button>
-                <button type="button" class="btn btn-sm btn-danger" :aria-label="`刪除第 ${i + 1} 組`"
+                <div class="btn-group btn-group-sm ms-auto">
+                  <button type="button" class="btn btn-outline-secondary" :disabled="i === 0"
+                    :aria-label="`第 ${i + 1} 組往前`" @click="move(i, i - 1)"><i class="bi bi-arrow-up"></i></button>
+                  <button type="button" class="btn btn-outline-secondary" :disabled="i === rows.length - 1"
+                    :aria-label="`第 ${i + 1} 組往後`" @click="move(i, i + 1)"><i class="bi bi-arrow-down"></i></button>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger" :aria-label="`刪除第 ${i + 1} 組`"
                   @click="rows.splice(i, 1); message = ''"><i class="bi bi-trash"></i></button>
               </template>
             </div>
@@ -46,22 +49,19 @@
           <span class="badge text-bg-secondary me-1">其他 {{ others.length }} 種</span>
           <span class="small text-body-secondary">{{ others.map(typeName).join('、') }}</span>
         </div>
-        <div v-if="canWrite" class="d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-success btn-sm" :disabled="rows.length >= MAX_GROUPS"
-            @click="rows.push(newRow()); message = ''"><i class="bi bi-plus-lg me-1"></i>加群組</button>
-          <button type="button" class="btn btn-primary btn-sm" :disabled="saving || !dirty" @click="save(payload())">
-            <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>儲存
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="saving || !dirty" @click="reset">取消變更</button>
-          <button type="button" class="btn btn-warning btn-sm ms-auto" :disabled="saving || !custom" @click="save([])">恢復預設</button>
-        </div>
+        <button v-if="canWrite" type="button" class="btn btn-outline-success btn-sm mb-3" :disabled="rows.length >= MAX_GROUPS"
+          @click="rows.push(newRow()); message = ''"><i class="bi bi-plus-lg me-1"></i>加群組</button>
+        <SettingsSaveBar v-if="canWrite" :dirty="dirty" :saving="saving" resettable :can-reset="custom"
+          reset-warning="換回程式預設的分組" @save="save(payload())" @cancel="reset" @reset="save([])" />
       </template>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import SettingsSaveBar from '@/components/SettingsSaveBar.vue'
+import { toast } from '@/utils/toast'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiFetch } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -87,6 +87,13 @@ const loading = ref(true)
 const saving = ref(false)
 const message = ref('')
 const messageType = ref('success')
+// 錯誤留在卡片裡（要修的地方）；成功改用全站的 toast（utils/toast.js），不把卡片內容往下推
+watch([message, messageType], ([m, t]) => {
+  if (m && t !== 'danger') {
+    toast(m, t)
+    message.value = ''
+  }
+})
 
 const typeName = (code) => {
   const zh = itemTypeZh(code)
@@ -94,6 +101,8 @@ const typeName = (code) => {
 }
 const payload = () => rows.value.map(plainGroup)
 const dirty = computed(() => JSON.stringify(payload()) !== JSON.stringify(saved.value))
+const emit = defineEmits(['dirty'])
+watch(dirty, v => emit('dirty', v))
 
 // 選項：還沒被別組選走的類型（一個類型只能在一組）；不帶 group，選單不分段
 function optionsFor(g) {

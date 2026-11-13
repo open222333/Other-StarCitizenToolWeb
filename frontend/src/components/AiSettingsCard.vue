@@ -9,8 +9,9 @@
 <template>
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body p-4">
-      <h6 class="fw-semibold mb-3"><i class="bi bi-robot me-1"></i>AI 問答（Discord /ask）</h6>
-      <div v-if="message" class="alert py-2" :class="messageType === 'danger' ? 'alert-danger' : 'alert-success'">{{ message }}</div>
+      <h6 class="fw-semibold mb-1"><i class="bi bi-robot me-1"></i>AI 問答（Discord /ask）</h6>
+      <p class="text-body-secondary small mb-3">Discord 的 /ask 用 AI 回答公會資料的問題。供應商照順序輪換，額度用完或出錯就換下一家；API key 只顯示末 4 碼。</p>
+      <div v-if="message && messageType === 'danger'" class="alert alert-danger py-2">{{ message }}</div>
       <div v-if="loading" class="text-muted small">載入中…</div>
       <template v-else-if="cfg">
         <div class="form-check form-switch mb-3">
@@ -18,7 +19,7 @@
           <label class="form-check-label" for="ai-enabled">開放 Discord /ask</label>
         </div>
 
-        <div class="fw-semibold mb-2">供應商（照順序輪換：額度用完或出錯就換下一家）</div>
+        <div class="fw-semibold mb-2">供應商</div>
         <div v-for="(p, i) in form.providers" :key="p.key" class="ai-provider mb-2">
           <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
             <span class="badge text-bg-secondary">{{ i + 1 }}</span>
@@ -70,9 +71,8 @@
             <input id="ai-pd" v-model.number="form.user_per_day" type="number" min="1" max="5000" class="form-control form-control-sm">
           </div>
         </div>
-        <button type="button" class="btn btn-sm btn-primary" :disabled="saving" @click="save">
-          <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>儲存</button>
-        <span v-if="cfg.updated_at" class="small text-muted ms-2">上次更新：{{ fmtTime(cfg.updated_at) }}（{{ cfg.updated_by || '—' }}）</span>
+        <SettingsSaveBar :dirty="dirty" :saving="saving" @save="save" @cancel="applyCfg(cfg)"
+          :saved-text="cfg.updated_at ? `上次更新：${fmtTime(cfg.updated_at)}（${cfg.updated_by || '—'}）` : ''" />
 
         <hr>
         <div class="fw-semibold mb-2">測試</div>
@@ -115,7 +115,9 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import SettingsSaveBar from '@/components/SettingsSaveBar.vue'
+import { toast } from '@/utils/toast'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiFetch } from '@/api'
 
 const cfg = ref(null)
@@ -124,6 +126,13 @@ const loading = ref(true)
 const saving = ref(false)
 const message = ref('')
 const messageType = ref('success')
+// 錯誤留在卡片裡（要修的地方）；成功改用全站的 toast（utils/toast.js），不把卡片內容往下推
+watch([message, messageType], ([m, t]) => {
+  if (m && t !== 'danger') {
+    toast(m, t)
+    message.value = ''
+  }
+})
 const question = ref('')
 const testing = ref(false)
 const testResult = ref(null)
@@ -143,7 +152,17 @@ function applyCfg(data) {
     user_per_day: data.user_per_day,
     providers: data.providers.map(p => ({ ...p, newKey: '', clearKey: false })),
   }
+  savedForm.value = formKey(form.value)
 }
+// 有沒有改過（跟上次載入／儲存時比）：只比會送出的欄位
+const savedForm = ref('')
+const formKey = f => JSON.stringify(f && {
+  enabled: f.enabled, pm: f.user_per_minute, pd: f.user_per_day,
+  p: f.providers.map(p => [p.key, p.enabled, (p.model || '').trim(), p.newKey.trim(), p.clearKey]),
+})
+const dirty = computed(() => !!form.value && formKey(form.value) !== savedForm.value)
+const emit = defineEmits(['dirty'])
+watch(dirty, v => emit('dirty', v))
 const runtime = key => cfg.value?.runtime?.[key] || { cooldown: 0, today: 0, last_error: '' }
 const providerLabel = key => cfg.value?.providers.find(p => p.key === key)?.label || key
 
@@ -154,6 +173,13 @@ async function load() {
   loading.value = false
   if (!data?.success) return say(data?.message || '讀取失敗。', 'danger')
   applyCfg(data.data)
+}
+
+// 測試完只更新各供應商的狀態（冷卻、今天次數），不要蓋掉還沒儲存的表單
+async function refreshRuntime() {
+  const res = await apiFetch('/data/ai/config')
+  const data = res ? await res.json().catch(() => null) : null
+  if (data?.success && cfg.value) cfg.value = { ...cfg.value, runtime: data.data.runtime }
 }
 
 function move(from, to) {
@@ -193,7 +219,7 @@ async function test() {
   testing.value = false
   if (!data?.success) return say(data?.message || '測試失敗。', 'danger')
   testResult.value = data.data
-  load()
+  refreshRuntime()
   if (logsOpen.value) loadLogs()
 }
 
