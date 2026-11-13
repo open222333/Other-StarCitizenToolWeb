@@ -82,7 +82,41 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
   識別名稱（`fleet.unit_names`，公開在「查詢持有資訊」：船艦列與詳細裡的配件網址按鈕標「玩家 · 識別名稱 · 配件碼」；後台列表不放）；配件網址也設在每一艘上（「編輯」視窗裡的「設置配件網址」，每條可關掉「公開」＝`private: true`，查詢持有資訊不列、只有本人與後台看得到；配件網址按鈕一律用 `btn-loadout`（次要強調色、比淡底鮮明），`fleet.unit_loadouts`；整筆的 `loadout_links` 是所有艘的合併，給互查／後台用，舊資料只有 loadout_links 的算第 1 艘）；登記船艦資料（瀏覽載具主檔＋每列「登記」按鈕＋勾選批量登記，原本的批量登記已併進來）、JSON 匯入都是工具列按鈕開跳出視窗（SfModal），不要再拆下層分頁。
   藍圖同理：「登記藍圖資料」＝遊戲藍圖資料庫瀏覽＋每列「登記」按鈕＋勾選批量登記（BlueprintMasterBrowser 傳 registeredUuids），不要再拆成兩個區塊。
   船艦價格分兩種，不要混在一起：官網現金價是 `vehicle_master.msrp`（美金），遊戲內購買價／租船價是 UEX（aUEC，`src/models/uex_vehicle_price.py`）。
+- **玩家頁「配裝模擬」**（`components/LoadoutSimulator.vue`、`LoadoutSlotGroup.vue`）：換配件與所有數值計算都在前端
+  `utils/loadoutCalc.js`（純函式，可用 node 直接跑），後端（`src/models/loadout.py`）只給資料；API 掛在 `/item/loadout/*`，
+  不要另開頂層前綴（否則要同步改 `frontend/vite.api-prefixes.mjs` 與 nginx）。能不能裝看種類（`types`）、尺寸（min／max）
+  和配件的 `required_tags`（船本身的 `tags`＋上層各格的 PortTags）。資料欄位要加就改 `src/scdata_loadout.py` 的 mapper
+  再重跑「配裝」同步，不要在模型裡補。電源分配與訊號在 `utils/loadoutPower.js`（模型寫在檔頭）；改公式後用
+  scunpacked 的 `ships.json` 驗證：全部開滿時耗電、EM、IR、冷卻產量要跟資料集的 `Power`／`Emission`／`Cooling` 一致。
+- **玩家頁不登入可用**：遊戲資料與工具分頁不用登入；「我的」（倉庫、藍圖、艦隊）、查詢持有資訊、個人資料整頁要登入，
+  工具箱裡的戰術小隊是下層分頁標 `member: true`（`MyPlayerView.vue` 的 `guestLock` 同時看主分頁與下層分頁）。
+  遊戲資料一律放「資料庫」（key 沿用 `items`）的下層分頁，公開分頁裡的「登記」類按鈕只在登入時顯示。
+  工具類功能一律放「工具箱」（`toolbox`）的下層分頁，不要再開新的主分頁。
+  「我的」「資料庫」「工具箱」底下的內容在 `MyPlayerView.vue` 用 `activePane`（下層分頁 key）判斷，不要再寫 `activeTab === 'warehouse'`；
+  分頁搬家時把舊 key 加進 `utils/playerTabs.js` 的 `LEGACY_TABS`（舊網址、後台存的順序、玩家隱藏的分頁都靠它轉）。
+  新分頁要決定是哪一種：整頁要登入的在 `utils/playerTabs.js` 標 `member: true`，`MyPlayerView.vue` 的面板加 `!isGuest &&`；
+  公開分頁用到的後端端點掛 `@public_api`（唯讀、不含個人或公會私有資料，會耗運算的另加 `@limiter.limit`），
+  並在 `tests/test_permissions.py` 的 `UNGUARDED_ALLOWLIST` 註明。公開分頁裡的「登記」類按鈕只在登入時顯示。
 - 畫面上的範例值用通用的假資料（例如分享代碼寫 `abcd1234`），不要用真實的代碼或帳號。
+
+## UI 規則（可用性與無障礙，配色維持現有主題）
+
+- **操作結果用 toast**：`import { toast } from '@/utils/toast'`，`toast('已儲存')`、`toast(msg, 'warning'|'danger'|'info')`
+  （也接受 `'alert-success'` 這種舊寫法）。畫面在 `components/SfToaster.vue`（掛在 `App.vue`，玩家頁用科幻配色、後台用後台主題）。
+  不要再在元件裡放 `<div v-if="message" class="alert">`＋自己的計時器。
+  **例外**：表單欄位填錯、要使用者修正的錯誤，留在表單裡、欄位旁邊（`alert-danger` 或 `invalid-feedback`），不要只跳 toast；
+  設定卡片的寫法是錯誤留在卡片、成功轉成 toast（見 `PlayerTabOrderCard.vue` 的 watch）。
+- **字級**：玩家頁用 `scifi-theme.css` 的 6 級變數 `--sf-fs-xs|sm|base|md|lg|xl`（.8／.9／1／1.1／1.35／1.6rem），
+  內文行高 `--sf-lh-body`（1.5）。新樣式不要再寫 `.95rem`、`1.08rem` 這種零碎值（圖示大小、`em` 相對值不在此限）。
+- **強調色的用法**：主強調色（`--sf-accent`）只給主要動作與目前位置（作用中的分頁、主按鈕、focus）；
+  次要強調色（`--sf-accent-2`）固定表示編號、未儲存、需要注意。一個區塊只放一個實心主按鈕，其他用外框或文字按鈕。
+  狀態不能只靠顏色：成功／警告／錯誤要同時有圖示或文字（例如「重複」「超過」「未註冊」）。
+- **鍵盤 focus**：全站有統一的 `:focus-visible` 外框（主強調色 2px，在 `scifi-theme.css` 最後一段），
+  元件不要寫 `outline: none` 蓋掉；自訂的可點元素用 `<button>` 或加 `tabindex="0"`＋`role`。
+- **觸控 44px**：`pointer: coarse` 時按鈕、分頁、輸入框、工具列按鈕最小 44×44px（`scifi-theme.css` 最後一段）。
+  新的可點元件如果不是 `.btn`／`.form-control`，自己在 coarse 斷點補 `min-height／min-width: 44px`。
+- **減少動態效果**：CSS 動畫與轉場在 `prefers-reduced-motion: reduce` 時統一關掉；
+  JS 捲動用 `utils/motion.js` 的 `scrollBehavior()`，不要寫死 `behavior: 'smooth'`。
 
 ## 中文化（翻譯）原則（使用者要求，務必遵守）
 
