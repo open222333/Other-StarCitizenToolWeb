@@ -110,6 +110,16 @@ class MiningLocation:
                 for dep in group.get('deposits', []):
                     if dep.get('resource_uuid'):
                         all_uuids.add(dep['resource_uuid'])
+        # 舊資料（還沒重新同步）沒有 location_type，從 raw 補
+        missing = [r['_id'] for r in rows if 'location_type' not in r]
+        if missing:
+            for doc in cls._col().find({'_id': {'$in': missing}}, {'raw.Locations': 1}):
+                locs = [x for x in ((doc.get('raw') or {}).get('Locations') or []) if isinstance(x, dict)]
+                picked = next((x for x in locs if x.get('System')), locs[0] if locs else {})
+                t = picked.get('Type')
+                for r in rows:
+                    if r['_id'] == doc['_id']:
+                        r['location_type'] = t if t not in (None, '', 'unknown') else None
         deposit_info = MiningDeposit.by_ids(all_uuids)
         hidden_deposits = set()
         if visible_only and all_uuids:

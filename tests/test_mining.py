@@ -121,12 +121,13 @@ def test_mining_location_systems_distinct_and_sorted(app):
 #  view 層
 # ═══════════════════════════════════════════════════════════
 
-def test_deposits_requires_auth(client):
-    assert client.get('/mining/deposits').status_code == 401
+def test_deposits_is_public(client):
+    # 玩家頁「礦物」不登入也能用（@public_api）
+    assert client.get('/mining/deposits').status_code == 200
 
 
-def test_locations_requires_auth(client):
-    assert client.get('/mining/locations').status_code == 401
+def test_locations_is_public(client):
+    assert client.get('/mining/locations').status_code == 200
 
 
 def test_list_deposits_returns_data(client, auth_headers):
@@ -163,3 +164,17 @@ def test_list_systems_returns_distinct_systems(client, auth_headers):
 
     assert resp.status_code == 200
     assert body['data'] == ['Pyro', 'Stanton']
+
+
+def test_mining_location_type_from_raw_for_old_docs(app):
+    """還沒重新同步（沒有 location_type）的舊資料從 raw.Locations 補。"""
+    from src.models.mining import MiningLocation
+    db = get_db()
+    _insert_location(db, 'L1', 'Daymar')
+    db['mining_location_master'].update_one({'_id': 'L1'}, {'$set': {
+        'raw': {'Locations': [{'System': 'Stanton', 'Name': 'Daymar', 'Type': 'moon'}]}}})
+    _insert_location(db, 'L2', 'Yela')
+    db['mining_location_master'].update_one({'_id': 'L2'}, {'$set': {'location_type': 'moon'}})
+    rows = {r['_id']: r for r in MiningLocation.list_all()}
+    assert rows['L1']['location_type'] == 'moon' and 'raw' not in rows['L1']
+    assert rows['L2']['location_type'] == 'moon'

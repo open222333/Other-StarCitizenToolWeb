@@ -1,4 +1,4 @@
-// 貨艙網格（玩家頁「貨艙網格」分頁 components/CargoLoader.vue；航線選船時的 8／16／32 SCU 最大量）：把標準貨櫃擺進船的貨物網格。
+// 貨艙網格（玩家頁「工具箱 › 貨艙網格」 components/CargoLoader.vue；航線選船時的 8／16／32 SCU 最大量）：把標準貨櫃擺進船的貨物網格。
 //
 // 網格資料來自 sc-cargo.space（後端 GET /starmap/nav/cargo-grids）：每格有位置 x／y／z 與
 // 寬（x）、高（y）、長（z），單位都是 1 SCU 的邊長；max_size／min_size 是這格能放的貨櫃大小限制。

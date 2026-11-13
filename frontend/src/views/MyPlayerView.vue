@@ -51,6 +51,138 @@
 <template>
   <div class="scifi-page scifi-app has-bottom-nav">
     <!-- ══════════ 跳出視窗（v-show 一直掛著；登記藍圖／船艦資料的搜尋卡用 Teleport defer 移進來）══════════ -->
+    <!-- 個人資料（點最上方的名字打開，舊網址 ?tab=profile 也會打開） -->
+    <SfModal v-if="!isGuest" id="profile" v-model:open="profileOpen" title="個人資料" icon="bi bi-person-gear" width="760px">
+        <Transition name="alert-slide">
+          <div v-if="profileError" class="alert alert-danger py-2">{{ profileError }}</div>
+        </Transition>
+
+        <div v-if="player" class="card scifi-card">
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="profile-scid">遊戲ID（Star Citizen ID）</label>
+              <input id="profile-scid" :value="player.star_citizen_id" type="text" class="form-control" disabled>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="profile-nickname">暱稱</label>
+              <input id="profile-nickname" v-model="profileForm.nickname" type="text" class="form-control">
+            </div>
+            <!-- Discord 兩個欄位放在同一張卡裡，公開勾選就在下面 ——
+                 勾選管的是這兩個欄位，分開放會看不出關聯。 -->
+            <div class="card scifi-card mb-3">
+              <div class="card-body py-3">
+                <div class="row g-2">
+                  <div class="col-12 col-md-6">
+                    <label class="form-label small fw-semibold mb-1" for="profile-discord-name">Discord 名稱</label>
+                    <input id="profile-discord-name" v-model="profileForm.discord_name" type="text" class="form-control form-control-sm">
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label small fw-semibold mb-1" for="profile-discord-id">Discord ID</label>
+                    <input id="profile-discord-id" v-model="profileForm.discord_id" type="text" class="form-control form-control-sm">
+                  </div>
+                </div>
+
+                <div class="form-check mt-3">
+                  <input class="form-check-input" type="checkbox" id="discord-public"
+                    v-model="profileForm.discord_public">
+                  <label class="form-check-label small" for="discord-public">
+                    公開給其他玩家
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="profile-notes">備註</label>
+              <textarea id="profile-notes" v-model="profileForm.notes" class="form-control" rows="2"></textarea>
+            </div>
+            <button class="btn btn-primary" :disabled="savingProfile" @click="saveProfile">
+              <span v-if="savingProfile" class="spinner-border spinner-border-sm me-1"></span>
+              儲存
+            </button>
+          </div>
+        </div>
+
+        <!-- 顯示的分頁：勾掉的分頁不出現在分頁列（手機底部列／更多），存在帳號上，換裝置也一樣；後台設成「預設不顯示」的要在這裡打開 -->
+        <div v-if="player" class="card scifi-card mt-3">
+          <div class="card-body">
+            <h3 class="sf-drawer__title"><i class="bi bi-ui-checks-grid me-1"></i>顯示的分頁</h3>
+            <div class="tab-prefs">
+              <div v-for="tab in orderedTabs" :key="tab.key" class="form-check mb-0">
+                <input :id="`tab-show-${tab.key}`" class="form-check-input" type="checkbox"
+                  :checked="isTabShown(tab.key)"
+                  :disabled="savingTabs" @change="toggleTab(tab.key, $event.target.checked)">
+                <label class="form-check-label" :for="`tab-show-${tab.key}`">
+                  <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
+                </label>
+              </div>
+            </div>
+            <div v-if="tabsError" class="sf-bad mt-2">{{ tabsError }}</div>
+          </div>
+        </div>
+
+        <!-- 更改密碼：只在「個人資料」視窗打開時才放進 DOM，並包成自己的 <form>（附隱藏的帳號欄位）。
+             否則瀏覽器會把自動填入的「目前密碼」跟其他分頁的搜尋欄位湊成一組帳密，
+             打完搜尋字、切分頁（網址改變）時就跳出「要儲存密碼嗎」。 -->
+        <div v-if="player && profileOpen" class="card scifi-card mt-3">
+          <form class="card-body" autocomplete="on" @submit.prevent="changePassword">
+            <input type="text" name="username" autocomplete="username" :value="player.star_citizen_id"
+              readonly hidden aria-hidden="true" tabindex="-1">
+            <h3 class="sf-drawer__title"><i class="bi bi-key me-1"></i>更改密碼</h3>
+            <Transition name="alert-slide">
+              <div v-if="pwError" class="alert alert-danger py-2">{{ pwError }}</div>
+            </Transition>
+
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="pw-current">目前密碼</label>
+              <input id="pw-current" v-model="pwForm.current_password" type="password" class="form-control"
+                autocomplete="current-password">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="pw-new">新密碼</label>
+              <input id="pw-new" v-model="pwForm.new_password" type="password" class="form-control" minlength="6"
+                placeholder="至少 6 個字元" autocomplete="new-password">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="pw-confirm">確認新密碼</label>
+              <input id="pw-confirm" v-model="pwForm.confirm_password" type="password" class="form-control" minlength="6"
+                placeholder="再輸入一次新密碼" autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-primary" :disabled="changingPassword">
+              <span v-if="changingPassword" class="spinner-border spinner-border-sm me-1"></span>
+              更改密碼
+            </button>
+          </form>
+        </div>
+
+        <!-- Discord 綁定碼：Discord 帳號沒辦法自己證明它屬於哪個遊戲帳號，
+             所以「證明」這一步只能放在需要密碼登入的這一頁。 -->
+        <div v-if="player" class="card scifi-card mt-3">
+          <div class="card-body">
+            <h3 class="sf-drawer__title"><i class="bi bi-discord me-1"></i>Discord 綁定</h3>
+
+            <Transition name="alert-slide">
+              <div v-if="bindError" class="alert alert-danger py-2">{{ bindError }}</div>
+            </Transition>
+
+            <div v-if="bindCode" class="mb-3">
+              <div class="p-3 rounded" style="background: var(--sf-panel-2, rgba(255,255,255,.06))">
+                <code class="d-block" style="user-select: all; word-break: break-all">
+                  /bind handle:{{ player.star_citizen_id }} code:{{ bindCode }}
+                </code>
+              </div>
+              <div class="small mt-2" style="color: var(--sf-text-muted)">
+                有效期限至 {{ fmtTime(bindCodeExpiresAt) }}
+              </div>
+            </div>
+
+            <button class="btn btn-primary" :disabled="issuingCode" @click="issueDiscordCode">
+              <span v-if="issuingCode" class="spinner-border spinner-border-sm me-1"></span>
+              {{ bindCode ? '重新產生綁定碼' : '產生 Discord 綁定碼' }}
+            </button>
+          </div>
+        </div>
+    </SfModal>
+
     <!-- 定居點（頂端名字右邊的按鈕）：從可選居住地（/starmap/home-locations）選一個，下面是「全部物品轉移到定居點」 -->
     <SfModal id="home" v-model:open="homeOpen" title="定居點" icon="bi bi-house">
       <div v-if="homeMessage" :class="['alert', 'py-2', homeMessageType]">{{ homeMessage }}</div>
@@ -97,13 +229,13 @@
     <SfModal id="bp-data" v-model:open="bpDataOpen" title="登記藍圖資料" icon="bi bi-journal-text" width="1440px">
       <div id="bp-modal-filters"></div>
       <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
-        :active="activeTab === 'blueprints' && bpDataOpen" :shared-filters="bpFilters"
+        :active="activePane === 'blueprints' && bpDataOpen" :shared-filters="bpFilters"
         :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </SfModal>
     <!-- 任務 › 勢力聲望：勢力的聲望階級與每一階解鎖的任務（見 components/FactionReputation.vue） -->
     <SfModal id="faction-rep" v-model:open="factionRepOpen" title="勢力聲望" icon="bi bi-award" width="1100px">
-      <FactionReputation :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions' && factionRepOpen"
-        :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
+      <FactionReputation :fetcher="playerAuth.playerFetch" :active="activePane === 'missions' && factionRepOpen"
+        :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest" @registered="onBulkRegistered" />
     </SfModal>
     <!-- 艦隊 › 編輯：數量（多艘同款）、每一艘的識別名稱與配件網址 -->
     <SfModal id="fleet-edit" v-model:open="fleetEditOpen" :title="fleetEditRow ? `編輯 ${fleetEditRow.vehicle?.name_zh || fleetEditRow.name}` : '編輯'"
@@ -197,7 +329,7 @@
     <SfModal id="fleet-data" v-model:open="fleetDataOpen" title="登記船艦資料" icon="bi bi-info-circle" width="1440px">
       <div id="fleet-modal-filters"></div>
       <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters"
-        :registered-uuids="fleetVehicleUuids" :active="activeTab === 'fleet' && fleetDataOpen"
+        :registered-uuids="fleetVehicleUuids" :active="activePane === 'fleet' && fleetDataOpen"
         @registered="loadFleet" />
     </SfModal>
 
@@ -207,13 +339,20 @@
       <span class="scifi-topbar__side" aria-hidden="true"></span>
 
       <div class="scifi-topbar__center">
-        <h1 class="scifi-topbar__title">
-          <i class="bi bi-person-badge"></i>
-          <span>{{ player?.nickname || '個人資料' }}</span>
+        <h1 v-if="isGuest || !player" class="scifi-topbar__title">
+          <i class="bi" :class="isGuest ? 'bi-tools' : 'bi-person-badge'"></i>
+          <span>{{ isGuest ? '星際公民工具' : '個人資料' }}</span>
         </h1>
-        <span v-if="player?.star_citizen_id" class="scifi-topbar__id d-none d-sm-inline">
-          {{ player.star_citizen_id }}
-        </span>
+        <!-- 名字＋遊戲ID：點了打開「個人資料」視窗（暱稱、Discord、顯示的分頁、密碼、Discord 綁定） -->
+        <h1 v-else class="scifi-topbar__title">
+          <button type="button" class="scifi-topbar__me" aria-haspopup="dialog" title="個人資料"
+            :aria-label="`個人資料：${player.nickname || player.star_citizen_id}`" @click="profileOpen = true">
+            <i class="bi bi-person-badge" aria-hidden="true"></i>
+            <span class="scifi-topbar__name">{{ player.nickname || player.star_citizen_id }}</span>
+            <span v-if="player.nickname" class="scifi-topbar__id d-none d-sm-inline">{{ player.star_citizen_id }}</span>
+            <i class="bi bi-gear scifi-topbar__me-gear" aria-hidden="true"></i>
+          </button>
+        </h1>
         <!-- 定居點：設定／清除＋全部物品轉移到定居點，都在跳出的視窗裡 -->
         <button v-if="player" type="button" class="btn btn-sm btn-success scifi-topbar__home" aria-haspopup="dialog"
           :aria-label="homeLocation ? `定居點：${locLabel(homeLocation)}` : '設置定居點'" @click="toggleHome">
@@ -224,14 +363,20 @@
 
       <div class="scifi-topbar__side scifi-topbar__actions">
         <ScifiThemePicker />
-        <button class="btn btn-danger btn-sm" aria-label="登出" title="登出" @click="logout">
+        <template v-if="isGuest">
+          <a class="btn btn-primary btn-sm" :href="loginHref" aria-label="登入">
+            <i class="bi bi-box-arrow-in-right"></i><span class="d-none d-sm-inline ms-1">登入</span></a>
+          <a class="btn btn-success btn-sm d-none d-sm-inline-block" :href="registerHref">
+            <i class="bi bi-person-plus me-1"></i>註冊</a>
+        </template>
+        <button v-else class="btn btn-danger btn-sm" aria-label="登出" title="登出" @click="logout">
           <i class="bi bi-box-arrow-right"></i>
           <span class="d-none d-sm-inline ms-1">登出</span>
         </button>
       </div>
     </header>
 
-    <!-- ══════════ 分頁列（放不下時折到下一列；手機改成底部導覽；「個人資料」可以選要顯示哪些分頁） ══════════ -->
+    <!-- ══════════ 分頁列（放不下時折到下一列；手機改成底部導覽；「個人資料」視窗可以選要顯示哪些分頁） ══════════ -->
     <nav class="scifi-tabs">
       <ul class="nav nav-tabs" role="tablist">
         <li class="nav-item" v-for="tab in visibleTabs" :key="tab.key" role="presentation">
@@ -245,13 +390,14 @@
             @click="setTab(tab.key)"
           >
             <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
+            <i v-if="isGuest && tab.member" class="bi bi-lock-fill ms-1 sf-tab-lock" aria-label="需要登入"></i>
           </button>
         </li>
       </ul>
     </nav>
 
     <!-- ══════════ 下層分頁（倉庫／查詢才有） ══════════ -->
-    <nav v-if="subTabsOf(activeTab).length" class="scifi-subtabs">
+    <nav v-if="subTabsOf(activeTab).length && !(isGuest && activeTabMeta?.member)" class="scifi-subtabs">
       <div class="btn-group" role="tablist">
         <button
           v-for="sub in subTabsOf(activeTab)"
@@ -263,15 +409,27 @@
           :aria-controls="`panel-${activeTab}-${sub.key}`"
           :id="`subtab-${activeTab}-${sub.key}`"
           @click="setSub(sub.key)"
-        >{{ sub.label }}</button>
+        >{{ sub.label }}<i v-if="isGuest && sub.member" class="bi bi-lock-fill ms-1 sf-tab-lock" aria-label="需要登入"></i></button>
       </div>
     </nav>
 
     <!-- ══════════ 內容區（滿版） ══════════ -->
     <div class="scifi-body sf-split">
+    <!-- 沒登入點到會員功能分頁（我的、查詢持有資訊、工具箱 › 戰術小隊）：登入提示 -->
+    <div v-if="guestLock" class="card scifi-card sf-guest" role="tabpanel" :id="`panel-${activeTab}`">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-lock-fill sf-guest__icon" aria-hidden="true"></i>
+        <h2 class="sf-guest__title">「{{ guestLock.label }}」登入後才能使用</h2>
+        <p class="sf-guest__text">{{ GUEST_LOCKED_TEXT[guestLock.key] || '這個功能需要會員帳號。' }}</p>
+        <div class="d-flex justify-content-center flex-wrap gap-2">
+          <a class="btn btn-primary" :href="loginHref"><i class="bi bi-box-arrow-in-right me-1"></i>登入</a>
+          <a class="btn btn-success" :href="registerHref"><i class="bi bi-person-plus me-1"></i>註冊</a>
+        </div>
+      </div>
+    </div>
     <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
-    <div v-show="activeTab === 'warehouse'" class="sf-toolbar">
+    <div v-show="!isGuest && activePane === 'warehouse'" class="sf-toolbar">
       <button aria-label="新增／異動" class="btn btn-sm btn-success" @click="stockWizardRef?.openNew()">
         <i class="bi bi-plus-slash-minus me-1"></i><span class="sf-btn-text">新增／異動</span>
       </button>
@@ -282,7 +440,7 @@
       <button class="btn btn-sm btn-primary" @click="refreshWarehouse" aria-label="重新整理"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
     <!-- 倉庫 › 共用篩選：只有這一張，同時篩「物品庫存」跟展開的「庫存紀錄」 -->
-    <InventoryFilterBar v-show="activeTab === 'warehouse'"
+    <InventoryFilterBar v-show="!isGuest && activePane === 'warehouse'"
       :rows="warehouseFilterRows" :known-locations="locations" :counts="warehouseFilterCounts" :loc-label="locLabel"
       :type-options="itemTypeOptions" v-model:q="stockFilter.q" v-model:types="stockFilter.types"
       v-model:dismantle="stockFilter.dismantle" :dismantle-options="dismantleOptions"
@@ -304,7 +462,30 @@
         :active="activeTab === 'items' && activeSub === 'data'" />
     </div>
 
-    <!-- ══════════ 物品 › 商品購買地點：勾選多種商品，列出全部都買得到的交易終端（UEX 價格表）══════════ -->
+    <!-- ══════════ 資料庫 › 藍圖：遊戲藍圖資料庫（不登入也能看；登入後每列多「登記」）。
+         搜尋卡跟「我的 › 藍圖」共用（Teleport 移進來）══════════ -->
+    <div v-show="itemsBpActive" id="panel-items-bpdata">
+      <div id="items-bp-filters"></div>
+      <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
+        :active="itemsBpActive" :shared-filters="itemsBpFilters"
+        :registered-uuids="isGuest ? null : myBlueprintUuids" @registered="onBulkRegistered" />
+    </div>
+
+    <!-- ══════════ 資料庫 › 艦船：載具主檔＋價格（不登入也能看；登入後可以登記到我的艦隊）。
+         搜尋卡跟「我的 › 艦隊」共用（Teleport 移進來）══════════ -->
+    <div v-show="itemsVehActive" id="panel-items-vehicles">
+      <div id="items-veh-filters"></div>
+      <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters" :can-register="!isGuest"
+        :registered-uuids="fleetVehicleUuids" :active="itemsVehActive" @registered="loadFleet" />
+    </div>
+
+    <!-- ══════════ 資料庫 › 礦物：每種礦物可以在哪裡挖到（scunpacked 的礦床與地點資料，見 components/MineralDatabase.vue）══════════ -->
+    <div v-show="activeTab === 'items' && activeSub === 'minerals'" id="panel-items-minerals">
+      <MineralDatabase :fetcher="playerAuth.playerFetch" :active="activeTab === 'items' && activeSub === 'minerals'"
+        card-class="card scifi-card" />
+    </div>
+
+    <!-- ══════════ 資料庫 › 商品購買地點：勾選多種商品，列出全部都買得到的交易終端（UEX 價格表）══════════ -->
     <div v-show="activeTab === 'items' && activeSub === 'commodities'" id="panel-items-commodities">
       <CommodityBuyFinder :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
         :active="activeTab === 'items' && activeSub === 'commodities'" />
@@ -312,7 +493,7 @@
 
     <!-- ══════════ 查詢持有資訊：一個區塊——一張搜尋卡（共同條件＋種類，選了單一種類才出現它專用的條件），
          一張整合的列表（物品／藍圖／船艦混在一起，不屬於那一類的欄位留空）══════════ -->
-    <div v-show="activeTab === 'search'" class="sf-split">
+    <div v-show="!isGuest && activeTab === 'search'" class="sf-split">
       <div class="sf-toolbar">
         <!-- 查詢條件都記在網址裡，複製下來貼給隊友就是同一個查詢 -->
         <button type="button" class="btn btn-sm btn-primary" aria-label="複製查詢連結" @click="copySearchLink">
@@ -519,7 +700,7 @@
 
     <!-- ══════════ 倉庫 › 庫存紀錄（原本的獨立分頁，改成物品庫存上方按「庫存紀錄」展開；
          舊網址 ?tab=warehouse&sub=history 直接展開）══════════ -->
-    <div v-show="activeTab === 'warehouse' && historyOpen" class="sf-drawer">
+    <div v-show="!isGuest && activePane === 'warehouse' && historyOpen" class="sf-drawer">
       <h3 class="sf-drawer__title"><i class="bi bi-clock-history me-1"></i>庫存紀錄</h3>
       <SfState :loading="loadingHistory" :empty="!filteredHistory.length"
         :empty-text="history.length ? '沒有符合篩選條件的紀錄。' : '目前沒有任何紀錄。'">
@@ -562,7 +743,7 @@
 
     <!-- ══════════ 倉庫 › 物品庫存 ══════════ -->
     <!-- 有展開工具時隱藏列表（工具一次只開一個，見 exclusiveDrawers） -->
-    <div v-show="activeTab === 'warehouse' && !warehouseDrawerOpen" role="tabpanel"
+    <div v-show="!isGuest && activePane === 'warehouse' && !warehouseDrawerOpen" role="tabpanel"
          id="panel-warehouse" :aria-labelledby="'tab-warehouse'">
       <SfState :loading="loadingInventory" :empty="!filteredInventory.length"
         :empty-text="myInventory.length ? '沒有符合篩選條件的物品。' : '目前沒有登記任何物品。'">
@@ -604,7 +785,7 @@
     </div>
 
     <!-- ══════════ 藍圖 › 工具列（同倉庫：開關＋重新整理放最上面）══════════ -->
-    <div v-show="activeTab === 'blueprints'" class="sf-toolbar">
+    <div v-show="!isGuest && activePane === 'blueprints'" class="sf-toolbar">
       <button aria-label="登記藍圖資料" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="bpDataOpen = true">
         <i class="bi bi-journal-text me-1"></i><span class="sf-btn-text">登記藍圖資料</span>
       </button>
@@ -614,8 +795,8 @@
          展開登記藍圖資料時多一個「只顯示未登記」（預設勾選）。
          預設可用的藍圖視同已登記，兩邊都不列（不需要勾選）。
          名稱打字就即時篩（子字串），同時跳出主檔的候選，點一個就代入名稱 -->
-    <Teleport defer to="#bp-modal-filters" :disabled="!bpDataOpen">
-    <div v-show="activeTab === 'blueprints'" class="card scifi-card sf-search mb-3">
+    <Teleport defer :to="bpCardTarget || '#bp-modal-filters'" :disabled="!bpCardTarget">
+    <div v-show="(!isGuest && activePane === 'blueprints') || itemsBpActive" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
           <div class="col col-md-7">
@@ -653,7 +834,7 @@
             <input id="bp-filter-unregistered" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="bp-filter-unregistered">只顯示未登記</label>
           </div>
-          <span v-if="bpFilterActive" class="small text-muted">我的藍圖 符合 {{ filteredBlueprints.length }} / {{ visibleBlueprints.length }} 張</span>
+          <span v-if="bpFilterActive && activePane === 'blueprints'" class="small text-muted">我的藍圖 符合 {{ filteredBlueprints.length }} / {{ visibleBlueprints.length }} 張</span>
           <button v-if="bpFilterActive && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearBpFilter">清除篩選</button>
         </div>
       </div>
@@ -661,13 +842,12 @@
     </Teleport>
 
     <!-- ══════════ 藍圖（自己的名冊，可增刪） ══════════ -->
-    <div v-show="activeTab === 'blueprints'" role="tabpanel"
+    <div v-show="!isGuest && activePane === 'blueprints'" role="tabpanel"
          id="panel-blueprints" :aria-labelledby="'tab-blueprints'">
       <Transition name="alert-slide">
         <div v-if="blueprintError" class="alert alert-danger py-2">{{ blueprintError }}</div>
       </Transition>
       <Transition name="alert-slide">
-        <div v-if="blueprintSuccess" class="alert alert-success py-2">{{ blueprintSuccess }}</div>
       </Transition>
 
       <!-- 列表外觀：卡片＋一般字級的 hover 表格；手機上每列變卡片（sf-stack） -->
@@ -763,14 +943,14 @@
     </div>
 
     <!-- ══════════ 任務（唯讀任務資料庫；藍圖欄標出自己已登記幾張，見 components/MissionBrowser.vue）══════════ -->
-    <div v-show="activeTab === 'missions'" class="sf-toolbar">
+    <div v-show="activePane === 'missions'" class="sf-toolbar">
       <button aria-label="勢力聲望" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="factionRepOpen = true">
         <i class="bi bi-award me-1"></i><span class="sf-btn-text">勢力聲望</span>
       </button>
       <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="missionBrowserRef?.reload()"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
     <!-- 任務 › 共用搜尋：名稱即時篩；類型／星系／勢力／合法性手機收進「篩選」面板 -->
-    <div v-show="activeTab === 'missions'" class="card scifi-card sf-search mb-3">
+    <div v-show="activePane === 'missions'" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-4">
@@ -824,14 +1004,14 @@
         </div>
       </div>
     </div>
-    <div v-show="activeTab === 'missions'" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
-      <MissionBrowser ref="missionBrowserRef" :fetcher="playerAuth.playerFetch" :active="activeTab === 'missions'"
-        :filters="msFilter" :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
+    <div v-show="activePane === 'missions'" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
+      <MissionBrowser ref="missionBrowserRef" :fetcher="playerAuth.playerFetch" :active="activePane === 'missions'"
+        :filters="msFilter" :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest"
+        @registered="onBulkRegistered" />
     </div>
 
-    <!-- ══════════ 個人資料 ══════════ -->
     <!-- ══════════ 艦隊（我的艦隊＋登記船艦資料／JSON 匯入） ══════════ -->
-    <div v-show="activeTab === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'" class="sf-split">
+    <div v-show="!isGuest && activePane === 'fleet'" role="tabpanel" id="panel-fleet" :aria-labelledby="'tab-fleet'" class="sf-split">
       <Transition name="alert-slide">
         <div v-if="fleetError" class="alert alert-danger py-2">{{ fleetError }}</div>
       </Transition>
@@ -848,7 +1028,7 @@
       </div>
 
       <!-- 共用搜尋：同一組條件同時篩「我的艦隊」跟「登記船艦資料」（開視窗時用 Teleport 移進視窗） -->
-      <Teleport defer to="#fleet-modal-filters" :disabled="!fleetDataOpen">
+      <Teleport defer :to="fleetCardTarget || '#fleet-modal-filters'" :disabled="!fleetCardTarget">
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
           <div class="row g-2 align-items-end">
@@ -859,7 +1039,8 @@
             </div>
             <!-- 手機：名稱以外的條件收進「篩選」底部面板 -->
             <SfFilterSheet :count="fleetSheetCount" @clear="clearMyFleetFilters">
-              <div class="col-12 col-md-6">
+              <!-- 取得方式只篩我的艦隊；在「資料庫 › 艦船」不顯示 -->
+              <div v-if="!itemsVehActive" class="col-12 col-md-6">
                 <label class="form-label small mb-1" for="myfleet-acquire">取得方式</label>
                 <MultiSelectFilter id="myfleet-acquire" v-model="myFleetAcquire" :options="VEHICLE_ACQUIRE_OPTIONS"
                   label="取得方式" placeholder="全部" block />
@@ -913,7 +1094,7 @@
             </SfFilterSheet>
           </div>
           <div v-if="fleet.length || myFleetHasFilter" class="d-flex flex-wrap align-items-center gap-2 mt-2">
-            <span v-if="fleet.length" class="small text-muted">
+            <span v-if="fleet.length && !itemsVehActive" class="small text-muted">
               <template v-if="myFleetHasFilter">符合 {{ filteredFleet.length }} 款、{{ filteredFleetShipCount }} 艘、{{ scuLabel(fleetScuOf(filteredFleet)) }} · </template>
               共 {{ fleet.length }} 款、{{ fleetShipCount }} 艘、載貨 {{ scuLabel(fleetScuOf(fleet)) }}
             </span>
@@ -1029,12 +1210,6 @@
     </div>
 
     <!-- ══════════ 礦物參考查詢 ══════════ -->
-    <div v-show="activeTab === 'mining'" role="tabpanel" id="panel-mining"
-      :aria-labelledby="'tab-mining'">
-      <!-- 元件跟後台「礦物參考查詢」頁共用，差別只在帶進去的身分 -->
-      <MiningLookup :fetcher="playerAuth.playerFetch" :active="activeTab === 'mining'"
-        card-class="card scifi-card" />
-    </div>
 
     <!-- ══════════ 航線規劃／合約分配（見 components/RoutePlanner.vue、ContractPlanner.vue、src/models/nav.py、haul.py）══════════ -->
     <div v-show="activeTab === 'route' && activeSub === 'plan'" role="tabpanel" id="panel-route-plan"
@@ -1048,25 +1223,45 @@
         :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
     </div>
 
-    <!-- ══════════ 貨艙網格（見 components/CargoLoader.vue）══════════ -->
-    <div v-show="activeTab === 'cargo'" role="tabpanel" id="panel-cargo" :aria-labelledby="'tab-cargo'">
-      <CargoLoader :fetcher="playerAuth.playerFetch" :active="activeTab === 'cargo'"
+    <!-- ══════════ 工具箱（原本各自是主分頁，見 utils/playerTabs.js 的 toolbox）══════════ -->
+    <!-- 工具箱 › 礦物回波（元件跟後台「礦物參考查詢」頁共用，差別只在帶進去的身分） -->
+    <div v-show="activePane === 'mining'" role="tabpanel" id="panel-toolbox-mining" aria-labelledby="subtab-toolbox-mining">
+      <MiningLookup :fetcher="playerAuth.playerFetch" :active="activePane === 'mining'"
+        card-class="card scifi-card" />
+    </div>
+
+    <!-- 工具箱 › 配裝模擬（見 components/LoadoutSimulator.vue、utils/loadoutCalc.js、src/models/loadout.py） -->
+    <div v-show="activePane === 'loadout'" role="tabpanel" id="panel-toolbox-loadout" aria-labelledby="subtab-toolbox-loadout">
+      <LoadoutSimulator :fetcher="playerAuth.playerFetch" :active="activePane === 'loadout'"
         :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
     </div>
 
-    <!-- ══════════ LOG 解析（Game.log 在瀏覽器裡解析，不上傳；見 components/GameLogReader.vue）══════════ -->
-    <div v-show="activeTab === 'gamelog'" role="tabpanel" id="panel-gamelog" :aria-labelledby="'tab-gamelog'">
-      <GameLogReader card-class="card scifi-card" :player-name="playerAuth.starCitizenId" />
+    <!-- 工具箱 › 戰術小隊：分配表（小隊 → 艦船 → 人員，可分享唯讀連結；見 components/SquadBoards.vue、src/models/squad.py）。會員功能 -->
+    <div v-if="!isGuest && squadsMounted" v-show="activePane === 'squads'" role="tabpanel" id="panel-toolbox-squads"
+      aria-labelledby="subtab-toolbox-squads">
+      <SquadBoards :fetcher="playerAuth.playerFetch" :active="activePane === 'squads'"
+        :fleet-uuids="fleetVehicleUuids" :me="playerAuth.starCitizenId" card-class="card scifi-card" />
     </div>
 
-    <!-- ══════════ 酬勞分配（總金額依人數／成數分，扣稅前後；純前端，見 components/PayoutCalculator.vue）══════════ -->
-    <div v-show="activeTab === 'payout'" role="tabpanel" id="panel-payout" :aria-labelledby="'tab-payout'">
+    <!-- 工具箱 › 貨艙網格（見 components/CargoLoader.vue） -->
+    <div v-show="activePane === 'cargo'" role="tabpanel" id="panel-toolbox-cargo" aria-labelledby="subtab-toolbox-cargo">
+      <CargoLoader :fetcher="playerAuth.playerFetch" :active="activePane === 'cargo'"
+        :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
+    </div>
+
+    <!-- 工具箱 › 酬勞分配（總金額依人數／成數分，扣稅前後；純前端，見 components/PayoutCalculator.vue） -->
+    <div v-show="activePane === 'payout'" role="tabpanel" id="panel-toolbox-payout" aria-labelledby="subtab-toolbox-payout">
       <PayoutCalculator card-class="card scifi-card" />
     </div>
 
-    <!-- ══════════ 中文轉碼（遊戲聊天用的 中文 ↔ @代碼，見 components/ChatCodeTranslator.vue）══════════ -->
-    <div v-show="activeTab === 'chatcode'" role="tabpanel" id="panel-chatcode" :aria-labelledby="'tab-chatcode'">
-      <ChatCodeTranslator :fetcher="playerAuth.playerFetch" :active="activeTab === 'chatcode'"
+    <!-- 工具箱 › LOG 解析（Game.log 在瀏覽器裡解析，不上傳；見 components/GameLogReader.vue） -->
+    <div v-show="activePane === 'gamelog'" role="tabpanel" id="panel-toolbox-gamelog" aria-labelledby="subtab-toolbox-gamelog">
+      <GameLogReader card-class="card scifi-card" :player-name="playerAuth.starCitizenId" />
+    </div>
+
+    <!-- 工具箱 › 中文轉碼（遊戲聊天用的 中文 ↔ @代碼，見 components/ChatCodeTranslator.vue） -->
+    <div v-show="activePane === 'chatcode'" role="tabpanel" id="panel-toolbox-chatcode" aria-labelledby="subtab-toolbox-chatcode">
+      <ChatCodeTranslator :fetcher="playerAuth.playerFetch" :active="activePane === 'chatcode'"
         card-class="card scifi-card" />
     </div>
 
@@ -1140,157 +1335,20 @@
       </div>
       </SfState>
     </div>
-
-    <div v-show="activeTab === 'profile'" role="tabpanel" id="panel-profile" :aria-labelledby="'tab-profile'">
-      <Transition name="alert-slide">
-        <div v-if="profileError" class="alert alert-danger py-2">{{ profileError }}</div>
-      </Transition>
-      <Transition name="alert-slide">
-        <div v-if="profileSuccess" class="alert alert-success py-2">已更新</div>
-      </Transition>
-
-      <div v-if="player" class="card scifi-card">
-        <div class="card-body">
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="profile-scid">遊戲ID（Star Citizen ID）</label>
-            <input id="profile-scid" :value="player.star_citizen_id" type="text" class="form-control" disabled>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="profile-nickname">暱稱</label>
-            <input id="profile-nickname" v-model="profileForm.nickname" type="text" class="form-control">
-          </div>
-          <!-- Discord 兩個欄位放在同一張卡裡，公開勾選就在下面 ——
-               勾選管的是這兩個欄位，分開放會看不出關聯。 -->
-          <div class="card scifi-card mb-3">
-            <div class="card-body py-3">
-              <div class="row g-2">
-                <div class="col-12 col-md-6">
-                  <label class="form-label small fw-semibold mb-1" for="profile-discord-name">Discord 名稱</label>
-                  <input id="profile-discord-name" v-model="profileForm.discord_name" type="text" class="form-control form-control-sm">
-                </div>
-                <div class="col-12 col-md-6">
-                  <label class="form-label small fw-semibold mb-1" for="profile-discord-id">Discord ID</label>
-                  <input id="profile-discord-id" v-model="profileForm.discord_id" type="text" class="form-control form-control-sm">
-                </div>
-              </div>
-
-              <div class="form-check mt-3">
-                <input class="form-check-input" type="checkbox" id="discord-public"
-                  v-model="profileForm.discord_public">
-                <label class="form-check-label small" for="discord-public">
-                  公開給其他玩家
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="profile-notes">備註</label>
-            <textarea id="profile-notes" v-model="profileForm.notes" class="form-control" rows="2"></textarea>
-          </div>
-          <button class="btn btn-primary" :disabled="savingProfile" @click="saveProfile">
-            <span v-if="savingProfile" class="spinner-border spinner-border-sm me-1"></span>
-            儲存
-          </button>
-        </div>
-      </div>
-
-      <!-- 顯示的分頁：勾掉的分頁不出現在分頁列（手機底部列／更多），存在帳號上，換裝置也一樣 -->
-      <div v-if="player" class="card scifi-card mt-3">
-        <div class="card-body">
-          <h3 class="sf-drawer__title"><i class="bi bi-ui-checks-grid me-1"></i>顯示的分頁</h3>
-          <div class="tab-prefs">
-            <div v-for="tab in orderedTabs" :key="tab.key" class="form-check mb-0">
-              <input :id="`tab-show-${tab.key}`" class="form-check-input" type="checkbox"
-                :checked="isTabShown(tab.key)"
-                :disabled="tab.key === 'profile' || savingTabs" @change="toggleTab(tab.key, $event.target.checked)">
-              <label class="form-check-label" :for="`tab-show-${tab.key}`">
-                <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
-              </label>
-            </div>
-          </div>
-          <div v-if="tabsError" class="sf-bad mt-2">{{ tabsError }}</div>
-        </div>
-      </div>
-
-      <!-- 更改密碼：只在「個人資料」分頁才放進 DOM，並包成自己的 <form>（附隱藏的帳號欄位）。
-           否則瀏覽器會把自動填入的「目前密碼」跟其他分頁的搜尋欄位湊成一組帳密，
-           打完搜尋字、切分頁（網址改變）時就跳出「要儲存密碼嗎」。 -->
-      <div v-if="player && activeTab === 'profile'" class="card scifi-card mt-3">
-        <form class="card-body" autocomplete="on" @submit.prevent="changePassword">
-          <input type="text" name="username" autocomplete="username" :value="player.star_citizen_id"
-            readonly hidden aria-hidden="true" tabindex="-1">
-          <h3 class="sf-drawer__title"><i class="bi bi-key me-1"></i>更改密碼</h3>
-          <Transition name="alert-slide">
-            <div v-if="pwError" class="alert alert-danger py-2">{{ pwError }}</div>
-          </Transition>
-          <Transition name="alert-slide">
-            <div v-if="pwSuccess" class="alert alert-success py-2">密碼已更新</div>
-          </Transition>
-
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="pw-current">目前密碼</label>
-            <input id="pw-current" v-model="pwForm.current_password" type="password" class="form-control"
-              autocomplete="current-password">
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="pw-new">新密碼</label>
-            <input id="pw-new" v-model="pwForm.new_password" type="password" class="form-control" minlength="6"
-              placeholder="至少 6 個字元" autocomplete="new-password">
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="pw-confirm">確認新密碼</label>
-            <input id="pw-confirm" v-model="pwForm.confirm_password" type="password" class="form-control" minlength="6"
-              placeholder="再輸入一次新密碼" autocomplete="new-password">
-          </div>
-          <button type="submit" class="btn btn-primary" :disabled="changingPassword">
-            <span v-if="changingPassword" class="spinner-border spinner-border-sm me-1"></span>
-            更改密碼
-          </button>
-        </form>
-      </div>
-
-      <!-- Discord 綁定碼：Discord 帳號沒辦法自己證明它屬於哪個遊戲帳號，
-           所以「證明」這一步只能放在需要密碼登入的這一頁。 -->
-      <div v-if="player" class="card scifi-card mt-3">
-        <div class="card-body">
-          <h3 class="sf-drawer__title"><i class="bi bi-discord me-1"></i>Discord 綁定</h3>
-
-          <Transition name="alert-slide">
-            <div v-if="bindError" class="alert alert-danger py-2">{{ bindError }}</div>
-          </Transition>
-
-          <div v-if="bindCode" class="mb-3">
-            <div class="p-3 rounded" style="background: var(--sf-panel-2, rgba(255,255,255,.06))">
-              <code class="d-block" style="user-select: all; word-break: break-all">
-                /bind handle:{{ player.star_citizen_id }} code:{{ bindCode }}
-              </code>
-            </div>
-            <div class="small mt-2" style="color: var(--sf-text-muted)">
-              有效期限至 {{ fmtTime(bindCodeExpiresAt) }}
-            </div>
-          </div>
-
-          <button class="btn btn-primary" :disabled="issuingCode" @click="issueDiscordCode">
-            <span v-if="issuingCode" class="spinner-border spinner-border-sm me-1"></span>
-            {{ bindCode ? '重新產生綁定碼' : '產生 Discord 綁定碼' }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- 倉庫 › 新增／異動（跳出視窗：地點 → 物品 → 數量） -->
   <StockWizard ref="stockWizardRef" :fetcher="playerAuth.playerFetch" :locations="locations" :loc-label="locLabel"
     :loc-zh="locZh" :home-location="homeLocation" :history="history" :type-options="itemTypeOptions"
     :dismantle-options="dismantleOptions" @done="onStockDone" />
-  <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" :registered-uuids="myBlueprintUuids" />
+  <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" :registered-uuids="isGuest ? null : myBlueprintUuids" />
 
   <!-- ══════════ 手機底部導覽列（上方分頁列在手機上藏起來）：常用的四個＋「更多」 ══════════ -->
   <nav v-if="isPhone" class="sf-bottom-nav" aria-label="主分頁">
     <button v-for="tab in bottomTabs" :key="tab.key" type="button" class="sf-bottom-nav__item"
       :class="{ active: activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : null"
       @click="setTab(tab.key); moreOpen = false">
-      <i :class="tab.icon"></i>{{ tab.short || tab.label }}
+      <i :class="tab.icon"></i>{{ tab.short || tab.label }}<i v-if="isGuest && tab.member" class="bi bi-lock-fill sf-tab-lock" aria-label="需要登入"></i>
     </button>
     <button type="button" class="sf-bottom-nav__item" :class="{ active: moreOpen || moreTabActive }"
       :aria-expanded="moreOpen ? 'true' : 'false'" @click="moreOpen = !moreOpen">
@@ -1304,7 +1362,7 @@
       <div class="sf-sheet__grip"></div>
       <button v-for="tab in moreTabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }"
         @click="setTab(tab.key); moreOpen = false">
-        <i :class="tab.icon"></i>{{ tab.label }}<i class="bi bi-chevron-right"></i>
+        <i :class="tab.icon"></i>{{ tab.label }}<i v-if="isGuest && tab.member" class="bi bi-lock-fill ms-1 sf-tab-lock" aria-label="需要登入"></i><i class="bi bi-chevron-right"></i>
       </button>
     </div>
   </template>
@@ -1312,10 +1370,12 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { toast } from '@/utils/toast'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
-import { PLAYER_LOGIN_PATH } from '@/router'
+import { PLAYER_HOME, PLAYER_LOGIN_PATH, PLAYER_REGISTER_PATH } from '@/router'
+import MineralDatabase from '@/components/MineralDatabase.vue'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
@@ -1342,9 +1402,12 @@ import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
 import RoutePlanner from '@/components/RoutePlanner.vue'
 import ContractPlanner from '@/components/ContractPlanner.vue'
+import LoadoutSimulator from '@/components/LoadoutSimulator.vue'
 import CargoLoader from '@/components/CargoLoader.vue'
-import { PLAYER_TABS, orderTabs } from '@/utils/playerTabs'
+import { LEGACY_TABS, PLAYER_TABS, normalizeHiddenTabs, normalizeTabAccess, normalizeTabKeys, orderSubTabs, orderTabs, subKey } from '@/utils/playerTabs'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
+// 戰術小隊：多數人不會打開，拆成另一個檔案，用到才下載
+const SquadBoards = defineAsyncComponent(() => import('@/components/SquadBoards.vue'))
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MissionBrowser from '@/components/MissionBrowser.vue'
 import FactionReputation from '@/components/FactionReputation.vue'
@@ -1362,6 +1425,8 @@ import { loadKnownLocations, loadStorageLocations, loadTranslations, translate }
 
 const router     = useRouter()
 const playerAuth = usePlayerAuthStore()
+// 沒登入（訪客）：只能用遊戲資料與工具分頁，會員功能分頁（utils/playerTabs.js 的 member）顯示登入提示
+const isGuest = computed(() => !playerAuth.isLoggedIn)
 
 // 點藍圖名稱看解鎖任務（「我的藍圖」「查詢 › 持有藍圖」共用一個彈窗）
 const bpMissionsRef = ref(null)
@@ -1419,18 +1484,22 @@ const TAB_ACCESS_CACHE = 'sc_player_tab_access'
 const tabAccess = ref((() => {
   try {
     const v = JSON.parse(localStorage.getItem(TAB_ACCESS_CACHE) || '{}')
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
+    return v && typeof v === 'object' && !Array.isArray(v) ? normalizeTabAccess(v) : {}
   } catch {
     return {}
   }
 })())
 // 不開放的分頁整個拿掉（分頁列、更多、個人資料的勾選都不出現）
-const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value).filter(t => tabAccess.value[t.key] !== 'closed'))
+// 下層分頁全部不開放的主分頁也拿掉
+const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value).filter(t => tabAccess.value[t.key] !== 'closed'
+  && !(t.subTabs?.length && !subTabsOf(t.key).length)))
 
 // 手機／平板（方案見專案文件「星際公民工具-玩家頁手機平板UI方案」）：
 // 手機上方分頁列換成底部導覽列，常用四個直接放，其餘收進「更多」
 const { isPhone } = useBreakpoint()
-const BOTTOM_TAB_KEYS = ['warehouse', 'blueprints', 'fleet', 'search']
+const BOTTOM_TAB_KEYS_MEMBER = ['my', 'items', 'toolbox', 'route']
+const BOTTOM_TAB_KEYS_GUEST = ['items', 'toolbox', 'route', 'tools']
+const BOTTOM_TAB_KEYS = computed(() => (isGuest.value ? BOTTOM_TAB_KEYS_GUEST : BOTTOM_TAB_KEYS_MEMBER))
 const BOTTOM_COUNT = 4
 
 // ── 顯示的分頁（個人資料可勾選；存在帳號上 hidden_tabs／shown_tabs，這台瀏覽器另存一份避免載入時閃一下）──
@@ -1439,7 +1508,7 @@ const tabsCacheKey = () => `sc_player_hidden_tabs:${playerAuth.starCitizenId || 
 function readTabsCache() {
   try {
     const v = JSON.parse(localStorage.getItem(tabsCacheKey()) || '[]')
-    return Array.isArray(v) ? v.filter(k => typeof k === 'string') : []
+    return Array.isArray(v) ? normalizeHiddenTabs(v) : []
   } catch {
     return []
   }
@@ -1449,39 +1518,38 @@ const shownCacheKey = () => `sc_player_shown_tabs:${playerAuth.starCitizenId || 
 const shownTabs = ref((() => {
   try {
     const v = JSON.parse(localStorage.getItem(shownCacheKey()) || '[]')
-    return Array.isArray(v) ? v.filter(k => typeof k === 'string') : []
+    return Array.isArray(v) ? normalizeTabKeys(v.filter(k => typeof k === 'string')) : []
   } catch {
     return []
   }
 })())
 function applyShownTabs(keys) {
-  shownTabs.value = (keys || []).filter(k => typeof k === 'string')
+  // 舊分頁（倉庫、藍圖、艦隊、任務）換成「我的」「資料庫」
+  shownTabs.value = normalizeTabKeys((keys || []).filter(k => typeof k === 'string'))
   try { localStorage.setItem(shownCacheKey(), JSON.stringify(shownTabs.value)) } catch { /* 存不了就算了 */ }
 }
-/** 這個分頁現在要不要顯示（個人資料一定顯示） */
+/** 這個分頁現在要不要顯示 */
 function isTabShown(key) {
-  if (key === 'profile') return true
   if (tabAccess.value[key] === 'hidden') return shownTabs.value.includes(key)
   return !hiddenTabs.value.includes(key)
 }
 const savingTabs = ref(false)
 const tabsError = ref('')
 function applyHiddenTabs(keys) {
-  hiddenTabs.value = (keys || []).filter(k => k !== 'profile')
+  hiddenTabs.value = normalizeHiddenTabs(keys)
   try { localStorage.setItem(tabsCacheKey(), JSON.stringify(hiddenTabs.value)) } catch { /* 存不了就算了 */ }
 }
 // 被隱藏的分頁如果正好是目前這頁（例如從舊連結進來），還是照常顯示
 const visibleTabs = computed(() => orderedTabs.value.filter(t => t.key === activeTab.value || isTabShown(t.key)))
 const bottomTabs = computed(() => {
-  const shown = visibleTabs.value.filter(t => t.key !== 'profile')
-  const first = shown.filter(t => BOTTOM_TAB_KEYS.includes(t.key))   // 照後台排的順序
-  const rest = shown.filter(t => !BOTTOM_TAB_KEYS.includes(t.key))
+  const shown = visibleTabs.value
+  const first = shown.filter(t => BOTTOM_TAB_KEYS.value.includes(t.key))   // 照後台排的順序
+  const rest = shown.filter(t => !BOTTOM_TAB_KEYS.value.includes(t.key))
   return [...first, ...rest].slice(0, BOTTOM_COUNT)
 })
 const moreTabs = computed(() => visibleTabs.value.filter(t => !bottomTabs.value.includes(t)))
 
 async function toggleTab(key, show) {
-  if (key === 'profile') return
   const before = { hidden: hiddenTabs.value, shown: shownTabs.value }
   let hidden = before.hidden
   let shown = before.shown
@@ -1521,8 +1589,10 @@ const MY_FLEET_SORT_OPTIONS = [{ field: 'name', label: '船艦' }, { field: 'typ
   { field: 'manufacturer', label: '廠商' }, { field: 'role', label: '角色' }, { field: 'cargo', label: '載貨' }, { field: 'usd', label: '美金' }, { field: 'auec', label: '遊戲幣' }, { field: 'rent', label: '租用' }, { field: 'ratio', label: 'aUEC／美金' }, { field: 'quantity', label: '數量' }]
 
 /** 某個主分頁的下層分頁清單（沒有就回空陣列）。 */
+/** 主分頁的下層分頁：照後台排的順序，拿掉後台設成「不開放」的（代號「主分頁.下層分頁」，見 utils/playerTabs.js） */
 function subTabsOf(key) {
-  return tabs.find(t => t.key === key)?.subTabs || []
+  return orderSubTabs(tabs.find(t => t.key === key), tabOrder.value)
+    .filter(s => tabAccess.value[subKey(key, s.key)] !== 'closed')
 }
 // 分頁狀態同步到 URL 的 ?tab= —— 這樣重新整理、手機切回瀏覽器、
 // 分享連結給隊友都會停在同一個分頁，瀏覽器的返回鍵也會退回上一個分頁
@@ -1530,12 +1600,55 @@ function subTabsOf(key) {
 const route = useRoute()
 const validTabs = tabs.map(t => t.key)
 // 舊網址：商品購買地點（?tab=search|warehouse&sub=commodities、?tab=commodities）、
-// 物品資料（?tab=warehouse&sub=items、?tab=itemdata）改到「物品」分頁的兩個下層分頁
-const legacySub = (['search', 'warehouse'].includes(route.query.tab) && route.query.sub === 'commodities')
+// 物品資料（?tab=warehouse&sub=items、?tab=itemdata）改到「資料庫」分頁的下層分頁
+const legacyItemsSub = (['search', 'warehouse'].includes(route.query.tab) && route.query.sub === 'commodities')
   || route.query.tab === 'commodities' ? 'commodities'
   : (route.query.tab === 'warehouse' && route.query.sub === 'items') || route.query.tab === 'itemdata' ? 'data' : ''
-const legacyCommodities = !!legacySub
-const activeTab = ref(legacySub ? 'items' : (validTabs.includes(route.query.tab) ? route.query.tab : 'warehouse'))
+// 舊的主分頁：倉庫、藍圖、艦隊 → 我的；任務 → 資料庫；礦物、配裝模擬等 → 工具箱（utils/playerTabs.js 的 LEGACY_TABS）
+const legacyTab = legacyItemsSub ? null : LEGACY_TABS[route.query.tab] || null
+// 「個人資料」原本是分頁，現在是點名字打開的視窗：舊網址 ?tab=profile 開場就打開視窗（分頁回到預設）
+const legacyProfile = route.query.tab === 'profile'
+const profileOpen = ref(legacyProfile && !isGuest.value)
+// 沒指定分頁時：會員從「我的」開始，訪客從第一個不用登入的分頁開始（照後台排的順序）
+const firstTab = () => (isGuest.value
+  ? (orderedTabs.value.find(t => !t.member && isTabShown(t.key)) || orderedTabs.value.find(t => !t.member))?.key || 'items'
+  : 'my')
+const initTab = legacyItemsSub ? 'items' : legacyTab ? legacyTab.tab
+  : (validTabs.includes(route.query.tab) ? route.query.tab : firstTab())
+const initSub = legacyItemsSub || (legacyTab ? legacyTab.sub
+  : (validSub(initTab, route.query.sub) ? route.query.sub : defaultSub(initTab)))
+// 舊網址要改寫成新的（onMounted 呼叫 syncUrl）
+const legacyRewrite = !!(legacyItemsSub || legacyTab || legacyProfile)
+const activeTab = ref(initTab)
+const activeSub = ref(initSub)
+// 「我的」「資料庫」「工具箱」底下的內容用下層分頁判斷：我的 › 倉庫＝'warehouse'、資料庫 › 任務＝'missions'、
+// 工具箱 › 配裝模擬＝'loadout'；其他分頁就是分頁本身
+const paneOf = (tab, sub) => (tab === 'my' || tab === 'items' || tab === 'toolbox' ? sub : tab)
+const activePane = computed(() => paneOf(activeTab.value, activeSub.value))
+const initPane = paneOf(initTab, initSub)
+const activeTabMeta = computed(() => tabs.find(t => t.key === activeTab.value) || null)
+// 沒登入時要顯示登入提示的分頁（整個主分頁是會員功能，或下層分頁是，例如工具箱 › 戰術小隊）
+const guestLock = computed(() => {
+  if (!isGuest.value) return null
+  if (activeTabMeta.value?.member) return activeTabMeta.value
+  const sub = subTabsOf(activeTab.value).find(t => t.key === activeSub.value)
+  return sub?.member ? sub : null
+})
+// 戰術小隊第一次打開才建立元件（多數人不會用到，不必一開頁就載入）
+const squadsMounted = ref(false)
+watch(activePane, p => { if (p === 'squads') squadsMounted.value = true }, { immediate: true })
+// 資料庫 › 藍圖、艦船：搜尋卡跟「我的 › 藍圖／艦隊」共用（Teleport 移過來）
+const itemsBpActive = computed(() => activeTab.value === 'items' && activeSub.value === 'bpdata')
+const itemsVehActive = computed(() => activeTab.value === 'items' && activeSub.value === 'vehicles')
+// 沒登入點到會員功能分頁的說明
+const GUEST_LOCKED_TEXT = {
+  my: '登記自己的倉庫、藍圖、艦隊需要會員帳號；遊戲的物品、藍圖、艦船資料在「資料庫」不用登入就能看。',
+  search: '查詢公會成員持有的物品、藍圖、船艦，需要會員帳號。',
+  squads: '建立與編輯戰術小隊分配表需要會員帳號；隊長分享的連結不用登入就能看。',
+}
+// 登入／註冊：登入完回到目前這一頁
+const loginHref = computed(() => router.resolve({ path: PLAYER_LOGIN_PATH, query: { redirect: route.fullPath } }).href)
+const registerHref = computed(() => router.resolve(PLAYER_REGISTER_PATH).href)
 
 /** 某個主分頁的預設下層分頁（沒有下層就回 ''）。 */
 function defaultSub(tabKey) {
@@ -1546,27 +1659,23 @@ function validSub(tabKey, sub) {
   return subTabsOf(tabKey).some(t => t.key === sub)
 }
 
-// 倉庫 › 新增／異動：跳出視窗（components/StockWizard.vue）。舊網址 ?tab=warehouse&sub=add|adjust 一進來就打開
-const openStockOnMount = activeTab.value === 'warehouse' && ['add', 'adjust'].includes(route.query.sub)
+// 開場就展開的視窗：?open=history|add|adjust|data|bulk|reputation（舊網址寫在 sub，例如 ?tab=fleet&sub=data）
+const openOnMount = String(route.query.open || (legacyTab ? route.query.sub || '' : ''))
+// 倉庫 › 新增／異動：跳出視窗（components/StockWizard.vue）
+const openStockOnMount = initPane === 'warehouse' && ['add', 'adjust'].includes(openOnMount)
 const stockWizardRef = ref(null)
 function onStockDone() {
   loadMyInventory()
   loadLocations()
   loadHistory()
 }
-// 艦隊的「登記船艦資料」（?tab=fleet&sub=data 直接展開；原本的批量登記已併進來，舊網址 sub=bulk 也展開它）
-const fleetDataOpen = ref(activeTab.value === 'fleet' && ['data', 'bulk'].includes(route.query.sub))
-// 倉庫的庫存紀錄同理（舊網址 ?sub=history 直接展開）
-const historyOpen = ref(activeTab.value === 'warehouse' && route.query.sub === 'history')
-// 藍圖的「登記藍圖資料」（原本的藍圖資料＋批量登記合併；舊網址 sub=data|bulk 都展開它）
-const bpDataOpen = ref(activeTab.value === 'blueprints' && ['data', 'bulk'].includes(route.query.sub))
+// 艦隊的「登記船艦資料」（open=data；原本的批量登記已併進來，bulk 也展開它）
+const fleetDataOpen = ref(initPane === 'fleet' && ['data', 'bulk'].includes(openOnMount))
+// 倉庫的庫存紀錄（open=history）
+const historyOpen = ref(initPane === 'warehouse' && openOnMount === 'history')
+// 藍圖的「登記藍圖資料」（open=data|bulk）
+const bpDataOpen = ref(initPane === 'blueprints' && ['data', 'bulk'].includes(openOnMount))
 const fleetImportOpen = ref(false)
-
-const activeSub = ref(legacySub || (
-  validSub(activeTab.value, route.query.sub)
-    ? route.query.sub
-    : defaultSub(activeTab.value)
-))
 
 // 「查詢持有資訊」記在網址上的條件（對應見下面 SEARCH_URL_STR／SEARCH_URL_ARR）。
 // 寫成常數放在這裡：syncUrl 可能在 setup 早期就被呼叫，那時下面的對照表還沒宣告
@@ -1577,8 +1686,13 @@ function syncUrl() {
   const query = { ...route.query, tab: activeTab.value }
   if (activeSub.value) query.sub = activeSub.value
   else delete query.sub
+  delete query.open
   // 「查詢持有資訊」的條件只留在那個分頁的網址上
   if (activeTab.value !== 'search') SEARCH_URL_KEYS.forEach(k => delete query[k])
+  // 配裝模擬的船與配裝（components/LoadoutSimulator.vue）同理
+  if (activePane.value !== 'loadout') ['ship', 'lo'].forEach(k => delete query[k])
+  // 戰術小隊開啟中的表（components/SquadBoards.vue）同理
+  if (activePane.value !== 'squads') delete query.board
   // replace 而不是 push：切分頁不該在歷史紀錄裡堆一堆項目，
   // 但仍然讓「重新整理後留在同一分頁」成立。
   router.replace({ query })
@@ -1594,10 +1708,15 @@ function setTab(key) {
 }
 
 // 目前的分頁被後台設成「不開放」（例如舊連結、或剛載入到最新設定）：換到第一個看得到的分頁
+// 下層分頁被設成不開放（例如資料庫 › 任務）：換到同一個主分頁的第一個下層分頁
 watch([activeTab, tabAccess], () => {
-  if (tabAccess.value[activeTab.value] !== 'closed') return
-  const next = orderedTabs.value.find(t => isTabShown(t.key)) || orderedTabs.value[0]
-  if (next) setTab(next.key)
+  if (orderedTabs.value.some(t => t.key === activeTab.value)) {
+    const subs = subTabsOf(activeTab.value)
+    if (subs.length && !subs.some(t => t.key === activeSub.value)) setSub(subs[0].key)
+    return
+  }
+  const next = isGuest.value ? firstTab() : (orderedTabs.value.find(t => isTabShown(t.key)) || orderedTabs.value[0])?.key
+  if (next) setTab(next)
 }, { immediate: true })
 
 function setSub(key) {
@@ -1614,18 +1733,27 @@ function setSub(key) {
 // 都會直接以該分頁開場，此時 watch 不會觸發（值沒變過），資料就永遠不會載。
 // 不用 { immediate: true } 是因為 bpHolders 等宣告在下面，
 // 立即執行會踩到 const 的 TDZ。
-function loadForTab(tab) {
+function loadForTab(tab, sub) {
+  const pane = paneOf(tab, sub)
+  // 資料庫（不用登入）：搜尋卡的類型、尺寸、廠商等選項
+  if (pane === 'data' && !itemTypes.value.length) loadItemTypes()
+  if (pane === 'data' && !dismantleMaterials.value.length) loadDismantleMaterials()
+  if (pane === 'bpdata' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
+  if (pane === 'vehicles' && !vehicleFacetsLoaded) loadVehicleFacets()
+  if (tab === 'tools') loadToolLinks()
+  // 沒登入：「我的」、查詢持有資訊、戰術小隊是登入提示，沒有東西要載
+  if (isGuest.value) return
   // 「查詢」：點開哪一區才載入那一區的資料（見 loadSearchSections）
   if (tab === 'search') loadSearchSections()
-  if ((tab === 'fleet' || tab === 'route' || tab === 'cargo') && !fleetLoaded.value) loadFleet()
-  if (tab === 'tools') loadToolLinks()
-  // 倉庫、物品資料搜尋卡的「物品類型」選項（物品主檔的全部類型）
-  if ((tab === 'warehouse' || tab === 'items') && !itemTypes.value.length) loadItemTypes()
-  // 共用搜尋卡的類型選項（主檔全部類型）、艦隊共用搜尋卡的類型／尺寸／廠商／角色選項
-  if (tab === 'blueprints' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
-  // 倉庫、物品資料搜尋卡的「拆解材料」選項
-  if ((tab === 'warehouse' || tab === 'items') && !dismantleMaterials.value.length) loadDismantleMaterials()
-  if (tab === 'fleet' && !vehicleFacetsLoaded) loadVehicleFacets()
+  // 艦隊、航線、貨艙網格、配裝模擬、戰術小隊（機庫的船排前面）、資料庫 › 艦船（標已登記）
+  if ((pane === 'fleet' || pane === 'vehicles' || tab === 'route' || pane === 'cargo' || pane === 'loadout' || pane === 'squads')
+    && !fleetLoaded.value) loadFleet()
+  // 倉庫搜尋卡的「物品類型」「拆解材料」選項
+  if (pane === 'warehouse' && !itemTypes.value.length) loadItemTypes()
+  if (pane === 'warehouse' && !dismantleMaterials.value.length) loadDismantleMaterials()
+  // 藍圖、艦隊共用搜尋卡的選項
+  if (pane === 'blueprints' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
+  if (pane === 'fleet' && !vehicleFacetsLoaded) loadVehicleFacets()
 }
 
 watch([activeTab, activeSub], ([tab, sub]) => loadForTab(tab, sub))
@@ -1646,6 +1774,14 @@ function loadSearchSections() {
 
 // 使用者直接改網址（或按上一頁）時，畫面要跟著走
 watch(() => [route.query.tab, route.query.sub], ([tab, sub]) => {
+  // 舊網址（?tab=warehouse、?tab=missions…）換到「我的」「資料庫」
+  const legacy = LEGACY_TABS[tab]
+  if (legacy) {
+    activeTab.value = legacy.tab
+    activeSub.value = legacy.sub
+    syncUrl()
+    return
+  }
   if (validTabs.includes(tab) && tab !== activeTab.value) {
     activeTab.value = tab
     activeSub.value = validSub(tab, sub) ? sub : defaultSub(tab)
@@ -1663,13 +1799,12 @@ function formatTs(ts) {
 
 // ── 玩家名冊資料 ──────────────────────────────────────────────
 const player        = ref(null)
-const loadingPlayer  = ref(true)
+const loadingPlayer  = ref(!isGuest.value)
 const playerError    = ref('')
 const profileForm    = reactive({ nickname: '', discord_name: '', discord_id: '',
                                   discord_public: false, notes: '' })
 const savingProfile  = ref(false)
 const profileError   = ref('')
-const profileSuccess = ref(false)
 
 // ── 更改密碼：獨立的表單／狀態，跟上面的個人資料儲存分開送出 ──────
 // 這樣密碼打錯不會連帶蓋掉「暱稱／Discord 已經存好了」的成功訊息，
@@ -1677,7 +1812,6 @@ const profileSuccess = ref(false)
 const pwForm = reactive({ current_password: '', new_password: '', confirm_password: '' })
 const changingPassword = ref(false)
 const pwError   = ref('')
-const pwSuccess = ref(false)
 
 async function loadPlayer() {
   loadingPlayer.value = true
@@ -1690,7 +1824,7 @@ async function loadPlayer() {
     player.value = data.data
     applyHiddenTabs(data.data.hidden_tabs)
     applyShownTabs(data.data.shown_tabs)
-    tabAccess.value = data.data.tab_access && typeof data.data.tab_access === 'object' ? data.data.tab_access : {}
+    tabAccess.value = data.data.tab_access && typeof data.data.tab_access === 'object' ? normalizeTabAccess(data.data.tab_access) : {}
     try { localStorage.setItem(TAB_ACCESS_CACHE, JSON.stringify(tabAccess.value)) } catch { /* 存不了就算了 */ }
     tabOrder.value = Array.isArray(data.data.tab_order) ? data.data.tab_order : []
     try { localStorage.setItem(TAB_ORDER_CACHE, JSON.stringify(tabOrder.value)) } catch { /* 存不了就算了 */ }
@@ -1706,7 +1840,6 @@ async function loadPlayer() {
 
 async function saveProfile() {
   profileError.value = ''
-  profileSuccess.value = false
   savingProfile.value = true
   try {
     const res = await playerAuth.playerFetch('/player/me', {
@@ -1716,7 +1849,7 @@ async function saveProfile() {
     if (!res) { profileError.value = '網路錯誤，請稍後再試'; return }
     const data = await res.json().catch(() => null)
     if (res.ok && data?.success) {
-      profileSuccess.value = true
+      toast('個人資料已更新')
       loadPlayer()
     } else {
       profileError.value = data?.message || '更新失敗，請稍後再試'
@@ -1728,7 +1861,6 @@ async function saveProfile() {
 
 async function changePassword() {
   pwError.value = ''
-  pwSuccess.value = false
 
   const current = pwForm.current_password
   const next     = pwForm.new_password
@@ -1745,7 +1877,7 @@ async function changePassword() {
     if (!res) { pwError.value = '網路錯誤，請稍後再試'; return }
     const data = await res.json().catch(() => null)
     if (res.ok && data?.success) {
-      pwSuccess.value = true
+      toast('密碼已更新')
       pwForm.current_password = ''
       pwForm.new_password = ''
       pwForm.confirm_password = ''
@@ -1799,19 +1931,35 @@ async function issueDiscordCode() {
   }
 }
 
-// 登出（或登入過期、refresh 失敗被 playerFetch 清掉登入狀態）→ 直接整頁換到登入頁。
-// 不用 router.push：登入頁是延遲載入的 chunk，載入慢或部署後舊 chunk 已經不在時
-// 畫面會停在原地；整頁換掉也順便把上一位玩家留在記憶體裡的資料清乾淨。
-function goLogin() {
-  window.location.replace(router.resolve(PLAYER_LOGIN_PATH).href)
-}
+// 登出、登入過期都用整頁換頁而不是 router.push：登入頁是延遲載入的 chunk，載入慢或部署後
+// 舊 chunk 已經不在時畫面會停在原地；整頁換掉也順便把上一位玩家留在記憶體裡的資料清乾淨。
 
+// 登出：留在這頁當訪客
+let loggingOut = false
 function logout() {
+  loggingOut = true
   playerAuth.clearAuth()
-  goLogin()
+  const tab = activeTabMeta.value?.member ? undefined : activeTab.value
+  window.location.replace(router.resolve({ path: PLAYER_HOME, query: tab ? { tab } : {} }).href)
 }
 
-watch(() => playerAuth.isLoggedIn, (loggedIn) => { if (!loggedIn) goLogin() })
+// 登入過期（refresh 也失敗，playerFetch 清掉登入狀態）→ 去登入頁，登入完回到這一頁
+watch(() => playerAuth.isLoggedIn, (loggedIn) => {
+  if (!loggedIn && !loggingOut) window.location.replace(loginHref.value)
+})
+
+// 訪客：分頁順序與開放狀態另外查（登入時跟著 /player/me 一起拿）
+async function loadTabConfig() {
+  const res = await playerAuth.playerFetch('/player/tab-config')
+  const data = res?.ok ? await res.json().catch(() => null) : null
+  if (!data?.success) return
+  tabAccess.value = data.data.tab_access && typeof data.data.tab_access === 'object' ? normalizeTabAccess(data.data.tab_access) : {}
+  tabOrder.value = Array.isArray(data.data.tab_order) ? data.data.tab_order : []
+  try {
+    localStorage.setItem(TAB_ACCESS_CACHE, JSON.stringify(tabAccess.value))
+    localStorage.setItem(TAB_ORDER_CACHE, JSON.stringify(tabOrder.value))
+  } catch { /* 存不了就算了 */ }
+}
 
 // ── 地點清單（給新增物品的地點下拉選單用） ─────────────────────
 // 來源有兩個：資料庫裡已經用過的地點（/inventory/locations，排前面），加上
@@ -2058,6 +2206,11 @@ async function loadDismantleMaterials() {
 const bpHasMissionsOnly = ref(true)
 // 「只顯示未登記」只作用在展開的「登記藍圖資料」，預設勾選（自己已登記的不用再看到）
 const bpUnregisteredOnly = ref(true)
+// 資料庫 › 藍圖：同一張搜尋卡，但是列全部藍圖（含預設可用的、已登記的）
+const itemsBpFilters = computed(() => ({ ...bpFilters.value, hideAvailable: false, unregistered: false }))
+// 藍圖、艦隊的共用搜尋卡要移到哪裡：登記視窗開著就進視窗，在「資料庫 › 藍圖／艦船」就進那裡
+const bpCardTarget = computed(() => (bpDataOpen.value ? '#bp-modal-filters' : itemsBpActive.value ? '#items-bp-filters' : null))
+const fleetCardTarget = computed(() => (fleetDataOpen.value ? '#fleet-modal-filters' : itemsVehActive.value ? '#items-veh-filters' : null))
 const bpFilters = computed(() => ({
   q: bpFilterQuery.value.trim(), types: myBpTypes.value,
   hasMissions: bpHasMissionsOnly.value, hideAvailable: true, unregistered: bpUnregisteredOnly.value,
@@ -2074,7 +2227,7 @@ function clearBpFilter() {
 // ── 任務分頁：共用搜尋卡（條件直接傳給 MissionBrowser）；「只看有藍圖」預設勾選 ──
 const missionBrowserRef = ref(null)
 // 任務 › 勢力聲望（?tab=missions&sub=reputation 直接展開）
-const factionRepOpen = ref(activeTab.value === 'missions' && route.query.sub === 'reputation')
+const factionRepOpen = ref(initPane === 'missions' && openOnMount === 'reputation')
 const MS_LEGALITY_OPTIONS = [{ value: 'legal', label: '合法' }, { value: 'illegal', label: '違法' }]
 const msFilter = reactive({ q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: true, hasReward: false })
 const msFacets = ref({ reward_scopes: [], star_systems: [], factions: [] })
@@ -2092,7 +2245,7 @@ function clearMsFilter() {
   Object.assign(msFilter, { q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: false, hasReward: false })
 }
 let msFacetsLoaded = false
-watch(activeTab, async (tab) => {
+watch(activePane, async (tab) => {
   if (tab !== 'missions' || msFacetsLoaded) return
   msFacetsLoaded = true
   const res = await playerAuth.playerFetch('/mission/facets')
@@ -2130,7 +2283,6 @@ const myBpSort = useTableSort(filteredBlueprints, { accessors: {
 } })
 // 刪除藍圖的結果訊息（登記一律走「登記藍圖資料」，原本這裡的單張登記表單已拿掉）
 const blueprintError       = ref('')
-const blueprintSuccess     = ref('')
 
 // 標籤留著：管理員從後台設過其他狀態的紀錄，在「查詢 › 持有藍圖」還是要看得懂。
 const BLUEPRINT_STATUS_LABELS = {
@@ -3059,15 +3211,19 @@ const warehouseDrawerOpen = computed(() => warehouseDrawers.some(r => r.value))
 onMounted(() => {
   scifiTheme.apply()      // 套用這位玩家自己存的配色（localStorage）
   trackStickyHeights()
-  loadPlayer()
-  loadLocations()
-  loadMyInventory()
-  loadHistory()
-  loadBlueprints()
+  if (isGuest.value) {
+    loadTabConfig()
+  } else {
+    loadPlayer()
+    loadLocations()
+    loadMyInventory()
+    loadHistory()
+    loadBlueprints()
+  }
   // 直接以 ?tab=blueprints / ?tab=search&sub=blueprints 開場時補載
   loadForTab(activeTab.value, activeSub.value)
-  if (legacyCommodities) syncUrl()   // 舊網址改寫成新的分頁
-  if (openStockOnMount) stockWizardRef.value?.openNew()
+  if (legacyRewrite) syncUrl()   // 舊網址改寫成新的分頁
+  if (openStockOnMount && !isGuest.value) stockWizardRef.value?.openNew()
 })
 
 onBeforeUnmount(() => {
@@ -3076,6 +3232,12 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 沒登入點到會員功能分頁的登入提示 */
+.sf-guest { max-width: 40rem; margin: 2rem auto; }
+.sf-guest__icon { font-size: 2.5rem; color: var(--sf-accent); }
+.sf-guest__title { font-size: 1.3rem; font-weight: 700; color: var(--sf-text-strong); margin: .8rem 0 .5rem; }
+.sf-guest__text { color: var(--sf-text-muted); margin-bottom: 1.2rem; }
+.sf-tab-lock { font-size: .8em; opacity: .7; }
 .stock-paste-raw { font-size: 1rem; color: var(--sf-text-muted); }
 /* 工具網站分組（列的樣式在 scifi-theme.css 的 .sf-tree-*） */
 .holder-ship { margin-bottom: .4rem; }
