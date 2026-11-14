@@ -36,6 +36,9 @@ CATALOG = [
         ('cargo_grid_master', '貨物網格（sc-cargo.space）'),
         ('ship_loadout_master', '艦船掛點（配裝模擬）'),
         ('ship_item_master', '艦船配件數值（配裝模擬）'),
+        ('rsi_ships', 'RSI 商店船價（CCU）'),
+        ('ccu_offers', 'CCU／Warbond 販售紀錄（RSI 商店）'),
+        ('ship_sale_history', '船艦上架歷史（Open Hangar，CC BY 4.0）'),
     ]),
     ('地點', [
         ('starmap_master', '地點主檔'),

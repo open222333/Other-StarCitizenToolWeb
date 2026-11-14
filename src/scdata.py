@@ -1461,6 +1461,24 @@ UPSTREAM_PROVIDERS: dict = {
         'limit': '120 次/分、172,800 次/日，超過回 requests_limit_reached',
         'url': 'https://uexcorp.space/api/documentation',
     },
+    'rsi': {
+        'short': 'RSI',
+        'name': 'RSI 官方商店（升級工具）',
+        'base': 'https://robertsspaceindustries.com',
+        'auth': '不需要（匿名 token）',
+        'limit_level': 'soft',
+        'limit': '非公開 API、沒有公開配額；每輪只打 4 次，排程每 6 小時一次',
+        'url': 'https://robertsspaceindustries.com/pledge/ship-upgrades',
+    },
+    'openhangar': {
+        'short': 'Open Hangar',
+        'name': 'Open Hangar 商店歷史（CC BY 4.0）',
+        'base': 'https://openhangar.space',
+        'auth': '不需要',
+        'limit_level': 'soft',
+        'limit': '公開 API、沒有公開配額；每輪只打 1 次，排程每天一次',
+        'url': 'https://openhangar.space',
+    },
     'github': {
         'short': 'GitHub',
         'name': 'GitHub raw（scunpacked-data、翻譯包）',
@@ -1511,4 +1529,12 @@ def job_upstreams() -> dict:
     out['uex_refinery'] = [u(f'{r}/') for r in UEX_JOB_RESOURCES['uex_refinery']]
     out['cargo_grids'] = [{'provider': 'github', 'url': CARGO_GRID_LIST_URL, 'note': '檔案清單（GitHub API）'},
                           {'provider': 'github', 'url': f'{CARGO_GRID_RAW_BASE}/<名稱>.json', 'note': '每艘船一次'}]
+    from src import rsi_store
+    out['ccu'] = [{'provider': 'rsi', 'url': rsi_store.AUTH_TOKEN_URL, 'note': '匿名 token'},
+                  {'provider': 'rsi', 'url': rsi_store.CONTEXT_TOKEN_URL, 'note': '升級工具 context'},
+                  {'provider': 'rsi', 'url': rsi_store.GRAPHQL_URL, 'note': 'initShipUpgrade（全部船、單買 SKU）'},
+                  {'provider': 'rsi', 'url': rsi_store.GRAPHQL_URL, 'note': 'filterShips（各船的升級 SKU）'}]
+    from src import openhangar
+    out['openhangar'] = [{'provider': 'openhangar', 'url': openhangar.CATALOG_URL,
+                          'note': '整份商店目錄與上架歷史'}]
     return out

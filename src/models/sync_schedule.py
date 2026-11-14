@@ -204,6 +204,11 @@ SYNC_JOBS = [
     ('cargo_grids', '貨物網格', DEFAULT_CRON),
     # 配裝模擬（scunpacked-data ship-items.json＋ships.json，見 src/scdata_loadout.py）
     ('loadout', '配裝', DEFAULT_CRON),
+    # CCU：RSI 官方商店的船價、單買 SKU 與升級（CCU／Warbond）快照，見 src/rsi_store.py、src/models/ccu.py。
+    # 上下架時間靠每次快照判斷，所以排得比較密（每 6 小時）
+    ('ccu', 'CCU', '17 */6 * * *'),
+    # Open Hangar 整理的商店上架歷史（2021-11 起，含 Warbond），見 src/openhangar.py；每天一次就夠
+    ('openhangar', 'Open Hangar 歷史', '43 4 * * *'),
 ]
 JOB_KEYS = [k for k, _, _ in SYNC_JOBS]
 JOB_LABELS = {k: label for k, label, _ in SYNC_JOBS}
@@ -401,6 +406,8 @@ class SyncJobs:
         'uex_refinery': ('uex_refinery_yields', {}),
         'cargo_grids': ('cargo_grid_master', {'is_current': True}),
         'loadout': ('ship_loadout_master', {'is_current': True}),
+        'ccu': ('rsi_ships', {'is_current': True}),
+        'openhangar': ('ship_sale_history', {}),
     }
 
     @classmethod

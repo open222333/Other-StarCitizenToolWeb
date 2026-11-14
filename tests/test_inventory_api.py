@@ -893,7 +893,7 @@ def test_sync_jobs_list_and_update(client, auth_headers):
     assert jobs['items']['next_run'] is not None, '預設排程是啟用的，應該算得出下次執行時間'
     assert jobs['items']['label'] == '物品' and 'count' in jobs['items']
     providers = {p['key']: p for p in body['data']['providers']}
-    assert set(providers) == {'wiki', 'uex', 'github'} and providers['uex']['limit_level'] == 'hard'
+    assert set(providers) == {'wiki', 'uex', 'github', 'rsi', 'openhangar'} and providers['uex']['limit_level'] == 'hard'
     assert {u['provider'] for j in jobs.values() for u in j['upstreams']} <= set(providers), '每個端點都對得到上游'
     assert all(j['upstreams'] for j in jobs.values()), '每一項都列出打的端點'
     assert jobs['uex']['upstreams'][0]['url'].endswith('/categories/')

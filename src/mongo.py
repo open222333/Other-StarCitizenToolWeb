@@ -258,6 +258,15 @@ def ensure_indexes():
     db['fleet'].create_index('vehicle_uuid')
     _ensure_fleet_unique_index(db)
 
+    # ── CCU 價格紀錄（RSI 商店，見 src/models/ccu.py）────────────────
+    db['ccu_offers'].create_index([('is_current', ASCENDING), ('kind', ASCENDING)])
+    db['ccu_offers'].create_index('ship_rsi_id')
+    db['ccu_offers'].create_index('_sync.run_id')
+    db['rsi_ships'].create_index('_sync.run_id')
+    db['rsi_ships'].create_index('vehicle_uuid')
+    db['ship_sale_history'].create_index('rsi_id')
+    db['ship_sale_history'].create_index('vehicle_uuid')
+
     # ── 戰術小隊分配表（見 src/models/squad.py）──────────────────────
     db['squad_boards'].create_index('share_token', unique=True,
                                     partialFilterExpression={'share_token': {'$type': 'string'}})

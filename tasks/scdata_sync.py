@@ -476,6 +476,73 @@ def _sync_cargo_grids(client, run_id: str, stamp: datetime) -> dict:
             'written': written, 'skipped': skipped, 'retired': retired}
 
 
+def _sync_ccu(client, run_id: str, stamp: datetime) -> dict:
+    """「CCU」：RSI 官方商店的船價、單買 SKU 與升級 SKU 快照 → rsi_ships、ccu_offers（見 src/models/ccu.py）。
+
+    ⚠️ 用的是官網升級工具背後的非公開端點（src/rsi_store.py）。抓到的船數低於原有的 80%、
+    或原本有升級 SKU 這次卻一個都沒有，判定抓取不完整，整輪失敗、不下架任何資料。
+    """
+    from src import rsi_store
+    from src.models import ccu
+    db = get_db()
+    _report(force=True, phase='讀取 RSI 商店')
+    try:
+        raw = rsi_store.fetch_store(client)
+    except rsi_store.RsiStoreError as err:
+        raise ScDataError(f'ccu: {err}') from err
+    exponent = raw.get('exponent', 2)
+    ships = rsi_store.map_ships(raw['ships'], exponent)
+    ship_index = {s['rsi_id']: s for s in ships}
+    offers = rsi_store.map_ship_offers(raw['ships'], exponent) + \
+        rsi_store.map_upgrade_offers(raw['upgrades'], ship_index, raw.get('from_id'), exponent)
+
+    before_ships = db[ccu.SHIPS].count_documents({'is_current': True})
+    floor = int(before_ships * 0.8)
+    if not ships or (before_ships and len(ships) < floor):
+        raise ScDataError(f'ccu: 只抓到 {len(ships)} 艘船，低於原有 {before_ships} 艘的 80%（門檻 {floor}），'
+                          '判定抓取不完整，不更新')
+    before_ccu = db[ccu.OFFERS].count_documents({'is_current': True, 'kind': 'ccu'})
+    if before_ccu >= 20 and not any(o['kind'] == 'ccu' for o in offers):
+        raise ScDataError(f'ccu: 原本有 {before_ccu} 個升級 SKU，這次一個都沒抓到，判定抓取不完整，不更新')
+
+    _report(force=True, phase='寫入船價與 CCU')
+    ship_stats = ccu.save_ships(ships, run_id, stamp)
+    offer_stats = ccu.save_offers(offers, ships, run_id, stamp)
+    logger.info('scdata_sync: CCU 完成 船=%d（對到載具 %d、下架 %d） SKU=%d（新上架 %d、下架 %d）',
+                ship_stats['seen'], ship_stats['linked'], ship_stats['retired'],
+                offer_stats['seen'], offer_stats['opened'], offer_stats['ended'])
+    return {'resource': 'ccu', 'collection': ccu.OFFERS, 'seen': ship_stats['seen'] + offer_stats['seen'],
+            'written': ship_stats['written'] + offer_stats['written'], 'retired': ship_stats['retired'] + offer_stats['ended'],
+            'ships': ship_stats['seen'], 'offers': offer_stats['seen'], 'opened': offer_stats['opened'],
+            'ended': offer_stats['ended'], 'linked': ship_stats['linked']}
+
+
+def _sync_openhangar(client, run_id: str, stamp: datetime) -> dict:
+    """「Open Hangar 歷史」：openhangar.space 整理的 RSI 商店上架歷史（2021-11 起）→ ship_sale_history。
+
+    每次都是整份歷史，直接覆寫。抓到的船數低於原有的 80%，判定抓取不完整、整輪失敗不寫入。
+    """
+    from src import openhangar
+    from src.models import ccu
+    _report(force=True, phase='讀取 Open Hangar')
+    try:
+        data = openhangar.fetch_catalog(client)
+    except openhangar.OpenHangarError as err:
+        raise ScDataError(f'openhangar: {err}') from err
+    ships = openhangar.map_history(data)
+    before = get_db()[ccu.SALE_HISTORY].count_documents({})
+    floor = int(before * 0.8)
+    if not ships or (before and len(ships) < floor):
+        raise ScDataError(f'openhangar: 只抓到 {len(ships)} 艘船的歷史，低於原有 {before} 艘的 80%（門檻 {floor}），'
+                          '判定抓取不完整，不更新')
+    _report(force=True, phase='寫入上架歷史')
+    stats = ccu.save_sale_history(ships, run_id, stamp)
+    logger.info('scdata_sync: Open Hangar 完成 船=%d（對到 RSI %d、對到載具 %d）',
+                stats['seen'], stats['linked_rsi'], stats['linked_vehicle'])
+    return {'resource': 'openhangar', 'collection': ccu.SALE_HISTORY, 'seen': stats['seen'],
+            'written': stats['written'], 'linked': stats['linked_vehicle'], 'linked_rsi': stats['linked_rsi']}
+
+
 TRANSLATION_LANG = 'zh-TW'
 
 
@@ -628,6 +695,20 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
         except Exception as err:
             logger.exception('scdata_sync: 貨物網格失敗')
             errors.append(f'cargo_grids: {err}')
+
+    elif key == 'ccu':
+        try:
+            stats.append(_sync_ccu(client('rsi'), run_id, stamp))
+        except Exception as err:
+            logger.exception('scdata_sync: CCU 失敗')
+            errors.append(f'ccu: {err}')
+
+    elif key == 'openhangar':
+        try:
+            stats.append(_sync_openhangar(client('openhangar'), run_id, stamp))
+        except Exception as err:
+            logger.exception('scdata_sync: Open Hangar 失敗')
+            errors.append(f'openhangar: {err}')
 
     elif key in UEX_JOB_RESOURCES:
         # 後台「資料同步排程」頁設定的 token 優先，沒有就用環境變數 UEX_API_TOKEN

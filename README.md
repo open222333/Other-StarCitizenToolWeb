@@ -400,6 +400,8 @@ MongoDB 是獨立節點這件事會直接影響移庫的一致性保證，見[�
 | [Star Citizen Wiki API](https://api.star-citizen.wiki) | 物品 / 載具 / 商品 / 藍圖 / 勢力 / 任務 | 社群自費維運，無 SLA、無公開配額 | 見[排程打的上游 API](#排程打的上游-api) |
 | [UEX Corp API 2.0](https://uexcorp.space/api/documentation) | 價格、終端位置 | 眾包資料可能與伺服器有落差 | 配額 120 req/min |
 | GitHub raw（[scunpacked-data](https://github.com/StarCitizenWiki/scunpacked-data)、[繁中翻譯包](https://github.com/cosmo-chang-1701/sc-translation-pack)） | 翻譯、礦物、地點、藍圖品質、配裝 | 沒公開配額，流量大會回 429 | 全部項目共 8 個檔案；JSON 檔沒變動時上游回 304，不重新下載（見 `scdata_json_files`） |
+| [RSI 官方商店](https://robertsspaceindustries.com/pledge/ship-upgrades)（升級工具背後的非公開端點） | CCU | 沒有公開配額 | 每輪 4 次請求（匿名 token、context、兩次 GraphQL），排程每 6 小時；不是文件化的 API，欄位可能隨官網改版變動 |
+| [Open Hangar](https://openhangar.space)（`/api/store/catalog`，資料 CC BY 4.0） | Open Hangar 歷史 | 沒有公開配額 | 每輪 1 次請求，排程每天一次；第三方整理的歷史，畫面上用到要標註來源 |
 | GitHub（[sc-cargo.space](https://github.com/sccargospace/sc-cargo.space)，MIT） | 飛船貨物網格 | 檔案清單走 GitHub API（未登入 60 次/小時），檔案走 raw | 清單 1 次＋每艘船 1 個檔案（約 100 個） |
 | Discord API | bot 指令 | 全域指令傳播最久約 1 小時 | — |
 
@@ -951,7 +953,7 @@ cd frontend && npm run test:calc
 玩家端 `/player/me` 的藍圖 autocomplete 需要打這裡。
 
 **排程存在 DB 裡，每個資料庫各自一筆（`sync_jobs` collection，`src/models/sync_schedule.py`
-的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、貨物網格、配裝、UEX 價格、UEX 精煉十三個同步項目，
+的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、貨物網格、配裝、CCU、Open Hangar 歷史、UEX 價格、UEX 精煉十五個同步項目，
 各自有 cron、啟用狀態與上次執行結果。後台「資料同步排程」頁（`/admin/sync-schedule`）
 可以個別改時間、個別「立即同步」，也可以「全部立即同步」。不用改 `tasks/celeryconfig.py`、
 也不用重啟 worker/beat。
@@ -1046,6 +1048,8 @@ curl -s -X POST http://localhost:8090/item/sync \
 | 礦物 | GitHub raw | `scunpacked-data/master/resources/resources.json`、`resources/locations.json` | |
 | 地點 | GitHub raw | `scunpacked-data/master/starmap.json` | 之後重建階層、套用設施／倉儲／居住地 |
 | 貨物網格 | GitHub API | `repos/sccargospace/sc-cargo.space/contents/src/grids?ref=main` | 檔案清單 |
+| CCU | RSI 官方商店 | `api/account/v2/setAuthToken`、`api/ship-upgrades/setContextToken`、`pledge-store/api/upgrade/graphql`（`initShipUpgrade`：全部船的標準價與單買 SKU；`filterShips(fromId=最便宜的船)`：各船目前能買的升級 SKU） | 只看得到現在有賣的；上下架時間靠每次快照累積（`src/rsi_store.py`、`src/models/ccu.py`）。抓到的船少於原有 80%、或原本有升級 SKU 這次卻沒有，整輪失敗不下架 |
+| Open Hangar 歷史 | Open Hangar | `https://openhangar.space/api/store/catalog`（`history`：每艘船 2021-11 起的每段上架 `[開始, 結束, 價格, 種類 S/W/U, 當時標準價]`；`avail`、`makers`；升級品項的 `toShipId` 用來對到 RSI 船 id） | 每次都是整份歷史、直接覆寫（`src/openhangar.py`）。抓到的船少於原有 80% 整輪失敗不寫入。跟 RSI 商店重疊的期間以 RSI 為準 |
 | | GitHub raw | `sccargospace/sc-cargo.space/main/src/grids/<船>.json` | 每艘船一個檔案 → `cargo_grid_master`；之後對應艦船主檔（`src/models/cargo_grid.py` 的 `link_vehicles`：名稱、廠商＋名稱、別名完全一樣優先，對不到再用「載具名稱以船名開頭」、去掉 [Concept]、型號位置、廠商縮寫補對） |
 | 配裝 | GitHub raw | `scunpacked-data/master/ship-items.json`、`ships.json` | 艦船配件數值 → `ship_item_master`、每艘船的掛點樹 → `ship_loadout_master`（不存 raw） |
 | UEX 價格 | UEX | `/categories/` → `/items/?id_category=<id>` | 每個物品分類一次 |
@@ -1095,6 +1099,9 @@ docker compose exec api python -c "from src.models import visibility; print(visi
 | `ship_item_master` | 遊戲 uuid | ~1300 | 配裝模擬用的艦船配件（武器、飛彈、護盾、電源、冷卻、量子、雷達、砲塔、飛彈架…）：精簡數值 `stats`（DPS、穿透距離、護盾 HP…）、子槽 `ports`（含預設配件）、`tags`／`required_tags` |
 | `ship_loadout_master` | 遊戲 uuid | ~320 | 配裝模擬用的每艘船：掛點樹 `slots`（只留配裝相關的槽）、船體／裝甲（減傷、偏轉、穿透抗性）、穿透倍率、飛行、油箱、同時運作護盾數 `shield_slots`、船本身提供的標籤 `tags`、電源 `power`（發電格數、武器電源池、各類耗電者預設的耗電／EM／冷卻、裝甲訊號倍率、資料集算好的預設訊號） |
 | `cargo_grid_master` | sc-cargo.space 檔名（例如 `c2_herc`） | ~106 | 飛船貨物網格（每格位置、長寬高、貨櫃大小限制）、對到的載具 `vehicle_uuids` |
+| `rsi_ships` | RSI 商店的船 id | ~250 | RSI 商店的船：標準價 `msrp`（美金未稅）、廠商、類型、可飛狀態、對到的載具 `vehicle_uuid`、標準價變動紀錄 `msrp_history`（同步項目「CCU」） |
+| `ccu_offers` | `種類:SKU id:船 id` | — | 商店有賣過的單買 SKU（`ship`）與升級 SKU（`ccu`）：價格、比標準價省多少 `savings`、`is_warbond`／`is_discount`、保險、限量庫存，上架期間 `periods: [{start, end}]` 與價格變動 `price_history`。歷史抓不回來，備份在「CCU 價格紀錄」 |
+| `ship_sale_history` | Open Hangar 的船名 | ~250 | 船的商店上架歷史（同步項目「Open Hangar 歷史」）：`periods: [{start, end, price, msrp, sale_type, code}]`（`standard` 單買、`warbond`、`code_u` 為 Open Hangar 的 U 代碼，意義未確認）、出現頻率 `avail`、對到的 `rsi_id`／`vehicle_uuid`，`source='openhangar'`、`credibility='歷史紀錄'`（RSI 抓到的 `ccu_offers` 是 `官方確認`） |
 | `app_settings` | 設定名稱 | 少量 | 後台可改的系統設定：`uex_api_token`、`player_tab_order`（玩家頁分頁順序）、`player_tab_access`（分頁開放狀態）、`item_type_groups`（物品類型分組） |
 | `player_visibility` | `<資料庫>:<id>` | 少量 | 後台手動設定的「玩家頁面顯示」（蓋過自動判斷，同步不會清掉） |
 | `inventory` | ObjectId | — | 庫存 |
