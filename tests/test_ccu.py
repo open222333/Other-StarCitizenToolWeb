@@ -233,3 +233,34 @@ def test_openhangar_guard(app, monkeypatch):
     monkeypatch.setattr(sync_mod, 'build_client', lambda **kw: real(transport=_oh_transport(status=503)))
     assert sync_mod._do_sync(jobs=['openhangar'])['ok'] is False
     assert db.ship_sale_history.count_documents({}) == 10
+
+
+def test_ship_price_api(app, client):
+    """玩家頁「資料庫 › 船價」：RSI 與 Open Hangar 合併；重疊的同種類期間以 RSI 為準；不用登入。"""
+    from src import openhangar
+    db = get_db()
+    db.vehicle_master.insert_one({'_id': 'v-gal', 'name': 'Galaxy', 'is_current': True})
+    t0 = datetime(2026, 11, 1)
+    _save(SHIPS, UPGRADES, 'r1', t0)
+    oh = dict(OH_CATALOG, history=dict(OH_CATALOG['history'], Galaxy=OH_CATALOG['history']['Galaxy'] + [
+        [int(datetime(2026, 10, 30).timestamp() * 1000), None, 340, 'W', 380]]))
+    ccu.save_sale_history(openhangar.map_history(oh), 'oh1', t0)
+
+    body = client.get('/item/ship-prices').get_json()
+    assert body['success'] and 'Open Hangar' in body['attribution']
+    rows = {r['name']: r for r in body['data']}
+    assert set(rows) == {'Galaxy', 'Avenger Titan', 'Skylark', 'Aurora MR'}, 'RSI 有、歷史沒有的船也列'
+    gal = rows['Galaxy']
+    assert gal['msrp'] == 380.0 and gal['msrp_source'] == 'rsi' and gal['avail'] == 'hardly'
+    assert gal['on_sale'] and gal['warbond_now'] and gal['price_now'] == 340.0
+    assert gal['warbond_count'] == 1, 'Open Hangar 的 WB 跟 RSI 的 WB 重疊，只算 RSI 那段'
+    assert gal['period_count'] == 3 and 'periods' not in gal and '_periods' not in gal
+    assert rows['Aurora MR']['key'] == 'rsi:1' and rows['Aurora MR']['on_sale'] is False
+    assert rows['Skylark']['msrp_source'] == 'openhangar' and rows['Skylark']['last_warbond']['price'] == 40.0
+
+    detail = client.get('/item/ship-prices/detail', query_string={'key': 'Galaxy'}).get_json()['data']
+    assert [p['source'] for p in detail['periods']] == ['rsi', 'openhangar', 'openhangar']
+    assert detail['periods'][0]['credibility'] == '官方確認' and detail['periods'][0]['insurance'] == 'LTI'
+    assert client.get('/item/ship-prices/detail', query_string={'key': 'rsi:1'}).get_json()['data']['periods'] == []
+    assert client.get('/item/ship-prices/detail', query_string={'key': 'nope'}).status_code == 404
+    assert client.get('/item/ship-prices/detail', query_string={'key': 'rsi:x'}).status_code == 404

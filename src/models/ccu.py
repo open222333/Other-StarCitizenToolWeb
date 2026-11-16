@@ -173,3 +173,135 @@ def save_sale_history(ships: list, run_id: str, stamp: datetime) -> dict:
     if ops:
         col.bulk_write(ops, ordered=False)
     return {'seen': len(ships), 'written': len(ops), 'linked_rsi': linked_rsi, 'linked_vehicle': linked_vehicle}
+
+
+# ── 玩家頁「資料庫 › 船價」：RSI 商店（官方）＋ Open Hangar（歷史）合起來看 ─────────
+
+def _zh_names(uuids) -> dict:
+    """載具 uuid → 中文名稱（查不到的不列）。"""
+    from src.sc_zh import vehicle_name_zh
+    out = {}
+    ids = [u for u in set(uuids) if u]
+    if not ids:
+        return out
+    for v in get_db()['vehicle_master'].find({'_id': {'$in': ids}}, {'class_name': 1, 'name': 1, 'game_name': 1}):
+        zh = vehicle_name_zh(v.get('class_name') or '', v.get('name') or '', game_name=v.get('game_name') or '')
+        if zh and zh != v.get('name'):
+            out[v['_id']] = zh
+    return out
+
+
+def _overlaps(a_start, a_end, b_start, b_end, now) -> bool:
+    return a_start <= (b_end or now) and b_start <= (a_end or now)
+
+
+def _rsi_periods(offers: list) -> list:
+    """RSI 的單買 SKU → 時間軸上的段（每段帶當時最後看到的價格）。"""
+    out = []
+    for o in offers:
+        if o.get('kind') != 'ship':
+            continue
+        for p in o.get('periods') or []:
+            if not p.get('start'):
+                continue
+            out.append({'start': p['start'], 'end': p.get('end'), 'price': o.get('price'), 'msrp': o.get('msrp'),
+                        'sale_type': 'warbond' if o.get('is_warbond') else 'standard',
+                        'source': 'rsi', 'credibility': '官方確認', 'title': o.get('title') or '',
+                        'insurance': o.get('insurance')})
+    return out
+
+
+def _merged_periods(history: dict, offers: list, now: datetime) -> list:
+    """一艘船的上架段：RSI 的全收；Open Hangar 的跟同種類的 RSI 段重疊就不收（以 RSI 為準）。新的在前。"""
+    rsi = _rsi_periods(offers)
+    out = list(rsi)
+    for p in (history or {}).get('periods') or []:
+        if any(r['sale_type'] == p.get('sale_type') and _overlaps(p['start'], p.get('end'), r['start'], r['end'], now)
+               for r in rsi):
+            continue
+        out.append({'start': p['start'], 'end': p.get('end'), 'price': p.get('price'), 'msrp': p.get('msrp'),
+                    'sale_type': p.get('sale_type'), 'source': 'openhangar', 'credibility': '歷史紀錄'})
+    out.sort(key=lambda p: p['start'], reverse=True)
+    return out
+
+
+def _price_row(key: str, history: dict, ship: dict, offers: list, now: datetime) -> dict:
+    periods = _merged_periods(history, offers, now)
+    wb = [p for p in periods if p['sale_type'] == 'warbond']
+    open_now = [p for p in periods if p['end'] is None]
+    history = history or {}
+    ship = ship or {}
+    return {
+        'key': key,
+        'name': history.get('name') or ship.get('name') or '',
+        'manufacturer': ship.get('manufacturer') or history.get('manufacturer'),
+        'vehicle_uuid': ship.get('vehicle_uuid') or history.get('vehicle_uuid'),
+        'msrp': ship.get('msrp') if ship.get('msrp') is not None else history.get('msrp'),
+        'msrp_source': 'rsi' if ship.get('msrp') is not None else ('openhangar' if history.get('msrp') is not None else None),
+        'avail': history.get('avail'),
+        'first_sold_at': history.get('first_sold_at'),
+        'on_sale': bool(open_now),
+        'warbond_now': any(p['sale_type'] == 'warbond' for p in open_now),
+        'price_now': min((p['price'] for p in open_now if p['price'] is not None), default=None),
+        'last_warbond': ({'price': wb[0]['price'], 'start': wb[0]['start'], 'end': wb[0]['end']} if wb else None),
+        'warbond_count': len(wb),
+        'period_count': len(periods),
+        'link': ship.get('link'),
+        '_periods': periods,
+    }
+
+
+def _price_rows(history_filter=None, ship_filter=None) -> list:
+    db = get_db()
+    now = datetime.utcnow()
+    histories = list(db[SALE_HISTORY].find(history_filter or {}, {'_sync': 0}))
+    ships = {d['_id']: d for d in db[SHIPS].find(ship_filter or {}, {'msrp_history': 0, '_sync': 0})}
+    offers_by_ship = {}
+    for o in db[OFFERS].find({'kind': 'ship'}, {'price_history': 0, '_sync': 0}):
+        offers_by_ship.setdefault(o.get('ship_rsi_id'), []).append(o)
+    rows, used = [], set()
+    for h in histories:
+        rid = h.get('rsi_id')
+        used.add(rid)
+        rows.append(_price_row(h['_id'], h, ships.get(rid), offers_by_ship.get(rid) or [], now))
+    if history_filter is None:
+        # RSI 有、Open Hangar 沒有紀錄的船（例如從沒單賣過）
+        for rid, s in ships.items():
+            if rid not in used and s.get('is_current', True):
+                rows.append(_price_row(f'rsi:{rid}', None, s, offers_by_ship.get(rid) or [], now))
+    zh = _zh_names(r['vehicle_uuid'] for r in rows)
+    for r in rows:
+        r['name_zh'] = zh.get(r['vehicle_uuid'])
+    return rows
+
+
+def ship_price_list() -> list:
+    """每艘船一列（不含各段明細）。"""
+    rows = _price_rows()
+    for r in rows:
+        r.pop('_periods')
+    rows.sort(key=lambda r: (r['name'] or '').lower())
+    return rows
+
+
+def ship_price_detail(key: str):
+    """一艘船的上架段明細（新的在前）；找不到回 None。"""
+    key = str(key or '')
+    if key.startswith('rsi:'):
+        try:
+            rid = int(key[4:])
+        except ValueError:
+            return None
+        ship = get_db()[SHIPS].find_one({'_id': rid}, {'msrp_history': 0, '_sync': 0})
+        if not ship:
+            return None
+        offers = list(get_db()[OFFERS].find({'kind': 'ship', 'ship_rsi_id': rid}, {'price_history': 0, '_sync': 0}))
+        row = _price_row(key, None, ship, offers, datetime.utcnow())
+    else:
+        rows = _price_rows({'_id': key})
+        if not rows:
+            return None
+        row = rows[0]
+    row['periods'] = row.pop('_periods')
+    row.setdefault('name_zh', _zh_names([row['vehicle_uuid']]).get(row['vehicle_uuid']))
+    return row

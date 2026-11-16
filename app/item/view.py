@@ -689,6 +689,46 @@ def vehicle_facets():
     return jsonify({'success': True, 'data': VehicleMaster.facets()})
 
 
+@app_item.route('/ship-prices', methods=['GET'])
+@public_api
+def ship_prices():
+    """船的商店價（美金）與上架狀況：RSI 官方商店＋Open Hangar 歷史合併，每艘一列。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    from src.models import ccu
+    from src import openhangar
+    return jsonify({'success': True, 'data': ccu.ship_price_list(), 'attribution': openhangar.ATTRIBUTION})
+
+
+@app_item.route('/ship-prices/detail', methods=['GET'])
+@public_api
+def ship_price_detail():
+    """一艘船的每段上架期間（key＝/item/ship-prices 回的 key）。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: key, type: string, required: true}
+    responses:
+      200:
+        description: 成功
+      404:
+        description: 找不到
+    """
+    from src.models import ccu
+    row = ccu.ship_price_detail(request.args.get('key', ''))
+    if not row:
+        return jsonify({'success': False, 'message': '找不到這艘船'}), 404
+    return jsonify({'success': True, 'data': row})
+
+
 #: /item/translations 一次最多查幾段文字、每段最長幾個字
 MAX_TRANSLATION_TEXTS = 300
 MAX_TRANSLATION_TEXT_LEN = 200

@@ -71,6 +71,7 @@
             <td class="text-end text-nowrap d-none d-xxl-table-cell" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(v)) }}</td>
             <td class="text-end text-nowrap pe-3 sf-stack__actions">
               <CargoGridButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
+              <ShipPriceButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <button type="button" class="btn btn-sm btn-info me-2" :aria-expanded="openId === v._id ? 'true' : 'false'"
                 @click="openId = openId === v._id ? '' : v._id">
                 <i class="bi me-1" :class="openId === v._id ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
@@ -154,6 +155,7 @@ import SfPager from '@/components/SfPager.vue'
 import SfState from '@/components/SfState.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
 import CargoGridButton from '@/components/CargoGridButton.vue'
+import ShipPriceButton from '@/components/ShipPriceButton.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUsd, auecPerUsd, fmtAuecPerUsd, vehicleRangeParams } from '@/utils/uexCommodity'
 import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'

@@ -296,6 +296,8 @@ UNGUARDED_ALLOWLIST = {
     'app_item.lookup_translations',
     'app_item.get_type_groups',       # 物品類型分組（篩選選單分段），跟翻譯一樣是公開的顯示設定
     'app_item.vehicle_facets',        # 上面幾支合成一次回應＋類型，玩家頁艦隊／持有船艦要用
+    'app_item.ship_prices',           # 船的商店價與上架狀況（RSI＋Open Hangar，公開資料）
+    'app_item.ship_price_detail',     # 同上，一艘船的上架期間
     'app_item.item_facets',           # 物品篩選選單選項，公開遊戲資料
     'app_item.get_item_uex_prices',   # 物品 UEX 買賣價格與終端，公開遊戲資料
     'app_item.list_commodities',
