@@ -10,13 +10,13 @@
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-3">
-            <label class="form-label small fw-semibold mb-1" for="crc-total">總量（SCU）</label>
-            <input id="crc-total" v-model.number="total" type="number" min="1" :max="MAX" step="1" inputmode="numeric"
+            <label class="form-label small fw-semibold mb-1" :for="`${id}-total`">總量（SCU）</label>
+            <input :id="`${id}-total`" v-model.number="total" type="number" min="1" :max="MAX" step="1" inputmode="numeric"
               class="form-control form-control-sm" :class="{ 'is-invalid': tooBig }">
           </div>
           <div class="col-12 col-md-9">
-            <span class="form-label small fw-semibold mb-1 d-block" id="crc-sizes-label">可用的貨櫃</span>
-            <div class="d-flex flex-wrap align-items-center gap-2" role="group" aria-labelledby="crc-sizes-label">
+            <span class="form-label small fw-semibold mb-1 d-block" :id="`${id}-sizes-label`">可用的貨櫃</span>
+            <div class="d-flex flex-wrap align-items-center gap-2" role="group" :aria-labelledby="`${id}-sizes-label`">
               <button v-for="s in SIZES_DESC" :key="s" type="button" class="btn btn-sm btn-subtab"
                 :class="{ active: sizes.includes(s) }" :aria-pressed="sizes.includes(s) ? 'true' : 'false'" @click="toggle(s)">
                 {{ s }} SCU</button>
@@ -69,17 +69,24 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import SfState from '@/components/SfState.vue'
 import { SIZES } from '@/utils/cargoPack'
 import { plan } from '@/utils/crateCombos'
 
-defineProps({ cardClass: { type: String, default: 'card' } })
+const props = defineProps({
+  /** 元素 id 前綴（工具箱跟跳出視窗會同時掛著，要不一樣） */
+  id: { type: String, default: 'crc' },
+  cardClass: { type: String, default: 'card' },
+  /** 預設總量（航線結果的「貨櫃試算」帶船的貨艙容量進來）；沒給用 106 當範例 */
+  initial: { type: Number, default: 0 },
+})
 
 /** 輸入上限（動態規劃的陣列長度跟總量成正比） */
 const MAX = 100000
 const SIZES_DESC = [...SIZES].sort((a, b) => b - a)
-const total = ref(106)
+const total = ref(props.initial > 0 ? Math.round(props.initial) : 106)
+watch(() => props.initial, v => { if (v > 0) total.value = Math.round(v) })
 const sizes = ref([...SIZES_DESC])
 const fmt = v => Number(v).toLocaleString('en-US')
 const tooBig = computed(() => total.value > MAX)

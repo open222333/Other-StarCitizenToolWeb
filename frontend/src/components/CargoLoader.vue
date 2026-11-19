@@ -1,5 +1,5 @@
 <!--
-  玩家頁「貨艙網格」：選幾艘船，填各種大小的貨櫃數量（1／2／4／8／16／24／32 SCU），
+  玩家頁「貨艙網格」：選幾艘船，填各種大小的貨櫃數量（1／2／4／8／16／32 SCU），
   按「裝載」把貨櫃擺進船的貨物網格（utils/cargoPack.js），右邊 3D 檢視（components/CargoView3D.vue）。
   「自動裝滿」用最大的貨櫃把網格塞滿並回填數量。網格資料：GET /starmap/nav/cargo-grids（sc-cargo.space）。
   船與數量記在這台瀏覽器（localStorage）。
@@ -99,7 +99,7 @@ const props = defineProps({
   fleetUuids: { type: Array, default: () => [] },
 })
 
-const COLORS = { 1: '#8fa3b8', 2: '#d88cb0', 4: '#7fc69a', 8: '#e3b65c', 16: '#6fa8e6', 24: '#ad94e0', 32: '#c3cbd6' }
+const COLORS = { 1: '#8fa3b8', 2: '#d88cb0', 4: '#7fc69a', 8: '#e3b65c', 16: '#6fa8e6', 32: '#c3cbd6' }
 const MAX_VEHICLES = 6
 const STORAGE_KEY = 'sc_cargo_loader_v1'
 

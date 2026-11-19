@@ -2,6 +2,7 @@
   航線規劃的「船＋量子引擎」選擇（RoutePlanner.vue、ContractPlanner.vue 每個小隊共用）。
   船是自動完成（自己機庫的船排前面），量子引擎只列跟船的引擎槽同尺寸的，下面列出實際數值。
   v-model:ship-id／v-model:ship-text／v-model:qd-id；選了船另外發 pick(船)。
+  有貨物網格資料的船，數值後面有「網格」按鈕跳出 3D 貨艙網格（CargoGridButton.vue）。
 -->
 <template>
   <div class="row g-2 align-items-end">
@@ -31,6 +32,8 @@
         <span v-if="showCargo && ship.external_cargo" class="sf-chip">外掛貨櫃（只停外部貨運站）</span>
         <!-- 貨物網格（sc-cargo.space）：每種貨櫃最多裝幾個 -->
         <span v-for="s in boxSizes" :key="s" class="sf-chip sp-box"><i class="bi bi-box me-1" aria-hidden="true"></i>{{ s }} SCU × {{ boxes[s] }}</span>
+        <!-- 有網格資料才出現：跳出視窗看 3D 貨艙網格 -->
+        <CargoGridButton :vehicle-uuid="ship.id" :name="shipLabel(ship)" button-class="py-0" />
       </div>
     </div>
   </div>
@@ -39,6 +42,7 @@
 <script setup>
 import { computed, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
+import CargoGridButton from '@/components/CargoGridButton.vue'
 import { BOX_SIZES, boxCapacity, shipPasses } from '@/utils/navBase'
 import { fmtNum, fmtSpeed, shipLabel } from '@/utils/navFormat'
 

@@ -1,5 +1,5 @@
 <!--
-  艦船資料列上的「貨艙網格」按鈕＋跳出視窗（我的艦隊、登記船艦資料、查詢持有資訊的船艦列用）：
+  艦船資料列上的「貨艙網格」按鈕＋跳出視窗（我的艦隊、登記船艦資料、查詢持有資訊的船艦列、航線選船 ShipPicker 用）：
   有貨物網格資料（sc-cargo.space，GET /starmap/nav/cargo-grids，utils/navBase.js 共用一份）的船才出現按鈕，
   按了跳出視窗用 3D 檢視（components/CargoView3D.vue）看網格；可以切「空網格／自動裝滿」，有非官方版面時也能切換。
 -->
@@ -40,7 +40,8 @@ import { gridByVehicle, useNavBase } from '@/utils/navBase'
 import { SIZES, autoFill, gridCapacity } from '@/utils/cargoPack'
 
 const props = defineProps({
-  fetcher: { type: Function, required: true },
+  /** 有給才自己載網格資料；航線選船（ShipPicker）那邊 useNavBase 已經載過，不用給 */
+  fetcher: { type: Function, default: null },
   /** 載具主檔 uuid */
   vehicleUuid: { type: String, default: '' },
   name: { type: String, default: '' },
@@ -63,7 +64,7 @@ const viewShips = computed(() => [{
 }])
 
 // 網格資料整站共用一份，第一個按鈕掛上來時載入
-onMounted(() => { useNavBase(props.fetcher).loadCargoGrids() })
+onMounted(() => { if (props.fetcher) useNavBase(props.fetcher).loadCargoGrids() })
 </script>
 
 <style scoped>

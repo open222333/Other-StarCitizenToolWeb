@@ -13,10 +13,10 @@ export const CONTAINERS = {
   4: { w: 2, h: 1, l: 2 },
   8: { w: 2, h: 2, l: 2 },
   16: { w: 2, h: 2, l: 4 },
-  24: { w: 2, h: 2, l: 6 },
   32: { w: 2, h: 2, l: 8 },
 }
-export const SIZES = [1, 2, 4, 8, 16, 24, 32]
+// 24 SCU 先不列（遊戲裡少見，玩家要求拿掉）
+export const SIZES = [1, 2, 4, 8, 16, 32]
 const DESC = [...SIZES].reverse()
 
 function makeSpace(g) {

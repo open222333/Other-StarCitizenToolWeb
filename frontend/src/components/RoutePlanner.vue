@@ -4,6 +4,7 @@
   結果一次給三種方案（最快／最省油／最順路），每一段列出經過的 OM 點、跳躍點（components/RouteLegsTable.vue）；
   可切換成 3D 星圖（components/RouteMap3D.vue）。多份合約分給多個小隊見 components/ContractPlanner.vue。
   超寬螢幕（21:9）表單分左右兩欄（左：船／油量／起點／終點，右：途經站點）。
+  結果上方有這艘船的「網格」（CargoGridButton.vue）與「貨櫃試算」（CrateCalcButton.vue）按鈕，各自跳出視窗。
   結果預設在跳出視窗（SfModal）裡，可切回原版接在表單下面（popupResult）；結果最下面「完成」可選結束或終點設為起點。
   表單（地點、船、貨運）記在這台瀏覽器（localStorage）。
 -->
@@ -217,10 +218,17 @@
                 油量不足：有段落單趟就超過油箱</span>
               <span v-if="current.warnings.includes('step_over_range')" class="sf-chip sf-chip--warn">單段超過可達距離</span>
             </div>
-            <div class="btn-group btn-group-sm mb-2" role="group" aria-label="顯示方式">
-              <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab"
-                :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
-                @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <div class="btn-group btn-group-sm" role="group" aria-label="顯示方式">
+                <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab"
+                  :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
+                  @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
+              </div>
+              <!-- 這趟的船：看貨艙網格、算貨櫃怎麼拆（總量預設帶船的貨艙容量） -->
+              <div class="ms-auto d-flex flex-wrap gap-2">
+                <CargoGridButton v-if="result.ship?.id" :vehicle-uuid="result.ship.id" :name="shipLabel(result.ship)" />
+                <CrateCalcButton :total="Number(result.ship?.cargo_scu) || 0" />
+              </div>
             </div>
             <RouteMap3D v-if="view === 'map'" :plan="current" :map="result.map || {}" />
             <div v-if="reorderError" class="alert alert-warning py-2 mb-2" role="alert">{{ reorderError }}</div>
@@ -254,11 +262,13 @@ import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import SfState from '@/components/SfState.vue'
 import SfModal from '@/components/SfModal.vue'
+import CargoGridButton from '@/components/CargoGridButton.vue'
+import CrateCalcButton from '@/components/CrateCalcButton.vue'
 import SystemStopsFill from '@/components/SystemStopsFill.vue'
 import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
 import { useNavBase } from '@/utils/navBase'
-import { fmtDist, fmtNum, fmtTime, placeLabel, placePath } from '@/utils/navFormat'
+import { fmtDist, fmtNum, fmtTime, placeLabel, placePath, shipLabel } from '@/utils/navFormat'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },

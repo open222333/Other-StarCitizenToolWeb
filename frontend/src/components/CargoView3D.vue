@@ -26,7 +26,7 @@ const props = defineProps({
 })
 
 // 貨櫃顏色（依 SCU 大小）
-const COLORS = { 1: '#8fa3b8', 2: '#d88cb0', 4: '#7fc69a', 8: '#e3b65c', 16: '#6fa8e6', 24: '#ad94e0', 32: '#c3cbd6' }
+const COLORS = { 1: '#8fa3b8', 2: '#d88cb0', 4: '#7fc69a', 8: '#e3b65c', 16: '#6fa8e6', 32: '#c3cbd6' }
 const GAP = 6
 
 const wrap = ref(null)
