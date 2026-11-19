@@ -479,6 +479,12 @@
         :registered-uuids="fleetVehicleUuids" :active="itemsVehActive" @registered="loadFleet" />
     </div>
 
+    <!-- ══════════ 資料庫 › 勢力：全部勢力（聲望種類、任務類型、任務數），展開看聲望階級與任務（見 components/FactionDatabase.vue）══════════ -->
+    <div v-if="factionsMounted" v-show="activePane === 'factions'" id="panel-items-factions">
+      <FactionDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'factions'" card-class="card scifi-card"
+        :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest" @registered="onBulkRegistered" />
+    </div>
+
     <!-- ══════════ 資料庫 › 礦物：每種礦物可以在哪裡挖到（scunpacked 的礦床與地點資料，見 components/MineralDatabase.vue）══════════ -->
     <div v-show="activeTab === 'items' && activeSub === 'minerals'" id="panel-items-minerals">
       <MineralDatabase :fetcher="playerAuth.playerFetch" :active="activeTab === 'items' && activeSub === 'minerals'"
@@ -822,6 +828,10 @@
                 <input id="bp-filter-unregistered-m" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
                 <label class="form-check-label" for="bp-filter-unregistered-m">只顯示未登記</label>
               </div>
+              <div v-else-if="itemsBpUnregShown" class="form-check mt-2">
+                <input id="items-bp-filter-unregistered-m" v-model="itemsBpUnregisteredOnly" class="form-check-input" type="checkbox">
+                <label class="form-check-label" for="items-bp-filter-unregistered-m">只顯示未登記</label>
+              </div>
             </template>
           </SfFilterSheet>
         </div>
@@ -833,6 +843,10 @@
           <div v-if="bpDataOpen && !isPhone" class="form-check form-check-inline mb-0">
             <input id="bp-filter-unregistered" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="bp-filter-unregistered">只顯示未登記</label>
+          </div>
+          <div v-else-if="itemsBpUnregShown && !isPhone" class="form-check form-check-inline mb-0">
+            <input id="items-bp-filter-unregistered" v-model="itemsBpUnregisteredOnly" class="form-check-input" type="checkbox">
+            <label class="form-check-label" for="items-bp-filter-unregistered">只顯示未登記</label>
           </div>
           <span v-if="bpFilterActive && activePane === 'blueprints'" class="small text-muted">我的藍圖 符合 {{ filteredBlueprints.length }} / {{ visibleBlueprints.length }} 張</span>
           <button v-if="bpFilterActive && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearBpFilter">清除篩選</button>
@@ -1249,6 +1263,11 @@
         :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
     </div>
 
+    <!-- 工具箱 › 貨櫃試算（總量拆成哪幾種貨櫃、各幾個；純前端，見 components/CrateCalculator.vue） -->
+    <div v-if="cratesMounted" v-show="activePane === 'crates'" role="tabpanel" id="panel-toolbox-crates" aria-labelledby="subtab-toolbox-crates">
+      <CrateCalculator card-class="card scifi-card" />
+    </div>
+
     <!-- 工具箱 › 酬勞分配（總金額依人數／成數分，扣稅前後；純前端，見 components/PayoutCalculator.vue） -->
     <div v-show="activePane === 'payout'" role="tabpanel" id="panel-toolbox-payout" aria-labelledby="subtab-toolbox-payout">
       <PayoutCalculator card-class="card scifi-card" />
@@ -1408,6 +1427,8 @@ import { LEGACY_TABS, PLAYER_TABS, normalizeHiddenTabs, normalizeTabAccess, norm
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 // 戰術小隊：多數人不會打開，拆成另一個檔案，用到才下載
 const SquadBoards = defineAsyncComponent(() => import('@/components/SquadBoards.vue'))
+const FactionDatabase = defineAsyncComponent(() => import('@/components/FactionDatabase.vue'))
+const CrateCalculator = defineAsyncComponent(() => import('@/components/CrateCalculator.vue'))
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MissionBrowser from '@/components/MissionBrowser.vue'
 import FactionReputation from '@/components/FactionReputation.vue'
@@ -1637,6 +1658,11 @@ const guestLock = computed(() => {
 // 戰術小隊第一次打開才建立元件（多數人不會用到，不必一開頁就載入）
 const squadsMounted = ref(false)
 watch(activePane, p => { if (p === 'squads') squadsMounted.value = true }, { immediate: true })
+// 資料庫 › 勢力：第一次切到才建立、載入程式
+const factionsMounted = ref(false)
+watch(activePane, p => { if (p === 'factions') factionsMounted.value = true }, { immediate: true })
+const cratesMounted = ref(false)
+watch(activePane, p => { if (p === 'crates') cratesMounted.value = true }, { immediate: true })
 // 資料庫 › 藍圖、艦船：搜尋卡跟「我的 › 藍圖／艦隊」共用（Teleport 移過來）
 const itemsBpActive = computed(() => activeTab.value === 'items' && activeSub.value === 'bpdata')
 const itemsVehActive = computed(() => activeTab.value === 'items' && activeSub.value === 'vehicles')
@@ -2206,8 +2232,12 @@ async function loadDismantleMaterials() {
 const bpHasMissionsOnly = ref(true)
 // 「只顯示未登記」只作用在展開的「登記藍圖資料」，預設勾選（自己已登記的不用再看到）
 const bpUnregisteredOnly = ref(true)
-// 資料庫 › 藍圖：同一張搜尋卡，但是列全部藍圖（含預設可用的、已登記的）
-const itemsBpFilters = computed(() => ({ ...bpFilters.value, hideAvailable: false, unregistered: false }))
+// 資料庫 › 藍圖：同一張搜尋卡，但是列全部藍圖（含預設可用的、已登記的）；
+// 登入後多一個自己的「只顯示未登記」（預設不勾，跟登記視窗那個分開記）
+const itemsBpUnregisteredOnly = ref(false)
+const itemsBpUnregShown = computed(() => !isGuest.value && itemsBpActive.value && !bpDataOpen.value)
+const itemsBpFilters = computed(() => ({ ...bpFilters.value, hideAvailable: false,
+  unregistered: !isGuest.value && itemsBpUnregisteredOnly.value }))
 // 藍圖、艦隊的共用搜尋卡要移到哪裡：登記視窗開著就進視窗，在「資料庫 › 藍圖／艦船」就進那裡
 const bpCardTarget = computed(() => (bpDataOpen.value ? '#bp-modal-filters' : itemsBpActive.value ? '#items-bp-filters' : null))
 const fleetCardTarget = computed(() => (fleetDataOpen.value ? '#fleet-modal-filters' : itemsVehActive.value ? '#items-veh-filters' : null))
@@ -2217,12 +2247,15 @@ const bpFilters = computed(() => ({
 }))
 // 手機「篩選」按鈕上的數字：收進面板的條件有幾個在作用
 const bpSheetCount = computed(() => myBpTypes.value.length + (bpHasMissionsOnly.value ? 1 : 0)
-  + (bpDataOpen.value && bpUnregisteredOnly.value ? 1 : 0))
-const bpFilterActive = computed(() => !!(bpFilters.value.q || myBpTypes.value.length || bpHasMissionsOnly.value))
+  + (bpDataOpen.value && bpUnregisteredOnly.value ? 1 : 0)
+  + (itemsBpUnregShown.value && itemsBpUnregisteredOnly.value ? 1 : 0))
+const bpFilterActive = computed(() => !!(bpFilters.value.q || myBpTypes.value.length || bpHasMissionsOnly.value
+  || (itemsBpUnregShown.value && itemsBpUnregisteredOnly.value)))
 function clearBpFilter() {
   bpFilterQuery.value = ''
   myBpTypes.value = []
   bpHasMissionsOnly.value = false
+  if (itemsBpUnregShown.value) itemsBpUnregisteredOnly.value = false
 }
 // ── 任務分頁：共用搜尋卡（條件直接傳給 MissionBrowser）；「只看有藍圖」預設勾選 ──
 const missionBrowserRef = ref(null)

@@ -14,7 +14,7 @@ export const PLAYER_TABS = [
     key: 'items', label: '資料庫', icon: 'bi bi-database',
     subTabs: [
       { key: 'data', label: '物品' }, { key: 'bpdata', label: '藍圖' }, { key: 'vehicles', label: '艦船' },
-      { key: 'missions', label: '任務' }, { key: 'minerals', label: '礦物' }, { key: 'commodities', label: '商品購買地點' },
+      { key: 'missions', label: '任務' }, { key: 'factions', label: '勢力' }, { key: 'minerals', label: '礦物' }, { key: 'commodities', label: '商品購買地點' },
     ],
   },
   // 量子航線規劃（多站點；見 components/RoutePlanner.vue）、合約分配（多合約 × 多小隊；見 components/ContractPlanner.vue）
@@ -26,11 +26,11 @@ export const PLAYER_TABS = [
     // 工具箱：原本各自是主分頁（舊網址 ?tab=mining|loadout|cargo|payout|gamelog|chatcode 會轉過來）。
     // 下層分頁標 member: true 的（戰術小隊）沒登入時顯示登入提示，其他不用登入。
     //   礦物回波（components/MiningLookup.vue）、配裝模擬（LoadoutSimulator.vue）、戰術小隊（SquadBoards.vue）、
-    //   貨艙網格（CargoLoader.vue，資料是 sc-cargo.space 的貨物網格）、酬勞分配、LOG 解析、中文轉碼
+    //   貨艙網格（CargoLoader.vue，資料是 sc-cargo.space 的貨物網格）、貨櫃試算（CrateCalculator.vue，總量拆成幾種貨櫃）、酬勞分配、LOG 解析、中文轉碼
     key: 'toolbox', label: '工具箱', icon: 'bi bi-tools',
     subTabs: [
       { key: 'mining', label: '礦物回波' }, { key: 'loadout', label: '配裝模擬' },
-      { key: 'squads', label: '戰術小隊', member: true }, { key: 'cargo', label: '貨艙網格' },
+      { key: 'squads', label: '戰術小隊', member: true }, { key: 'cargo', label: '貨艙網格' }, { key: 'crates', label: '貨櫃試算' },
       { key: 'payout', label: '酬勞分配' }, { key: 'gamelog', label: 'LOG 解析' }, { key: 'chatcode', label: '中文轉碼' },
     ],
   },

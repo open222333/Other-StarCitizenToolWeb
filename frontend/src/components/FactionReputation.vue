@@ -1,5 +1,7 @@
 <!--
-  玩家頁「任務 › 勢力聲望」：輸入勢力名稱（自動完成，中英文皆可）選一個勢力，列出它的聲望階級（名稱＋門檻分數），
+  玩家頁「任務 › 勢力聲望」／「資料庫 › 勢力」展開：輸入勢力名稱（自動完成，中英文皆可）選一個勢力
+  （傳 factionId 時直接顯示那個勢力，不出現搜尋卡），列出它的聲望階級（名稱＋門檻分數），
+  一個勢力有好幾種聲望（例如紅風物流的立場、貨運）時上面一排按鈕切換，各自一條階級表；
   每一階底下是「要到這個階級才能接」的任務（任務的 min_standing_name 對階級名稱，
   GET /mission/factions/<id>/reputation）；沒有門檻的、門檻對不到階級表的各自一組。
   點任務展開細節（MissionDetail：說明、條件、報酬、聲望異動、冷卻、聲望門檻、獎勵藍圖登記狀況）。
@@ -7,7 +9,7 @@
 -->
 <template>
   <div>
-    <div class="card scifi-card sf-search mb-3">
+    <div v-if="!fixedId" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-6">
@@ -22,6 +24,16 @@
 
     <SfState :loading="loading" :error="failed ? '讀取失敗。' : ''" :empty="!factionId || !data" empty-text="—"
       @retry="loadFaction(factionId)">
+      <!-- 好幾種聲望：一種一個按鈕（按鈕上是該種聲望的任務數） -->
+      <div v-if="scopes.length > 1" class="btn-group btn-group-sm flex-wrap mb-2" role="group" aria-label="聲望種類">
+        <button v-for="(sc, i) in scopes" :key="i" type="button" class="btn btn-subtab" :class="{ active: scopeIndex === i }"
+          :aria-pressed="scopeIndex === i ? 'true' : 'false'" @click="scopeIndex = i">
+          {{ scopeLabel(sc.scope) }}<span class="fr-scope-count ms-1">{{ scopeMissionCount(i) }}</span>
+        </button>
+      </div>
+      <div v-else-if="scopes.length === 1 && scopes[0].scope" class="mb-2">
+        <span class="sf-chip sf-chip--accent mb-0">{{ scopeLabel(scopes[0].scope) }}</span>
+      </div>
       <div v-for="g in groups" :key="g.key" class="card scifi-card mb-2">
         <div class="card-body py-2 ps-3 pe-3">
           <button type="button" class="fr-head p-0 text-start w-100" :aria-expanded="isOpen(g.key) ? 'true' : 'false'"
@@ -55,7 +67,7 @@
                       <span class="fw-semibold">{{ m.title_zh || m.title }}</span>
                       <span v-if="m.title_zh" class="small text-muted ms-1">{{ m.title }}</span>
                       <span v-if="m.illegal" class="sf-chip sf-chip--warn ms-1">違法</span>
-                      <span v-if="g.key === 'unmatched' && m.min_standing_name" class="sf-chip ms-1">{{ m.min_standing_name }}</span>
+                      <span v-if="g.key.endsWith('unmatched') && m.min_standing_name" class="sf-chip ms-1">{{ m.min_standing_name }}</span>
                     </td>
                     <td data-label="類型">{{ m.reward_scope ? typeLabel(m.reward_scope) : '—' }}</td>
                     <td class="d-none d-md-table-cell" data-label="星系">{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</td>
@@ -105,15 +117,18 @@ const props = defineProps({
   registeredUuids: { type: Array, default: () => [] },
   /** 能不能在任務細節直接登記藍圖（沒登入＝false） */
   canRegister: { type: Boolean, default: true },
+  /** 直接顯示這個勢力（不出現搜尋卡）；資料庫 › 勢力展開用 */
+  factionId: { type: String, default: '' },
 })
+const fixedId = computed(() => props.factionId || '')
 
 const factions = ref([])
-const factionId = ref('')
+const factionId = ref(props.factionId || '')
 const factionQuery = ref('')
 const openMission = ref('')
-// 這個勢力的聲望階級表，給 MissionDetail 換算聲望門檻分數
+// 這個勢力目前選的那種聲望的階級表，給 MissionDetail 換算聲望門檻分數
 const ladderMap = computed(() => (data.value
-  ? { [data.value.faction._id]: (data.value.ranks || []).map(r => ({ name: r.name, min_reputation: r.min_reputation })) }
+  ? { [data.value.faction._id]: ((scopes.value[scopeIndex.value] || scopes.value[0])?.ranks || []).map(r => ({ name: r.name, min_reputation: r.min_reputation })) }
   : {}))
 // 本地清單比對：中文、英文、翻譯資料庫查到的中文都算
 async function searchFactions(q) {
@@ -139,13 +154,38 @@ function systemLabel(s) { return translate('location', s) || s }
 
 const registered = computed(() => new Set(props.registeredUuids || []))
 
-// 沒門檻 → 各階級（依階級表順序）→ 門檻對不到階級表的
-const groups = computed(() => {
+// ── 聲望種類（舊版後端只有 ranks：當成一種） ──
+const scopes = computed(() => {
   const d = data.value
   if (!d) return []
-  const out = [{ key: 'open', title: '不需聲望', threshold: null, missions: d.open || [] }]
-  ;(d.ranks || []).forEach((r, i) => out.push({ key: `rank-${i}`, title: r.name, threshold: r.min_reputation, missions: r.missions || [] }))
-  if ((d.unmatched || []).length) out.push({ key: 'unmatched', title: '其他聲望門檻', threshold: null, missions: d.unmatched })
+  return d.scopes?.length ? d.scopes : [{ scope: null, ranks: d.ranks || [] }]
+})
+const scopeIndex = ref(0)
+/** 種類名稱：遊戲翻譯（跟任務類型同一份）→ 英文；沒有名稱的叫「聲望」 */
+function scopeLabel(sc) { return sc ? (translate('mission_type', sc) || sc) : '聲望' }
+/** 沒門檻／門檻對不到的任務，屬不屬於這種聲望：任務會給這種聲望、或沒寫給哪種（只有一種時全部算） */
+function inScope(m, sc) {
+  if (scopes.value.length <= 1 || !sc) return true
+  const list = m.rep_scopes || []
+  return !list.length || list.some(x => x.toLowerCase() === sc.toLowerCase())
+}
+function scopeMissionCount(i) {
+  const sc = scopes.value[i]
+  const d = data.value
+  if (!sc || !d) return 0
+  return (sc.ranks || []).reduce((n, r) => n + (r.missions || []).length, 0)
+    + [...(d.open || []), ...(d.unmatched || [])].filter(m => inScope(m, sc.scope)).length
+}
+// 沒門檻 → 各階級（依這種聲望的階級表順序）→ 門檻對不到階級表的
+const groups = computed(() => {
+  const d = data.value
+  const sc = scopes.value[scopeIndex.value] || scopes.value[0]
+  if (!d || !sc) return []
+  const pre = `${scopeIndex.value}-`
+  const out = [{ key: `${pre}open`, title: '不需聲望', threshold: null, missions: (d.open || []).filter(m => inScope(m, sc.scope)) }]
+  ;(sc.ranks || []).forEach((r, i) => out.push({ key: `${pre}rank-${i}`, title: r.name, threshold: r.min_reputation, missions: r.missions || [] }))
+  const um = (d.unmatched || []).filter(m => inScope(m, sc.scope))
+  if (um.length) out.push({ key: `${pre}unmatched`, title: '其他聲望門檻', threshold: null, missions: um })
   return out
 })
 // 每個任務的藍圖數／已登記數只算一次（key 是任務物件本身）
@@ -172,16 +212,22 @@ async function loadFaction(id) {
   data.value = body?.success ? body.data : null
   failed.value = !body?.success
   loading.value = false
-  const all = [...(data.value?.open || []), ...(data.value?.unmatched || []), ...(data.value?.ranks || []).flatMap(r => r.missions)]
+  scopeIndex.value = 0
+  const all = [...(data.value?.open || []), ...(data.value?.unmatched || []),
+    ...(data.value?.scopes || [{ ranks: data.value?.ranks || [] }]).flatMap(sc => (sc.ranks || []).flatMap(r => r.missions || []))]
+  loadTranslations('mission_type', (data.value?.scopes || []).map(sc => sc.scope))
   loadTranslations('mission_type', all.map(m => m.reward_scope))
   loadTranslations('location', all.flatMap(m => m.star_systems || []))
   loadTranslations('faction', all.flatMap(m => (m.reputation_gained || []).map(r => r.faction)))
 }
 watch(factionId, loadFaction)
+watch(() => props.factionId, id => { if (id) factionId.value = id })
+// 指定了勢力：一開始就載入（不用等勢力清單）
+if (props.factionId) loadFaction(props.factionId)
 
 let loaded = false
 watch(() => props.active, async (v) => {
-  if (!v || loaded) return
+  if (!v || loaded || fixedId.value) return
   loaded = true
   const body = await getJson('/mission/factions')
   const list = (body?.success ? body.data : []).filter(f => f.mission_count > 0)
@@ -196,4 +242,5 @@ watch(() => props.active, async (v) => {
 .fr-count { color: var(--sf-text-strong); }
 .fr-row { cursor: pointer; }
 .fr-detail { background: var(--sf-inset); }
+.fr-scope-count { opacity: .75; font-size: .85em; }
 </style>

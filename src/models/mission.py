@@ -287,11 +287,8 @@ def standing_key(name) -> str:
     return '' if not text or 'placeholder' in text.lower() else text.lower()
 
 
-def ladder_steps(ladder) -> list:
-    """勢力 reputation_ladder 整理成 [{name, min_reputation}]（結構隨上游變動，盡量抓名稱＋門檻）。"""
-    if isinstance(ladder, dict):
-        ladder = (ladder.get('ranks') or ladder.get('standings') or ladder.get('steps')
-                  or next((v for v in ladder.values() if isinstance(v, list)), []))
+def _steps_of(ladder) -> list:
+    """一條階級表（list）→ [{name, min_reputation}]。"""
     out = []
     for step in ladder if isinstance(ladder, list) else []:
         if isinstance(step, str):
@@ -307,6 +304,89 @@ def ladder_steps(ladder) -> list:
     return out
 
 
+#: 一條階級表在 dict 裡常見的 key
+_STEP_KEYS = ('ranks', 'standings', 'steps', 'ladder', 'tiers', 'levels')
+#: 「一種聲望」的名稱在 dict 裡常見的 key
+_SCOPE_NAME_KEYS = ('scope', 'scope_name', 'display_name', 'name', 'title', 'label')
+
+
+def _scope_steps(obj):
+    """obj 是「一種聲望」（裡面有一條階級表）時回傳那條表，不是就回 None。"""
+    if not isinstance(obj, dict):
+        return None
+    for k in _STEP_KEYS:
+        if isinstance(obj.get(k), list):
+            return obj[k]
+    return None
+
+
+def _scope_name(obj):
+    return next((obj[k] for k in _SCOPE_NAME_KEYS if isinstance(obj.get(k), str) and obj.get(k)), None)
+
+
+def ladder_scopes(ladder) -> list:
+    """勢力 reputation_ladder → [{scope, steps}]。一個勢力可以有好幾種聲望（例如立場、貨運），各有一條階級表。
+
+    上游結構不固定，認得這幾種（scope 是那種聲望的名稱，看不出來的是 None）：
+      - [{name, min_reputation}, …]                     一條表
+      - {ranks|standings|steps: […]}                    一條表
+      - [{scope|name: 'Hauling', ranks: […]}, …]        多種聲望，每種一條
+      - {'Hauling': […], 'Affinity': […]}               多種聲望，key 是名稱
+    """
+    if isinstance(ladder, list):
+        dicts = [x for x in ladder if isinstance(x, dict)]
+        if dicts and all(_scope_steps(x) is not None for x in dicts):
+            out = []
+            for x in dicts:
+                steps = _steps_of(_scope_steps(x))
+                if steps:
+                    out.append({'scope': _scope_name(x), 'steps': steps})
+            return out
+        steps = _steps_of(ladder)
+        return [{'scope': None, 'steps': steps}] if steps else []
+    if isinstance(ladder, dict):
+        own = _scope_steps(ladder)
+        if own is not None:
+            steps = _steps_of(own)
+            return [{'scope': _scope_name(ladder), 'steps': steps}] if steps else []
+        out = []
+        for key, value in ladder.items():
+            if isinstance(value, list):
+                steps = _steps_of(value)
+            elif isinstance(value, dict):
+                steps = _steps_of(_scope_steps(value) or [])
+            else:
+                steps = []
+            if steps:
+                out.append({'scope': str(key), 'steps': steps})
+        return out
+    return []
+
+
+def ladder_steps(ladder) -> list:
+    """全部聲望種類的階級攤平成 [{name, min_reputation}]（同名只留第一個），任務說明換算「聲望門檻」分數用。"""
+    out, seen = [], set()
+    for sc in ladder_scopes(ladder):
+        for st in sc['steps']:
+            key = standing_key(st['name']) or st['name']
+            if key not in seen:
+                seen.add(key)
+                out.append(st)
+    return out
+
+
+def _rep_scopes_for(mission: dict, faction_id: str, faction_name: str) -> list:
+    """任務完成後給這個勢力的聲望是哪幾種（reputation_gained 的 scope）。"""
+    out = []
+    for r in mission.get('reputation_gained') or []:
+        if not isinstance(r, dict) or not r.get('scope'):
+            continue
+        if r.get('faction_uuid') == faction_id or (faction_name and (r.get('faction') or '').strip().lower() == faction_name):
+            if r['scope'] not in out:
+                out.append(r['scope'])
+    return out
+
+
 class Faction:
     COLLECTION = FACTION_COLLECTION
     PROJECTION = {'raw': 0}
@@ -317,22 +397,32 @@ class Faction:
 
     @classmethod
     def _mission_counts(cls, visible_only: bool = False) -> dict:
-        """`{faction_uuid: {'missions': n, 'blueprint_missions': n}}`；visible_only＝只算玩家頁面顯示的任務"""
+        """`{faction_uuid: {'missions', 'blueprint_missions', 'mission_types', 'rep_scopes'}}`；
+        visible_only＝只算玩家頁面顯示的任務。rep_scopes＝任務給這個勢力的聲望種類（reputation_gained 的 scope）。"""
         out = {}
+        names = {r['_id']: (r.get('name') or '').strip().lower()
+                 for r in cls._col().find({'is_current': True}, {'name': 1})}
         filt = add_visibility_filter({'is_current': True, 'faction_uuid': {'$nin': [None, '']}},
                                      visible_only=visible_only)
         for row in get_db()[MISSION_COLLECTION].find(
                 filt,
-                {'faction_uuid': 1, 'has_blueprints': 1}):
-            c = out.setdefault(row['faction_uuid'], {'missions': 0, 'blueprint_missions': 0})
+                {'faction_uuid': 1, 'has_blueprints': 1, 'reward_scope': 1, 'reputation_gained': 1}):
+            fid = row['faction_uuid']
+            c = out.setdefault(fid, {'missions': 0, 'blueprint_missions': 0, 'mission_types': [], 'rep_scopes': []})
             c['missions'] += 1
             if row.get('has_blueprints'):
                 c['blueprint_missions'] += 1
+            if row.get('reward_scope') and row['reward_scope'] not in c['mission_types']:
+                c['mission_types'].append(row['reward_scope'])
+            for sc in _rep_scopes_for(row, fid, names.get(fid, '')):
+                if sc not in c['rep_scopes']:
+                    c['rep_scopes'].append(sc)
         return out
 
     @classmethod
     def list_all(cls, visible_only: bool = False) -> list:
-        """全部勢力（約 64 筆，不分頁，篩選在前端做），附任務數（玩家只算玩家頁面顯示的任務）。"""
+        """全部勢力（約 64 筆，不分頁，篩選在前端做），附任務數（玩家只算玩家頁面顯示的任務）、
+        任務類型 mission_types、聲望種類 scopes（階級表裡的種類＋任務會給的聲望種類）。"""
         counts = cls._mission_counts(visible_only=visible_only)
         rows = list(cls._col().find({'is_current': True}, cls.PROJECTION)
                     .sort('name_lower', ASCENDING))
@@ -340,6 +430,12 @@ class Faction:
             c = counts.get(row['_id']) or {}
             row['mission_count'] = c.get('missions', 0)
             row['blueprint_mission_count'] = c.get('blueprint_missions', 0)
+            row['mission_types'] = sorted(c.get('mission_types') or [])
+            scopes = [sc['scope'] for sc in ladder_scopes(row.get('reputation_ladder')) if sc['scope']]
+            for sc in c.get('rep_scopes') or []:
+                if sc not in scopes:
+                    scopes.append(sc)
+            row['scopes'] = scopes
         return rows
 
     @classmethod
@@ -402,21 +498,46 @@ class Faction:
         # 每個任務可以展開看細節（說明、條件、報酬、聲望異動、獎勵藍圖）：只取 MissionDetail 用得到的欄位
         missions = Mission._attach_blueprint_names(
             list(get_db()[MISSION_COLLECTION].find(filt, cls.REPUTATION_MISSION_FIELDS).sort('title_lower', ASCENDING)))
-        steps = ladder_steps(doc.get('reputation_ladder'))
-        ranks = [{**s, 'missions': []} for s in steps]
-        by_key = {standing_key(s['name']): r for s, r in zip(steps, ranks) if standing_key(s['name'])}
-        open_missions, unmatched = [], []
+        name_l = (doc.get('name') or '').strip().lower()
+        scopes = [{'scope': sc['scope'], 'ranks': [{**st, 'missions': []} for st in sc['steps']]}
+                  for sc in ladder_scopes(doc.get('reputation_ladder'))]
+        # 階級名稱 → 有這一階的聲望種類（同名可能出現在好幾種）
+        by_key = {}
+        for sc in scopes:
+            for r in sc['ranks']:
+                k = standing_key(r['name'])
+                if k:
+                    by_key.setdefault(k, []).append((sc, r))
+        open_missions, unmatched, rep_scopes = [], [], []
         for m in missions:
+            m['rep_scopes'] = _rep_scopes_for(m, faction_id, name_l)
+            for s_ in m['rep_scopes']:
+                if s_ not in rep_scopes:
+                    rep_scopes.append(s_)
             key = standing_key(m.get('min_standing_name'))
             if not key:
                 open_missions.append(m)
-            elif key in by_key:
-                by_key[key]['missions'].append(m)
-            else:
+                continue
+            hits = by_key.get(key)
+            if not hits:
                 unmatched.append(m)
+                continue
+            # 好幾種聲望都有這個階級名稱：優先放到這個任務給的聲望種類，再來是任務類型同名的
+            wanted = [x.lower() for x in m['rep_scopes'] + [m.get('reward_scope') or '']]
+            _, rank = next(((sc, r) for sc, r in hits if (sc['scope'] or '').lower() in wanted), hits[0])
+            rank['missions'].append(m)
+        # 階級表只有一條、沒寫種類名稱：任務給的聲望只有一種時就用它當名稱
+        if len(scopes) == 1 and not scopes[0]['scope'] and len(rep_scopes) == 1:
+            scopes[0]['scope'] = rep_scopes[0]
+        # 任務會給、但階級表沒有的聲望種類也列出來（沒有階級，只有名稱）
+        known = {(sc['scope'] or '').lower() for sc in scopes}
+        extra = [{'scope': s_, 'ranks': []} for s_ in rep_scopes if s_.lower() not in known]
         return {'faction': {'_id': doc['_id'], 'name': doc.get('name'), 'name_zh': doc.get('name_zh'),
                             'faction_type': doc.get('faction_type'), 'lawful': doc.get('lawful')},
-                'ranks': ranks, 'open': open_missions, 'unmatched': unmatched}
+                'scopes': scopes + extra,
+                # 舊欄位：第一種聲望的階級
+                'ranks': scopes[0]['ranks'] if scopes else [],
+                'open': open_missions, 'unmatched': unmatched}
 
     @classmethod
     def count_current(cls) -> int:

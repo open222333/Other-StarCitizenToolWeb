@@ -282,6 +282,54 @@ def test_faction_reputation_groups_missions_by_rank(missions):
         {'name': 'A', 'min_reputation': None}, {'name': 'B', 'min_reputation': 5}]
 
 
+def test_ladder_scopes_shapes():
+    from src.models.mission import ladder_scopes, ladder_steps
+    one = [{'name': 'Applicant', 'min_reputation': 0}]
+    assert ladder_scopes(one) == [{'scope': None, 'steps': [{'name': 'Applicant', 'min_reputation': 0}]}]
+    assert ladder_scopes({'standings': one}) == [{'scope': None, 'steps': [{'name': 'Applicant', 'min_reputation': 0}]}]
+    multi = [{'scope': 'Affinity', 'ranks': [{'name': 'Neutral', 'min_reputation': 0}]},
+             {'name': 'Hauling', 'standings': [{'name': 'Trainee', 'min': 0}, {'name': 'Rookie', 'min': 2000}]}]
+    assert [(s['scope'], [x['name'] for x in s['steps']]) for s in ladder_scopes(multi)] == [
+        ('Affinity', ['Neutral']), ('Hauling', ['Trainee', 'Rookie'])]
+    by_key = {'Affinity': [{'name': 'Neutral', 'min_reputation': 0}], 'Hauling': {'ranks': ['Trainee']}}
+    assert [s['scope'] for s in ladder_scopes(by_key)] == ['Affinity', 'Hauling']
+    assert [x['name'] for x in ladder_steps(multi)] == ['Neutral', 'Trainee', 'Rookie']
+    assert ladder_scopes(None) == [] and ladder_scopes({'x': 1}) == []
+
+
+def test_faction_reputation_multiple_scopes(missions):
+    """紅風物流這種：立場（Affinity）＋貨運（Hauling）兩條階級表，任務放到它給的那種聲望底下。"""
+    db = get_db()
+    db['faction_master'].insert_one({
+        '_id': 'f1', 'name': 'Faction One', 'name_lower': 'faction one', 'is_current': True,
+        'reputation_ladder': [
+            {'scope': 'Affinity', 'ranks': [{'name': 'Neutral', 'min_reputation': 0}, {'name': 'Trusted', 'min_reputation': 500}]},
+            {'scope': 'Hauling', 'ranks': [{'name': 'Trainee', 'min_reputation': 0}, {'name': 'Trusted', 'min_reputation': 900}]}]})
+    rep = lambda sc: [{'faction': 'Faction One', 'faction_uuid': 'f1', 'scope': sc, 'amount': 100}]
+    m = db['mission_master']
+    m.update_one({'_id': 'm1'}, {'$set': {'min_standing_name': 'Trusted', 'reputation_gained': rep('Hauling')}})
+    m.update_one({'_id': 'm2'}, {'$set': {'min_standing_name': 'trusted', 'reward_scope': 'Bounty', 'faction_uuid': 'f1',
+                                          'reputation_gained': rep('Affinity')}})
+    m.update_one({'_id': 'm3'}, {'$set': {'reputation_gained': rep('Salvage')}})
+    data = Faction.reputation('f1')
+    got = {s['scope']: [(r['name'], [x['_id'] for x in r['missions']]) for r in s['ranks']] for s in data['scopes']}
+    assert got == {'Affinity': [('Neutral', []), ('Trusted', ['m2'])],
+                   'Hauling': [('Trainee', []), ('Trusted', ['m1'])],
+                   'Salvage': []}, '同名階級依任務給的聲望種類分開；階級表沒有的種類也列出來'
+    assert data['ranks'] == data['scopes'][0]['ranks']
+    row = next(r for r in Faction.list_all() if r['_id'] == 'f1')
+    assert row['scopes'] == ['Affinity', 'Hauling', 'Salvage']
+    assert 'Hauling' in row['mission_types'] and 'Bounty' in row['mission_types']
+
+
+def test_faction_single_unnamed_ladder_takes_mission_scope(missions):
+    db = get_db()
+    db['faction_master'].insert_one({'_id': 'f1', 'name': 'Faction One', 'name_lower': 'faction one', 'is_current': True,
+                                     'reputation_ladder': [{'name': 'Applicant', 'min_reputation': 0}]})
+    db['mission_master'].update_many({}, {'$set': {'reputation_gained': [{'faction_uuid': 'f1', 'scope': 'Hauling', 'amount': 5}]}})
+    assert [s['scope'] for s in Faction.reputation('f1')['scopes']] == ['Hauling']
+
+
 # ═══════════════════════════════════════════════════════════
 #  API
 # ═══════════════════════════════════════════════════════════
