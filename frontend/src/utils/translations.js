@@ -8,7 +8,7 @@
 import { reactive } from 'vue'
 
 const DOMAINS = ['location', 'item', 'vehicle', 'vehicle_role',
-  'mining_resource', 'mining_deposit', 'blueprint_type', 'item_type', 'item_sub_type', 'item_class', 'mission_type', 'faction']
+  'mining_resource', 'mining_deposit', 'blueprint_type', 'item_type', 'item_sub_type', 'item_class', 'mission_type', 'faction', 'rep_rank']
 
 const cache = reactive(Object.fromEntries(DOMAINS.map(d => [d, {}])))
 const inflight = Object.fromEntries(DOMAINS.map(d => [d, new Set()]))

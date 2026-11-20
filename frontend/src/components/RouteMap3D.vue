@@ -242,7 +242,8 @@ function fit(animate = false) {
   // 窄螢幕（手機直放）時寬度才是限制；右邊扣掉按鈕那一欄，內容往左挪半欄
   const TOOLS = 52
   const halfTan = Math.min(Math.tan(FOV / 2), ((size.w - TOOLS) / 2) / focal())
-  const dist = clampDist(Math.max(MIN_DIST * 50, (r / halfTan) * 1.12))
+  // 整顆包圍球（半徑 r）的外框要落在視角內：距離 ≥ r／sin(半視角)；再留 15% 給站點標籤
+  const dist = clampDist(Math.max(MIN_DIST * 50, r * Math.sqrt(1 + 1 / (halfTan * halfTan)) * 1.15))
   const shift = fromCam((TOOLS / 2) * dist / focal(), 0, 0)
   moveTo({ target: c.map((v, i) => v + shift[i]), dist }, animate)
 }
@@ -1044,7 +1045,8 @@ watch([() => props.plan, system], () => nextTick(() => {
 
 <style scoped>
 .rm3d__wrap {
-  position: relative; height: 520px; user-select: none; -webkit-user-select: none;
+  /* 跟著視窗高度：航線結果視窗裡扣掉上面的方案／數據列與下面的「完成」列，矮螢幕不用再捲；介於 16rem～40rem */
+  position: relative; height: clamp(16rem, calc(100dvh - 28rem), 40rem); user-select: none; -webkit-user-select: none;
   border: 1px solid var(--sf-border); border-radius: .6rem; overflow: hidden; background: #03060d;
 }
 .rm3d__wrap.is-full { position: fixed; inset: 0; z-index: 2000; height: auto; border-radius: 0; border: 0; }

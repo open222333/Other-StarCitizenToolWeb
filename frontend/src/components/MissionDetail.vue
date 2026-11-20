@@ -38,9 +38,10 @@
         <dt>聲望門檻</dt>
         <dd>
           <template v-if="standing">
-            {{ factionLabel(m) }} · <span class="fw-semibold">{{ standing.name }}</span>
+            {{ factionLabel(m) }} · <span class="fw-semibold">{{ rankLabel(standing.name) }}</span>
+            <span v-if="translate('rep_rank', standing.name)" class="small text-muted ms-1">{{ standing.name }}</span>
             <span v-if="standing.min !== null" class="md-chance ms-1">{{ fmtInt(standing.min) }} 聲望以上</span>
-            <span v-if="standing.max" class="text-muted ms-1">（上限 {{ standing.max }}）</span>
+            <span v-if="standing.max" class="text-muted ms-1">（上限 {{ rankLabel(standing.max) }}）</span>
           </template>
           <span v-else class="text-muted">不需聲望</span>
         </dd>
@@ -77,9 +78,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { factionLabel, fmtChance, fmtCooldown, fmtInt, fmtRep, missionConditions, rewardLabel } from '@/utils/mission'
-import { translate } from '@/utils/translations'
+import { loadTranslations, translate } from '@/utils/translations'
 import { bpStateLabel, bpUuid, isBpRegistered, missionPool, registeredInPool } from '@/utils/missionBlueprints'
 
 const props = defineProps({
@@ -134,6 +135,8 @@ async function register(uuids) {
 function typeLabel(s) { return translate('mission_type', s) || s }
 function systemLabel(s) { return translate('location', s) || s }
 function factionName(s) { return translate('faction', s) || s }
+// 聲望階級名稱：翻譯包有就顯示中文（RepStanding_*，見後端 sc_zh.rep_rank_zh）
+function rankLabel(s) { return translate('rep_rank', s) || s }
 
 const realStanding = s => (typeof s === 'string' && s.trim() && !/placeholder/i.test(s) ? s.trim() : '')
 const standing = computed(() => {
@@ -142,6 +145,7 @@ const standing = computed(() => {
   const step = (props.ladders[m.value.faction_uuid] || []).find(x => (x.name || '').toLowerCase() === name.toLowerCase())
   return { name, min: step?.min_reputation ?? null, max: realStanding(m.value.max_standing_name) }
 })
+watch(standing, s => { if (s) loadTranslations('rep_rank', [s.name, s.max]) }, { immediate: true })
 </script>
 
 <style scoped>

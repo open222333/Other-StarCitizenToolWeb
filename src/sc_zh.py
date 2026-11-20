@@ -22,7 +22,9 @@ labels.json）＋社群繁中化包（cosmo-chang-1701/sc-translation-pack）寫
   - 礦床：人工條目（岩石／小行星分類）→ 同礦物的查法。
   - 藍圖類型：人工條目（遊戲 output_type 代碼，翻譯包沒有）。
   - 任務／勢力：英文標題／名稱反查，key 用片段比對（見下方「任務／勢力」一節）。
-  - 任務類型（reward_scope）：英文反查 RepScope_*（聲望範圍名稱）→ mobiGlas_ui_MissionType_* → mobiglas_ui_*。
+  - 任務類型（reward_scope）／聲望種類：內部代號直接當 key（RepScope_<代號>_Name、別名表）→ 英文反查
+    RepScope_*（聲望範圍名稱）→ mobiGlas_ui_MissionType_* → mobiglas_ui_*。
+  - 聲望階級名稱：英文反查 RepStanding_*／RepScope_*_Rank*。
 """
 
 import re
@@ -350,9 +352,56 @@ def mission_text_zh(title: str, description: str = '', lang: str = DEFAULT_LANG)
 _MISSION_TYPE_PREFIXES = ['repscope_', 'mobiglas_ui_missiontype_', 'mobiglas_ui_']
 
 
+#: 聲望種類的內部代號（勢力階級表 reputation_ladder 的 scope，例如 FactionReputation、BountyHunter）
+#: 跟翻譯包 key 拼法不同的 → 直接指定 key（小寫比對）
+_SCOPE_KEY_ALIASES = {
+    'factionreputation': ['mobiGlas_Reputation_Standing'],          # 立場
+    'bountyhunter': ['RepScope_Bounty_Name'],                       # 賞金獵人
+    'bountyhunting': ['RepScope_Bounty_Name'],
+    'missiongiver': ['RepScope_MissionGiver_Default_Name'],         # 親和度
+    'hauling': ['RepScope_TransportGuild_Name'],                    # 貨運
+}
+
+
 def mission_type_zh(scope: str, lang: str = DEFAULT_LANG) -> Optional[str]:
-    """任務類型（上游 reward_scope，例如 Hauling、Assassination），用英文反查翻譯包。"""
-    return T.by_english(scope, [_manual('mission_type')] + _MISSION_TYPE_PREFIXES, lang) if scope else None
+    """任務類型／聲望種類 → 翻譯，查不到回 None。
+
+    上游有兩種寫法：顯示用的英文（reward_scope，例如 Hauling、Assassination）跟內部代號
+    （階級表的 scope，例如 FactionReputation、BountyHunter、Security）。依序試：
+    人工條目 → 代號直接當 key（別名表、RepScope_<代號>_Name、mobiGlas_Reputation_ScopeTitle_<代號>）
+    → 英文反查 RepScope_*／mobiGlas 合約分類。
+    """
+    text = (scope or '').strip()
+    if not text:
+        return None
+    value = T.by_english(text, [_manual('mission_type')], lang)
+    if value:
+        return value
+    ident = re.sub(r'[^0-9A-Za-z_]', '', text)
+    if ident:
+        keys = list(_SCOPE_KEY_ALIASES.get(ident.lower(), []))
+        keys += [f'RepScope_{ident}_Name', f'RepScope_{ident}_Default_Name',
+                 f'mobiGlas_Reputation_ScopeTitle_{ident}']
+        value = T.by_keys(keys, lang)
+        if value:
+            return value
+    return T.by_english(text, _MISSION_TYPE_PREFIXES, lang)
+
+
+#: 聲望階級名稱（例如 Junior Contractor）：英文反查 RepStanding_*（不含 _Perk 說明）／RepScope_*_Rank*
+_REP_RANK_PATTERNS = [r'^repstanding_(?!.*_perks?$)', r'^repscope_.*_rank\d']
+
+
+def rep_rank_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """勢力聲望階級名稱 → 翻譯（人工條目優先），查不到回 None。"""
+    text = (name or '').strip()
+    if not text:
+        return None
+    value = T.by_english(text, [_manual('rep_rank')], lang)
+    if value:
+        return value
+    hit = T.match_english(text, _REP_RANK_PATTERNS, lang)
+    return hit[1] if hit else None
 
 
 def mission_giver_zh(name: str, lang: str = DEFAULT_LANG) -> Optional[str]:
@@ -488,6 +537,7 @@ LOOKUPS = {
     'faction':         faction_name_zh,
     'mission_giver':   mission_giver_zh,
     'mission_type':    mission_type_zh,
+    'rep_rank':        rep_rank_zh,
     'starmap_type':    starmap_type_zh,
     'amenity':         amenity_zh,
 }

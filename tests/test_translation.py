@@ -187,6 +187,28 @@ def test_mission_type_from_translation_pack(client, seed_translations):
     assert body['data'] == {'Assassination': '暗殺'}
 
 
+
+def test_reputation_scope_codes_and_ranks(client, seed_translations):
+    """聲望種類的內部代號（階級表的 scope）直接當 key 查；別名表處理拼法不同的；階級名稱英文反查。"""
+    seed_translations({
+        'mobiGlas_Reputation_Standing': ('Standing', '立場'),
+        'RepScope_Bounty_Name': ('Bounty Hunting', '賞金獵人'),
+        'RepScope_Security_Name': ('Security', '保全'),
+        'mobiGlas_Reputation_ScopeTitle_Affinity': ('Affinity', '親和度'),
+        'RepScope_Contractor_Rank1': ('Junior Contractor', '初級承包商'),
+        'RepStanding_Bounty_Probation_Name': ('Probationary Guild Member', '試用公會成員'),
+    })
+    assert Z.mission_type_zh('FactionReputation') == '立場'
+    assert Z.mission_type_zh('BountyHunter') == '賞金獵人'
+    assert Z.mission_type_zh('Security') == '保全'
+    assert Z.mission_type_zh('Affinity') == '親和度'
+    assert Z.mission_type_zh('NoSuchScope') is None
+    assert Z.rep_rank_zh('Junior Contractor') == '初級承包商'
+    assert Z.rep_rank_zh('probationary guild member') == '試用公會成員'
+    assert Z.rep_rank_zh('Security') is None, '聲望種類名稱不算階級'
+    body = client.get('/item/translations?domain=rep_rank&text=Junior Contractor').get_json()
+    assert body['data'] == {'Junior Contractor': '初級承包商'}
+
 def test_manual_entries_are_written_at_startup(app):
     """app 啟動（ensure_indexes）就會寫人工條目，不用等第一次同步。"""
     from src.mongo import ensure_indexes

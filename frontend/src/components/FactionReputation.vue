@@ -40,6 +40,7 @@
             @click="toggle(g.key)">
             <i class="bi me-1" :class="isOpen(g.key) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
             <span class="fw-semibold">{{ g.title }}</span>
+            <span v-if="g.en" class="small text-muted ms-1">{{ g.en }}</span>
             <span v-if="g.threshold !== null && g.threshold !== undefined" class="fr-threshold ms-2">{{ fmtInt(g.threshold) }} 聲望</span>
             <span class="small text-muted ms-2">{{ g.missions.length }} 個任務</span>
           </button>
@@ -67,7 +68,7 @@
                       <span class="fw-semibold">{{ m.title_zh || m.title }}</span>
                       <span v-if="m.title_zh" class="small text-muted ms-1">{{ m.title }}</span>
                       <span v-if="m.illegal" class="sf-chip sf-chip--warn ms-1">違法</span>
-                      <span v-if="g.key.endsWith('unmatched') && m.min_standing_name" class="sf-chip ms-1">{{ m.min_standing_name }}</span>
+                      <span v-if="g.key.endsWith('unmatched') && m.min_standing_name" class="sf-chip ms-1">{{ translate('rep_rank', m.min_standing_name) || m.min_standing_name }}</span>
                     </td>
                     <td data-label="類型">{{ m.reward_scope ? typeLabel(m.reward_scope) : '—' }}</td>
                     <td class="d-none d-md-table-cell" data-label="星系">{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</td>
@@ -183,7 +184,8 @@ const groups = computed(() => {
   if (!d || !sc) return []
   const pre = `${scopeIndex.value}-`
   const out = [{ key: `${pre}open`, title: '不需聲望', threshold: null, missions: (d.open || []).filter(m => inScope(m, sc.scope)) }]
-  ;(sc.ranks || []).forEach((r, i) => out.push({ key: `${pre}rank-${i}`, title: r.name, threshold: r.min_reputation, missions: r.missions || [] }))
+  ;(sc.ranks || []).forEach((r, i) => out.push({ key: `${pre}rank-${i}`, title: translate('rep_rank', r.name) || r.name,
+    en: translate('rep_rank', r.name) ? r.name : '', threshold: r.min_reputation, missions: r.missions || [] }))
   const um = (d.unmatched || []).filter(m => inScope(m, sc.scope))
   if (um.length) out.push({ key: `${pre}unmatched`, title: '其他聲望門檻', threshold: null, missions: um })
   return out
@@ -216,6 +218,8 @@ async function loadFaction(id) {
   const all = [...(data.value?.open || []), ...(data.value?.unmatched || []),
     ...(data.value?.scopes || [{ ranks: data.value?.ranks || [] }]).flatMap(sc => (sc.ranks || []).flatMap(r => r.missions || []))]
   loadTranslations('mission_type', (data.value?.scopes || []).map(sc => sc.scope))
+  loadTranslations('rep_rank', (data.value?.unmatched || []).map(m => m.min_standing_name))
+  loadTranslations('rep_rank', (data.value?.scopes || [{ ranks: data.value?.ranks || [] }]).flatMap(sc => (sc.ranks || []).map(r => r.name)))
   loadTranslations('mission_type', all.map(m => m.reward_scope))
   loadTranslations('location', all.flatMap(m => m.star_systems || []))
   loadTranslations('faction', all.flatMap(m => (m.reputation_gained || []).map(r => r.faction)))
