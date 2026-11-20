@@ -6,7 +6,7 @@
 而 README 又把這個網址列在「API 與文件」表格裡。
 
 改成直接回一頁自帶樣式的靜態 HTML：不需要模板檔案，也就不會再有
-「檔案沒跟著部署」這種失敗模式。真正的 API 文件在 /apidocs（Swagger UI），
+「檔案沒跟著部署」這種失敗模式。真正的 API 文件在後台「API 文件」頁（只給 admin；/apidocs 也限 admin token），
 這一頁只負責當入口與講清楚兩個前端的差別。
 """
 from flask import Blueprint, Response
@@ -40,8 +40,8 @@ _PAGE = """<!doctype html>
 <p class="sub">星際公民公會倉庫管理系統 · 說明入口</p>
 
 <h2>API 文件</h2>
-<p><a href="/apidocs">Swagger UI（/apidocs）</a> —— 所有端點、參數與回應格式。
-需要 token 的端點請先用 <code>POST /auth/login</code> 取得，再填進右上角的 Authorize。</p>
+<p>所有端點、參數與回應格式在後台的「系統 › API 文件」（只給管理員）。
+Swagger UI（<code>/apidocs</code>）與規格檔（<code>/apispec_1.json</code>）也只接受管理員 token，瀏覽器直接開會回 401。</p>
 
 <h2>兩個前端不要搞混</h2>
 <table>

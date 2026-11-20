@@ -538,3 +538,20 @@ def test_has_reward_filter_and_sort():
     assert [r['_id'] for r in rows][:2] == ['r3', 'r1']
     rows, _ = Mission.list_all(has_reward=True, query='Dynamic')
     assert rows == []
+
+
+
+def test_glued_title_and_translated_fills(seed_translations):
+    """Wiki 標題兩段黏在一起（"...LargeMaster Rank - ..."）時分開比對；代入值（等級、規模）也翻成中文，
+    沒有值的航線範圍欄位直接拿掉。"""
+    seed_translations({
+        'Covalex_HaulCargo_MultiToSingle_title': ('~mission(ReputationRank) Rank - ~mission(CargoGradeToken) Cargo Haul',
+                                                  '~mission(ReputationRank) 等級 - ~mission(CargoRouteToken) ~mission(CargoGradeToken) 貨物運送'),
+        'RepStanding_TransportGuild_Rank6': ('Master', '大師'),
+        'HaulCargo_CargoGrade_Bulk': ('Large', '大型'),
+    })
+    got = Z.mission_text_zh('Master | [CargoRouteToken] LargeMaster Rank - Large Cargo Haul')
+    assert got['title_zh'] == '大師 等級 - 大型 貨物運送'
+    assert got['title_key'] == 'covalex_haulcargo_multitosingle_title'
+    # 一般標題照舊整段比對
+    assert Z.mission_text_zh('Master Rank - Large Cargo Haul')['title_zh'] == '大師 等級 - 大型 貨物運送'

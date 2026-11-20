@@ -27,7 +27,7 @@ from app.starmap.view import app_starmap
 from app.data.view import app_data
 from app.loadout.view import app_loadout
 from app.links.view import app_links
-from src import FLASK_JSON_PATH
+from src import ADMIN_TITLE, FLASK_JSON_PATH
 from src.limiter import limiter
 
 app = Flask(__name__)
@@ -89,28 +89,18 @@ def warn_if_real_ip_lost(remote_addr: str, forwarded_for: str) -> bool:
 def _check_real_ip():
     warn_if_real_ip_lost(request.remote_addr or '', request.headers.get('X-Forwarded-For', ''))
 
+# Swagger（flasgger）：每個端點 docstring 裡 `---` 以下的 YAML 組成 API 文件。
+# 文件只給後台管理員看（審查報告 A8）：/apidocs、/apispec_1.json 都要 admin token（瀏覽器直接開會 401），
+# 後台「API 文件」頁走 GET /data/api-spec 拿同一份內容（app/data/view.py）。
 template = {
     "swagger": "2.0",
-    # "openapi": "3.0.0",
     "info": {
-        "title": "My API",
-        "description": "練習用 API文檔",
-        "contact": {
-            "responsibleOrganization": "ME",
-            "responsibleDeveloper": "Me",
-            "email": "open222333@gmail.com",
-            "url": "www.test.com",
-        },
-        "termsOfService": "http://test.com/terms",
-        "version": "0.0.1"
+        "title": f"{ADMIN_TITLE} API",
+        "description": "星際公民公會工具（後台、玩家頁、Discord bot）的 API。需要 token 的端點："
+                       "後台帳號用 POST /auth/login，玩家用 POST /player/login，放在 Authorization: Bearer <token>。",
+        "version": "1.0",
     },
-    "host": "127.0.0.1",  # overrides localhost:500
-    "basePath": "/",  # base bash for blueprint registration
-    "schemes": [
-        "http",
-        # "https"
-    ],
-    "operationId": "getmyData",
+    "basePath": "/",
     "securityDefinitions": {
         "Bearer": {
             "type": "apiKey",
@@ -121,7 +111,14 @@ template = {
     }
 }
 
-swagger = Swagger(app, template=template)
+
+def _docs_admin_only(fn):
+    """Swagger 的 /apidocs、/apispec_1.json 只給後台 admin（晚一點 import，避免循環引用）。"""
+    from src.permissions import admin_api
+    return admin_api('admin')(fn)
+
+
+swagger = Swagger(app, template=template, decorators=[_docs_admin_only])
 jwt = JWTManager(app)
 limiter.init_app(app)
 

@@ -10,18 +10,22 @@
   第一個還沒去的列標成「下一站」）；reorderable 時最左邊一欄可以拖拉（或用上下按鈕）調整順序，
   發 reorder（新順序的 plan.legs），由上層重算。
   起點那一列、終點那一列不能移動。
-  replannable 時表格下面有「中途插入站點」＋「重新規劃未完成的行程」：最後一個勾了「已去過」的站之前都算跑完了，
+  cargoOn 時（貨物規劃，可選）多一欄「貨艙」：每一站有「貨物」按鈕跳出視窗設定裝／卸哪些貨物、幾 SCU、最大貨櫃
+  （components/StopCargoEditor.vue），列出每筆拆成哪些貨櫃、離開這站時貨艙用量（超過容量標紅）；v-model:stopCargo＝{列代號: [裝卸]}。
+  seedCargo（航線規劃表單先填的裝卸）或 seedFromActions（合約分配：取貨＝裝、送貨＝卸）會先帶入，之後在視窗裡調整。
+  replannable 時表格下面有「中途插入站點」按鈕，跳出視窗設定要插入的站＋「重新規劃未完成的行程」：最後一個勾了「已去過」的站之前都算跑完了，
   發 replan（目前位置、目前油量、跑完的／還沒跑的 plan.legs、要插入的地點 id 清單 inserts），由上層重算。可以插入好幾個站。
 -->
 <template>
   <div style="overflow-x:auto">
-    <table class="table table-hover align-middle mb-0 sf-stack rlt">
+    <table v-show="!hideTable" class="table table-hover align-middle mb-0 sf-stack rlt">
       <thead class="table-light">
         <tr>
           <th v-if="reorderable" class="ps-2 text-center text-nowrap">順序</th>
           <th :class="reorderable ? '' : 'ps-3'">目的地</th>
           <th>動作</th>
-          <th v-if="showLoad" class="text-end">載貨</th>
+          <th v-if="showLoad && !cargoOn" class="text-end">載貨</th>
+          <th v-if="cargoOn" class="text-end">貨艙</th>
           <th class="text-end">距離</th>
           <th class="text-end">時間</th>
           <th class="text-end">油量</th>
@@ -58,6 +62,7 @@
               <span class="sf-chip text-nowrap" :class="actionClass(a.action)">{{ actionLabel(a) }}</span>
               <span v-if="a.contract_name" class="rlt-cargo">{{ a.contract_name }} · {{ a.item_name }}</span>
             </div>
+            <CargoSummary v-if="cargoOn" :entries="entriesOf(START_KEY)" :shorts="flow.get(START_KEY)?.shorts" />
             <div v-if="startFuel.mixed.length || startFuel.refuel || startFuel.short" class="d-flex flex-wrap gap-1 mt-1">
               <span v-for="m in startFuel.mixed" :key="m.name" class="sf-chip sf-chip--warn">
                 {{ mixedLabel(m) }}</span>
@@ -65,7 +70,11 @@
               <span v-if="startFuel.short" class="sf-chip sf-chip--warn text-nowrap">下一段超過油箱</span>
             </div>
           </td>
-          <td v-if="showLoad" class="text-end" data-label="載貨">{{ fmtNum(table.start?.load_after || 0) }}</td>
+          <td v-if="showLoad && !cargoOn" class="text-end" data-label="載貨">{{ fmtNum(table.start?.load_after || 0) }}</td>
+          <td v-if="cargoOn" class="text-end" data-label="貨艙">
+            <CargoCell :flow="flow.get(START_KEY)" :capacity="cargoCapacity" :count="entriesOf(START_KEY).length"
+              :label="`起點 ${placeLabel(plan.start)} 的貨物`" @open="openCargo(START_KEY, plan.start)" />
+          </td>
           <td class="text-end" data-label="距離">—</td>
           <td class="text-end" data-label="時間">—</td>
           <td class="text-end" data-label="油量">—</td>
@@ -121,6 +130,7 @@
               <span class="sf-chip text-nowrap" :class="actionClass(a.action)">{{ actionLabel(a) }}</span>
               <span v-if="a.contract_name" class="rlt-cargo">{{ a.contract_name }} · {{ a.item_name }}</span>
             </div>
+            <CargoSummary v-if="cargoOn" :entries="entriesOf(row.key)" :shorts="flow.get(row.key)?.shorts" />
             <div v-if="row.mixed.length || row.refuel || row.short" class="d-flex flex-wrap gap-1 mt-1">
               <span v-for="m in row.mixed" :key="m.name" class="sf-chip sf-chip--warn">
                 {{ mixedLabel(m) }}</span>
@@ -128,7 +138,11 @@
               <span v-if="row.short" class="sf-chip sf-chip--warn text-nowrap">下一段超過油箱</span>
             </div>
           </td>
-          <td v-if="showLoad" class="text-end text-nowrap" data-label="載貨">{{ fmtNum(row.load_after) }}</td>
+          <td v-if="showLoad && !cargoOn" class="text-end text-nowrap" data-label="載貨">{{ fmtNum(row.load_after) }}</td>
+          <td v-if="cargoOn" class="text-end" data-label="貨艙">
+            <CargoCell :flow="flow.get(row.key)" :capacity="cargoCapacity" :count="entriesOf(row.key).length"
+              :label="`第 ${i + 1} 站 ${placeLabel(row.to)} 的貨物`" @open="openCargo(row.key, row.to)" />
+          </td>
           <td class="text-end text-nowrap" data-label="距離">{{ row.moved ? fmtDist(row.distance) : '—' }}</td>
           <td class="text-end text-nowrap" data-label="時間">{{ row.moved ? fmtTime(row.time) : '—' }}</td>
           <td class="text-end text-nowrap" data-label="油量">
@@ -138,31 +152,50 @@
         </tr>
       </tbody>
     </table>
-    <div v-if="replannable" class="rlt-replan mt-2">
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-        <span class="fw-semibold">中途插入站點</span>
-        <span class="sf-chip">目前位置 {{ placeLabel(progress.current) }}</span>
-        <span v-if="progress.fuel != null && fuelCapacity" class="sf-chip">
-          油量 {{ fmtNum(progress.fuel) }}（{{ Math.round(progress.fuel / fuelCapacity * 100) }}%）</span>
-      </div>
-      <!-- 可以插入好幾個站：每個一列，右邊移除；全部跟還沒去的站一起重新排序 -->
-      <div v-for="(ins, i) in inserts" :key="ins.key" class="d-flex align-items-center gap-2 mb-1">
-        <span class="rlt-replan__no">{{ i + 1 }}</span>
-        <div class="flex-grow-1 rlt-replan__place">
-          <PlacePicker :id="`${uid}-insert-${ins.key}`" :label="`插入站點 ${i + 1} `" :places="places" :model-value="ins"
-            @update:model-value="v => Object.assign(ins, v)" />
-        </div>
-        <button v-if="inserts.length > 1 || ins.id || ins.text" type="button" class="btn btn-sm btn-danger"
-          :aria-label="`移除插入站點 ${i + 1}`" @click="removeInsert(i)"><i class="bi bi-trash"></i></button>
-      </div>
-      <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
-        <button type="button" class="btn btn-sm btn-success" :disabled="inserts.length >= MAX_INSERTS"
-          @click="inserts.push(newInsert())"><i class="bi bi-plus-lg me-1"></i>加插入站點</button>
-        <button type="button" class="btn btn-sm btn-primary ms-auto" :disabled="replanning" @click="replan">
-          <i class="bi bi-arrow-repeat me-1"></i>重新規劃未完成的行程
-        </button>
-      </div>
+    <div v-if="replannable" class="d-flex flex-wrap align-items-center gap-2 mt-2">
+      <button type="button" class="btn btn-sm btn-info" aria-haspopup="dialog" :disabled="replanning" @click="insertOpen = true">
+        <i class="bi bi-signpost-2 me-1"></i>中途插入站點</button>
+      <span class="sf-chip mb-0">目前位置 {{ placeLabel(progress.current) }}</span>
+      <span v-if="progress.fuel != null && fuelCapacity" class="sf-chip mb-0">
+        油量 {{ fmtNum(progress.fuel) }}（{{ Math.round(progress.fuel / fuelCapacity * 100) }}%）</span>
     </div>
+    <!-- 視窗 Teleport 到 body（航段表可能已經在航線結果視窗裡），外面包 .scifi-page 才吃得到主題 -->
+    <Teleport to="body">
+      <div class="scifi-page rlt-host">
+        <SfModal v-if="replannable" :id="`${uid}-insert`" v-model:open="insertOpen" title="中途插入站點" icon="bi bi-signpost-2" width="760px">
+          <div class="rlt-insert">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <span class="sf-chip mb-0">目前位置 {{ placeLabel(progress.current) }}</span>
+            <span v-if="progress.fuel != null && fuelCapacity" class="sf-chip mb-0">
+              油量 {{ fmtNum(progress.fuel) }}（{{ Math.round(progress.fuel / fuelCapacity * 100) }}%）</span>
+            <span class="small text-muted">最後一個勾了「已去過」的站之前都算跑完了；插入的站跟還沒去的站一起重新排序。</span>
+          </div>
+          <!-- 可以插入好幾個站：每個一列，右邊移除；全部跟還沒去的站一起重新排序 -->
+          <div v-for="(ins, i) in inserts" :key="ins.key" class="d-flex align-items-center gap-2 mb-1">
+            <span class="rlt-replan__no">{{ i + 1 }}</span>
+            <div class="flex-grow-1 rlt-replan__place">
+              <PlacePicker :id="`${uid}-insert-${ins.key}`" :label="`插入站點 ${i + 1} `" :places="places" :model-value="ins"
+                @update:model-value="v => Object.assign(ins, v)" />
+            </div>
+            <button v-if="inserts.length > 1 || ins.id || ins.text" type="button" class="btn btn-sm btn-danger"
+              :aria-label="`移除插入站點 ${i + 1}`" @click="removeInsert(i)"><i class="bi bi-trash"></i></button>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+            <button type="button" class="btn btn-sm btn-success" :disabled="inserts.length >= MAX_INSERTS"
+              @click="inserts.push(newInsert())"><i class="bi bi-plus-lg me-1"></i>加插入站點</button>
+            <button type="button" class="btn btn-sm btn-primary ms-auto" :disabled="replanning" @click="replan">
+              <i class="bi bi-arrow-repeat me-1"></i>重新規劃未完成的行程
+            </button>
+          </div>
+          </div>
+        </SfModal>
+        <SfModal v-if="cargoOn" :id="`${uid}-cargo`" v-model:open="cargoOpen" :title="cargoTitle" icon="bi bi-box-seam" width="900px">
+          <StopCargoEditor v-if="cargoOpen && cargoKey" :id="`${uid}-cg`" :key="cargoKey" :entries="entriesOf(cargoKey)"
+            :arriving="flow.get(cargoKey)?.arriving || {}" :capacity="cargoCapacity" :items="allItems" :commodities="commodities"
+            @update:entries="v => setEntries(cargoKey, v)" />
+        </SfModal>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -191,6 +224,12 @@ function markHintSeen() {
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import PlacePicker from '@/components/PlacePicker.vue'
+import SfModal from '@/components/SfModal.vue'
+import StopCargoEditor from '@/components/StopCargoEditor.vue'
+import CargoCell from '@/components/RouteCargoCell.vue'
+import CargoSummary from '@/components/RouteCargoSummary.vue'
+import { cargoFlow, carryEntries, newCargoEntry } from '@/utils/stopCargo'
+import { actionClass, actionLabel, buildRouteRows, norm, traitsOf } from '@/utils/routeRows'
 import { fmtDist, fmtNum, fmtTime, placeLabel, placePath } from '@/utils/navFormat'
 
 const props = defineProps({
@@ -205,8 +244,21 @@ const props = defineProps({
   replannable: { type: Boolean, default: false },
   replanning: { type: Boolean, default: false },
   places: { type: Array, default: () => [] },
+  // 只藏表格（切到總覽／3D 星圖時）：下面的「中途插入站點」、貨物視窗照樣能用
+  hideTable: { type: Boolean, default: false },
+  // 貨物規劃（可選）：每站裝卸 {列代號: [{ key, action, item, scu, max }]}、貨艙容量（0＝不檢查超載）
+  cargoOn: { type: Boolean, default: false },
+  stopCargo: { type: Object, default: () => ({}) },
+  cargoCapacity: { type: Number, default: 0 },
+  // 商品資料庫（貨物名稱自動完成）
+  commodities: { type: Array, default: () => [] },
+  // 預先帶入的裝卸（航線規劃表單填的）：{ start: [...], end: [...], places: {地點 id: [...]} }；換一個物件才再帶一次
+  seedCargo: { type: Object, default: null },
+  // 合約分配：直接把每站的取貨／送貨（合約動作）帶成裝／卸；maxCrateOf(動作) 給最大貨櫃
+  seedFromActions: { type: Boolean, default: false },
+  maxCrateOf: { type: Function, default: null },
 })
-const emit = defineEmits(['update:visited', 'reorder', 'replan'])
+const emit = defineEmits(['update:visited', 'reorder', 'replan', 'update:stopCargo'])
 const uid = `rlt-${Math.random().toString(36).slice(2, 8)}`
 
 // ── 中途重新規劃：最後一個勾了「已去過」的站（含）之前都算跑完 ──
@@ -229,11 +281,38 @@ const progress = computed(() => {
     .filter(l => l.action !== 'end')
   const row = last >= 0 ? rows[last] : null
   const fuel = row ? (row.refuel ? props.fuelCapacity : row.fuel_after) : props.plan.start_fuel
-  return { current: row ? row.to : props.plan.start, fuel: fuel ?? null, done, remaining }
+  return { current: row ? row.to : props.plan.start, fuel: fuel ?? null, done, remaining,
+    startDone, lastKey: row ? row.key : (startDone ? START_KEY : '') }
 })
+const insertOpen = ref(false)
 function replan() {
   const ids = [...new Set(inserts.map(x => x.id).filter(Boolean))]
-  emit('replan', { ...progress.value, inserts: ids })
+  // 貨物規劃：跑完的站做完的裝卸，現在艙內有什麼一起帶過去（新航線起點的「已在艙內」）
+  const p = progress.value
+  const carry = props.cargoOn ? carryEntries(flow.value.get(p.lastKey)?.leaving || {}) : []
+  const startEntries = props.cargoOn && !p.startDone ? entriesOf(START_KEY) : []
+  emit('replan', { ...p, inserts: ids, cargoCarry: [...carry, ...startEntries] })
+  insertOpen.value = false
+}
+
+// ── 貨物規劃（可選）：每一站的裝卸，依航線順序累加 ──
+const entriesOf = key => props.stopCargo?.[key] || []
+function setEntries(key, list) {
+  const next = { ...(props.stopCargo || {}) }
+  if (list.length) next[key] = list
+  else delete next[key]
+  emit('update:stopCargo', next)
+}
+const flow = computed(() => cargoFlow([START_KEY, ...table.value.rows.map(r => r.key)], props.stopCargo, props.cargoCapacity))
+const allItems = computed(() => [...new Set(Object.values(props.stopCargo || {}).flat().map(e => (e.item || '').trim()).filter(Boolean))])
+
+const cargoOpen = ref(false)
+const cargoKey = ref('')
+const cargoTitle = ref('貨物')
+function openCargo(key, place) {
+  cargoKey.value = key
+  cargoTitle.value = `${placeLabel(place)} 的貨物`
+  cargoOpen.value = true
 }
 // 換了一份航線（重新規劃成功）就清掉插入的站點
 watch(() => props.plan, () => inserts.splice(0, inserts.length, newInsert()))
@@ -276,25 +355,6 @@ function onDrop(i) {
   dragFrom.value = dragOver.value = -1
 }
 
-const ACTIONS = { stop: '途經', pickup: '取貨', dropoff: '送貨', end: '終點', hub: '回指定站' }
-const actionClass = a => ({ pickup: 'sf-chip--accent', dropoff: 'sf-chip--ok', end: 'sf-chip--todo', hub: 'sf-chip--todo' }[a] || '')
-function actionLabel(a) {
-  const base = ACTIONS[a.action] || a.action
-  // 收集任務的取貨點（合約分配：各點量不知道）
-  if (a.unknown) return `${base}（數量未知）`
-  if (a.contract_name) return `${base} ${fmtNum(a.scu)} SCU`
-  return a.cargo ? `${base} #${a.cargo} · ${fmtNum(a.scu)} SCU` : base
-}
-
-// 站點特性：特大機庫、外部貨運（裝卸碼頭，外掛貨櫃船能裝卸）、對接口
-const TRAITS = [
-  { key: 'xl', field: 'xl_hangar', label: '特大機庫', icon: 'bi bi-building' },
-  { key: 'dock', field: 'loading_dock', label: '外部貨運', icon: 'bi bi-box-seam' },
-  { key: 'docking', field: 'docking', label: '對接口', icon: 'bi bi-plug' },
-]
-const traitsOf = p => TRAITS.filter(t => p?.[t.field])
-
-// 第 k 段出發前要補燃料／第 k 段單段就超過油箱
 const refuelBefore = k => !!props.plan.refuel_stops?.includes(k)
 const shortAt = k => !!props.plan.legs[k]?.fuel_short
 // 起點那一列：在起點就地取貨的動作併進來
@@ -304,101 +364,7 @@ const startFuel = computed(() => {
     : { refuel: refuelBefore(0), short: shortAt(0), mixed: [] }
 })
 
-function viaOf(leg) {
-  // 中途經過的點（最後一步的終點就是目的地，不列）
-  return leg.steps.slice(0, -1).map((s, i) => ({ kind: leg.steps[i + 1].kind === 'jump' ? 'jump' : 'qt', place: s.to }))
-}
-
-const table = computed(() => {
-  const legs = props.plan.legs || []
-  const out = []
-  for (let i = 0; i < legs.length; i++) {
-    const leg = legs[i]
-    const prev = out[out.length - 1]
-    // 同一站：這段沒有移動，而且目的地跟上一列一樣
-    if (prev && !leg.steps.length && leg.to.id === prev.to.id) {
-      prev.legs.push(leg)
-      prev.last = i
-      continue
-    }
-    out.push({ to: leg.to, legs: [leg], first: i, last: i, via: viaOf(leg), moved: leg.steps.length > 0,
-      distance: leg.distance, time: leg.time, fuel: leg.fuel, fuel_short: !!leg.fuel_short })
-  }
-  // 貨艙裡目前有哪些（貨物名稱 → 合約 → SCU），用來檢查同名不同合約
-  const onboard = new Map()
-  const seenKeys = new Map()
-  for (const row of out) {
-    const lastLeg = row.legs[row.legs.length - 1]
-    row.load_after = lastLeg.load_after
-    row.fuel_after = lastLeg.fuel_after
-    // 出發往下一段前：補燃料、下一段超過油箱
-    row.refuel = refuelBefore(row.last + 1)
-    row.short = shortAt(row.last + 1)
-    // 動作：同一個動作、同一份合約、同一種貨物合併
-    const merged = new Map()
-    for (const leg of row.legs) {
-      // 同一份合約裡同名的貨物（例如兩項都是 Waste）也合併
-      const key = leg.contract_name ? `${leg.action}|${leg.contract}|${norm(leg.item_name)}` : `${leg.action}|${leg.cargo}|${merged.size}`
-      const hit = merged.get(key)
-      if (hit) {
-        hit.scu += leg.scu || 0
-        hit.unknown = hit.unknown && !!leg.scu_unknown
-      } else merged.set(key, { action: leg.action, cargo: leg.cargo, scu: leg.scu || 0, contract: leg.contract,
-        contract_name: leg.contract_name, item_name: leg.item_name, item_named: leg.item_named,
-        unknown: !!leg.scu_unknown })
-    }
-    row.actions = [...merged.values()]
-    // 列的代號（已去過用）：目的地＋做的事，調整順序後還認得
-    // （同一個代號出現第二次時加上次數，例如同一站去兩次）
-    const base = `${row.to.id}|${row.actions.map(a => (a.contract_name
-      ? `${a.action}:${a.contract}:${norm(a.item_name)}` : a.action)).join(',')}`
-    seenKeys.set(base, (seenKeys.get(base) || 0) + 1)
-    row.key = seenKeys.get(base) > 1 ? `${base}#${seenKeys.get(base)}` : base
-    // 同名貨物分屬不同合約：這一站處理到的貨物名稱，在這站的動作或貨艙裡出現兩份以上合約
-    // 沒填貨物名稱的（item_named 是 false，名稱是後端補的「貨物 N」）不比對
-    const named = a => a.contract_name && a.item_named !== false
-    const names = new Set(row.actions.filter(named).map(a => norm(a.item_name)))
-    const contractsOf = new Map()
-    const note = (name, contractName) => {
-      if (!names.has(name)) return
-      if (!contractsOf.has(name)) contractsOf.set(name, { label: '', set: new Set(), dropoff: false })
-      contractsOf.get(name).set.add(contractName)
-    }
-    for (const [name, byContract] of onboard) {
-      for (const [contractName, scu] of byContract) if (scu > 1e-9) note(name, contractName)
-    }
-    for (const a of row.actions) {
-      if (!named(a)) continue
-      note(norm(a.item_name), a.contract_name)
-      const entry = contractsOf.get(norm(a.item_name))
-      if (!entry.label) entry.label = a.item_name
-      if (a.action === 'dropoff') entry.dropoff = true
-    }
-    // 取貨時：貨艙裡要分開放；送貨時：要分開繳交
-    row.mixed = [...contractsOf.values()].filter(v => v.set.size > 1)
-      .map(v => ({ name: v.label, contracts: [...v.set], kind: v.dropoff ? 'dropoff' : 'pickup' }))
-    // 更新貨艙
-    for (const a of row.actions) {
-      if (!named(a)) continue
-      const name = norm(a.item_name)
-      if (!onboard.has(name)) onboard.set(name, new Map())
-      const byContract = onboard.get(name)
-      // 數量未知的取貨也算「貨艙裡有這份合約的貨」
-      const delta = a.action === 'pickup' ? (a.scu || (a.unknown ? 1 : 0)) : -a.scu
-      byContract.set(a.contract_name, (byContract.get(a.contract_name) || 0) + delta)
-    }
-  }
-  // 一開始就在起點做的事（沒有移動）併到起點那一列
-  const start = out[0] && !out[0].moved && out[0].to.id === props.plan.start?.id ? out.shift() : null
-  return { start, rows: out }
-})
-
-// 貨物名稱比對：「垃圾（Waste）」跟「Waste」算同一種（取括號裡的英文）
-function norm(text) {
-  const t = (text || '').trim()
-  const m = t.match(/[（(]([^（）()]+)[）)]$/)
-  return (m ? m[1] : t).trim().toLowerCase()
-}
+const table = computed(() => buildRouteRows(props.plan))
 
 const mixedLabel = m => (m.kind === 'dropoff'
   ? `送貨：${m.name} 分屬 ${m.contracts.join('、')}，請分開繳交`
@@ -417,6 +383,66 @@ function fuelLeft(row) {
   if (row.fuel_after == null || !cap) return '—'
   return `${fmtNum(row.fuel_after)}（${Math.max(0, Math.round(row.fuel_after / cap * 100))}%）`
 }
+
+// 預先帶入：每個來源（表單的 seedCargo，或合約分配的這份 plan）只帶一次，而且只補還沒有設定的站
+const seededTokens = new WeakSet()
+// 合約分配：數量未知的取貨（只知道送多少）→ 用這份航線同一份合約、同一種貨物「送貨合計－已知取貨」估，給第一個未知的取貨點
+let unknownLeft = new Map()
+const actionKey = a => `${a.contract}|${norm(a.item_name)}`
+function estimateUnknown(rows) {
+  const left = new Map()
+  for (const a of rows.flatMap(r => r?.actions || [])) {
+    if (!a.contract_name) continue
+    const k = actionKey(a)
+    if (a.action === 'dropoff') left.set(k, (left.get(k) || 0) + (Number(a.scu) || 0))
+    else if (a.action === 'pickup' && !a.unknown) left.set(k, (left.get(k) || 0) - (Number(a.scu) || 0))
+  }
+  unknownLeft = left
+}
+function scuOf(a) {
+  if (a.action !== 'pickup' || !a.unknown || Number(a.scu) > 0) return Number(a.scu) || 0
+  const k = actionKey(a)
+  const v = Math.max(0, unknownLeft.get(k) || 0)
+  unknownLeft.set(k, 0)
+  return v
+}
+function seedEntries(row, isStart) {
+  if (props.seedFromActions) {
+    return (row?.actions || []).filter(a => a.contract_name && (a.action === 'pickup' || a.action === 'dropoff'))
+      .map(a => ({ a, scu: scuOf(a) })).filter(x => x.scu > 0)
+      .map(({ a, scu }) => newCargoEntry({ action: a.action === 'pickup' ? 'load' : 'unload', item: a.item_name, scu,
+        max: props.maxCrateOf?.(a) || 32 }))
+  }
+  const seed = props.seedCargo
+  if (isStart) return seed.start || []
+  if (row.legs.some(l => l.action === 'end')) return seed.end || []
+  if (row.legs.every(l => l.action === 'stop')) return seed.places?.[row.to.id] || []
+  return []
+}
+watch(() => [props.cargoOn, props.seedCargo, props.plan, table.value], () => {
+  const token = props.seedFromActions ? props.plan : props.seedCargo
+  if (!props.cargoOn || !token || seededTokens.has(token)) return
+  seededTokens.add(token)
+  const next = { ...(props.stopCargo || {}) }
+  const usedPlaces = new Set()
+  if (props.seedFromActions) estimateUnknown([table.value.start, ...table.value.rows])
+  let changed = false
+  const put = (key, list) => {
+    if (!list?.length || next[key]?.length) return
+    next[key] = list.map(e => newCargoEntry(e))
+    changed = true
+  }
+  put(START_KEY, seedEntries(table.value.start, true))
+  for (const row of table.value.rows) {
+    // 表單同一個地點只帶到第一次經過的那一站
+    if (!props.seedFromActions && row.legs.every(l => l.action === 'stop')) {
+      if (usedPlaces.has(row.to.id)) continue
+      usedPlaces.add(row.to.id)
+    }
+    put(row.key, seedEntries(row, false))
+  }
+  if (changed) emit('update:stopCargo', next)
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -491,7 +517,9 @@ function fuelLeft(row) {
 .sf-chip.rlt-trait--xl { --trait: 168, 107, 255; }
 .sf-chip.rlt-trait--dock { --trait: 255, 163, 26; }
 .sf-chip.rlt-trait--docking { --trait: 24, 201, 230; }
-.rlt-replan { border: 1px dashed var(--sf-border); border-radius: .5rem; padding: .5rem .75rem; }
+.rlt-host { display: contents; }
+/* 插入站點視窗：留高度給地點的候選清單 */
+.rlt-insert { min-height: 16rem; }
 .rlt-replan__no { min-width: 1.25rem; text-align: center; color: var(--sf-text-muted); }
 .rlt-replan__place { min-width: min(100%, 20rem); }
 .rlt-grip { color: var(--sf-text-muted); cursor: grab; }

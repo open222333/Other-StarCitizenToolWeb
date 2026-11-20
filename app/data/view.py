@@ -15,6 +15,24 @@ from src.permissions import READ_ROLES, admin_api
 app_data = Blueprint('app_data', __name__)
 
 
+@app_data.route('/api-spec', methods=['GET'])
+@admin_api('admin')
+def api_spec():
+    """API 文件（Swagger 2.0 規格，後台「API 文件」頁用；只給 admin）。
+    ---
+    tags: [Data]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: Swagger 2.0 規格（paths、definitions…），跟 /apispec_1.json 同一份"
+      403:
+        description: 權限不足
+    """
+    from app import swagger
+    return jsonify({'success': True, 'data': swagger.get_apispecs('apispec_1')})
+
+
 @app_data.route('/collections', methods=['GET'])
 @admin_api(*READ_ROLES)
 def list_collections():

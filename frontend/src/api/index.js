@@ -255,6 +255,8 @@ export const dataApi = {
     return apiFetch(`/data/collections/${encodeURIComponent(name)}?${sp.toString()}`)
   },
   doc: (name, id) => apiFetch(`/data/collections/${encodeURIComponent(name)}/doc?id=${encodeURIComponent(id)}`),
+  // API 文件（Swagger 規格，只給 admin；views/ApiDocsView.vue）
+  apiSpec: () => apiFetch('/data/api-spec'),
 }
 
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────

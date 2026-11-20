@@ -29,3 +29,12 @@ plan(9999, [1, 2, 4, 8, 16, 24, 32], { slack: 3 })
 assert.ok(Date.now() - t0 < 2000)
 assert.deepEqual(plan(0, [8]).targets, [])
 console.log('crateCombos ok')
+
+// splitCrates：最大貨櫃限制（合約常限制最大 16／8 SCU）
+import { splitCrates, cratesText } from './crateCombos.js'
+assert.deepEqual(splitCrates(106, 32), { 32: 3, 8: 1, 2: 1 })
+assert.deepEqual(splitCrates(106, 16), { 16: 6, 8: 1, 2: 1 })
+assert.equal(cratesText(splitCrates(5, 4)), '4×1、1×1')
+assert.deepEqual(splitCrates(0), {})
+assert.deepEqual(splitCrates(48, 32, [32, 24, 8]), { 24: 2 })
+console.log('splitCrates ok')

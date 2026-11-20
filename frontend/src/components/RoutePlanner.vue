@@ -4,6 +4,7 @@
   結果一次給三種方案（最快／最省油／最順路），每一段列出經過的 OM 點、跳躍點（components/RouteLegsTable.vue）；
   可切換成 3D 星圖（components/RouteMap3D.vue）。多份合約分給多個小隊見 components/ContractPlanner.vue。
   超寬螢幕（21:9）表單分左右兩欄（左：船／油量／起點／終點，右：途經站點）。
+  結果上方的「貨物規劃」開關（可選）打開後，航段表每站有「貨物」按鈕設定裝卸（RouteLegsTable.vue、StopCargoEditor.vue）。
   結果上方有這艘船的「網格」（CargoGridButton.vue）與「貨櫃試算」（CrateCalcButton.vue）按鈕，各自跳出視窗。
   結果預設在跳出視窗（SfModal）裡，可切回原版接在表單下面（popupResult）；結果最下面「完成」可選結束或終點設為起點。
   表單（地點、船、貨運）記在這台瀏覽器（localStorage）。
@@ -25,27 +26,6 @@
             <div class="col-12">
               <label class="form-label small fw-semibold mb-1" for="rp-fuel">起始油量</label>
               <FuelStartInput id="rp-fuel" v-model="startFuel" />
-            </div>
-            <div class="col-12">
-              <label class="form-label small fw-semibold mb-1" for="rp-start">起點</label>
-              <PlacePicker id="rp-start" label="起點" :places="base.places.value" :model-value="start"
-                @update:model-value="v => Object.assign(start, v)" />
-            </div>
-            <div class="col-12">
-              <label class="form-label small fw-semibold mb-1" for="rp-end-mode">終點</label>
-              <div class="row g-1">
-                <div class="col-12 col-md-3">
-                  <select id="rp-end-mode" v-model="endMode" class="form-select form-select-sm">
-                    <option value="none">最後一站</option>
-                    <option value="start">回到起點</option>
-                    <option value="fixed">指定地點</option>
-                  </select>
-                </div>
-                <div v-if="endMode === 'fixed'" class="col-12 col-md-9">
-                  <PlacePicker id="rp-end" label="終點" :places="base.places.value" :model-value="endPlace"
-                    @update:model-value="v => Object.assign(endPlace, v)" />
-                </div>
-              </div>
             </div>
             <div class="col-12">
               <div class="form-check mb-1">
@@ -73,7 +53,7 @@
           <div class="rp-split__right">
           <div class="mt-3 rp-stops">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <span class="small fw-semibold">途經站點</span>
+              <span class="small fw-semibold">站點</span>
               <span v-if="stops.length" class="sf-chip" :class="{ 'sf-chip--warn': onCount >= MAX_ON }">
                 規劃 {{ onCount }} / {{ MAX_ON }}</span>
               <div class="ms-auto d-flex flex-wrap gap-2">
@@ -91,6 +71,22 @@
               <SystemStopsFill id="rp-fill" :places="base.places.value" @fill="fillStops" />
             </div>
             <div v-if="fillNote" class="sf-chip sf-chip--warn mb-2">{{ fillNote }}</div>
+            <!-- 起點、途經站點、終點同一種列：序號（起／1…／終）、地點（選好後收成一行，點一下改）、貨物、刪除 -->
+            <div class="d-flex gap-2 mb-2 align-items-center rp-row">
+              <span class="rp-index rp-index--tag">起</span>
+              <span class="rp-switch-gap" aria-hidden="true"></span>
+              <div class="rp-place">
+                <PlaceSlot id="rp-start" label="起點" :places="base.places.value" :model-value="start"
+                  @update:model-value="v => Object.assign(start, v)" />
+              </div>
+              <!-- 中間：這站要裝卸的貨（沒有就是空白，把右邊的按鈕推到最右） -->
+              <div class="rp-mid"><RouteCargoSummary inline :entries="startCargo" /></div>
+              <span class="rp-dist-gap" aria-hidden="true"></span>
+              <button type="button" class="btn btn-sm text-nowrap" :class="cargoCount(startCargo) ? 'btn-info' : 'btn-secondary'"
+                aria-haspopup="dialog" :aria-label="'起點的貨物'" @click="openFormCargo('start')">
+                <i class="bi bi-box-seam"></i><span class="d-none d-md-inline ms-1">貨物</span><span v-if="cargoCount(startCargo)" class="ms-1">{{ cargoCount(startCargo) }}</span></button>
+              <span class="rp-del-gap" aria-hidden="true"></span>
+            </div>
             <!-- 總開關：跟每列開關對齊放在列表最上方，全開時關閉全部，否則開到上限 -->
             <div v-if="stops.length > 1" class="d-flex gap-2 mb-2 align-items-center rp-all">
               <span class="rp-index"></span>
@@ -101,25 +97,56 @@
               </div>
               <label for="rp-on-all" class="small fw-semibold mb-0 rp-all-label">全部</label>
             </div>
-            <div v-for="(s, i) in stops" :key="s.key" class="d-flex gap-2 mb-2 align-items-center"
-              :class="{ 'rp-off': !s.on }">
+            <template v-for="(s, i) in stops" :key="s.key">
+            <div class="d-flex gap-2 mb-2 align-items-center rp-row" :class="{ 'rp-off': !s.on }">
               <span class="rp-index">{{ i + 1 }}</span>
               <div class="form-check form-switch mb-0 rp-switch">
                 <input :id="`rp-on-${s.key}`" v-model="s.on" class="form-check-input" type="checkbox" role="switch"
                   :disabled="!s.on && onCount >= MAX_ON" :aria-label="`站點 ${i + 1} 加入規劃`">
               </div>
-              <div v-if="s.auto && placeOf(s)" class="flex-grow-1 min-w-0 rp-auto">
-                <span class="fw-semibold">{{ placeLabel(placeOf(s)) }}</span>
-                <span class="rp-path">{{ placePath(placeOf(s)) }}</span>
-              </div>
-              <div v-else class="flex-grow-1">
-                <PlacePicker :id="`rp-stop-${s.key}`" :label="`站點 ${i + 1} `" :places="base.places.value" :model-value="s"
+              <div class="rp-place">
+                <div v-if="s.auto && placeOf(s)" class="rp-auto">
+                  <span class="fw-semibold">{{ placeLabel(placeOf(s)) }}</span>
+                  <span class="rp-path">{{ placePath(placeOf(s)) }}</span>
+                </div>
+                <PlaceSlot v-else :id="`rp-stop-${s.key}`" :label="`站點 ${i + 1} `" :places="base.places.value" :model-value="s"
                   @update:model-value="v => Object.assign(s, v)" />
               </div>
-              <span v-if="directDist(s)" class="sf-chip text-nowrap" :title="`起點直達 ${directDist(s)}`">
+              <div class="rp-mid"><RouteCargoSummary inline :entries="s.cargo" /></div>
+              <span v-if="directDist(s)" class="sf-chip text-nowrap rp-dist" :title="`起點直達 ${directDist(s)}`">
                 <i class="bi bi-rulers me-1"></i>{{ directDist(s) }}</span>
+              <button type="button" class="btn btn-sm text-nowrap" :class="cargoCount(s.cargo) ? 'btn-info' : 'btn-secondary'"
+                aria-haspopup="dialog" :aria-label="`站點 ${i + 1} 的貨物`" @click="openFormCargo(`stop:${s.key}`)">
+                <i class="bi bi-box-seam"></i><span class="d-none d-md-inline ms-1">貨物</span><span v-if="cargoCount(s.cargo)" class="ms-1">{{ cargoCount(s.cargo) }}</span></button>
               <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除站點 ${i + 1}`"
                 @click="stops.splice(i, 1)"><i class="bi bi-trash"></i></button>
+            </div>
+            </template>
+            <!-- 終點：最後一站／回到起點／指定地點 -->
+            <div class="d-flex gap-2 mb-2 align-items-center rp-row">
+              <span class="rp-index rp-index--tag">終</span>
+              <select id="rp-end-mode" v-model="endMode" class="form-select form-select-sm rp-end-mode" aria-label="終點">
+                <option value="none">最後一站</option>
+                <option value="start">回到起點</option>
+                <option value="fixed">指定地點</option>
+              </select>
+              <div class="rp-place">
+                <PlaceSlot v-if="endMode === 'fixed'" id="rp-end" label="終點" :places="base.places.value" :model-value="endPlace"
+                  @update:model-value="v => Object.assign(endPlace, v)" />
+                <div v-else-if="endMode === 'start'" class="rp-auto">
+                  <span class="fw-semibold">{{ placeOf(start) ? placeLabel(placeOf(start)) : '（還沒選起點）' }}</span>
+                  <span v-if="placeOf(start)" class="rp-path">{{ placePath(placeOf(start)) }}</span>
+                </div>
+                <div v-else class="small text-muted">最後一個途經站點就是終點</div>
+              </div>
+              <div class="rp-mid"><RouteCargoSummary v-if="endMode !== 'none'" inline :entries="endCargo" /></div>
+              <span class="rp-dist-gap" aria-hidden="true"></span>
+              <template v-if="endMode !== 'none'">
+              <button type="button" class="btn btn-sm text-nowrap" :class="cargoCount(endCargo) ? 'btn-info' : 'btn-secondary'"
+                aria-haspopup="dialog" :aria-label="'終點的貨物'" @click="openFormCargo('end')">
+                <i class="bi bi-box-seam"></i><span class="d-none d-md-inline ms-1">貨物</span><span v-if="cargoCount(endCargo)" class="ms-1">{{ cargoCount(endCargo) }}</span></button>
+              </template>
+              <span class="rp-del-gap" aria-hidden="true"></span>
             </div>
           </div>
 
@@ -189,6 +216,11 @@
     </div>
 
     <!-- 規劃結果：預設在跳出視窗裡（popupResult），關掉開關就照原版接在表單下面；同一份內容用 Teleport 換位置 -->
+    <!-- 表單：某一站要裝／卸的貨（規劃後帶進航段表的貨物規劃） -->
+    <SfModal id="rp-form-cargo" v-model:open="formCargoOpen" :title="formCargoTitle" icon="bi bi-box-seam" width="900px">
+      <StopCargoEditor v-if="formCargoOpen && formCargoKey" id="rp-fc" :key="formCargoKey" simple
+        :entries="formCargoOf(formCargoKey)" :items="formCargoItems" :commodities="base.commodities.value" @update:entries="v => setFormCargo(formCargoKey, v)" />
+    </SfModal>
     <SfModal id="rp-result" v-model:open="resultOpen" title="航線規劃" icon="bi bi-signpost-split" width="1440px">
       <div id="rp-result-modal"></div>
     </SfModal>
@@ -220,9 +252,14 @@
             </div>
             <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
               <div class="btn-group btn-group-sm" role="group" aria-label="顯示方式">
-                <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab"
+                <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab text-nowrap"
                   :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
                   @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
+              </div>
+              <!-- 貨物規劃（可選）：航段表每站多「貨物」按鈕設定裝卸，顯示貨艙用量與貨櫃拆法 -->
+              <div class="form-check form-switch mb-0 ms-md-2">
+                <input id="rp-cargo-plan" v-model="cargoPlanOn" class="form-check-input" type="checkbox" role="switch">
+                <label class="form-check-label" for="rp-cargo-plan">貨物規劃</label>
               </div>
               <!-- 這趟的船：看貨艙網格、算貨櫃怎麼拆（總量預設帶船的貨艙容量） -->
               <div class="ms-auto d-flex flex-wrap gap-2">
@@ -231,10 +268,15 @@
               </div>
             </div>
             <RouteMap3D v-if="view === 'map'" :plan="current" :map="result.map || {}" />
+            <RouteFlowView v-if="view === 'flow'" v-model:visited="visited" :plan="current"
+              :fuel-capacity="result.ship.qt_fuel_capacity" :cargo-on="cargoPlanOn && !SHOW_CARGO" :stop-cargo="stopCargo"
+              :cargo-capacity="Number(result.ship?.cargo_scu) || 0" />
             <div v-if="reorderError" class="alert alert-warning py-2 mb-2" role="alert">{{ reorderError }}</div>
-            <RouteLegsTable v-show="view === 'table'" v-model:visited="visited" :plan="current"
+            <RouteLegsTable :hide-table="view !== 'table'" v-model:visited="visited" :plan="current"
               :fuel-capacity="result.ship.qt_fuel_capacity" :show-load="SHOW_CARGO" :reorderable="!SHOW_CARGO && !reordering"
               :replannable="!SHOW_CARGO" :replanning="reordering" :places="base.places.value"
+              :cargo-on="cargoPlanOn && !SHOW_CARGO" v-model:stop-cargo="stopCargo" :seed-cargo="seedCargo"
+              :cargo-capacity="Number(result.ship?.cargo_scu) || 0" :commodities="base.commodities.value"
               @reorder="reorder" @replan="replan" />
 
             <!-- 完成：兩個選項直接列出來——結束這趟（清掉結果），或把終點設成下一趟的起點、終點重設。
@@ -260,8 +302,12 @@ import PlacePicker from '@/components/PlacePicker.vue'
 import FuelStartInput from '@/components/FuelStartInput.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
+import RouteFlowView from '@/components/RouteFlowView.vue'
 import SfState from '@/components/SfState.vue'
 import SfModal from '@/components/SfModal.vue'
+import PlaceSlot from '@/components/PlaceSlot.vue'
+import StopCargoEditor from '@/components/StopCargoEditor.vue'
+import RouteCargoSummary from '@/components/RouteCargoSummary.vue'
 import CargoGridButton from '@/components/CargoGridButton.vue'
 import CrateCalcButton from '@/components/CrateCalcButton.vue'
 import SystemStopsFill from '@/components/SystemStopsFill.vue'
@@ -298,11 +344,19 @@ function loadSaved() {
   }
 }
 const saved = loadSaved()
+// 顯示方式：航段表、總覽（一頁看完整條航線，滑鼠移上去看細節；預設）、3D 星圖；選過的記在這台瀏覽器
+const VIEWS = [
+  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
+  { key: 'flow', label: '總覽', icon: 'bi bi-grid-3x3-gap' },
+  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
+]
+const view = ref(VIEWS.some(v => v.key === saved.view) ? saved.view : 'flow')
 const start = reactive(newPlace(saved.start))
 const endPlace = reactive(newPlace(saved.end))
 const endMode = ref(['none', 'start', 'fixed'].includes(saved.endMode) ? saved.endMode : 'none')
 // 途經站點：on＝加入規劃（開關）；auto＝依星系填入的（不用地點選擇器，直接顯示名稱）
-const newStop = (p = {}) => ({ ...newPlace(p), on: p.on !== false, auto: !!p.auto })
+const newStop = (p = {}) => ({ ...newPlace(p), on: p.on !== false, auto: !!p.auto,
+  cargo: Array.isArray(p.cargo) ? p.cargo.filter(e => e && typeof e === 'object') : [] })
 const stops = reactive((Array.isArray(saved.stops) ? saved.stops : []).slice(0, MAX_STOPS).map(newStop))
 // 舊存檔（12 個上限以前）沒有 on：超過上限的先關掉
 stops.forEach((s, i) => { if (i >= MAX_ON) s.on = false })
@@ -322,14 +376,61 @@ const hubPlace = reactive(newPlace(saved.hub))
 const hubEvery = ref(Number(saved.hubEvery) >= 1 ? Math.round(Number(saved.hubEvery)) : 3)
 // 結果顯示方式：true＝跳出視窗（預設）、false＝原版（接在表單下面）
 const popupResult = ref(saved.popupResult !== false)
+// 貨物規劃（可選，記在這台瀏覽器）：每站裝卸 {航段表列代號: [...]}，見 utils/stopCargo.js；換一份航線就清掉
+const cargoPlanOn = ref(saved.cargoPlanOn === true)
+const stopCargo = ref({})
+// 表單先填的裝卸（起點、終點、每個途經站點的 s.cargo）：規劃時當成 seedCargo 帶進航段表
+const asList = v => (Array.isArray(v) ? v.filter(e => e && typeof e === 'object') : [])
+const startCargo = ref(asList(saved.startCargo))
+const endCargo = ref(asList(saved.endCargo))
+const seedCargo = ref(null)
+const formCargoOpen = ref(false)
+const formCargoKey = ref('')
+const formCargoTitle = ref('貨物')
+// 有填 SCU 的才算一筆（按鈕上的數字、摘要都只看這些）
+const cargoCount = list => (list || []).filter(e => Number(e.scu) > 0).length
+function formCargoOf(key) {
+  if (key === 'start') return startCargo.value
+  if (key === 'end') return endCargo.value
+  return stops.find(s => `stop:${s.key}` === key)?.cargo || []
+}
+function setFormCargo(key, list) {
+  if (key === 'start') startCargo.value = list
+  else if (key === 'end') endCargo.value = list
+  else {
+    const s = stops.find(x => `stop:${x.key}` === key)
+    if (s) s.cargo = list
+  }
+}
+function openFormCargo(key) {
+  const name = p => (p?.id && placeOf(p) ? placeLabel(placeOf(p)) : '')
+  if (key === 'start') formCargoTitle.value = `起點${name(start) ? ` ${name(start)}` : ''} 的貨物`
+  else if (key === 'end') formCargoTitle.value = `終點${endMode.value === 'start' ? `（回到起點）` : name(endPlace) ? ` ${name(endPlace)}` : ''} 的貨物`
+  else {
+    const i = stops.findIndex(x => `stop:${x.key}` === key)
+    formCargoTitle.value = `站點 ${i + 1}${name(stops[i]) ? ` ${name(stops[i])}` : ''} 的貨物`
+  }
+  formCargoKey.value = key
+  formCargoOpen.value = true
+}
+const formCargoItems = computed(() => [...new Set([...startCargo.value, ...endCargo.value, ...stops.flatMap(s => s.cargo)]
+  .map(e => (e.item || '').trim()).filter(Boolean))])
+// 規劃時：表單的裝卸 → { start, end, places: {地點 id: [...]} }（同一個地點填在好幾列的合併）
+function buildSeed() {
+  const places = {}
+  for (const s of filledStops.value) if (s.cargo.length) places[s.id] = [...(places[s.id] || []), ...s.cargo]
+  const seed = { start: startCargo.value, end: endMode.value !== 'none' ? endCargo.value : [], places }
+  const any = seed.start.length || seed.end.length || Object.keys(places).length
+  return any ? JSON.parse(JSON.stringify(seed)) : null
+}
 const resultOpen = ref(false)
 watch(popupResult, (on) => { resultOpen.value = on && !!(result.value || planning.value || planError.value) })
 const hubReady = computed(() => !hubOn.value || (!!hubPlace.id && hubEvery.value >= 1 && hubEvery.value <= MAX_ON))
 
 const plain = p => ({ id: p.id, text: p.text })
-const plainStop = s => ({ ...plain(s), on: s.on, auto: s.auto })
+const plainStop = s => ({ ...plain(s), on: s.on, auto: s.auto, cargo: s.cargo })
 watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel,
-  hubOn, hubPlace, hubEvery, popupResult], () => {
+  hubOn, hubPlace, hubEvery, popupResult, cargoPlanOn, startCargo, endCargo, view], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plainStop),
@@ -337,6 +438,7 @@ watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId
       autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
       externalCargo: externalCargo.value, startFuel: startFuel.value,
       hubOn: hubOn.value, hub: plain(hubPlace), hubEvery: hubEvery.value, popupResult: popupResult.value,
+      cargoPlanOn: cargoPlanOn.value, startCargo: startCargo.value, endCargo: endCargo.value, view: view.value,
     }))
   } catch { /* 存不了就算了 */ }
 }, { deep: true })
@@ -347,6 +449,7 @@ watch(() => props.active, (on) => {
   if (!on) return
   if (!base.loaded.value) base.load()
   base.loadCargoGrids()
+  base.loadCommodities()
 }, { immediate: true })
 
 // ── 規劃 ─────────────────────────────────────────────────
@@ -355,11 +458,6 @@ const planError = ref('')
 const result = ref(null)
 const planKey = ref('fastest')
 // 結果的顯示方式：航段表／3D 星圖
-const VIEWS = [
-  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
-  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
-]
-const view = ref('table')
 
 const filledStops = computed(() => stops.filter(s => s.id && s.on))
 const onCount = computed(() => stops.filter(s => s.on).length)
@@ -453,6 +551,9 @@ async function replan(p) {
   visited.value = []
   manualOrder.value = false
   replannedFrom.value = p.current
+  // 貨物規劃：現在艙內的貨（跑完的站做完的裝卸）當成新起點的「已在艙內」
+  stopCargo.value = p.cargoCarry?.length ? { start: p.cargoCarry } : {}
+  seedCargo.value = null
 }
 
 async function reorder(legs) {
@@ -478,6 +579,10 @@ async function plan() {
   if (popupResult.value) resultOpen.value = true
   planError.value = ''
   visited.value = []
+  stopCargo.value = {}
+  seedCargo.value = buildSeed()
+  // 表單有填貨物就自動打開貨物規劃
+  if (seedCargo.value) cargoPlanOn.value = true
   manualOrder.value = false
   replannedFrom.value = null
   reorderError.value = ''
@@ -521,6 +626,8 @@ function resetResult() {
   result.value = null
   planError.value = ''
   visited.value = []
+  stopCargo.value = {}
+  seedCargo.value = null
   manualOrder.value = false
   replannedFrom.value = null
   reorderError.value = ''
@@ -545,6 +652,8 @@ function clearForm() {
   Object.assign(hubPlace, newPlace())
   stops.splice(0)
   cargo.splice(0)
+  startCargo.value = []
+  endCargo.value = []
   resetResult()
 }
 
@@ -554,6 +663,25 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 
 <style scoped>
 .rp-index { min-width: 1.5rem; text-align: center; color: var(--sf-text-muted); }
+/* 起點／終點的序號：「起」「終」字樣 */
+.rp-index--tag { font-weight: 700; color: var(--sf-accent-text, var(--sf-accent)); }
+/* 起點那一列沒有開關：留一樣寬的空位，地點欄跟途經站點對齊 */
+.rp-switch-gap { flex: 0 0 auto; width: 2.5em; }
+.rp-end-mode { flex: 0 0 auto; width: auto; }
+/* 每站要裝卸的貨：摘要放在那一列下面，對齊地點欄 */
+/* 一列：序號、開關、地點（只佔自己需要的寬度）、中間放這站的裝卸、右邊距離／貨物／刪除；滑過整列反白，橫向好對 */
+.rp-row { padding: .2rem .3rem; margin-left: -.3rem; margin-right: -.3rem; border-radius: .4rem; }
+.rp-row:hover { background: rgba(var(--sf-accent-rgb), .07); }
+.rp-place { flex: 0 1 auto; min-width: 0; max-width: 60%; }
+/* 還在選地點（地點選擇器）時佔滿 */
+.rp-place:has(.place-picker) { flex: 1 1 auto; max-width: none; }
+.rp-mid { flex: 1 1 0; min-width: 0; display: flex; align-items: center; }
+/* 中間剩下的空白畫一條淡淡的虛線，眼睛從站名順著看到右邊的距離、按鈕 */
+.rp-mid::after { content: ''; flex: 1 1 auto; min-width: 1rem; margin: 0 .5rem; border-bottom: 1px dashed var(--sf-border); opacity: .7; }
+/* 右邊對齊：距離固定寬度靠右；起點／終點沒有刪除鈕，留一樣寬的空位 */
+.rp-dist { min-width: 7.5rem; justify-content: flex-end; }
+.rp-del-gap { flex: 0 0 auto; width: 2.35rem; }
+.rp-dist-gap { flex: 0 0 auto; width: 7.5rem; }
 .rp-switch { padding-left: 2.5em; }
 .rp-switch .form-check-input { width: 2.2em; height: 1.2em; cursor: pointer; }
 .rp-auto { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; padding: .25rem .5rem;
@@ -572,6 +700,16 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
   .rp-split__right { border-left: 1px solid var(--sf-border); padding-left: 2rem; min-height: 100%; }
   .rp-split__right > .rp-stops { margin-top: 0 !important; }
   .rp-actions { border-top: 1px solid var(--sf-border); padding-top: .75rem; margin-top: 1rem !important; }
+}
+/* 手機：站點一列放不下——地點欄佔滿第一行，距離、貨物、刪除換到下一行靠右 */
+@media (max-width: 767.98px) {
+  .rp-row { flex-wrap: wrap; row-gap: .35rem !important; }
+  .rp-row > .rp-mid + * { margin-left: auto; }
+  .rp-place { flex: 1 1 calc(100% - 6rem); max-width: none; }
+  .rp-mid { flex: 1 1 100%; order: 10; padding-left: 4.5rem; }
+  .rp-mid::after, .rp-del-gap, .rp-dist-gap { display: none; }
+  .rp-dist { min-width: 0; }
+  .rp-mid:not(:has(*)) { display: none; }
 }
 .rp-fill { padding: .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
 .rp-finish { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem;

@@ -19,7 +19,7 @@
                 <input id="cp-common-start" v-model="commonStart" class="form-check-input" type="checkbox">
                 <label class="form-check-label fw-semibold" for="cp-common-start">共同起點</label>
               </div>
-              <PlacePicker v-if="commonStart" id="cp-start" label="共同起點" :places="base.places.value" :model-value="start"
+              <PlaceSlot v-if="commonStart" id="cp-start" class="cp-fit" label="共同起點" :places="base.places.value" :model-value="start"
                 :class="{ 'cp-invalid': isBad('start') }" @update:model-value="v => Object.assign(start, v)" />
             </div>
             <div class="col-12">
@@ -48,11 +48,13 @@
                       :aria-label="`共同送貨點 ${di + 1} 加入規劃`">
                   </div>
                   <div class="cp-point__place" :class="{ 'cp-invalid': isBad(`cdrop-${cd.key}`) }">
-                    <PlacePicker :id="`cp-cdrop-${cd.key}`" :label="`共同送貨點 ${di + 1}`" :places="base.places.value"
+                    <PlaceSlot :id="`cp-cdrop-${cd.key}`" :label="`共同送貨點 ${di + 1}`" :places="base.places.value"
                       :model-value="cd.place" @update:model-value="v => Object.assign(cd.place, v)" />
                   </div>
+                  <span class="cp-mid" aria-hidden="true"></span>
                   <button v-if="commonDrops.length > 1" type="button" class="btn btn-sm btn-danger"
                     :aria-label="`移除共同送貨點 ${di + 1}`" @click="commonDrops.splice(di, 1)"><i class="bi bi-trash"></i></button>
+                  <span v-else class="cp-del-gap" aria-hidden="true"></span>
                 </div>
               </template>
             </div>
@@ -102,7 +104,7 @@
                 :fleet-uuids="fleetUuids" show-cargo :auto-pick="sq.mine" :fleet-filter="sq.mine" />
               <div v-if="usesOwnStart(sq)" class="mt-2">
                 <label class="cp-field-label" :for="`cp-sq-start-${sq.key}`"><i class="bi bi-geo-alt me-1"></i>起點</label>
-                <PlacePicker :id="`cp-sq-start-${sq.key}`" :label="`${squadName(sq, i)}起點`" :places="base.places.value"
+                <PlaceSlot :id="`cp-sq-start-${sq.key}`" class="cp-fit" :label="`${squadName(sq, i)}起點`" :places="base.places.value"
                   :class="{ 'cp-invalid': isBad(`start-${sq.key}`) }"
                   :model-value="sq.start" @update:model-value="v => Object.assign(sq.start, v)" />
               </div>
@@ -139,6 +141,11 @@
                     :min-chars="0" :debounce-ms="0"
                     :placeholder="`貨物 ${ii + 1}`" :aria-label="`${contractName(c, ci)} 貨物 ${ii + 1} 名稱`" />
                   <span class="sf-chip text-nowrap" :class="{ 'sf-chip--warn': mismatch(it) || isBad(`item-${it.key}`) }">{{ itemSummary(it) }}</span>
+                  <!-- 最大貨櫃（合約常限制 16／8 SCU）：結果的「貨物規劃」用來拆貨櫃 -->
+                  <select v-model.number="it.maxBox" class="form-select form-select-sm cp-maxbox" title="最大貨櫃"
+                    :aria-label="`${contractName(c, ci)} 貨物 ${ii + 1} 最大貨櫃`">
+                    <option v-for="sz in CRATE_SIZES" :key="sz" :value="sz">最大 {{ sz }} SCU</option>
+                  </select>
                   <span v-if="sameNameIn(it, ci).length" class="sf-chip sf-chip--warn">
                     {{ sameNameIn(it, ci).join('、') }} 也有同名商品</span>
                   <button type="button" class="btn btn-sm btn-danger ms-auto"
@@ -174,13 +181,20 @@
                         :aria-label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1} 加入規劃`">
                     </div>
                     <div v-if="locked(side)" class="cp-point__place cp-common-place">
-                      {{ pt.place.text || `共同送貨點 ${pi + 1}` }}</div>
+                      <template v-if="placeOfId(pt.place.id)">
+                        <span class="fw-semibold">{{ placeLabel(placeOfId(pt.place.id)) }}</span>
+                        <span class="cp-path">{{ placePath(placeOfId(pt.place.id)) }}</span>
+                      </template>
+                      <template v-else>{{ pt.place.text || `共同送貨點 ${pi + 1}` }}</template>
+                    </div>
                     <div v-else class="cp-point__place" :class="{ 'cp-invalid': isBad(`place-${pt.key}`) }">
-                      <PlacePicker :id="`cp-${side.key}-${pt.key}`"
+                      <PlaceSlot :id="`cp-${side.key}-${pt.key}`"
                         :label="`${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1}`"
                         :places="base.places.value" :model-value="pt.place"
                         @update:model-value="v => Object.assign(pt.place, v)" />
                     </div>
+                    <!-- 中間空白畫淡虛線，眼睛順著看到右邊的 SCU -->
+                    <span class="cp-mid" aria-hidden="true"></span>
                     <div class="input-group input-group-sm cp-point__scu" :class="{ 'cp-invalid': isBad(`scu-${pt.key}`) }">
                       <input v-model.number="pt.scu" type="number" min="1" step="1" class="form-control"
                         :placeholder="autoScu(it, side.key) ?? ''"
@@ -190,6 +204,7 @@
                     <button v-if="!locked(side)" type="button" class="btn btn-sm btn-danger" :disabled="it[side.key].length <= 1"
                       :aria-label="`移除${contractName(c, ci)} 貨物 ${ii + 1} ${side.label} ${pi + 1}`"
                       @click="it[side.key].splice(pi, 1)"><i class="bi bi-trash"></i></button>
+                    <span v-else class="cp-del-gap" aria-hidden="true"></span>
                   </div>
                 </div>
               </div>
@@ -297,15 +312,27 @@
             </div>
             <div v-if="!squad.plan" class="cp-muted py-2">沒有分到貨物</div>
             <template v-else>
-              <div class="btn-group btn-group-sm mb-2" role="group" aria-label="顯示方式">
-                <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab"
-                  :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
-                  @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <div class="btn-group btn-group-sm" role="group" aria-label="顯示方式">
+                  <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab text-nowrap"
+                    :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
+                    @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
+                </div>
+                <!-- 貨物規劃（可選）：取貨＝裝、送貨＝卸自動帶入，拆成貨櫃、算每站貨艙用量，每站「貨物」視窗可以調整 -->
+                <div class="form-check form-switch mb-0 ms-md-2">
+                  <input id="cp-cargo-plan" v-model="cargoPlanOn" class="form-check-input" type="checkbox" role="switch">
+                  <label class="form-check-label" for="cp-cargo-plan">貨物規劃</label>
+                </div>
               </div>
               <RouteMap3D v-if="view === 'map'" :key="`${planKey}-${squad.index}`" :plan="squad.plan" :map="result.map || {}" />
+              <RouteFlowView v-if="view === 'flow'" :visited="visitedOf(squad)" :plan="squad.plan"
+                :fuel-capacity="squad.ship.qt_fuel_capacity" :cargo-on="cargoPlanOn" :stop-cargo="cargoOf(squad)"
+                :cargo-capacity="Number(squad.ship.cargo_scu) || 0" @update:visited="v => setVisitedOf(squad, v)" />
               <div v-if="reorderError" class="alert alert-warning py-2 mb-2" role="alert">{{ reorderError }}</div>
-              <RouteLegsTable v-show="view === 'table'" :visited="visitedOf(squad)"
+              <RouteLegsTable :hide-table="view !== 'table'" :visited="visitedOf(squad)"
                 :plan="squad.plan" :fuel-capacity="squad.ship.qt_fuel_capacity" show-load :reorderable="!reordering"
+                :cargo-on="cargoPlanOn" seed-from-actions :commodities="base.commodities.value" :max-crate-of="maxCrateOf" :cargo-capacity="Number(squad.ship.cargo_scu) || 0"
+                :stop-cargo="cargoOf(squad)" @update:stop-cargo="v => setCargoOf(squad, v)"
                 replannable :replanning="reordering" :places="base.places.value"
                 @update:visited="v => setVisitedOf(squad, v)" @reorder="legs => reorder(squad, legs)"
                 @replan="p => replan(squad, p)" />
@@ -321,16 +348,18 @@
 import { scrollBehavior } from '@/utils/motion'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
-import PlacePicker from '@/components/PlacePicker.vue'
+import PlaceSlot from '@/components/PlaceSlot.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
+import { SIZES as CRATE_SIZES_ASC } from '@/utils/cargoPack'
 import RouteMap3D from '@/components/RouteMap3D.vue'
+import RouteFlowView from '@/components/RouteFlowView.vue'
 import SfState from '@/components/SfState.vue'
 import SystemStopsFill from '@/components/SystemStopsFill.vue'
 import FuelStartInput from '@/components/FuelStartInput.vue'
 import ShipFilter from '@/components/ShipFilter.vue'
 import ShipPicker from '@/components/ShipPicker.vue'
 import { useNavBase } from '@/utils/navBase'
-import { fmtDist, fmtNum, fmtTime, placeLabel, shipLabel } from '@/utils/navFormat'
+import { fmtDist, fmtNum, fmtTime, placeLabel, placePath, shipLabel } from '@/utils/navFormat'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -383,6 +412,7 @@ function fillList(k, list, rows, make) {
   else delete fillNotes[k]
 }
 
+const CRATE_SIZES = [...CRATE_SIZES_ASC].sort((a, b) => b - a)
 let keySeq = 0
 const newPlace = (p = {}) => ({ id: p?.id || '', text: p?.text || '' })
 // mine：「我的小隊」（用我機庫的船；選船篩選的「只看我的機庫」只套用在這種小隊）；舊存檔沒有這欄時第一隊算我的
@@ -397,7 +427,7 @@ const newPoint = (pt = {}) => ({ key: ++keySeq, place: reactive(newPlace(pt.plac
 function newItem(it = {}) {
   const pickups = Array.isArray(it.pickups) ? it.pickups : [{ place: it.pickup, scu: it.scu }]
   const dropoffs = Array.isArray(it.dropoffs) ? it.dropoffs : [{ place: it.dropoff, scu: it.scu }]
-  return { key: ++keySeq, cargo: it.cargo || '',
+  return { key: ++keySeq, cargo: it.cargo || '', maxBox: CRATE_SIZES.includes(Number(it.maxBox)) ? Number(it.maxBox) : 32,
     pickups: (pickups.length ? pickups : [{}]).slice(0, MAX_POINTS).map(newPoint),
     dropoffs: (dropoffs.length ? dropoffs : [{}]).slice(0, MAX_POINTS).map(newPoint) }
 }
@@ -413,6 +443,15 @@ function loadSaved() {
   }
 }
 const saved = loadSaved()
+// 顯示方式：航段表、總覽（一頁看完整條航線，滑鼠移上去看細節；預設）、3D 星圖；選過的記在這台瀏覽器
+const VIEWS = [
+  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
+  { key: 'flow', label: '總覽', icon: 'bi bi-grid-3x3-gap' },
+  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
+]
+const view = ref(VIEWS.some(v => v.key === saved.view) ? saved.view : 'flow')
+// 結果的「貨物規劃」開關（記在這台瀏覽器）
+const cargoPlanOn = ref(saved.cargoPlanOn === true)
 const start = reactive(newPlace(saved.start))
 const endMode = ref(saved.endMode === 'start' ? 'start' : 'none')
 // 各隊的起始油量 { mode: pct／amount, value }，value 空的＝滿油（百分比照各自油箱算）
@@ -477,20 +516,23 @@ watch(dropSig, (sig, old) => {
 }, { immediate: true })
 
 const savePoint = pt => ({ place: plain(pt.place), scu: pt.scu, on: isOn(pt) })
-watch([start, endMode, commonStart, startFuel, squads, contracts, commonDrop, commonDrops], () => {
+watch([start, endMode, commonStart, startFuel, squads, contracts, commonDrop, commonDrops, cargoPlanOn, view], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), endMode: endMode.value, commonStart: commonStart.value, startFuel: startFuel.value,
       commonDrop: commonDrop.value, commonDrops: commonDrops.map(cd => ({ place: plain(cd.place), on: cd.on })),
       squads: squads.map(s => ({ name: s.name, shipId: s.shipId, shipText: s.shipText, qdId: s.qdId,
         ownStart: s.ownStart, start: plain(s.start), mine: s.mine })),
-      contracts: contracts.map(c => ({ name: c.name, on: c.on, items: c.items.map(it => ({ cargo: it.cargo,
+      cargoPlanOn: cargoPlanOn.value, view: view.value,
+      contracts: contracts.map(c => ({ name: c.name, on: c.on, items: c.items.map(it => ({ cargo: it.cargo, maxBox: it.maxBox,
         pickups: it.pickups.map(savePoint), dropoffs: it.dropoffs.map(savePoint) })) })),
     }))
   } catch { /* 存不了就算了 */ }
 }, { deep: true })
 
 const base = useNavBase(props.fetcher)
+const placeByIdMap = computed(() => new Map(base.places.value.map(p => [p.id, p])))
+const placeOfId = id => (id ? placeByIdMap.value.get(id) || null : null)
 watch(() => props.active, (on) => {
   if (!on) return
   if (!base.loaded.value) base.load()
@@ -654,16 +696,19 @@ const planError = ref('')
 const result = ref(null)
 const planKey = ref('time')
 const squadIndex = ref(0)
-const VIEWS = [
-  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
-  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
-]
-const view = ref('table')
 
 // ── 航段表：已去過（每個方案、每隊各自記）、拖拉調整順序後重算那一隊 ──
 const visitedMap = reactive({})
 const visitedOf = sq => visitedMap[`${planKey.value}-${sq.index}`] || []
 const setVisitedOf = (sq, v) => { visitedMap[`${planKey.value}-${sq.index}`] = v }
+// ── 貨物規劃（可選，開關記在這台瀏覽器）：每個方案、每隊各自的每站裝卸（見 RouteLegsTable 的 seedFromActions） ──
+const cargoMap = reactive({})
+const cargoOf = sq => cargoMap[`${planKey.value}-${sq.index}`] || {}
+const setCargoOf = (sq, v) => { cargoMap[`${planKey.value}-${sq.index}`] = v }
+// 最大貨櫃：分析當下記下「第幾份合約＋貨物名稱 → 最大貨櫃」（後端動作的 contract 是送出去的合約序號）
+let maxBoxTable = new Map()
+const crateKey = (ci, name) => `${ci}|${(name || '').trim().toLowerCase()}`
+const maxCrateOf = a => maxBoxTable.get(crateKey(a.contract, a.item_name)) || 32
 const reordering = ref(false)
 const reorderError = ref('')
 let resultEndMode = 'none'
@@ -763,6 +808,9 @@ async function plan() {
   planError.value = ''
   reorderError.value = ''
   Object.keys(visitedMap).forEach(k => delete visitedMap[k])
+  Object.keys(cargoMap).forEach(k => delete cargoMap[k])
+  maxBoxTable = new Map(contracts.filter(c => c.on && c.items.some(it => !blankItem(it)))
+    .flatMap((c, ci) => c.items.filter(it => !blankItem(it)).map(it => [crateKey(ci, it.cargo), it.maxBox || 32])))
   resultEndMode = endMode.value
   resultStartFuel = fuelParam()
   const res = await props.fetcher('/starmap/nav/contracts', {
@@ -840,11 +888,27 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 .cp-side-label { min-width: 4rem; font-weight: 600; }
 .cp-side-label--pickups { color: var(--sf-accent-text, var(--sf-accent)); }
 .cp-side-label--dropoffs { color: var(--bs-success); }
-.cp-point { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin-bottom: .35rem; }
-.cp-point__place { flex: 1 1 18rem; min-width: 0; }
+/* 每個點一列（跟航線規劃的站點同一種排法）：地點只佔需要的寬度，中間淡虛線，右邊 SCU、刪除對齊；滑過整列反白 */
+.cp-point { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin: 0 -.3rem .2rem; padding: .2rem .3rem; border-radius: .4rem; }
+.cp-point:hover { background: rgba(var(--sf-accent-rgb), .07); }
+.cp-point__place { flex: 0 1 auto; min-width: 0; max-width: 65%; }
+/* 還在選地點（地點選擇器）時佔滿 */
+.cp-point__place:has(.place-picker) { flex: 1 1 18rem; max-width: none; }
+.cp-mid { flex: 1 1 1rem; min-width: 1rem; align-self: center; border-bottom: 1px dashed var(--sf-border); opacity: .7; }
+.cp-del-gap { flex: 0 0 auto; width: 2.35rem; }
+/* 起點選好後只佔名稱的寬度 */
+.ps-show.cp-fit { display: inline-flex; max-width: 100%; }
+.cp-path { color: var(--sf-text-muted); }
+.cp-invalid :deep(.ps-show) { border-color: var(--bs-danger); }
+@media (max-width: 767.98px) {
+  .cp-point__place { flex: 1 1 calc(100% - 6rem); max-width: none; }
+  .cp-mid { display: none; }
+  .cp-point__scu { margin-left: auto; }
+}
 .cp-point__scu { flex: 0 0 9rem; width: 9rem; }
 .cp-muted { color: var(--sf-text-muted); }
-.cp-common-place { padding: .25rem .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
+.cp-common-place { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; padding: .25rem .5rem;
+  border: 1px solid var(--sf-border); border-radius: .375rem; background: var(--sf-chip-bg); }
 .cp-fill { padding: .5rem; border: 1px solid var(--sf-border); border-radius: .375rem; }
 /* 沒填完的欄位：紅框 */
 .cp-invalid :deep(.form-control) {
@@ -853,4 +917,5 @@ const planLabel = key => result.value?.plans.find(p => p.key === key)?.label || 
 }
 .cp-cargo { flex: 1 1 14rem; max-width: 22rem; }
 .cp-scu { max-width: 9rem; }
+.cp-maxbox { flex: 0 0 auto; width: auto; }
 </style>

@@ -751,7 +751,7 @@ def lookup_translations():
       - {in: query, name: lang, type: string, default: zh-TW}
     responses:
       200:
-        description: 成功，data 是 {英文: 翻譯}，查不到的不會出現
+        description: "成功，data 是 {英文: 翻譯}，查不到的不會出現"
       400:
         description: domain 不認得、沒帶 text、或 text 太多
     """

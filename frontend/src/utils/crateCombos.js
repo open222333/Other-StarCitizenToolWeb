@@ -78,3 +78,30 @@ export function plan(total, sizes, { slack = 2, maxShown = 10 } = {}) {
   for (let v = total + 1; v <= total + big; v += 1) if (Number.isFinite(dp[v])) { targets.push(make(v)); break }
   return { exact: false, targets }
 }
+
+/**
+ * 一個量用「最大到 maxSize」的標準貨櫃拆，最少個數的拆法：{size: n}（大到小）。
+ * 標準貨櫃 1／2／4／8／16／32 都是 2 的次方，大的先放（貪心）就是最少；
+ * sizes 給的不是這種組合時改用動態規劃（plan）。
+ */
+export function splitCrates(total, maxSize = 32, sizes = [1, 2, 4, 8, 16, 32]) {
+  const n = Math.max(0, Math.round(Number(total) || 0))
+  const use = sizes.filter(s => s <= maxSize).sort((a, b) => b - a)
+  if (!n || !use.length) return {}
+  const pow2 = use.every(s => (s & (s - 1)) === 0) && use.includes(1)
+  if (!pow2) {
+    const best = plan(n, use).targets[0]?.options[0]?.counts || {}
+    return Object.fromEntries(Object.entries(best).filter(([, c]) => c))
+  }
+  const out = {}
+  let rest = n
+  for (const s of use) {
+    const c = Math.floor(rest / s)
+    if (c) { out[s] = c; rest -= c * s }
+  }
+  return out
+}
+
+/** splitCrates 的結果 → 「32×3、8×1」 */
+export const cratesText = counts => Object.entries(counts || {})
+  .sort((a, b) => b[0] - a[0]).map(([s, c]) => `${s}×${c}`).join('、')

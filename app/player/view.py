@@ -1510,7 +1510,7 @@ def set_my_hidden_tabs():
       - in: body
         schema:
           properties:
-            hidden_tabs: {type: array, items: {type: string}, description: "不顯示的分頁代號，例如 [\"mining\", \"gamelog\"]；空陣列＝全部顯示"}
+            hidden_tabs: {type: array, items: {type: string}, description: '不顯示的分頁代號，例如 ["mining", "gamelog"]；空陣列＝全部顯示'}
             shown_tabs: {type: array, items: {type: string}, description: "後台設成「預設不顯示」、自己打開的分頁；沒帶＝不改"}
     responses:
       200:

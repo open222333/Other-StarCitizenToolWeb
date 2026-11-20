@@ -49,7 +49,7 @@ export const PLAYER_LOGIN_PATH = playerPath('/login')
 export const PLAYER_HELP_PATH = playerPath('/help')
 
 // 改成 /admin/、/player/ 分層前的舊網址 → 新網址（只有 web build 需要；admin build 的網址沒變）
-const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles'
+const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles|api-docs'
 const keepQuery = path => to => ({ path: typeof path === 'function' ? path(to) : path, query: to.query, hash: to.hash })
 const LEGACY_REDIRECTS = PLAYER_BUILD ? [
   { path: '/me', redirect: keepQuery(PLAYER_HOME) },
@@ -215,6 +215,13 @@ const router = createRouter({
           path: 'data',
           name: 'data-browser',
           component: () => import('@/views/DataBrowserView.vue'),
+        },
+        {
+          // API 文件（只給 admin，後端 GET /data/api-spec；見 ApiDocsView.vue 檔頭）
+          path: 'api-docs',
+          name: 'api-docs',
+          component: () => import('@/views/ApiDocsView.vue'),
+          meta: { requiresAdmin: true },
         },
         {
           // 艦船基本資料（唯讀，遊戲主檔，見 VehicleListView.vue 檔頭）

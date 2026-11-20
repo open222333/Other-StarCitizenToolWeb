@@ -255,17 +255,64 @@ _MISSION_TOKEN = re.compile(r'~mission\(([^)|]*)(?:\|[^)]*)?\)')
 _WIKI_TOKEN = re.compile(r'\[([^\]|]+)\|[^\]]*\]')
 
 
+#: 翻譯包標題裡有、但英文標題常常沒有的代入欄位：沒有值時整個拿掉，不顯示成 [CargoRouteToken]
+_OPTIONAL_TOKENS = {'cargoroutetoken'}
+
+
 def clean_title_zh(value: Optional[str], fills: dict = None) -> Optional[str]:
     """翻譯包任務標題 → 顯示用：拿掉 <EM4>[藍圖]</EM4> 這類附加標記；
     `~mission(Location)` 代入欄位換成 fills 裡對應的值（Wiki 標題已經填好的部分），
-    沒有就顯示成 `[Location]`。"""
+    沒有就顯示成 `[Location]`（_OPTIONAL_TOKENS 裡的直接拿掉）。"""
     if not value:
         return value
     fills = {k.lower(): v for k, v in (fills or {}).items()}
+
+    def fill(m):
+        name = m.group(1).strip().lower()
+        if fills.get(name):
+            return fills[name]
+        return '' if name in _OPTIONAL_TOKENS else f'[{m.group(1)}]'
     out = _EM_BLOCK.sub('', value)
-    out = _MISSION_TOKEN.sub(lambda m: fills.get(m.group(1).strip().lower()) or f'[{m.group(1)}]', out)
-    out = _OTHER_TAG.sub('', out).replace('\\n', ' ').strip()
+    out = _MISSION_TOKEN.sub(fill, out)
+    out = _OTHER_TAG.sub('', out).replace('\\n', ' ')
+    out = re.sub(r'[ \t]{2,}', ' ', out).strip()
     return out or None
+
+
+#: 樣板代入值的翻譯：Wiki 標題填的是英文（Master、Large、Interstellar），翻譯包有對應的字
+_FILL_PREFIXES = {
+    'cargogradetoken': ['haulcargo_cargograde_'],
+    'cargoroutetoken': ['haulcargo_cargoroute_'],
+}
+
+
+def _zh_fills(fills: dict, lang: str = DEFAULT_LANG) -> dict:
+    """樣板比對出來的英文代入值 → 翻譯（聲望等級、貨運規模、航線範圍）；查不到留英文；
+    Wiki 沒解析的 `[CargoRouteToken]` 這種值當成沒有。"""
+    out = {}
+    for name, value in (fills or {}).items():
+        v = (value or '').strip()
+        if not v or re.fullmatch(r'\[[^\]]*\]', v):
+            continue
+        key = name.lower()
+        if key == 'reputationrank':
+            out[name] = rep_rank_zh(v, lang) or v
+        elif key in _FILL_PREFIXES:
+            out[name] = T.by_english(v, _FILL_PREFIXES[key], lang) or v
+        else:
+            out[name] = v
+    return out
+
+
+#: Wiki 標題偶爾是兩段英文黏在一起（"Master | [CargoRouteToken] LargeMaster Rank - Large Cargo Haul"）：
+#: 小寫字母後面直接接大寫開頭的字、中間沒有空白，就從那裡切開分別比對
+_GLUED = re.compile(r'(?<=[a-z\]])(?=[A-Z][a-z])')
+
+
+def _title_parts(title: str) -> list:
+    # 太短的片段（例如 microTech 切出來的 "Tech"）不拿來比，免得對到別的標題
+    parts = [p.strip() for p in _GLUED.split(title or '') if len(p.strip()) >= 12]
+    return sorted(parts, key=len, reverse=True) if len(parts) > 1 else []
 
 
 def clean_text_zh(value: Optional[str]) -> Optional[str]:
@@ -322,10 +369,23 @@ def mission_text_zh(title: str, description: str = '', lang: str = DEFAULT_LANG)
     out = {'title_zh': None, 'description_zh': None, 'title_key': None}
     # 先找英文相同（或只差代入欄位寫法、引號、空白）的；都沒有才用樣板比對已經填好值的標題
     # （"Delivery for Lorville Ready" ↔ "Delivery for ~mission(Destination) Ready"）
-    candidates = [(k, v, {}) for k, v in T.candidates_by_english(title, _MISSION_TITLE_PATTERNS, lang)]
+    def find(text):
+        found = [(k, v, {}) for k, v in T.candidates_by_english(text, _MISSION_TITLE_PATTERNS, lang)]
+        if not found:
+            found = T.template_candidates(text, _MISSION_TITLE_PATTERNS, lang)
+        return [c for c in found if 'desc' not in c[0]]
+
+    # 黏在一起的兩段英文先分開試（長的先）——整段拿去比樣板會把前一段整個當成代入值；都比不到才用整段
+    # （整段英文剛好有一模一樣的條目時照用，例如標題裡本來就有 microTech 這種大小寫）
+    candidates = [(k, v, {}) for k, v in T.candidates_by_english(title, _MISSION_TITLE_PATTERNS, lang)
+                  if 'desc' not in k]
+    for part in ([] if candidates else _title_parts(title)):
+        candidates = find(part)
+        if candidates:
+            break
     if not candidates:
-        candidates = T.template_candidates(title, _MISSION_TITLE_PATTERNS, lang)
-    candidates = [c for c in candidates if 'desc' not in c[0]]
+        candidates = find(title)
+    candidates = [(k, v, _zh_fills(f, lang)) for k, v, f in candidates]
     if not candidates:
         return out
 
