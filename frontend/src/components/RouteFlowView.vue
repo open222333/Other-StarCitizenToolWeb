@@ -1,6 +1,7 @@
 <!--
   航線的「總覽」顯示方式（RoutePlanner.vue、ContractPlanner.vue 跟航段表／3D 星圖並列）：
-  整條航線排成一格一格（起點 → 第 1 站 → …），依寬度自動換行，40 個站也不用上下捲；
+  整條航線排成一格一格（起點 → 第 1 站 → …），蛇形排列：橫向（direction=horizontal）一行左→右、下一行右→左；
+  直向（vertical）一欄上→下、下一欄下→上。欄數依寬度自動算，40 個站也不用上下捲；
   每格只有站號、站名和幾個小圖示（補燃料、外部貨運、特大機庫、貨艙用量），滑鼠移上去（手機點一下）才跳出細節：
   動作、距離、時間、油量、剩油、經過的 OM／跳躍點、站點特性、這站的裝卸貨。
   站號一樣是「已去過」按鈕（v-model:visited，跟航段表共用同一份）。列的資料見 utils/routeRows.js。
@@ -11,7 +12,7 @@
     <ol ref="gridEl" class="rfv-grid" aria-label="航線總覽" title="滑鼠移到站上（手機點一下）看細節；點站號標記已去過"
       :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }">
       <li v-for="(n, i) in nodes" :key="n.key" class="rfv-node" :style="cellOf(i)"
-        :class="[`dir-${dirOf(i)}`, { 'is-visited': isVisited(n.key), 'is-next': nextKey === n.key, 'is-warn': n.refuel || n.short,
+        :class="[`dir-${dirOf(i)}`, { 'is-turn': isTurn(i), 'is-visited': isVisited(n.key), 'is-next': nextKey === n.key, 'is-warn': n.refuel || n.short,
                   'is-active': tipIndex === i, 'is-over': n.flow?.over }]"
         tabindex="0" :aria-label="`${i}. ${placeLabel(n.to)}`" @mouseenter="show(i, $event)" @mouseleave="hideSoon"
         @focus="show(i, $event)" @blur="hideSoon" @click="toggleTip(i, $event)">
@@ -84,6 +85,8 @@ const props = defineProps({
   cargoOn: { type: Boolean, default: false },
   stopCargo: { type: Object, default: () => ({}) },
   cargoCapacity: { type: Number, default: 0 },
+  // 排列方向：horizontal＝橫向（一行一行，左右來回）、vertical＝直向（一欄一欄，上下來回）
+  direction: { type: String, default: 'horizontal' },
 })
 const emit = defineEmits(['update:visited'])
 
@@ -143,7 +146,15 @@ function measure() {
   const colW = Math.min(9.5 * rem, w / 2 - GAP_PX)
   cols.value = Math.max(1, Math.floor((w + GAP_PX) / (colW + GAP_PX)))
 }
+// 直向：欄數一樣（寬度決定），行數＝站數÷欄數；第一欄上→下、第二欄下→上…
+const rowsN = computed(() => Math.max(1, Math.ceil(nodes.value.length / cols.value)))
+const vertical = computed(() => props.direction === 'vertical')
 const posOf = (i) => {
+  if (vertical.value) {
+    const col = Math.floor(i / rowsN.value)
+    const k = i % rowsN.value
+    return { col, row: col % 2 === 0 ? k : rowsN.value - 1 - k }
+  }
   const row = Math.floor(i / cols.value)
   const k = i % cols.value
   return { row, col: row % 2 === 0 ? k : cols.value - 1 - k }
@@ -152,15 +163,19 @@ const cellOf = (i) => {
   const p = posOf(i)
   return { gridRow: p.row + 1, gridColumn: p.col + 1 }
 }
-// 這一格跟上一站的關係：r＝上一站在左邊、l＝在右邊、d＝在正上方（換行）
+// 這一格跟上一站的關係：r＝上一站在左邊、l＝在右邊、d＝在正上方、u＝在正下方
 function dirOf(i) {
   if (i === 0) return 'first'
-  if (i % cols.value === 0) return 'd'
-  return Math.floor(i / cols.value) % 2 === 0 ? 'r' : 'l'
+  const a = posOf(i - 1), b = posOf(i)
+  if (a.row === b.row) return a.col < b.col ? 'r' : 'l'
+  return a.row < b.row ? 'd' : 'u'
 }
+// 換行（橫向）／換欄（直向）的那一格
+const isTurn = i => i > 0 && (vertical.value ? i % rowsN.value === 0 : i % cols.value === 0)
 function arrowIcon(i, jump) {
   const d = dirOf(i)
   if (d === 'd') return jump ? 'bi-chevron-double-down' : 'bi-arrow-down'
+  if (d === 'u') return jump ? 'bi-chevron-double-up' : 'bi-arrow-up'
   if (d === 'l') return jump ? 'bi-chevron-double-left' : 'bi-arrow-left'
   return jump ? 'bi-chevron-double-right' : 'bi-arrow-right'
 }
@@ -270,7 +285,10 @@ onBeforeUnmount(() => {
 .dir-r > .rfv-arrow { left: -10px; top: 50%; transform: translate(-50%, -50%); }
 .dir-l > .rfv-arrow { right: -10px; top: 50%; transform: translate(50%, -50%); }
 /* 換行：箭頭在上下兩格之間，指著從上面那一站下來 */
-.dir-d > .rfv-arrow { left: 50%; top: calc(-.95rem / 2); transform: translate(-50%, -50%); color: var(--sf-accent-text, var(--sf-accent)); }
+.dir-d > .rfv-arrow { left: 50%; top: calc(-.95rem / 2); transform: translate(-50%, -50%); }
+.dir-u > .rfv-arrow { left: 50%; bottom: calc(-.95rem / 2); transform: translate(-50%, 50%); }
+/* 換行／換欄的那一個箭頭用強調色 */
+.rfv-node.is-turn > .rfv-arrow { color: var(--sf-accent-text, var(--sf-accent)); }
 .rfv-mark {
   flex: 0 0 auto; width: 1.75rem; height: 1.75rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   font-size: .9rem; font-weight: 600; color: var(--sf-text); background: var(--sf-bg-2, rgba(0, 0, 0, .25));

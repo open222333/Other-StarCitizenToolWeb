@@ -256,6 +256,12 @@
                   :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
                   @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
               </div>
+<!-- 總覽的排列方向：橫向（左右來回）／直向（上下來回） -->
+              <div v-if="view === 'flow'" class="btn-group btn-group-sm" role="group" aria-label="總覽排列方向">
+                <button v-for="d in FLOW_DIRS" :key="d.key" type="button" class="btn btn-subtab text-nowrap"
+                  :class="{ active: flowDir === d.key }" :aria-pressed="flowDir === d.key ? 'true' : 'false'"
+                  :title="d.title" @click="flowDir = d.key"><i :class="d.icon" class="me-1"></i>{{ d.label }}</button>
+              </div>
               <!-- 貨物規劃（可選）：航段表每站多「貨物」按鈕設定裝卸，顯示貨艙用量與貨櫃拆法 -->
               <div class="form-check form-switch mb-0 ms-md-2">
                 <input id="rp-cargo-plan" v-model="cargoPlanOn" class="form-check-input" type="checkbox" role="switch">
@@ -268,7 +274,7 @@
               </div>
             </div>
             <RouteMap3D v-if="view === 'map'" :plan="current" :map="result.map || {}" />
-            <RouteFlowView v-if="view === 'flow'" v-model:visited="visited" :plan="current"
+            <RouteFlowView v-if="view === 'flow'" v-model:visited="visited" :plan="current" :direction="flowDir"
               :fuel-capacity="result.ship.qt_fuel_capacity" :cargo-on="cargoPlanOn && !SHOW_CARGO" :stop-cargo="stopCargo"
               :cargo-capacity="Number(result.ship?.cargo_scu) || 0" />
             <div v-if="reorderError" class="alert alert-warning py-2 mb-2" role="alert">{{ reorderError }}</div>
@@ -351,6 +357,11 @@ const VIEWS = [
   { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
 ]
 const view = ref(VIEWS.some(v => v.key === saved.view) ? saved.view : 'flow')
+const FLOW_DIRS = [
+  { key: 'horizontal', label: '橫向', icon: 'bi bi-arrow-left-right', title: '一行一行排，左右來回' },
+  { key: 'vertical', label: '直向', icon: 'bi bi-arrow-down-up', title: '一欄一欄排，上下來回' },
+]
+const flowDir = ref(saved.flowDir === 'vertical' ? 'vertical' : 'horizontal')
 const start = reactive(newPlace(saved.start))
 const endPlace = reactive(newPlace(saved.end))
 const endMode = ref(['none', 'start', 'fixed'].includes(saved.endMode) ? saved.endMode : 'none')
@@ -430,7 +441,7 @@ const hubReady = computed(() => !hubOn.value || (!!hubPlace.id && hubEvery.value
 const plain = p => ({ id: p.id, text: p.text })
 const plainStop = s => ({ ...plain(s), on: s.on, auto: s.auto, cargo: s.cargo })
 watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel,
-  hubOn, hubPlace, hubEvery, popupResult, cargoPlanOn, startCargo, endCargo, view], () => {
+  hubOn, hubPlace, hubEvery, popupResult, cargoPlanOn, startCargo, endCargo, view, flowDir], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plainStop),
@@ -438,7 +449,7 @@ watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId
       autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
       externalCargo: externalCargo.value, startFuel: startFuel.value,
       hubOn: hubOn.value, hub: plain(hubPlace), hubEvery: hubEvery.value, popupResult: popupResult.value,
-      cargoPlanOn: cargoPlanOn.value, startCargo: startCargo.value, endCargo: endCargo.value, view: view.value,
+      cargoPlanOn: cargoPlanOn.value, startCargo: startCargo.value, endCargo: endCargo.value, view: view.value, flowDir: flowDir.value,
     }))
   } catch { /* 存不了就算了 */ }
 }, { deep: true })

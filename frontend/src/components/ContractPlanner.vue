@@ -318,6 +318,12 @@
                     :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
                     @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
                 </div>
+<!-- 總覽的排列方向：橫向（左右來回）／直向（上下來回） -->
+                <div v-if="view === 'flow'" class="btn-group btn-group-sm" role="group" aria-label="總覽排列方向">
+                  <button v-for="d in FLOW_DIRS" :key="d.key" type="button" class="btn btn-subtab text-nowrap"
+                    :class="{ active: flowDir === d.key }" :aria-pressed="flowDir === d.key ? 'true' : 'false'"
+                    :title="d.title" @click="flowDir = d.key"><i :class="d.icon" class="me-1"></i>{{ d.label }}</button>
+                </div>
                 <!-- 貨物規劃（可選）：取貨＝裝、送貨＝卸自動帶入，拆成貨櫃、算每站貨艙用量，每站「貨物」視窗可以調整 -->
                 <div class="form-check form-switch mb-0 ms-md-2">
                   <input id="cp-cargo-plan" v-model="cargoPlanOn" class="form-check-input" type="checkbox" role="switch">
@@ -325,7 +331,7 @@
                 </div>
               </div>
               <RouteMap3D v-if="view === 'map'" :key="`${planKey}-${squad.index}`" :plan="squad.plan" :map="result.map || {}" />
-              <RouteFlowView v-if="view === 'flow'" :visited="visitedOf(squad)" :plan="squad.plan"
+              <RouteFlowView v-if="view === 'flow'" :visited="visitedOf(squad)" :plan="squad.plan" :direction="flowDir"
                 :fuel-capacity="squad.ship.qt_fuel_capacity" :cargo-on="cargoPlanOn" :stop-cargo="cargoOf(squad)"
                 :cargo-capacity="Number(squad.ship.cargo_scu) || 0" @update:visited="v => setVisitedOf(squad, v)" />
               <div v-if="reorderError" class="alert alert-warning py-2 mb-2" role="alert">{{ reorderError }}</div>
@@ -450,6 +456,11 @@ const VIEWS = [
   { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
 ]
 const view = ref(VIEWS.some(v => v.key === saved.view) ? saved.view : 'flow')
+const FLOW_DIRS = [
+  { key: 'horizontal', label: '橫向', icon: 'bi bi-arrow-left-right', title: '一行一行排，左右來回' },
+  { key: 'vertical', label: '直向', icon: 'bi bi-arrow-down-up', title: '一欄一欄排，上下來回' },
+]
+const flowDir = ref(saved.flowDir === 'vertical' ? 'vertical' : 'horizontal')
 // 結果的「貨物規劃」開關（記在這台瀏覽器）
 const cargoPlanOn = ref(saved.cargoPlanOn === true)
 const start = reactive(newPlace(saved.start))
@@ -516,14 +527,14 @@ watch(dropSig, (sig, old) => {
 }, { immediate: true })
 
 const savePoint = pt => ({ place: plain(pt.place), scu: pt.scu, on: isOn(pt) })
-watch([start, endMode, commonStart, startFuel, squads, contracts, commonDrop, commonDrops, cargoPlanOn, view], () => {
+watch([start, endMode, commonStart, startFuel, squads, contracts, commonDrop, commonDrops, cargoPlanOn, view, flowDir], () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       start: plain(start), endMode: endMode.value, commonStart: commonStart.value, startFuel: startFuel.value,
       commonDrop: commonDrop.value, commonDrops: commonDrops.map(cd => ({ place: plain(cd.place), on: cd.on })),
       squads: squads.map(s => ({ name: s.name, shipId: s.shipId, shipText: s.shipText, qdId: s.qdId,
         ownStart: s.ownStart, start: plain(s.start), mine: s.mine })),
-      cargoPlanOn: cargoPlanOn.value, view: view.value,
+      cargoPlanOn: cargoPlanOn.value, view: view.value, flowDir: flowDir.value,
       contracts: contracts.map(c => ({ name: c.name, on: c.on, items: c.items.map(it => ({ cargo: it.cargo, maxBox: it.maxBox,
         pickups: it.pickups.map(savePoint), dropoffs: it.dropoffs.map(savePoint) })) })),
     }))
