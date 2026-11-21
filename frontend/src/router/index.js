@@ -42,14 +42,14 @@ const HOME_REDIRECT = PLAYER_BUILD ? PLAYER_HOME : '/users'
 // 後台登入頁：兩套 build 最終網址都是 /admin/login（admin build 靠 router base、web build 靠 ADMIN_PREFIX）。
 export const ADMIN_LOGIN_PATH = adminPath('/login')
 
-// 玩家登入頁：/player/login（舊網址 /login、/player-login 由 LEGACY_REDIRECTS 導過來）。
+// 玩家登入：/player/login 只剩導向（→ /player/me?login=1 打開登入視窗；舊網址 /login、/player-login 也導過來）。
 export const PLAYER_LOGIN_PATH = playerPath('/login')
 
 // 玩家頁使用說明：/player/help（公開，登入頁有連結）
 export const PLAYER_HELP_PATH = playerPath('/help')
 
 // 改成 /admin/、/player/ 分層前的舊網址 → 新網址（只有 web build 需要；admin build 的網址沒變）
-const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles|api-docs'
+const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles|api-docs|news'
 const keepQuery = path => to => ({ path: typeof path === 'function' ? path(to) : path, query: to.query, hash: to.hash })
 const LEGACY_REDIRECTS = PLAYER_BUILD ? [
   { path: '/me', redirect: keepQuery(PLAYER_HOME) },
@@ -79,22 +79,13 @@ const router = createRouter({
       meta: { guest: true },
     },
 
-    {
-      // 公開自助註冊頁，不需要登入，也不因為已登入而被導開
-      path: PLAYER_REGISTER_PATH,
-      name: 'register',
-      component: () => import('@/views/RegisterView.vue'),
-    },
+    // 玩家登入／註冊沒有獨立頁面了：直接進玩家頁，用右上角的跳出視窗（components/PlayerAuthModal.vue）。
+    // 舊網址（書籤、後台登入頁的連結）導到玩家頁並打開視窗，?redirect= 照帶（登入後回去）
+    { path: PLAYER_LOGIN_PATH, name: 'player-login', redirect: to => ({ path: PLAYER_HOME, query: { ...to.query, login: '1' } }) },
+    { path: PLAYER_REGISTER_PATH, name: 'register', redirect: to => ({ path: PLAYER_HOME, query: { ...to.query, register: '1' } }) },
 
     {
-      // 玩家登入（跟後台登入分開的身分體系，見 stores/playerAuth.js）
-      path: PLAYER_LOGIN_PATH,
-      name: 'player-login',
-      component: () => import('@/views/PlayerLoginView.vue'),
-    },
-
-    {
-      // 玩家頁使用說明（公開頁面，玩家登入頁有連結）
+      // 玩家頁使用說明（公開頁面，玩家頁右上角「說明」按鈕）
       path: PLAYER_HELP_PATH,
       name: 'player-help',
       component: () => import('@/views/PlayerHelpView.vue'),
@@ -217,6 +208,12 @@ const router = createRouter({
           component: () => import('@/views/DataBrowserView.vue'),
         },
         {
+          // 新聞（玩家頁「新聞」分頁與「艦長室」上方公告；API 金鑰管理只給 admin，見 NewsListView.vue 檔頭）
+          path: 'news',
+          name: 'news',
+          component: () => import('@/views/NewsListView.vue'),
+        },
+        {
           // API 文件（只給 admin，後端 GET /data/api-spec；見 ApiDocsView.vue 檔頭）
           path: 'api-docs',
           name: 'api-docs',
@@ -240,7 +237,7 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
 
   // 尚未登入 → 導向登入頁
-  // 帶著原本要去的網址，登入完導回去（LoginView／PlayerLoginView 讀 ?redirect=）
+  // 帶著原本要去的網址，登入完導回去（LoginView 讀 ?redirect=；玩家頁的登入視窗見 MyPlayerView 的 authRedirect）
   if (to.meta.requiresAuth && !auth.isLoggedIn) return { path: ADMIN_LOGIN_PATH, query: { redirect: to.fullPath } }
 
   // 已登入卻訪問 guest-only 頁面（後台登入頁）→ 後台首頁。
@@ -253,7 +250,7 @@ router.beforeEach((to) => {
   // 玩家個人頁：需要玩家自己的登入狀態（跟後台 admin 登入分開）
   if (to.meta.requiresPlayerAuth) {
     const playerAuth = usePlayerAuthStore()
-    if (!playerAuth.isLoggedIn) return { path: PLAYER_LOGIN_PATH, query: { redirect: to.fullPath } }
+    if (!playerAuth.isLoggedIn) return { path: PLAYER_HOME, query: { login: '1', redirect: to.fullPath } }
   }
 })
 

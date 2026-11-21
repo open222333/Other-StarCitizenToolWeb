@@ -296,6 +296,12 @@
   border-bottom: 1px solid var(--sf-border);
 }
 .scifi-topbar__side { min-width: 0; }
+/* 手機：右邊按鈕（說明、配色、登入／登出）多了放不下，標題改靠左、不再硬置中，避免跟按鈕疊在一起 */
+@media (max-width: 575.98px) {
+  .scifi-topbar { grid-template-columns: 0 minmax(0, 1fr) auto; gap: .5rem; }
+  .scifi-topbar__center { justify-content: flex-start; }
+  .scifi-topbar__actions { gap: .35rem; }
+}
 .scifi-topbar__actions {
   display: flex; align-items: center; justify-content: flex-end; gap: .5rem;
 }
@@ -1121,4 +1127,106 @@ html:has(.scifi-page) { color-scheme: dark; }
 /* ── 全站提示（components/SfToaster.vue）：手機上玩家頁有底部導覽列時，浮在導覽列上面 ── */
 @media (max-width: 767.98px) {
   body:has(.scifi-page.has-bottom-nav) .sf-toaster { bottom: calc(76px + env(safe-area-inset-bottom)); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * 視覺強化（背景、按鈕）：在原本的配色之上加質感，全部走主題變數，換配色／亮底跟著變。
+ *   - 背景：星點＋淡淡的 HUD 格線（往畫面中間漸淡）＋上方一道強調色光帶，固定不隨捲動
+ *   - 按鈕：上亮下暗的金屬光澤、內側亮邊；滑過時依按鈕語意發光（主色、成功綠、刪除紅、次要橘）；
+ *     主要按鈕滑過時有一道光掃過
+ *   - 下層分頁、主分頁：漸層底，選中的有發光底線
+ *   減少動態效果（prefers-reduced-motion）時不做位移與掃光。
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 背景：放在玩家頁、說明頁最外層（Teleport 的視窗容器是 display:contents，不加） ── */
+.scifi-app, .help-page { position: relative; isolation: isolate; }
+.scifi-app::before, .help-page::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    /* 上方強調色光帶 */
+    radial-gradient(ellipse 70% 28% at 50% -6%, rgba(var(--sf-accent-rgb), .16), transparent 70%),
+    /* 星點（三種大小、不同間距錯開，看起來不規則） */
+    radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, .55), transparent 60%),
+    radial-gradient(1px 1px at 72% 34%, rgba(255, 255, 255, .45), transparent 60%),
+    radial-gradient(1.5px 1.5px at 38% 72%, rgba(255, 255, 255, .5), transparent 60%),
+    radial-gradient(1px 1px at 86% 82%, rgba(255, 255, 255, .4), transparent 60%),
+    radial-gradient(1.5px 1.5px at 58% 8%, rgba(var(--sf-accent-rgb), .7), transparent 60%),
+    radial-gradient(1px 1px at 22% 52%, rgba(var(--sf-accent-2-rgb), .6), transparent 60%);
+  background-size: 100% 100%, 260px 260px, 340px 340px, 420px 420px, 300px 300px, 520px 520px, 380px 380px;
+}
+.scifi-app::after, .help-page::after {
+  /* HUD 格線：48px 一格，四周淡、中間幾乎看不到，不干擾內容 */
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(rgba(var(--sf-accent-rgb), .05) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, rgba(var(--sf-accent-rgb), .05) 1px, transparent 1px) 0 0 / 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, transparent 35%, #000 100%);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, transparent 35%, #000 100%);
+}
+/* 亮底：不要星點（白底上像灰塵），格線改成很淡的深色 */
+:root[data-sf-mode='light'] .scifi-app::before, :root[data-sf-mode='light'] .help-page::before {
+  background: radial-gradient(ellipse 70% 28% at 50% -6%, rgba(var(--sf-accent-rgb), .12), transparent 70%);
+}
+:root[data-sf-mode='light'] .scifi-app::after, :root[data-sf-mode='light'] .help-page::after {
+  background:
+    linear-gradient(rgba(var(--sf-accent-rgb), .07) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, rgba(var(--sf-accent-rgb), .07) 1px, transparent 1px) 0 0 / 48px 48px;
+}
+
+/* ── 按鈕：金屬光澤＋語意發光 ── */
+.scifi-page .btn {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, .10) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10);
+  transition: background-color .15s, border-color .15s, box-shadow .2s, transform .15s, color .15s;
+}
+.scifi-page .btn:hover:not(:disabled) { transform: translateY(-1px); }
+.scifi-page .btn:active:not(:disabled) { transform: translateY(0); }
+.scifi-page .btn-info:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 14px rgba(var(--sf-accent-rgb), .35); }
+.scifi-page .btn-success:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 14px rgba(var(--bs-success-rgb), .35); }
+.scifi-page .btn-danger:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 14px rgba(var(--bs-danger-rgb), .35); }
+.scifi-page .btn-warning:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 14px rgba(var(--sf-accent-2-rgb), .35); }
+.scifi-page .btn-secondary:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 10px rgba(var(--sf-accent-rgb), .15); }
+
+/* 主要按鈕：強調色漸層（亮→暗）＋外發光，滑過時一道光掃過 */
+.scifi-page .btn-primary, .btn-scifi {
+  position: relative; overflow: hidden;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .22) 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, .14) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 0 10px rgba(var(--sf-accent-rgb), .25);
+}
+.scifi-page .btn-primary:hover:not(:disabled), .btn-scifi:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 0 18px rgba(var(--sf-accent-rgb), .55);
+}
+.scifi-page .btn-primary::after, .btn-scifi::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .35), transparent);
+  transform: skewX(-20deg); opacity: 0;
+}
+.scifi-page .btn-primary:hover:not(:disabled)::after, .btn-scifi:hover:not(:disabled)::after {
+  animation: sf-btn-sheen .7s ease-out; opacity: 1;
+}
+@keyframes sf-btn-sheen { from { left: -60%; } to { left: 130%; } }
+
+/* 下層分頁按鈕：面板漸層；選中：強調色漸層＋底部發光線 */
+.btn-subtab {
+  background: linear-gradient(180deg, var(--sf-panel) 0%, var(--sf-panel-2) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+.btn-subtab.active {
+  background: linear-gradient(180deg, rgba(var(--sf-accent-rgb), .30) 0%, rgba(var(--sf-accent-rgb), .12) 100%);
+  box-shadow: inset 0 -2px 0 var(--sf-accent), 0 0 14px rgba(var(--sf-accent-rgb), .25);
+}
+/* 主分頁：選中的底線發光、背景由下往上淡出 */
+.scifi-tabs .nav-tabs .nav-link.active {
+  background: linear-gradient(0deg, rgba(var(--sf-accent-rgb), .22) 0%, rgba(var(--sf-accent-rgb), 0) 100%);
+  box-shadow: 0 6px 14px -8px rgba(var(--sf-accent-rgb), .9);
+}
+/* 亮底：光澤、發光都收斂（白底上會髒） */
+:root[data-sf-mode='light'] .scifi-page .btn { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5); }
+:root[data-sf-mode='light'] .scifi-page .btn-primary, :root[data-sf-mode='light'] .btn-scifi {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 2px 6px rgba(var(--sf-accent-rgb), .25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scifi-page .btn:hover:not(:disabled) { transform: none; }
+  .scifi-page .btn-primary::after, .btn-scifi::after { display: none; }
 }

@@ -253,6 +253,11 @@ def ensure_indexes():
     # ── 工具網站連結（見 src/models/tool_link.py）──────────────────────
     db['tool_links'].create_index([('deleted_at', ASCENDING), ('sort_order', ASCENDING)])
 
+    # ── 新聞與外部 API 金鑰（見 src/models/news.py、api_key.py）────────
+    from src.models import api_key as _api_key, news as _news
+    _news.ensure_indexes(db)
+    _api_key.ensure_indexes(db)
+
     # ── 艦隊名冊（玩家擁有的船／載具，見 src/models/fleet.py）──────────
     db['fleet'].create_index('player_id')
     db['fleet'].create_index('vehicle_uuid')

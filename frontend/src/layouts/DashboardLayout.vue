@@ -71,6 +71,9 @@
         <RouterLink class="nav-link" :to="adminPath('/vehicles')" @click="sidebarOpen = false">
           <i class="bi bi-rocket-takeoff"></i>艦船
         </RouterLink>
+        <RouterLink class="nav-link" :to="adminPath('/news')" @click="sidebarOpen = false">
+          <i class="bi bi-newspaper"></i>新聞
+        </RouterLink>
         <RouterLink class="nav-link" :to="adminPath('/tool-links')" @click="sidebarOpen = false">
           <i class="bi bi-link-45deg"></i>工具網站
         </RouterLink>

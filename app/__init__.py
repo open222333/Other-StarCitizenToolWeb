@@ -27,6 +27,7 @@ from app.starmap.view import app_starmap
 from app.data.view import app_data
 from app.loadout.view import app_loadout
 from app.links.view import app_links
+from app.news.view import app_news
 from src import ADMIN_TITLE, FLASK_JSON_PATH
 from src.limiter import limiter
 
@@ -196,6 +197,7 @@ def create_app(config_object=None):
     app.register_blueprint(blueprint=app_starmap, url_prefix='/starmap')
     app.register_blueprint(blueprint=app_links, url_prefix='/links')
     app.register_blueprint(blueprint=app_data, url_prefix='/data')
+    app.register_blueprint(blueprint=app_news, url_prefix='/news')
     if config_object:
         app.config.from_object(config_object)
     return app

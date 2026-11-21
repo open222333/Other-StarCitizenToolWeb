@@ -28,6 +28,7 @@ export const API_PREFIXES = [
   '/mission',
   '/starmap',
   '/data',
+  '/news',
 ]
 
 /** 產生 Vite dev server 的 proxy 設定物件。 */

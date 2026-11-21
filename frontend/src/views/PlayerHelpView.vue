@@ -1,31 +1,32 @@
 <!--
-  玩家頁使用說明（公開頁面，/player/help）：每個分頁能做什麼、怎麼用，附畫面截圖。玩家登入頁有連結進來。
+  玩家頁使用說明（公開頁面，/player/help）：每個分頁能做什麼、怎麼用，附畫面截圖。玩家頁右上角「說明」按鈕進來。
   只說明玩家頁面（不含後台）。分頁有增減時，這裡跟著 utils/playerTabs.js 一起改。
   截圖放在 public/help/（webp，寬 1120），畫面改版時重拍對應的那張；截圖裡的資料都是示範資料。
 -->
 <template>
   <div class="scifi-page help-page">
+    <div class="help-layout">
     <div class="help-wrap">
       <header class="help-head">
         <div class="d-flex flex-wrap align-items-center gap-2">
-          <h1 class="help-title"><i class="bi bi-book me-2" style="color: var(--sf-accent)"></i>玩家頁使用說明</h1>
-          <RouterLink :to="playerAuth.isLoggedIn ? PLAYER_HOME : PLAYER_LOGIN_PATH" class="btn btn-sm btn-primary ms-auto">
-            <i class="bi me-1" :class="playerAuth.isLoggedIn ? 'bi-house' : 'bi-box-arrow-in-right'"></i>
-            {{ playerAuth.isLoggedIn ? '回到玩家頁' : '前往登入' }}
+          <h1 class="help-title">玩家頁使用說明</h1>
+          <RouterLink :to="PLAYER_HOME" class="btn btn-sm btn-primary ms-auto">
+            <i class="bi bi-arrow-left me-1"></i>回到玩家頁
           </RouterLink>
         </div>
+        <!-- 窄螢幕：目錄放上面；寬螢幕改用右邊的大綱 -->
         <nav class="help-toc" aria-label="目錄">
           <a v-for="s in sections" :key="s.id" :href="`#${s.id}`" class="help-toc__item" @click.prevent="jump(s.id)">
-            <i :class="s.icon" class="me-1"></i>{{ s.title }}</a>
+            {{ s.title }}</a>
         </nav>
       </header>
 
       <section v-for="s in sections" :id="s.id" :key="s.id" class="card scifi-card help-card">
         <div class="card-body">
-          <h2 class="help-h2"><i :class="s.icon" class="me-2"></i>{{ s.title }}</h2>
+          <h2 class="help-h2">{{ s.title }}</h2>
           <p v-if="s.intro" class="help-intro">{{ s.intro }}</p>
           <div v-for="(b, i) in s.blocks" :key="i" class="help-block">
-            <h3 v-if="b.title" class="help-h3">{{ b.title }}</h3>
+            <h3 v-if="b.title" :id="blockId(s, i)" class="help-h3">{{ b.title }}</h3>
             <ul class="help-list">
               <li v-for="(t, j) in b.items" :key="j">{{ t }}</li>
             </ul>
@@ -43,15 +44,32 @@
         <button type="button" class="btn btn-sm btn-info" @click="jump('top')"><i class="bi bi-arrow-up me-1"></i>回到最上面</button>
       </div>
     </div>
+
+    <!-- 寬螢幕右邊的大綱：每一章與章裡的小節，捲動時標出目前看到的地方，點了跳過去 -->
+    <aside class="help-outline" aria-label="大綱">
+      <div class="help-outline__head">大綱</div>
+      <nav ref="outlineEl" class="help-outline__body">
+        <template v-for="s in sections" :key="s.id">
+          <a :href="`#${s.id}`" class="help-outline__sec" :class="{ active: activeSec === s.id }"
+            :aria-current="activeSec === s.id ? 'true' : null" @click.prevent="jump(s.id)">
+            {{ s.title }}</a>
+          <a v-for="(b, i) in s.blocks.filter(x => x.title)" :key="blockId(s, s.blocks.indexOf(b))"
+            :href="`#${blockId(s, s.blocks.indexOf(b))}`" class="help-outline__sub"
+            :class="{ active: activeId === blockId(s, s.blocks.indexOf(b)) }"
+            @click.prevent="jump(blockId(s, s.blocks.indexOf(b)))">{{ b.title }}</a>
+        </template>
+      </nav>
+      <button type="button" class="btn btn-sm btn-info w-100 mt-2" @click="jump('top')"><i class="bi bi-arrow-up me-1"></i>回到最上面</button>
+    </aside>
+    </div>
   </div>
 </template>
 
 <script setup>
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { scrollBehavior } from '@/utils/motion'
-import { usePlayerAuthStore } from '@/stores/playerAuth'
-import { PLAYER_HOME, PLAYER_LOGIN_PATH } from '@/router'
+import { PLAYER_HOME } from '@/router'
 
-const playerAuth = usePlayerAuthStore()
 // 截圖在 public/help/（玩家站與後台的 base 不同，用 BASE_URL 組）
 const imgUrl = name => `${import.meta.env.BASE_URL}help/${name}.webp`
 
@@ -60,17 +78,31 @@ function jump(id) {
     window.scrollTo({ top: 0, behavior: scrollBehavior() })
     return
   }
-  document.getElementById(id)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' })
+  const el = document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' })
+  // 截圖是延遲載入的：捲動途中上面的圖片載入、版面往下推，會停在不對的地方——停下來後再對準一次（最多 3 次）
+  let tries = 0
+  const settle = () => {
+    const top = el.getBoundingClientRect().top
+    if (Math.abs(top - 16) > 6 && tries < 3) {
+      tries += 1
+      el.scrollIntoView({ behavior: 'auto', block: 'start' })
+      setTimeout(settle, 400)
+    }
+  }
+  setTimeout(settle, 900)
 }
 
 const sections = [
   {
     id: 'start', title: '開始使用', icon: 'bi bi-rocket-takeoff',
     blocks: [
-      { figs: [{ src: 'login', alt: '登入頁', w: '22rem' }, { src: 'mobile', alt: '手機：底部分頁列與「更多」', w: '34rem' }], items: [
+      { figs: [{ src: 'login', alt: '右上角「登入／註冊」的跳出視窗', w: '22rem' }, { src: 'mobile', alt: '手機：底部分頁列與「更多」', w: '34rem' }], items: [
         '不登入也能用遊戲資料與工具：資料庫（物品、藍圖、艦船、任務、勢力、礦物、商品購買地點）、航線、工具箱（礦物回波、配裝模擬、貨艙網格、貨櫃試算、酬勞分配、LOG 解析、中文轉碼）、工具網站。',
-        '「我的」（倉庫、藍圖、艦隊）、工具箱 › 戰術小隊、查詢持有資訊、個人資料（點最上方的名字）是會員功能，分頁上有鎖頭，點進去會出現登入與註冊按鈕；登入後回到原本那一頁。',
+        '「艦長室」（倉庫、藍圖、艦隊）、工具箱 › 戰術小隊、查詢持有資訊、個人資料（點最上方的名字）是會員功能，沒登入時不會出現；按右上角「登入／註冊」跳出視窗，上方切換登入或註冊，登入後回到原本那一頁。',
         '用遊戲ID（Star Citizen ID）註冊帳號，之後用遊戲ID＋密碼登入；勾「記住我」可以 30 天不用重新登入。',
+        '右上角「說明」（問號）打開這份使用說明。',
         '上方是分頁列，放不下時可以左右滑；手機上分頁列移到畫面底部，常用的四個直接放，其餘在「更多」裡。',
         '右上角「配色」可以換強調色與背景（深色、淺色），只存在這台瀏覽器。',
         '點最上方的名字打開「個人資料」，裡面的「顯示的分頁」可以把用不到的分頁藏起來。',
@@ -84,7 +116,7 @@ const sections = [
     ],
   },
   {
-    id: 'warehouse', title: '我的 › 倉庫', icon: 'bi bi-box-seam',
+    id: 'warehouse', title: '艦長室 › 倉庫', icon: 'bi bi-box-seam',
     intro: '記錄自己的物品放在哪裡、有多少。上方的按鈕可以展開新增／異動、庫存紀錄，搜尋卡的條件同時套用到列表。',
     blocks: [
       { title: '物品庫存', figs: [{ src: 'warehouse', alt: '物品庫存' }], items: [
@@ -105,7 +137,7 @@ const sections = [
     ],
   },
   {
-    id: 'blueprints', title: '我的 › 藍圖', icon: 'bi bi-diagram-3',
+    id: 'blueprints', title: '艦長室 › 藍圖', icon: 'bi bi-diagram-3',
     intro: '你自己的藍圖名冊（可以新增、刪除）。',
     blocks: [
       { title: '我的藍圖', figs: [{ src: 'blueprints', alt: '展開材料' }, { src: 'blueprints_quality', alt: '品質試算' }], items: [
@@ -120,7 +152,7 @@ const sections = [
     ],
   },
   {
-    id: 'fleet', title: '我的 › 艦隊', icon: 'bi bi-rocket-takeoff',
+    id: 'fleet', title: '艦長室 › 艦隊', icon: 'bi bi-rocket-takeoff',
     blocks: [
       { title: '我的艦隊', figs: [{ src: 'fleet', alt: '我的艦隊' }], items: [
         '列出你登記的船／載具：類型、尺寸、廠商、角色、貨物量、美金與遊戲幣價格、租用價格。',
@@ -139,6 +171,17 @@ const sections = [
     ],
   },
   {
+    id: 'news', title: '新聞', icon: 'bi bi-newspaper',
+    blocks: [
+      { items: [
+        '公會公告與遊戲新聞，不用登入也能看；置頂的排最前面，再依發布時間新到舊。',
+        '上面可以搜尋標題、內文、標籤，分類按鈕只看那一類；一次列 20 則，按「載入更多」看更舊的。',
+        '點一則跳出全文（有封面、內文、來源連結「看原文」）。網址加 ?tab=news&news=<編號> 可以直接分享某一則。',
+        '登入後「艦長室」最上面有「公告」：置頂的新聞（沒有置頂就是最新 3 則），按「全部新聞」到新聞分頁。',
+      ] },
+    ],
+  },
+  {
     id: 'items', title: '資料庫', icon: 'bi bi-database',
     intro: '遊戲資料，分物品、藍圖、艦船、任務、勢力、礦物、商品購買地點七個子分頁，都不用登入；登入後藍圖、艦船、任務可以直接登記。',
     blocks: [
@@ -147,8 +190,8 @@ const sections = [
         '可以依名稱、類型篩選，只看買得到的、只看可拆解的，或依拆解後會得到的材料找物品。',
       ] },
       { title: '藍圖、艦船', items: [
-        '藍圖：遊戲藍圖資料庫，看配方、品質試算、解鎖任務；搜尋條件跟「我的 › 藍圖」一樣，登入後多一個「只顯示未登記」。',
-        '艦船：官網價、遊戲內購買價、租船價、貨艙網格；搜尋條件跟「我的 › 艦隊」一樣。',
+        '藍圖：遊戲藍圖資料庫，看配方、品質試算、解鎖任務；搜尋條件跟「艦長室 › 藍圖」一樣，登入後多一個「只顯示未登記」。',
+        '艦船：官網價、遊戲內購買價、租船價、貨艙網格；搜尋條件跟「艦長室 › 艦隊」一樣。',
         '艦船的「船價」按鈕：跳出視窗看 RSI 商店的美金價（真錢贊助價，不是遊戲內 aUEC）、現在有沒有在賣、上次 Warbond，以及 2021 年 11 月以來每次上架的時間軸與明細；有資料的船才有按鈕。現況來自 RSI 官方商店，歷史來自 Open Hangar（CC BY 4.0）。',
       ] },
       { title: '任務', figs: [{ src: 'missions', alt: '展開任務看獎勵藍圖' }], items: [
@@ -304,11 +347,85 @@ const sections = [
     ],
   },
 ]
+
+const blockId = (s, i) => `${s.id}-${i + 1}`
+
+// ── 大綱的「目前位置」：畫面上方 1/3 處經過的最後一個章節／小節標題 ──
+const activeId = ref('')
+const activeSec = ref(sections[0]?.id || '')
+const outlineEl = ref(null)
+function updateActive() {
+  const line = window.innerHeight * 0.3
+  let sec = sections[0]?.id || ''
+  let id = sec
+  for (const s of sections) {
+    const el = document.getElementById(s.id)
+    if (el && el.getBoundingClientRect().top <= line) { sec = s.id; id = s.id }
+    s.blocks.forEach((b, i) => {
+      if (!b.title) return
+      const h = document.getElementById(blockId(s, i))
+      if (h && h.getBoundingClientRect().top <= line) id = blockId(s, i)
+    })
+  }
+  // 捲到底：最後一章
+  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+    sec = sections[sections.length - 1]?.id || sec
+    if (!id.startsWith(sec)) id = sec
+  }
+  if (activeId.value !== id) {
+    activeId.value = id
+    activeSec.value = sec
+    // 大綱很長時，讓目前那一項留在看得到的地方
+    requestAnimationFrame(() => outlineEl.value?.querySelector('.active:last-of-type, .help-outline__sub.active, .help-outline__sec.active')
+      ?.scrollIntoView({ block: 'nearest' }))
+  }
+}
+let ticking = false
+const onScroll = () => {
+  if (ticking) return
+  ticking = true
+  requestAnimationFrame(() => { ticking = false; updateActive() })
+}
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true })
+  window.addEventListener('resize', onScroll)
+  updateActive()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+  window.removeEventListener('resize', onScroll)
+})
 </script>
 
 <style scoped>
 .help-page { min-height: 100vh; padding: 1rem; }
-.help-wrap { max-width: 56rem; margin: 0 auto; }
+.help-wrap { max-width: 56rem; margin: 0 auto; min-width: 0; }
+.help-outline { display: none; }
+/* 寬螢幕：內容在左、大綱在右（捲動時固定），上面的目錄藏起來 */
+@media (min-width: 1200px) {
+  .help-layout { display: grid; grid-template-columns: minmax(0, 56rem) 15rem; gap: 1.5rem; justify-content: center; align-items: start; }
+  .help-wrap { margin: 0; }
+  .help-head .help-toc { display: none; }
+  .help-outline {
+    display: block; position: sticky; top: 1rem; max-height: calc(100vh - 2rem);
+    display: flex; flex-direction: column;
+    padding: .75rem; border: 1px solid var(--sf-border); border-radius: .6rem; background: var(--sf-panel);
+  }
+}
+.help-outline__head { font-weight: 700; color: var(--sf-text-strong, var(--sf-text)); padding: 0 .25rem .5rem;
+  border-bottom: 1px solid var(--sf-border); margin-bottom: .4rem; }
+.help-outline__body { overflow-y: auto; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; }
+.help-outline .help-outline__sec, .help-outline .help-outline__sub {
+  display: block; text-decoration: none; color: var(--sf-text-muted); border-left: 2px solid transparent;
+  padding: .2rem .5rem; line-height: 1.4; border-radius: 0 .3rem .3rem 0;
+}
+.help-outline .help-outline__sec { font-weight: 600; color: var(--sf-text); margin-top: .35rem; }
+.help-outline .help-outline__sub { padding-left: 1.1rem; font-size: .9rem; }
+.help-outline .help-outline__sec:hover, .help-outline .help-outline__sub:hover { color: var(--sf-accent-text, var(--sf-accent)); background: var(--sf-hover-bg, rgba(127, 127, 127, .08)); }
+.help-outline .help-outline__sec.active { color: var(--sf-accent-text, var(--sf-accent)); }
+.help-outline .help-outline__sub.active { color: var(--sf-accent-text, var(--sf-accent)); border-left-color: var(--sf-accent);
+  background: rgba(var(--sf-accent-rgb), .1); }
+.help-h3 { scroll-margin-top: 1rem; }
 .help-head { margin-bottom: 1rem; }
 .help-title { font-size: 1.6rem; font-weight: 700; margin: 0; color: var(--sf-text-strong, var(--sf-text)); }
 .help-toc { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .9rem; }

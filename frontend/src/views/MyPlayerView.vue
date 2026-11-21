@@ -112,7 +112,7 @@
                   :checked="isTabShown(tab.key)"
                   :disabled="savingTabs" @change="toggleTab(tab.key, $event.target.checked)">
                 <label class="form-check-label" :for="`tab-show-${tab.key}`">
-                  <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
+                  {{ tab.label }}
                 </label>
               </div>
             </div>
@@ -340,14 +340,12 @@
 
       <div class="scifi-topbar__center">
         <h1 v-if="isGuest || !player" class="scifi-topbar__title">
-          <i class="bi" :class="isGuest ? 'bi-tools' : 'bi-person-badge'"></i>
           <span>{{ isGuest ? '星際公民工具' : '個人資料' }}</span>
         </h1>
         <!-- 名字＋遊戲ID：點了打開「個人資料」視窗（暱稱、Discord、顯示的分頁、密碼、Discord 綁定） -->
         <h1 v-else class="scifi-topbar__title">
           <button type="button" class="scifi-topbar__me" aria-haspopup="dialog" title="個人資料"
             :aria-label="`個人資料：${player.nickname || player.star_citizen_id}`" @click="profileOpen = true">
-            <i class="bi bi-person-badge" aria-hidden="true"></i>
             <span class="scifi-topbar__name">{{ player.nickname || player.star_citizen_id }}</span>
             <span v-if="player.nickname" class="scifi-topbar__id d-none d-sm-inline">{{ player.star_citizen_id }}</span>
             <i class="bi bi-gear scifi-topbar__me-gear" aria-hidden="true"></i>
@@ -362,13 +360,14 @@
       </div>
 
       <div class="scifi-topbar__side scifi-topbar__actions">
+        <!-- 使用說明（公開頁面 /player/help） -->
+        <RouterLink :to="PLAYER_HELP_PATH" class="btn btn-info btn-sm" aria-label="使用說明" title="使用說明">
+          <i class="bi bi-question-circle"></i><span class="d-none d-lg-inline ms-1">說明</span></RouterLink>
         <ScifiThemePicker />
-        <template v-if="isGuest">
-          <a class="btn btn-primary btn-sm" :href="loginHref" aria-label="登入">
-            <i class="bi bi-box-arrow-in-right"></i><span class="d-none d-sm-inline ms-1">登入</span></a>
-          <a class="btn btn-success btn-sm d-none d-sm-inline-block" :href="registerHref">
-            <i class="bi bi-person-plus me-1"></i>註冊</a>
-        </template>
+        <!-- 沒登入：一個「登入／註冊」按鈕，打開跳出視窗（components/PlayerAuthModal.vue，視窗上方切換登入或註冊） -->
+        <button v-if="isGuest" type="button" class="btn btn-primary btn-sm" aria-haspopup="dialog" aria-label="登入／註冊"
+          @click="openAuth('login')">
+          <i class="bi bi-person-circle"></i><span class="d-none d-sm-inline ms-1">登入／註冊</span></button>
         <button v-else class="btn btn-danger btn-sm" aria-label="登出" title="登出" @click="logout">
           <i class="bi bi-box-arrow-right"></i>
           <span class="d-none d-sm-inline ms-1">登出</span>
@@ -389,8 +388,7 @@
             :id="`tab-${tab.key}`"
             @click="setTab(tab.key)"
           >
-            <i :class="tab.icon" class="me-1"></i>{{ tab.label }}
-            <i v-if="isGuest && tab.member" class="bi bi-lock-fill ms-1 sf-tab-lock" aria-label="需要登入"></i>
+            {{ tab.label }}
           </button>
         </li>
       </ul>
@@ -422,12 +420,15 @@
         <h2 class="sf-guest__title">「{{ guestLock.label }}」登入後才能使用</h2>
         <p class="sf-guest__text">{{ GUEST_LOCKED_TEXT[guestLock.key] || '這個功能需要會員帳號。' }}</p>
         <div class="d-flex justify-content-center flex-wrap gap-2">
-          <a class="btn btn-primary" :href="loginHref"><i class="bi bi-box-arrow-in-right me-1"></i>登入</a>
-          <a class="btn btn-success" :href="registerHref"><i class="bi bi-person-plus me-1"></i>註冊</a>
+          <button type="button" class="btn btn-primary" @click="openAuth('login')"><i class="bi bi-box-arrow-in-right me-1"></i>登入</button>
+          <button type="button" class="btn btn-success" @click="openAuth('register')"><i class="bi bi-person-plus me-1"></i>註冊</button>
         </div>
       </div>
     </div>
     <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
+    <!-- 「艦長室」上方：置頂公告（沒有置頂就是最新 3 則），點「全部新聞」切到新聞分頁 -->
+    <NewsBanner v-if="!isGuest && myMounted" v-show="activeTab === 'my'" :fetcher="playerAuth.playerFetch"
+      card-class="card scifi-card" @all="setTab('news')" />
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="!isGuest && activePane === 'warehouse'" class="sf-toolbar">
       <button aria-label="新增／異動" class="btn btn-sm btn-success" @click="stockWizardRef?.openNew()">
@@ -463,7 +464,7 @@
     </div>
 
     <!-- ══════════ 資料庫 › 藍圖：遊戲藍圖資料庫（不登入也能看；登入後每列多「登記」）。
-         搜尋卡跟「我的 › 藍圖」共用（Teleport 移進來）══════════ -->
+         搜尋卡跟「艦長室 › 藍圖」共用（Teleport 移進來）══════════ -->
     <div v-show="itemsBpActive" id="panel-items-bpdata" class="sf-split">
       <div id="items-bp-filters" class="sf-split__side"></div>
       <BlueprintMasterBrowser player :fetcher="playerAuth.playerFetch" card-class="card scifi-card"
@@ -472,7 +473,7 @@
     </div>
 
     <!-- ══════════ 資料庫 › 艦船：載具主檔＋價格（不登入也能看；登入後可以登記到我的艦隊）。
-         搜尋卡跟「我的 › 艦隊」共用（Teleport 移進來）══════════ -->
+         搜尋卡跟「艦長室 › 艦隊」共用（Teleport 移進來）══════════ -->
     <div v-show="itemsVehActive" id="panel-items-vehicles" class="sf-split">
       <div id="items-veh-filters" class="sf-split__side"></div>
       <VehicleDataBrowser :fetcher="playerAuth.playerFetch" :filters="fleetFilters" :can-register="!isGuest"
@@ -1284,6 +1285,11 @@
         card-class="card scifi-card" />
     </div>
 
+    <!-- ══════════ 新聞（後台或外部程式寫入，不登入也能看；見 components/NewsBoard.vue） ══════════ -->
+    <div v-if="newsMounted" v-show="activeTab === 'news'" role="tabpanel" id="panel-news" aria-labelledby="tab-news">
+      <NewsBoard :fetcher="playerAuth.playerFetch" :active="activeTab === 'news'" card-class="card scifi-card" />
+    </div>
+
     <!-- ══════════ 工具網站（後台維護的外部連結） ══════════ -->
     <div v-show="activeTab === 'tools'" role="tabpanel" id="panel-tools" :aria-labelledby="'tab-tools'">
       <SfState :loading="loadingToolLinks && !toolLinks.length" :error="toolLinksError" :empty="!toolLinks.length"
@@ -1356,6 +1362,9 @@
     </div>
   </div>
 
+  <!-- 玩家登入／註冊（右上角按鈕；舊網址 /player/login、/player/register 導過來時帶 ?login=1／?register=1） -->
+  <PlayerAuthModal v-if="isGuest" v-model:open="authOpen" v-model:mode="authMode" @done="afterLogin" />
+
   <!-- 倉庫 › 新增／異動（跳出視窗：地點 → 物品 → 數量） -->
   <StockWizard ref="stockWizardRef" :fetcher="playerAuth.playerFetch" :locations="locations" :loc-label="locLabel"
     :loc-zh="locZh" :home-location="homeLocation" :history="history" :type-options="itemTypeOptions"
@@ -1381,7 +1390,7 @@
       <div class="sf-sheet__grip"></div>
       <button v-for="tab in moreTabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }"
         @click="setTab(tab.key); moreOpen = false">
-        <i :class="tab.icon"></i>{{ tab.label }}<i v-if="isGuest && tab.member" class="bi bi-lock-fill ms-1 sf-tab-lock" aria-label="需要登入"></i><i class="bi bi-chevron-right"></i>
+        {{ tab.label }}<i class="bi bi-chevron-right"></i>
       </button>
     </div>
   </template>
@@ -1393,7 +1402,8 @@ import { toast } from '@/utils/toast'
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
-import { PLAYER_HOME, PLAYER_LOGIN_PATH, PLAYER_REGISTER_PATH } from '@/router'
+import { PLAYER_HELP_PATH, PLAYER_HOME, safeRedirect } from '@/router'
+import PlayerAuthModal from '@/components/PlayerAuthModal.vue'
 import MineralDatabase from '@/components/MineralDatabase.vue'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
@@ -1429,6 +1439,8 @@ import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 const SquadBoards = defineAsyncComponent(() => import('@/components/SquadBoards.vue'))
 const FactionDatabase = defineAsyncComponent(() => import('@/components/FactionDatabase.vue'))
 const CrateCalculator = defineAsyncComponent(() => import('@/components/CrateCalculator.vue'))
+const NewsBoard = defineAsyncComponent(() => import('@/components/NewsBoard.vue'))
+const NewsBanner = defineAsyncComponent(() => import('@/components/NewsBanner.vue'))
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MissionBrowser from '@/components/MissionBrowser.vue'
 import FactionReputation from '@/components/FactionReputation.vue'
@@ -1512,14 +1524,16 @@ const tabAccess = ref((() => {
 })())
 // 不開放的分頁整個拿掉（分頁列、更多、個人資料的勾選都不出現）
 // 下層分頁全部不開放的主分頁也拿掉
+// 沒登入：會員功能（我的、查詢持有資訊…）整個藏起來，要用的人按右上角登入
 const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value).filter(t => tabAccess.value[t.key] !== 'closed'
+  && !(isGuest.value && t.member)
   && !(t.subTabs?.length && !subTabsOf(t.key).length)))
 
 // 手機／平板（方案見專案文件「星際公民工具-玩家頁手機平板UI方案」）：
 // 手機上方分頁列換成底部導覽列，常用四個直接放，其餘收進「更多」
 const { isPhone } = useBreakpoint()
 const BOTTOM_TAB_KEYS_MEMBER = ['my', 'items', 'toolbox', 'route']
-const BOTTOM_TAB_KEYS_GUEST = ['items', 'toolbox', 'route', 'tools']
+const BOTTOM_TAB_KEYS_GUEST = ['news', 'items', 'route', 'toolbox']
 const BOTTOM_TAB_KEYS = computed(() => (isGuest.value ? BOTTOM_TAB_KEYS_GUEST : BOTTOM_TAB_KEYS_MEMBER))
 const BOTTOM_COUNT = 4
 
@@ -1545,7 +1559,7 @@ const shownTabs = ref((() => {
   }
 })())
 function applyShownTabs(keys) {
-  // 舊分頁（倉庫、藍圖、艦隊、任務）換成「我的」「資料庫」
+  // 舊分頁（倉庫、藍圖、艦隊、任務）換成「艦長室」「資料庫」
   shownTabs.value = normalizeTabKeys((keys || []).filter(k => typeof k === 'string'))
   try { localStorage.setItem(shownCacheKey(), JSON.stringify(shownTabs.value)) } catch { /* 存不了就算了 */ }
 }
@@ -1613,7 +1627,7 @@ const MY_FLEET_SORT_OPTIONS = [{ field: 'name', label: '船艦' }, { field: 'typ
 /** 主分頁的下層分頁：照後台排的順序，拿掉後台設成「不開放」的（代號「主分頁.下層分頁」，見 utils/playerTabs.js） */
 function subTabsOf(key) {
   return orderSubTabs(tabs.find(t => t.key === key), tabOrder.value)
-    .filter(s => tabAccess.value[subKey(key, s.key)] !== 'closed')
+    .filter(s => tabAccess.value[subKey(key, s.key)] !== 'closed' && !(isGuest.value && s.member))
 }
 // 分頁狀態同步到 URL 的 ?tab= —— 這樣重新整理、手機切回瀏覽器、
 // 分享連結給隊友都會停在同一個分頁，瀏覽器的返回鍵也會退回上一個分頁
@@ -1630,19 +1644,26 @@ const legacyTab = legacyItemsSub ? null : LEGACY_TABS[route.query.tab] || null
 // 「個人資料」原本是分頁，現在是點名字打開的視窗：舊網址 ?tab=profile 開場就打開視窗（分頁回到預設）
 const legacyProfile = route.query.tab === 'profile'
 const profileOpen = ref(legacyProfile && !isGuest.value)
-// 沒指定分頁時：會員從「我的」開始，訪客從第一個不用登入的分頁開始（照後台排的順序）
+// 沒指定分頁時：會員從「艦長室」開始，訪客從第一個不用登入的分頁開始（照後台排的順序）
 const firstTab = () => (isGuest.value
   ? (orderedTabs.value.find(t => !t.member && isTabShown(t.key)) || orderedTabs.value.find(t => !t.member))?.key || 'items'
   : 'my')
-const initTab = legacyItemsSub ? 'items' : legacyTab ? legacyTab.tab
-  : (validTabs.includes(route.query.tab) ? route.query.tab : firstTab())
-const initSub = legacyItemsSub || (legacyTab ? legacyTab.sub
+const requestedTab = legacyItemsSub ? 'items' : legacyTab ? legacyTab.tab
+  : (validTabs.includes(route.query.tab) ? route.query.tab : '')
+// 沒登入卻指定了會員分頁（舊連結、別人分享的網址）：先停在第一個公開分頁，跳出登入視窗，登入後回到原本那頁
+const guestWanted = isGuest.value && !!requestedTab && !!tabs.find(t => t.key === requestedTab)?.member
+const initTab = requestedTab && !guestWanted ? requestedTab : firstTab()
+// 下層分頁是會員功能（工具箱 › 戰術小隊）時同理
+const guestWantedSub = isGuest.value && !guestWanted && !!route.query.sub
+  && !!tabs.find(t => t.key === initTab)?.subTabs?.find(x => x.key === route.query.sub)?.member
+const initSub = legacyItemsSub || (legacyTab && !guestWanted ? legacyTab.sub
   : (validSub(initTab, route.query.sub) ? route.query.sub : defaultSub(initTab)))
 // 舊網址要改寫成新的（onMounted 呼叫 syncUrl）
-const legacyRewrite = !!(legacyItemsSub || legacyTab || legacyProfile)
+const legacyRewrite = !!(legacyItemsSub || legacyTab || legacyProfile || guestWanted || guestWantedSub
+  || route.query.login || route.query.register || route.query.redirect)
 const activeTab = ref(initTab)
 const activeSub = ref(initSub)
-// 「我的」「資料庫」「工具箱」底下的內容用下層分頁判斷：我的 › 倉庫＝'warehouse'、資料庫 › 任務＝'missions'、
+// 「艦長室」「資料庫」「工具箱」底下的內容用下層分頁判斷：我的 › 倉庫＝'warehouse'、資料庫 › 任務＝'missions'、
 // 工具箱 › 配裝模擬＝'loadout'；其他分頁就是分頁本身
 const paneOf = (tab, sub) => (tab === 'my' || tab === 'items' || tab === 'toolbox' ? sub : tab)
 const activePane = computed(() => paneOf(activeTab.value, activeSub.value))
@@ -1661,9 +1682,13 @@ watch(activePane, p => { if (p === 'squads') squadsMounted.value = true }, { imm
 // 資料庫 › 勢力：第一次切到才建立、載入程式
 const factionsMounted = ref(false)
 watch(activePane, p => { if (p === 'factions') factionsMounted.value = true }, { immediate: true })
+const newsMounted = ref(false)
+watch(activeTab, t => { if (t === 'news') newsMounted.value = true }, { immediate: true })
+const myMounted = ref(false)
+watch(activeTab, t => { if (t === 'my') myMounted.value = true }, { immediate: true })
 const cratesMounted = ref(false)
 watch(activePane, p => { if (p === 'crates') cratesMounted.value = true }, { immediate: true })
-// 資料庫 › 藍圖、艦船：搜尋卡跟「我的 › 藍圖／艦隊」共用（Teleport 移過來）
+// 資料庫 › 藍圖、艦船：搜尋卡跟「艦長室 › 藍圖／艦隊」共用（Teleport 移過來）
 const itemsBpActive = computed(() => activeTab.value === 'items' && activeSub.value === 'bpdata')
 const itemsVehActive = computed(() => activeTab.value === 'items' && activeSub.value === 'vehicles')
 // 沒登入點到會員功能分頁的說明
@@ -1672,9 +1697,21 @@ const GUEST_LOCKED_TEXT = {
   search: '查詢公會成員持有的物品、藍圖、船艦，需要會員帳號。',
   squads: '建立與編輯戰術小隊分配表需要會員帳號；隊長分享的連結不用登入就能看。',
 }
-// 登入／註冊：登入完回到目前這一頁
-const loginHref = computed(() => router.resolve({ path: PLAYER_LOGIN_PATH, query: { redirect: route.fullPath } }).href)
-const registerHref = computed(() => router.resolve(PLAYER_REGISTER_PATH).href)
+// ── 登入／註冊視窗（components/PlayerAuthModal.vue）──
+// ?login=1／?register=1（舊的登入頁、註冊頁導過來）開場就打開；?redirect= 是登入後要去的頁面（只接受 /player/ 底下）
+const authMode = ref(route.query.register ? 'register' : 'login')
+const authOpen = ref(isGuest.value && !!(route.query.login || route.query.register || guestWanted || guestWantedSub))
+const authRedirect = guestWanted || guestWantedSub ? route.fullPath : safeRedirect(route.query.redirect, '/player/')
+function openAuth(mode) {
+  authMode.value = mode
+  authOpen.value = true
+}
+// 登入成功：整頁重新載入（會員資料、分頁設定一次讀齊），回到要去的那頁（沒有就留在目前這頁）
+function afterLogin() {
+  const q = { ...route.query }
+  ;['login', 'register', 'redirect'].forEach(k => delete q[k])
+  window.location.assign(authRedirect || router.resolve({ path: PLAYER_HOME, query: q }).href)
+}
 
 /** 某個主分頁的預設下層分頁（沒有下層就回 ''）。 */
 function defaultSub(tabKey) {
@@ -1713,6 +1750,7 @@ function syncUrl() {
   if (activeSub.value) query.sub = activeSub.value
   else delete query.sub
   delete query.open
+  ;['login', 'register', 'redirect'].forEach(k => delete query[k])
   // 「查詢持有資訊」的條件只留在那個分頁的網址上
   if (activeTab.value !== 'search') SEARCH_URL_KEYS.forEach(k => delete query[k])
   // 配裝模擬的船與配裝（components/LoadoutSimulator.vue）同理
@@ -1767,7 +1805,7 @@ function loadForTab(tab, sub) {
   if (pane === 'bpdata' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
   if (pane === 'vehicles' && !vehicleFacetsLoaded) loadVehicleFacets()
   if (tab === 'tools') loadToolLinks()
-  // 沒登入：「我的」、查詢持有資訊、戰術小隊是登入提示，沒有東西要載
+  // 沒登入：「艦長室」、查詢持有資訊、戰術小隊是登入提示，沒有東西要載
   if (isGuest.value) return
   // 「查詢」：點開哪一區才載入那一區的資料（見 loadSearchSections）
   if (tab === 'search') loadSearchSections()
@@ -1800,7 +1838,7 @@ function loadSearchSections() {
 
 // 使用者直接改網址（或按上一頁）時，畫面要跟著走
 watch(() => [route.query.tab, route.query.sub], ([tab, sub]) => {
-  // 舊網址（?tab=warehouse、?tab=missions…）換到「我的」「資料庫」
+  // 舊網址（?tab=warehouse、?tab=missions…）換到「艦長室」「資料庫」
   const legacy = LEGACY_TABS[tab]
   if (legacy) {
     activeTab.value = legacy.tab
@@ -1969,9 +2007,11 @@ function logout() {
   window.location.replace(router.resolve({ path: PLAYER_HOME, query: tab ? { tab } : {} }).href)
 }
 
-// 登入過期（refresh 也失敗，playerFetch 清掉登入狀態）→ 去登入頁，登入完回到這一頁
+// 登入過期（refresh 也失敗，playerFetch 清掉登入狀態）→ 重新載入成訪客、跳出登入視窗，登入完回到這一頁
 watch(() => playerAuth.isLoggedIn, (loggedIn) => {
-  if (!loggedIn && !loggingOut) window.location.replace(loginHref.value)
+  if (!loggedIn && !loggingOut) {
+    window.location.replace(router.resolve({ path: PLAYER_HOME, query: { login: '1', redirect: route.fullPath } }).href)
+  }
 })
 
 // 訪客：分頁順序與開放狀態另外查（登入時跟著 /player/me 一起拿）

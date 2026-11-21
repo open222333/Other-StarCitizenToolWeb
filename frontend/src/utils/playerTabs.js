@@ -4,10 +4,12 @@
 // member: true＝會員功能（要登入，沒登入時整頁是登入提示）；沒標的不登入也能用（後端是 @public_api，見 src/permissions.py）。
 export const PLAYER_TABS = [
   {
-    // 我的：自己登記的倉庫、藍圖、艦隊（原本是三個主分頁，舊網址 ?tab=warehouse|blueprints|fleet 會轉過來）
-    key: 'my', label: '我的', icon: 'bi bi-person-badge', member: true,
+    // 艦長室：自己登記的倉庫、藍圖、艦隊（原本是三個主分頁，舊網址 ?tab=warehouse|blueprints|fleet 會轉過來）
+    key: 'my', label: '艦長室', icon: 'bi bi-person-badge', member: true,
     subTabs: [{ key: 'warehouse', label: '倉庫' }, { key: 'blueprints', label: '藍圖' }, { key: 'fleet', label: '艦隊' }],
   },
+  // 新聞：後台或外部程式（API 金鑰）寫入的新聞，不登入也能看（components/NewsBoard.vue）；「艦長室」上方另有置頂公告（NewsBanner.vue）
+  { key: 'news', label: '新聞', icon: 'bi bi-newspaper' },
   {
     // 資料庫：遊戲資料（唯讀，不登入也能看）。key 沿用原本「物品」分頁的 items，後台設定與舊網址不用改；
     // 任務原本是主分頁（舊網址 ?tab=missions 會轉過來）
@@ -42,7 +44,7 @@ export const PLAYER_TABS = [
   // 「個人資料」不是分頁：點最上方的名字打開視窗（MyPlayerView.vue 的 profileOpen；舊網址 ?tab=profile 會打開它）
 ]
 
-/** 舊的主分頁 → 現在所在的主分頁與下層分頁（倉庫、藍圖、艦隊併進「我的」；任務放進「資料庫」；
+/** 舊的主分頁 → 現在所在的主分頁與下層分頁（倉庫、藍圖、艦隊併進「艦長室」；任務放進「資料庫」；
  *  礦物、配裝模擬、貨艙網格、酬勞分配、LOG 解析、中文轉碼併進「工具箱」） */
 export const LEGACY_TABS = {
   warehouse: { tab: 'my', sub: 'warehouse' },
@@ -74,7 +76,7 @@ export function normalizeTabKeys(keys) {
  *  順序跟主分頁存在同一個 tab_order 清單、開放狀態存在同一個 tab_access（下層分頁只有開放／不開放）。 */
 export const subKey = (tab, sub) => `${tab}.${sub}`
 
-/** 後台存的開放狀態 {分頁: hidden|closed}：「我的」自己沒設就沿用舊的倉庫／藍圖／艦隊；
+/** 後台存的開放狀態 {分頁: hidden|closed}：「艦長室」自己沒設就沿用舊的倉庫／藍圖／艦隊；
  *  搬進「資料庫」「工具箱」的舊分頁設成不開放的，換成那個下層分頁不開放（例如 loadout → toolbox.loadout）；
  *  不會讓整個「資料庫」「工具箱」關掉。下層分頁沒有「預設不顯示」，舊的 hidden 當成開放。 */
 export function normalizeTabAccess(access) {
@@ -106,7 +108,7 @@ export function orderSubTabs(tab, order) {
     .map(x => x.s)
 }
 
-/** 玩家勾掉不顯示的分頁：舊的倉庫、藍圖、艦隊三個都勾掉才藏「我的」，舊的工具分頁全部勾掉才藏「工具箱」；
+/** 玩家勾掉不顯示的分頁：舊的倉庫、藍圖、艦隊三個都勾掉才藏「艦長室」，舊的工具分頁全部勾掉才藏「工具箱」；
  *  任務不影響「資料庫」 */
 export function normalizeHiddenTabs(keys) {
   const list = (keys || []).filter(k => typeof k === 'string')

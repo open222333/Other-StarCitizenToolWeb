@@ -175,7 +175,7 @@ async function load() {
     return
   }
   saved.value = data.data.tab_order || []
-  // 舊的分頁（倉庫、藍圖、艦隊、任務）已經併進「我的」「資料庫」，換成新的分頁
+  // 舊的分頁（倉庫、藍圖、艦隊、任務）已經併進「艦長室」「資料庫」，換成新的分頁
   savedAccess.value = normalizeTabAccess(data.data.tab_access)
   reset()
 }

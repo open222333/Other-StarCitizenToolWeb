@@ -13,7 +13,8 @@
     "test:quality": "node src/utils/craftQuality.test.mjs",
     "test:mining": "node src/utils/miningSignature.test.mjs",
     "test:crates": "node src/utils/crateCombos.test.mjs",
-    "test:cargo": "node src/utils/stopCargo.test.mjs"
+    "test:cargo": "node src/utils/stopCargo.test.mjs",
+    "test:markdown": "node src/utils/markdown.test.mjs"
   },
   "dependencies": {
     "bootstrap":       "^5.3.3",

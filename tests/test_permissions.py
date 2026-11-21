@@ -230,6 +230,12 @@ UNGUARDED_ALLOWLIST = {
     'app_player.login_player',          # 公開自助登入
     'app_admin.index',                  # 後台 SPA 的 HTML 殼（靜態檔）
 
+    # ── 新聞（app/news/view.py）：玩家頁公開讀；外部寫入用 API 金鑰（@api_key_required，不是 JWT）──
+    'app_news.list_public',
+    'app_news.list_tags',
+    'app_news.get_public',
+    'app_news.ingest',
+
     # ── 自己驗證 refresh token，不需要角色 ───────────────────
     'auth.refresh',
     'app_player.refresh_player',

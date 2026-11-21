@@ -259,6 +259,17 @@ export const dataApi = {
   apiSpec: () => apiFetch('/data/api-spec'),
 }
 
+// ── 新聞 API（後台；app/news/view.py）───────────────────────────────
+export const newsApi = {
+  listAdmin: () => apiFetch('/news/admin?limit=100'),
+  create: data => apiFetch('/news/admin', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => apiFetch(`/news/admin/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  remove: id => apiFetch(`/news/admin/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  keys: () => apiFetch('/news/keys'),
+  createKey: data => apiFetch('/news/keys', { method: 'POST', body: JSON.stringify(data) }),
+  revokeKey: id => apiFetch(`/news/keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────
 // 對應 app/item/view.py 的 /item/sync-status、/item/sync、/item/sync-jobs
 // （每個資料庫一個同步項目，各自排程；syncNow 帶 { jobs: [...] } 只同步那幾項）
