@@ -34,6 +34,7 @@ BACKUP_SETS = [
      'collections': ['app_settings', 'sync_schedule', 'player_visibility', 'mineral_uex_links'], 'default': True},
     {'key': 'tool_links', 'label': '工具網站', 'collections': ['tool_links', 'tool_link_tags'], 'default': True},
     {'key': 'news', 'label': '新聞與 API 金鑰', 'collections': ['news', 'api_keys'], 'default': True},
+    {'key': 'mineral_sources', 'label': '礦物取得方式（後台手動填寫）', 'collections': ['mineral_sources'], 'default': True},
     # RSI 商店只看得到現在有賣的：CCU／Warbond 的上架歷史是排程一次次存下來的，抓不回來，要備份
     {'key': 'ccu', 'label': 'CCU 價格紀錄（RSI 商店船價、CCU／Warbond 上架歷史、Open Hangar 歷史）',
      'collections': ['rsi_ships', 'ccu_offers', 'ship_sale_history'], 'default': True},

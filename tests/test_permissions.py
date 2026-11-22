@@ -326,6 +326,7 @@ UNGUARDED_ALLOWLIST = {
     # 礦物回波參考表（同樣是公開遊戲資料，來源是 scunpacked-data；
     # 純查詢對照表，沒有寫入動作，後台/玩家兩種身分都應該看得到）
     'app_mining.list_deposits',
+    'app_mining.list_mineral_sources',          # 礦物取得方式（後台手動填寫的公開說明）
     'app_mining.list_locations',
     'app_mining.list_systems',
     # 任務／勢力資料庫（公開遊戲資料，來源是 Star Citizen Wiki API；

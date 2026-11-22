@@ -19,6 +19,10 @@
   礦床、地點的狀態在各自的文件上；礦物沒有文件，狀態另外拿（GET /item/visibility/minerals）。
   玩家端的 /mining/deposits、/mining/locations 後端本來就會拿掉不顯示的。
 
+  取得方式（礦物分頁）：要先完成特殊行動、任務、活動才挖得到的礦物（例如 Carinite），遊戲資料沒有，
+  管理員在這裡手動填寫（mineral_sources，GET／PUT／DELETE /mining/sources，見 src/models/mineral_source.py），
+  玩家頁「資料庫 › 礦物」顯示。
+
   中文對照：一律用 utils/translations.js 即時查資料庫 sc_translations（跟全站
   同一個來源），查不到才退回同步當下存進礦床／地點文件的 *_zh 快照。
   「只看沒有中文」用來找翻譯包缺的條目（要補的話加到
@@ -94,14 +98,16 @@
                 <SortTh :sort="mineralSort" field="uex">UEX 縮寫</SortTh>
                 <SortTh :sort="mineralSort" field="signature" class="text-end">RS</SortTh>
                 <SortTh :sort="mineralSort" field="deposits">所在礦床</SortTh>
+                <th class="text-nowrap">取得方式</th>
                 <th class="pe-3 text-nowrap">玩家頁面</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!filteredMinerals.length">
-                <td colspan="7" class="text-center py-4 text-muted">{{ emptyText }}</td>
+                <td colspan="8" class="text-center py-4 text-muted">{{ emptyText }}</td>
               </tr>
-              <tr v-for="m in mineralSort.sorted.value" :key="m.key">
+              <template v-for="m in mineralSort.sorted.value" :key="m.key">
+              <tr>
                 <td class="ps-3 fw-semibold">{{ m.name }}</td>
                 <td><ZhCell :zh="m.zh" /></td>
                 <td class="small text-muted font-monospace">{{ m.key }}</td>
@@ -137,10 +143,52 @@
                     </ul>
                   </details>
                 </td>
+                <td class="small">
+                  <!-- 取得方式（mineral_sources）：特殊行動、任務獎勵…；遊戲資料標不出產地的礦物在這裡補 -->
+                  <span v-for="k in (sources[m.key]?.methods || [])" :key="k" class="badge bg-warning-subtle text-warning-emphasis me-1">{{ methodLabel(k) }}</span>
+                  <span v-if="sources[m.key] && !sources[m.key].methods?.length" class="text-muted me-1">有說明</span>
+                  <span v-if="!sources[m.key] && autoSources[m.key]" class="badge bg-secondary-subtle text-secondary-emphasis me-1"
+                    title="Star Citizen Wiki API 標成可開採、但沒有產地（排程同步自動判斷）；手動填寫後以手填為主">自動：需特殊取得</span>
+                  <span v-if="!sources[m.key] && !autoSources[m.key]" class="text-muted me-1">—</span>
+                  <button v-if="canWrite" type="button" class="btn btn-sm btn-outline-primary py-0 px-1"
+                    :aria-label="`編輯 ${m.name} 的取得方式`" @click="openSource(m)"><i class="bi bi-pencil"></i></button>
+                </td>
                 <td class="pe-3">
                   <PlayerVisibleToggle dataset="minerals" :doc-id="m.key" :row="mineralState(m.key)" />
                 </td>
               </tr>
+              <tr v-if="srcEdit && srcEdit.key === m.key" class="table-active">
+                <td colspan="8" class="px-3 py-3">
+                  <div class="fw-semibold mb-2">{{ m.name }} 的取得方式</div>
+                  <div class="d-flex flex-wrap gap-3 mb-2">
+                    <div v-for="(label, k) in methodsLabel" :key="k" class="form-check mb-0">
+                      <input :id="`src-${k}`" v-model="srcEdit.methods" class="form-check-input" type="checkbox" :value="k">
+                      <label class="form-check-label" :for="`src-${k}`">{{ label }}</label>
+                    </div>
+                  </div>
+                  <label class="form-label small mb-1" for="src-desc">說明（Markdown：要先完成什麼、在哪裡挖…）</label>
+                  <textarea id="src-desc" v-model="srcEdit.description" class="form-control form-control-sm mb-2" rows="4" maxlength="5000"></textarea>
+                  <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                      <label class="form-label small mb-1" for="src-locs">相關地點（一行一個）</label>
+                      <textarea id="src-locs" v-model="srcEdit.locationsText" class="form-control form-control-sm" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small mb-1" for="src-url">參考連結</label>
+                      <input id="src-url" v-model="srcEdit.source_url" type="url" class="form-control form-control-sm" placeholder="https://">
+                    </div>
+                  </div>
+                  <div v-if="srcError" class="small text-danger mb-2">{{ srcError }}</div>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-primary" :disabled="srcSaving" @click="saveSource(m)">
+                      <span v-if="srcSaving" class="spinner-border spinner-border-sm me-1"></span>儲存</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="srcEdit = null">取消</button>
+                    <button v-if="sources[m.key]" type="button" class="btn btn-sm btn-outline-danger ms-auto" :disabled="srcSaving"
+                      @click="removeSource(m)">刪除</button>
+                  </div>
+                </td>
+              </tr>
+              </template>
             </tbody>
           </table>
 
@@ -333,7 +381,60 @@ watch(tab, (t) => {
   else systems.value = []
 })
 
+// ── 取得方式（mineral_sources）──
+const sources = ref({})        // {resource_key: {...}}
+const autoSources = ref({})    // 自動判斷（Wiki API 可開採但沒有產地）
+const methodsLabel = ref({})   // {代碼: 顯示文字}（後端給）
+const methodLabel = k => methodsLabel.value[k] || k
+const srcEdit = ref(null)
+const srcSaving = ref(false)
+const srcError = ref('')
+async function loadSources() {
+  const res = await miningApi.sources()
+  const body = res?.ok ? await res.json().catch(() => null) : null
+  if (!body?.success) return
+  sources.value = Object.fromEntries((body.data || []).map(d => [d.key, d]))
+  autoSources.value = Object.fromEntries((body.auto || []).map(d => [d.key, d]))
+  methodsLabel.value = body.methods_label || {}
+}
+function openSource(m) {
+  const cur = sources.value[m.key] || {}
+  srcError.value = ''
+  srcEdit.value = { key: m.key, methods: [...(cur.methods || [])], description: cur.description || '',
+    locationsText: (cur.locations || []).join('\n'), source_url: cur.source_url || '' }
+}
+async function saveSource(m) {
+  const e = srcEdit.value
+  srcSaving.value = true
+  srcError.value = ''
+  try {
+    const res = await miningApi.setSource(m.key, { resource_name: m.name, methods: e.methods, description: e.description,
+      locations: e.locationsText.split('\n').map(x => x.trim()).filter(Boolean), source_url: e.source_url.trim() })
+    const body = res ? await res.json().catch(() => null) : null
+    if (!res?.ok || !body?.success) { srcError.value = body?.message || '儲存失敗'; return }
+    sources.value = { ...sources.value, [m.key]: body.data }
+    srcEdit.value = null
+  } finally {
+    srcSaving.value = false
+  }
+}
+async function removeSource(m) {
+  srcSaving.value = true
+  try {
+    const res = await miningApi.deleteSource(m.key)
+    if (res?.ok) {
+      const next = { ...sources.value }
+      delete next[m.key]
+      sources.value = next
+      srcEdit.value = null
+    }
+  } finally {
+    srcSaving.value = false
+  }
+}
+
 async function load() {
+  loadSources()
   loading.value = true
   loadFailed.value = false
   try {

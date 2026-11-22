@@ -1360,6 +1360,8 @@
       </div>
       </SfState>
     </div>
+    <!-- 最下方：資料來源與使用條款（components/SiteFooter.vue） -->
+    <SiteFooter />
   </div>
 
   <!-- 玩家登入／註冊（右上角按鈕；舊網址 /player/login、/player/register 導過來時帶 ?login=1／?register=1） -->
@@ -1405,6 +1407,7 @@ import { usePlayerAuthStore } from '@/stores/playerAuth'
 import { PLAYER_HELP_PATH, PLAYER_HOME, safeRedirect } from '@/router'
 import PlayerAuthModal from '@/components/PlayerAuthModal.vue'
 import MineralDatabase from '@/components/MineralDatabase.vue'
+import SiteFooter from '@/components/SiteFooter.vue'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'

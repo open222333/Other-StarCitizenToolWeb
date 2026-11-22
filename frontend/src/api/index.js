@@ -172,6 +172,10 @@ export const miningApi = {
   },
   // 後台「商品資料庫 › 交易終端」
   uexTerminals: () => apiFetch('/mining/uex-terminals'),
+  // 礦物取得方式（後台手動填寫，src/models/mineral_source.py）
+  sources:      () => apiFetch('/mining/sources'),
+  setSource:    (key, body) => apiFetch(`/mining/sources/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteSource: (key) => apiFetch(`/mining/sources/${encodeURIComponent(key)}`, { method: 'DELETE' }),
 }
 
 // ── 任務／勢力資料庫 API（遊戲資料，唯讀）─────────────────────────

@@ -17,7 +17,7 @@ from src.models.log import Log
 from src.models.mining import MiningDeposit, MiningLocation
 from src.models.uex_commodity import UexCommodity
 from src.models.uex_commodity_price import UexCommodityPrice
-from src.models import uex_refinery_method, uex_refinery_yield
+from src.models import mineral_source, uex_refinery_method, uex_refinery_yield
 
 app_mining = Blueprint('app_mining', __name__)
 
@@ -245,4 +245,91 @@ def set_mineral_uex(resource_key):
     except ValueError as err:
         return jsonify({'success': False, 'message': str(err)}), 400
     Log.create(get_jwt_identity(), 'set_mineral_uex', f'礦物 {resource_key} 的 UEX 商品：{data.get("uex_id")}')
+    return jsonify({'success': True})
+
+
+# ── 礦物取得方式（後台手動填寫，見 src/models/mineral_source.py）─────────────
+
+def _iso(v):
+    return v.isoformat() + 'Z' if hasattr(v, 'isoformat') else v
+
+
+def _source_out(doc: dict) -> dict:
+    out = {k: v for k, v in doc.items() if k != '_id'}
+    out['key'] = doc['_id']
+    out['updated_at'] = _iso(doc.get('updated_at'))
+    return out
+
+
+@app_mining.route('/sources', methods=['GET'])
+@public_api
+def list_mineral_sources():
+    """礦物的取得方式（要先完成特殊行動、任務、活動才挖得到等，遊戲資料沒有的資訊，後台手動填寫）。
+    ---
+    tags: [Mining]
+    responses:
+      200:
+        description: "data：後台手填 [{key（礦物 resource_key）, resource_name, methods, description（Markdown）, locations, source_url, updated_at}]；auto：自動判斷（Star Citizen Wiki API 標成可開採、卻沒有產地的礦物）[{key, methods: [unplaced], description_en, description_zh, web_url, source, synced_at}]；methods_label：{代碼: 顯示文字}"
+    """
+    auto = mineral_source.auto_sources()
+    for a in auto.values():
+        a['synced_at'] = _iso(a.get('synced_at'))
+    return jsonify({'success': True, 'data': [_source_out(d) for d in mineral_source.list_all()],
+                    'auto': list(auto.values()), 'methods_label': mineral_source.METHOD_LABELS})
+
+
+@app_mining.route('/sources/<path:resource_key>', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_mineral_source(resource_key):
+    """新增或修改一種礦物的取得方式。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: resource_key, type: string, required: true, description: "礦床成分的 resource_key，例如 Carinite"}
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            resource_name: {type: string}
+            methods: {type: array, items: {type: string}, description: "special／mission／cave／event／other"}
+            description: {type: string, description: "Markdown，最多 5000 字"}
+            locations: {type: array, items: {type: string}}
+            source_url: {type: string, description: "http／https"}
+    responses:
+      200:
+        description: 成功
+      400:
+        description: 欄位不合法
+    """
+    try:
+        doc = mineral_source.upsert(resource_key, request.get_json(silent=True) or {}, get_jwt_identity())
+    except ValueError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    Log.create(get_jwt_identity(), 'set_mineral_source', f'礦物 {resource_key} 的取得方式：{"、".join(doc.get("methods") or [])}')
+    return jsonify({'success': True, 'data': _source_out(doc)})
+
+
+@app_mining.route('/sources/<path:resource_key>', methods=['DELETE'])
+@admin_api(*WRITE_ROLES)
+def delete_mineral_source(resource_key):
+    """刪除一種礦物的取得方式。
+    ---
+    tags: [Mining]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: resource_key, type: string, required: true}
+    responses:
+      200:
+        description: 成功
+      404:
+        description: 沒有這筆
+    """
+    if not mineral_source.delete(resource_key):
+        return jsonify({'success': False, 'message': '沒有這筆資料'}), 404
+    Log.create(get_jwt_identity(), 'delete_mineral_source', f'刪除礦物 {resource_key} 的取得方式')
     return jsonify({'success': True})

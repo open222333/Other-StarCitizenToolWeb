@@ -6,6 +6,8 @@
     - GET /mining/locations：各地點（星系、類型）的礦床群組（船載／地面載具／手持／採集）與各礦床的佔比
   兩份合起來：礦物 → 有哪些地點的哪一種採集方式會出現含有它的礦床。
   遊戲資料有礦床、但沒有放到任何地點的礦物（例如 Carinite）也列出來，標「遊戲資料未標出產地」（有篩選地點／方式時不列）。
+  取得方式：要先完成特殊行動、任務、活動才挖得到的礦物，後台手動填寫（GET /mining/sources，src/models/mineral_source.py），
+  列表標出來、展開「詳細」最上面顯示說明；「採集方式」篩選多一個「特殊取得」。
   展開「詳細」另外列「用在哪些藍圖」：GET /blueprint/master/by-material（名稱去掉 (Ore)／(Raw) 後綴比對）。
   「出現率」＝那一類礦床在該地點同一群組裡的佔比 × 礦床含有這種礦物的機率（遊戲資料的相對值，不是實際刷新次數）。
   打撈、殘骸、化石、戰利品箱這些群組不列。
@@ -40,6 +42,7 @@
             <select id="mdb-method" v-model="method" class="form-select form-select-sm">
               <option value="">全部</option>
               <option v-for="m in METHODS" :key="m.key" :value="m.key">{{ m.label }}</option>
+              <option :value="SOURCE_FILTER">特殊取得（行動／任務／活動）</option>
             </select>
           </div>
         </div>
@@ -80,13 +83,16 @@
                     </td>
                     <td data-label="採集方式">
                       <span v-for="k in m.methods" :key="k" class="sf-chip me-1">{{ methodLabel(k) }}</span>
-                      <span v-if="!m.methods.length" class="small text-muted">—</span>
+                      <!-- 後台補的取得方式（特殊行動、任務獎勵…） -->
+                      <span v-for="k in (sources[m.key]?.methods || [])" :key="`s-${k}`" class="sf-chip sf-chip--warn me-1">{{ sourceLabel(k) }}</span>
+                      <span v-if="!m.methods.length && !sources[m.key]?.methods?.length" class="small text-muted">—</span>
                     </td>
                     <td class="text-end" data-label="地點數">{{ m.places }}</td>
                     <td class="text-end text-nowrap" data-label="最高含量">{{ pct(m.content) }}</td>
                     <td class="text-end text-nowrap" data-label="最高出現率">{{ m.chance == null ? '—' : pct(m.chance * 100, 2) }}</td>
                     <td class="d-none d-lg-table-cell small" data-label="主要地點">
                       <template v-if="m.places">{{ m.top.map(o => placeLabel(o)).join('、') }}<template v-if="m.places > m.top.length"> …</template></template>
+                      <span v-else-if="sources[m.key]" class="text-muted">需{{ (sources[m.key].methods || []).map(sourceLabel).join('、') || '特殊方式' }}取得，見詳細</span>
                       <span v-else class="text-muted">遊戲資料未標出產地</span>
                     </td>
                     <td class="text-end pe-3 sf-stack__actions">
@@ -102,11 +108,33 @@
                         <h3 class="sf-sheet__title">{{ m.name_zh || m.name }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="openKey = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <div class="mdb-sec">產地</div>
-                      <p v-if="!m.occurrences.length" class="small text-muted mb-2">
+                      <!-- 取得方式（後台手動填寫） -->
+                      <template v-if="sources[m.key]">
+                        <div class="mdb-sec">取得方式</div>
+                        <div class="mb-1">
+                          <span v-for="k in (sources[m.key].methods || [])" :key="k" class="sf-chip sf-chip--warn me-1">{{ sourceLabel(k) }}</span>
+                        </div>
+                        <!-- 自動判斷：遊戲說明（翻譯包中文，沒有就英文）＋資料來源 -->
+                        <template v-if="sources[m.key].auto">
+                          <p v-if="sources[m.key].description_zh || sources[m.key].description_en" class="small mb-1">
+                            {{ sources[m.key].description_zh || sources[m.key].description_en }}</p>
+                          <p class="small text-muted mb-1">遊戲資料把它列為可開採，但沒有標出任何產地，通常要先完成特殊行動、任務或活動才挖得到。
+                            資料來源：{{ sources[m.key].source }}（排程同步）</p>
+                        </template>
+                        <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 先跳脫整段 HTML，只產生白名單標籤 -->
+                        <div v-else-if="sources[m.key].description" class="mdb-md small" v-html="renderMarkdown(sources[m.key].description)"></div>
+                        <div v-if="sources[m.key].locations?.length" class="small mb-1">
+                          <span class="text-muted me-1">相關地點</span>{{ sources[m.key].locations.map(locText).join('、') }}
+                        </div>
+                        <a v-if="sources[m.key].source_url || sources[m.key].web_url" :href="sources[m.key].source_url || sources[m.key].web_url"
+                          target="_blank" rel="noopener noreferrer" class="small"><i class="bi bi-box-arrow-up-right me-1"></i>參考資料</a>
+                        <div class="mb-3"></div>
+                      </template>
+                      <div v-if="m.occurrences.length || !sources[m.key]" class="mdb-sec">產地</div>
+                      <p v-if="!m.occurrences.length && !sources[m.key]" class="small text-muted mb-2">
                         遊戲資料有這種礦物的礦床，但沒有標出會出現在哪些地點（可能是任務、洞穴或還沒開放的地點）。
                       </p>
-                      <table v-else class="table table-sm align-middle mb-0 mdb-sub">
+                      <table v-else-if="m.occurrences.length" class="table table-sm align-middle mb-0 mdb-sub">
                         <thead>
                           <tr>
                             <th>地點</th><th>星系</th><th>類型</th><th>採集方式</th><th>礦床</th>
@@ -178,6 +206,8 @@ import SortTh from '@/components/SortTh.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
 import { blueprintTypeZh } from '@/utils/blueprintOutputType'
+import { renderMarkdown } from '@/utils/markdown'
+import { loadTranslations, translate } from '@/utils/translations'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -229,6 +259,24 @@ async function load() {
   deposits.value = d
   locations.value = l
   loaded.value = true
+  loadSources()
+}
+
+// ── 取得方式（後台手動填寫；讀不到不影響其他內容）──
+const SOURCE_FILTER = '__source'
+const sources = ref({})
+const sourceLabels = ref({})
+const sourceLabel = k => sourceLabels.value[k] || k
+const locText = en => { const zh = translate('location', en); return zh && zh !== en ? `${zh}（${en}）` : en }
+async function loadSources() {
+  const res = await props.fetcher('/mining/sources')
+  const body = res ? await res.json().catch(() => null) : null
+  if (!res?.ok || !body?.success) return
+  // 後台手填的為主；沒填的用自動判斷（Wiki API 標成可開採、但遊戲資料沒標產地，例如 Carinite）
+  sources.value = Object.fromEntries([...(body.auto || []).map(x => [x.key, { ...x, auto: true }]),
+    ...(body.data || []).map(x => [x.key, x])])
+  sourceLabels.value = body.methods_label || {}
+  loadTranslations('location', (body.data || []).flatMap(x => x.locations || []))
 }
 watch(() => props.active, on => { if (on && !loaded.value && !loading.value) load() }, { immediate: true })
 
@@ -309,11 +357,14 @@ const rows = computed(() => {
   const out = []
   for (const m of minerals.value) {
     if (q && ![m.name, m.name_zh, m.key, m.uex_code].some(x => (x || '').toLowerCase().includes(q))) continue
+    // 「特殊取得」：只看後台補了取得方式的礦物（產地照常列）
+    const bySource = method.value === SOURCE_FILTER
+    if (bySource && !sources.value[m.key]) continue
     const occ = m.all.filter(o => (!system.value || o.system === system.value)
       && (!place.value || `${o.system}|${o.name}` === place.value)
-      && (!method.value || o.method === method.value))
-    // 沒有產地資料的：只在沒篩地點／方式時列
-    if (!occ.length && (m.all.length || system.value || place.value || method.value)) continue
+      && (!method.value || bySource || o.method === method.value))
+    // 沒有產地資料的：只在沒篩地點／方式時列（「特殊取得」篩選時也列）
+    if (!occ.length && (m.all.length || system.value || place.value || (method.value && !bySource))) continue
     occ.sort((a, b) => b.chance - a.chance || (b.max ?? 0) - (a.max ?? 0))
     const placeKeys = new Set(occ.map(o => `${o.system}|${o.name}`))
     const top = []
@@ -376,6 +427,7 @@ const { isPhone } = useBreakpoint()
 .mdb-detail { background: var(--sf-chip-bg); }
 .mdb-sub { --bs-table-bg: transparent; font-size: .95rem; }
 .mdb-sub th { font-size: .8rem; color: var(--sf-text-muted); font-weight: 600; }
+.mdb-md :deep(p) { margin-bottom: .4rem; }
 .mdb-sec { font-weight: 700; font-size: .9rem; color: var(--sf-accent-text, var(--sf-accent)); margin-bottom: .35rem; }
 .mdb-bpq { max-width: 20rem; }
 </style>

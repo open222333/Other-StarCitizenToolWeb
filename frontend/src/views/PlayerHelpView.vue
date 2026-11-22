@@ -43,6 +43,7 @@
       <div class="text-center my-4">
         <button type="button" class="btn btn-sm btn-info" @click="jump('top')"><i class="bi bi-arrow-up me-1"></i>回到最上面</button>
       </div>
+      <SiteFooter />
     </div>
 
     <!-- 寬螢幕右邊的大綱：每一章與章裡的小節，捲動時標出目前看到的地方，點了跳過去 -->
@@ -67,6 +68,7 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import SiteFooter from '@/components/SiteFooter.vue'
 import { scrollBehavior } from '@/utils/motion'
 import { PLAYER_HOME } from '@/router'
 

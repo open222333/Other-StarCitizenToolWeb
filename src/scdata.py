@@ -662,6 +662,13 @@ def map_commodity(doc: dict) -> Optional[dict]:
         'has_salvage': doc.get('has_salvage'),
         'tier': doc.get('tier'),
         'web_url': doc.get('web_url'),
+        # 取得方式（礦物資料庫「特殊取得」自動判斷用，見 src/models/mineral_source.py 的 auto_sources）：
+        # methods＝FPS／Ship／GroundVehicle／Harvestable…、systems／location_count＝遊戲資料標出的產地
+        'kind': doc.get('kind'),
+        'methods': doc.get('methods') or [],
+        'systems': doc.get('systems') or [],
+        'location_count': len(doc.get('locations') or []),
+        'description': doc.get('description'),
         'raw': doc,
     }
 
