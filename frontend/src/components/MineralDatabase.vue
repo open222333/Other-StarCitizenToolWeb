@@ -5,6 +5,8 @@
     - GET /mining/deposits：礦床成分（parts：礦物、含量範圍 %、出現機率）
     - GET /mining/locations：各地點（星系、類型）的礦床群組（船載／地面載具／手持／採集）與各礦床的佔比
   兩份合起來：礦物 → 有哪些地點的哪一種採集方式會出現含有它的礦床。
+  遊戲資料有礦床、但沒有放到任何地點的礦物（例如 Carinite）也列出來，標「遊戲資料未標出產地」（有篩選地點／方式時不列）。
+  展開「詳細」另外列「用在哪些藍圖」：GET /blueprint/master/by-material（名稱去掉 (Ore)／(Raw) 後綴比對）。
   「出現率」＝那一類礦床在該地點同一群組裡的佔比 × 礦床含有這種礦物的機率（遊戲資料的相對值，不是實際刷新次數）。
   打撈、殘骸、化石、戰利品箱這些群組不列。
 -->
@@ -70,23 +72,27 @@
                 <template v-for="m in sort.sorted.value" :key="m.key">
                   <tr>
                     <td class="ps-3 sf-stack__title">
-                      <span class="fw-semibold">{{ m.name_zh || m.name }}</span>
-                      <span v-if="m.name_zh" class="small text-muted ms-1">{{ m.name }}</span>
-                      <span v-if="m.uex_code" class="sf-chip sf-chip--accent ms-1">{{ m.uex_code }}</span>
+                      <span class="sf-name">
+                        <span class="fw-semibold">{{ m.name_zh || m.name }}</span>
+                        <span v-if="m.uex_code" class="sf-chip sf-chip--accent ms-1">{{ m.uex_code }}</span>
+                        <span v-if="m.name_zh" class="sf-name__en">{{ m.name }}</span>
+                      </span>
                     </td>
                     <td data-label="採集方式">
                       <span v-for="k in m.methods" :key="k" class="sf-chip me-1">{{ methodLabel(k) }}</span>
+                      <span v-if="!m.methods.length" class="small text-muted">—</span>
                     </td>
                     <td class="text-end" data-label="地點數">{{ m.places }}</td>
                     <td class="text-end text-nowrap" data-label="最高含量">{{ pct(m.content) }}</td>
-                    <td class="text-end text-nowrap" data-label="最高出現率">{{ pct(m.chance * 100, 2) }}</td>
+                    <td class="text-end text-nowrap" data-label="最高出現率">{{ m.chance == null ? '—' : pct(m.chance * 100, 2) }}</td>
                     <td class="d-none d-lg-table-cell small" data-label="主要地點">
-                      {{ m.top.map(o => placeLabel(o)).join('、') }}<template v-if="m.places > m.top.length"> …</template>
+                      <template v-if="m.places">{{ m.top.map(o => placeLabel(o)).join('、') }}<template v-if="m.places > m.top.length"> …</template></template>
+                      <span v-else class="text-muted">遊戲資料未標出產地</span>
                     </td>
                     <td class="text-end pe-3 sf-stack__actions">
                       <button type="button" class="btn btn-sm btn-info text-nowrap" :aria-expanded="openKey === m.key ? 'true' : 'false'"
-                        @click="openKey = openKey === m.key ? '' : m.key">
-                        <i class="bi me-1" :class="openKey === m.key ? 'bi-chevron-up' : 'bi-chevron-down'"></i>地點
+                        @click="toggle(m)">
+                        <i class="bi me-1" :class="openKey === m.key ? 'bi-chevron-up' : 'bi-chevron-down'"></i>詳細
                       </button>
                     </td>
                   </tr>
@@ -96,7 +102,11 @@
                         <h3 class="sf-sheet__title">{{ m.name_zh || m.name }}</h3>
                         <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="openKey = ''"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <table class="table table-sm align-middle mb-0 mdb-sub">
+                      <div class="mdb-sec">產地</div>
+                      <p v-if="!m.occurrences.length" class="small text-muted mb-2">
+                        遊戲資料有這種礦物的礦床，但沒有標出會出現在哪些地點（可能是任務、洞穴或還沒開放的地點）。
+                      </p>
+                      <table v-else class="table table-sm align-middle mb-0 mdb-sub">
                         <thead>
                           <tr>
                             <th>地點</th><th>星系</th><th>類型</th><th>採集方式</th><th>礦床</th>
@@ -115,6 +125,39 @@
                           </tr>
                         </tbody>
                       </table>
+
+                      <!-- 用在哪些藍圖 -->
+                      <div class="mdb-sec mt-3">用在哪些藍圖
+                        <span v-if="bpOf(m).rows" class="small text-muted fw-normal ms-1">{{ bpOf(m).rows.length }} 張</span>
+                      </div>
+                      <div v-if="bpOf(m).loading" class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>載入中…</div>
+                      <div v-else-if="bpOf(m).error" class="small text-danger">{{ bpOf(m).error }}
+                        <button type="button" class="btn btn-sm btn-secondary ms-2" @click="loadBlueprints(m, true)">重試</button></div>
+                      <p v-else-if="bpOf(m).rows && !bpOf(m).rows.length" class="small text-muted mb-0">沒有藍圖用到這種礦物。</p>
+                      <template v-else-if="bpOf(m).rows">
+                        <input v-if="bpOf(m).rows.length > 8" v-model="bpQuery" type="search" class="form-control form-control-sm mb-2 mdb-bpq"
+                          placeholder="篩選藍圖名稱或類型" aria-label="篩選藍圖">
+                        <table class="table table-sm align-middle mb-0 mdb-sub">
+                          <thead>
+                            <tr><th>藍圖</th><th>類型</th><th class="text-end">用量</th><th class="ps-3">取得</th></tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="b in bpShown(m)" :key="b._id">
+                              <td data-label="藍圖" class="fw-semibold">{{ b.name_zh || b.name }}
+                                <span v-if="b.name_zh" class="small text-muted fw-normal ms-1">{{ b.name }}</span></td>
+                              <td data-label="類型" class="small">{{ blueprintTypeZh(b.output_type) || b.output_type_label || b.output_type || '—' }}</td>
+                              <td data-label="用量" class="text-end text-nowrap">{{ useLabel(b) }}</td>
+                              <td data-label="取得" class="ps-3">
+                                <span v-if="b.is_available_by_default" class="sf-chip sf-chip--accent">預設可用</span>
+                                <span v-else-if="b.mission_count" class="sf-chip">任務 {{ b.mission_count }} 個</span>
+                                <span v-else class="small text-muted">—</span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <button v-if="bpFiltered(m).length > bpShown(m).length" type="button" class="btn btn-sm btn-secondary mt-2"
+                          @click="bpAll = true">顯示全部 {{ bpFiltered(m).length }} 張</button>
+                      </template>
                     </td>
                   </tr>
                 </template>
@@ -128,12 +171,13 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import SfState from '@/components/SfState.vue'
 import SortSelect from '@/components/SortSelect.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
+import { blueprintTypeZh } from '@/utils/blueprintOutputType'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -225,6 +269,14 @@ const minerals = computed(() => {
       }
     }
   }
+  // 有礦床、但沒放到任何地點的礦物（Carinite 等）：一樣列出來，產地空白
+  for (const dep of deposits.value) {
+    for (const p of dep.parts || []) {
+      const key = p.resource_key || p.resource_name
+      if (!key || byKey.has(key) || !realName(p.resource_name)) continue
+      byKey.set(key, { key, name: p.resource_name, name_zh: p.resource_name_zh || '', uex_code: p.uex?.code || '', occ: new Map() })
+    }
+  }
   return [...byKey.values()].map(m => ({ ...m, all: [...m.occ.values()] }))
 })
 
@@ -260,7 +312,8 @@ const rows = computed(() => {
     const occ = m.all.filter(o => (!system.value || o.system === system.value)
       && (!place.value || `${o.system}|${o.name}` === place.value)
       && (!method.value || o.method === method.value))
-    if (!occ.length) continue
+    // 沒有產地資料的：只在沒篩地點／方式時列
+    if (!occ.length && (m.all.length || system.value || place.value || method.value)) continue
     occ.sort((a, b) => b.chance - a.chance || (b.max ?? 0) - (a.max ?? 0))
     const placeKeys = new Set(occ.map(o => `${o.system}|${o.name}`))
     const top = []
@@ -272,8 +325,8 @@ const rows = computed(() => {
       key: m.key, name: m.name, name_zh: m.name_zh, uex_code: m.uex_code, occurrences: occ, top,
       methods: METHODS.map(x => x.key).filter(k => occ.some(o => o.method === k)),
       places: placeKeys.size,
-      content: Math.max(...occ.map(o => o.max ?? 0)),
-      chance: Math.max(...occ.map(o => o.chance)),
+      content: occ.length ? Math.max(...occ.map(o => o.max ?? 0)) : null,
+      chance: occ.length ? Math.max(...occ.map(o => o.chance)) : null,
     })
   }
   return out
@@ -284,6 +337,38 @@ const SORT_OPTIONS = [{ field: 'name', label: '礦物' }, { field: 'places', lab
   { field: 'content', label: '最高含量' }, { field: 'chance', label: '最高出現率' }]
 const sort = useTableSort(rows, { key: 'name', accessors: { name: m => m.name_zh || m.name } })
 const openKey = ref('')
+function toggle(m) {
+  openKey.value = openKey.value === m.key ? '' : m.key
+  bpQuery.value = ''
+  bpAll.value = false
+  if (openKey.value) loadBlueprints(m)
+}
+
+// ── 用在哪些藍圖（展開時才抓，抓過的記著） ──
+const bpCache = reactive({})
+const bpQuery = ref('')
+const bpAll = ref(false)
+const BP_PAGE = 15
+const bpOf = m => bpCache[m.key] || {}
+async function loadBlueprints(m, force = false) {
+  if (!force && bpCache[m.key] && !bpCache[m.key].error) return
+  bpCache[m.key] = { loading: true }
+  const res = await props.fetcher(`/blueprint/master/by-material?material=${encodeURIComponent(m.name)}`)
+  const body = res ? await res.json().catch(() => null) : null
+  bpCache[m.key] = res?.ok && body?.success ? { rows: body.data || [] } : { error: '藍圖讀取失敗。' }
+}
+function bpFiltered(m) {
+  const rows = bpOf(m).rows || []
+  const q = bpQuery.value.trim().toLowerCase()
+  if (!q) return rows
+  return rows.filter(b => [b.name, b.name_zh, b.output_type, blueprintTypeZh(b.output_type)]
+    .some(x => (x || '').toLowerCase().includes(q)))
+}
+const bpShown = m => (bpAll.value ? bpFiltered(m) : bpFiltered(m).slice(0, BP_PAGE))
+function useLabel(b) {
+  return (b.hits || []).map(h => (h.quantity_scu != null ? `${h.quantity_scu} SCU` : h.quantity != null ? `${h.quantity} 個` : '—'))
+    .join('、') || '—'
+}
 const { isPhone } = useBreakpoint()
 </script>
 
@@ -291,4 +376,6 @@ const { isPhone } = useBreakpoint()
 .mdb-detail { background: var(--sf-chip-bg); }
 .mdb-sub { --bs-table-bg: transparent; font-size: .95rem; }
 .mdb-sub th { font-size: .8rem; color: var(--sf-text-muted); font-weight: 600; }
+.mdb-sec { font-weight: 700; font-size: .9rem; color: var(--sf-accent-text, var(--sf-accent)); margin-bottom: .35rem; }
+.mdb-bpq { max-width: 20rem; }
 </style>

@@ -1158,19 +1158,23 @@ html:has(.scifi-page) { color-scheme: dark; }
   /* HUD 格線：48px 一格，四周淡、中間幾乎看不到，不干擾內容 */
   content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background:
-    linear-gradient(rgba(var(--sf-accent-rgb), .05) 1px, transparent 1px) 0 0 / 48px 48px,
-    linear-gradient(90deg, rgba(var(--sf-accent-rgb), .05) 1px, transparent 1px) 0 0 / 48px 48px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, transparent 35%, #000 100%);
-  mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, transparent 35%, #000 100%);
+    linear-gradient(rgba(var(--sf-accent-rgb), .07) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, rgba(var(--sf-accent-rgb), .07) 1px, transparent 1px) 0 0 / 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, rgba(0, 0, 0, .6) 20%, #000 100%);
+  mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, rgba(0, 0, 0, .6) 20%, #000 100%);
 }
-/* 亮底：不要星點（白底上像灰塵），格線改成很淡的深色 */
+/* 亮底：「設計圖／觀測站」風格——不要星點（白底上像灰塵），改成點陣＋大小兩層格線 */
 :root[data-sf-mode='light'] .scifi-app::before, :root[data-sf-mode='light'] .help-page::before {
-  background: radial-gradient(ellipse 70% 28% at 50% -6%, rgba(var(--sf-accent-rgb), .12), transparent 70%);
+  background:
+    radial-gradient(ellipse 70% 28% at 50% -6%, rgba(var(--sf-accent-rgb), .14), transparent 70%),
+    radial-gradient(circle, rgba(var(--sf-accent-rgb), .22) 1px, transparent 1.4px) 0 0 / 24px 24px;
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, rgba(0, 0, 0, .35) 25%, #000 100%);
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, rgba(0, 0, 0, .35) 25%, #000 100%);
 }
 :root[data-sf-mode='light'] .scifi-app::after, :root[data-sf-mode='light'] .help-page::after {
   background:
-    linear-gradient(rgba(var(--sf-accent-rgb), .07) 1px, transparent 1px) 0 0 / 48px 48px,
-    linear-gradient(90deg, rgba(var(--sf-accent-rgb), .07) 1px, transparent 1px) 0 0 / 48px 48px;
+    linear-gradient(rgba(var(--sf-accent-rgb), .10) 1px, transparent 1px) 0 0 / 96px 96px,
+    linear-gradient(90deg, rgba(var(--sf-accent-rgb), .10) 1px, transparent 1px) 0 0 / 96px 96px;
 }
 
 /* ── 按鈕：金屬光澤＋語意發光 ── */
@@ -1230,3 +1234,78 @@ html:has(.scifi-page) { color-scheme: dark; }
   .scifi-page .btn:hover:not(:disabled) { transform: none; }
   .scifi-page .btn-primary::after, .btn-scifi::after { display: none; }
 }
+
+/* ── 背景底色：星雲（主色左上、次色右下、主色右上淡一點）＋右下角行星弧光，取代原本單一漸層 ──
+ * 放在 .scifi-page 本身（固定不隨捲動），星點、格線疊在上面（::before／::after）。亮底另外處理。 */
+:root:not([data-sf-mode='light']) .scifi-page {
+  background:
+    /* 行星邊緣的弧光（右下角一顆大圓的邊） */
+    radial-gradient(circle 560px at calc(100% + 140px) calc(100% + 330px),
+      rgba(var(--sf-accent-rgb), .05) 0, rgba(0, 0, 0, .28) 520px, rgba(var(--sf-accent-rgb), .30) 558px,
+      rgba(var(--sf-accent-rgb), .10) 566px, rgba(var(--sf-accent-rgb), .03) 600px, transparent 660px),
+    /* 星雲 */
+    radial-gradient(ellipse 55% 45% at 8% 0%, rgba(var(--sf-accent-rgb), .24), transparent 70%),
+    radial-gradient(ellipse 40% 35% at 85% 12%, rgba(var(--sf-accent-rgb), .10), transparent 70%),
+    radial-gradient(ellipse 50% 45% at 92% 92%, rgba(var(--sf-accent-2-rgb), .16), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(var(--sf-accent-2-rgb), .08), transparent 70%),
+    /* 斜向一道很淡的光帶 */
+    linear-gradient(115deg, transparent 30%, rgba(var(--sf-accent-rgb), .05) 45%, transparent 60%),
+    linear-gradient(160deg, var(--sf-bg-1) 0%, var(--sf-bg-2) 55%, var(--sf-bg-1) 100%);
+  background-attachment: fixed;
+}
+/* 亮底：晨光天空（主色左上、次色右下的暖光）＋右下角「設計圖」式的行星：
+ * 淡色球體＋細邊線＋兩圈軌道線，像星圖上的示意圖，不會像暗底那樣一大塊黑 */
+:root[data-sf-mode='light'] .scifi-app, :root[data-sf-mode='light'] .help-page {
+  background-image:
+    /* 行星：細邊線 */
+    radial-gradient(circle 420px at calc(100% - 40px) calc(100% + 170px),
+      transparent 417px, rgba(var(--sf-accent-rgb), .45) 418px, rgba(var(--sf-accent-rgb), .12) 421px, transparent 436px),
+    /* 行星：球體（亮面在左上） */
+    radial-gradient(circle 420px at calc(100% - 40px) calc(100% + 170px),
+      rgba(var(--sf-accent-rgb), .03) 0, rgba(var(--sf-accent-rgb), .10) 300px, rgba(var(--sf-accent-rgb), .16) 418px, transparent 419px),
+    /* 兩圈軌道線（橢圓） */
+    radial-gradient(ellipse 760px 300px at calc(100% - 40px) calc(100% + 120px),
+      transparent 99.4%, rgba(var(--sf-accent-rgb), .22) 99.7%, transparent 100%),
+    radial-gradient(ellipse 1040px 420px at calc(100% - 40px) calc(100% + 120px),
+      transparent 99.5%, rgba(var(--sf-accent-2-rgb), .22) 99.75%, transparent 100%),
+    /* 晨光 */
+    radial-gradient(ellipse 60% 50% at 6% 0%, rgba(var(--sf-accent-rgb), .20), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 88% 10%, rgba(var(--sf-accent-rgb), .08), transparent 70%),
+    radial-gradient(ellipse 55% 50% at 95% 95%, rgba(var(--sf-accent-2-rgb), .16), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(var(--sf-accent-2-rgb), .08), transparent 70%),
+    linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, .55) 45%, transparent 60%),
+    linear-gradient(170deg, var(--sf-bg-1) 0%, var(--sf-bg-2) 100%);
+  background-attachment: fixed;
+}
+
+/* ── 搜尋卡、列表卡半透明：透出後面的星雲／格線背景 ──
+ * 只動頁面上的卡片；跳出視窗（.sfm-dialog）、底部面板不動，維持不透明好閱讀。
+ * 用 rgba(var(--sf-panel-rgb)) 而不是 color-mix()：舊一點的瀏覽器不支援 color-mix，整條會失效變回不透明。
+ * 不加 backdrop-filter：它會讓卡片變成 position:fixed 子元素的定位基準，
+ * 手機上表格展開的詳細面板（.sf-stack__detail，fixed 底部面板）會被關在卡片裡。 */
+.scifi-page .scifi-card:not(.sfm-dialog) {
+  background: linear-gradient(165deg,
+    rgba(var(--sf-panel-rgb, 18, 26, 43), .55) 0%,
+    rgba(var(--sf-panel-2-rgb, 12, 18, 32), .45) 100%);
+}
+/* 搜尋卡保留強調色的淡底，一樣半透明 */
+.scifi-page .scifi-card.sf-search:not(.sfm-dialog) {
+  background:
+    linear-gradient(165deg, rgba(var(--sf-accent-rgb), .14) 0%, rgba(var(--sf-accent-rgb), .05) 100%),
+    linear-gradient(165deg, rgba(var(--sf-panel-rgb, 18, 26, 43), .55) 0%, rgba(var(--sf-panel-2-rgb, 12, 18, 32), .45) 100%);
+}
+:root[data-sf-mode='light'] .scifi-page .scifi-card:not(.sfm-dialog) {
+  background: linear-gradient(165deg,
+    rgba(var(--sf-panel-rgb, 255, 255, 255), .78) 0%,
+    rgba(var(--sf-panel-2-rgb, 246, 248, 252), .70) 100%);
+}
+:root[data-sf-mode='light'] .scifi-page .scifi-card.sf-search:not(.sfm-dialog) {
+  background:
+    linear-gradient(165deg, rgba(var(--sf-accent-rgb), .10) 0%, rgba(var(--sf-accent-rgb), .03) 100%),
+    linear-gradient(165deg, rgba(var(--sf-panel-rgb, 255, 255, 255), .78) 0%, rgba(var(--sf-panel-2-rgb, 246, 248, 252), .70) 100%);
+}
+
+/* ── 資料列名稱：中文一行、英文小字換到第二行（資料庫各分頁共用：物品、藍圖、艦船、任務、勢力、礦物）──
+ * 前面有展開箭頭／按鈕時，整塊名稱靠在箭頭右邊，第二行英文跟中文對齊。 */
+.sf-name { display: inline-block; vertical-align: middle; max-width: 100%; }
+.sf-name__en { display: block; font-size: .8em; font-weight: 400; color: var(--sf-text-muted); line-height: 1.3; margin-top: .1rem; }

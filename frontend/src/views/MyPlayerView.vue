@@ -455,7 +455,7 @@
         <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="itemDataRef?.refresh()">
           <i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
       </div>
-      <InventoryFilterBar :rows="[]" :show-locations="false" show-buyable :type-options="itemTypeOptions"
+      <InventoryFilterBar :rows="[]" :show-locations="false" show-buyable :type-options="itemTypeTreeOpts"
         v-model:q="itemDataFilter.q" v-model:types="itemDataFilter.types" v-model:buyable="itemDataFilter.buyable"
         v-model:dismantlable="itemDataFilter.dismantlable" v-model:dismantle="itemDataFilter.dismantle"
         :dismantle-options="dismantleOptions" />
@@ -609,10 +609,10 @@
             <tr>
               <td class="ps-3 sf-stack__title">
                 <span class="fw-semibold">{{ row.name_zh || row.name }}</span>
-                <span v-if="row.name_zh && row.name_zh !== row.name" class="small text-muted ms-1">{{ row.name }}</span>
                 <i v-if="row.retired" class="bi bi-exclamation-triangle text-warning ms-1" title="這個物品已在新版本移除"></i>
                 <i v-if="row.freeText" class="bi bi-pencil ms-1" title="自由輸入，沒有對應到遊戲配方"></i>
                 <span v-if="row.note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ row.note }}</span>
+                <span v-if="row.name_zh && row.name_zh !== row.name" class="sf-name__en">{{ row.name }}</span>
                 <!-- 船艦：每位持有者每一艘的配件網址，按鈕標「玩家 · 識別名稱 · 配件碼」 -->
                 <VehicleLoadoutLinks v-for="u in (row.kind === 'fleet' ? holderUnitLoadouts(row.src.holders) : [])" :key="u.key"
                   :links="u.links" :prefix="u.prefix" button-class="btn-loadout" hide-label />
@@ -734,7 +734,7 @@
             </td>
             <td class="sf-stack__title">
               <span class="fw-semibold">{{ row.item_name_zh || row.item_name }}</span>
-              <span v-if="row.item_name_zh" class="small text-muted ms-1">{{ row.item_name }}</span>
+              <span v-if="row.item_name_zh" class="sf-name__en">{{ row.item_name }}</span>
             </td>
             <td data-label="地點">{{ locLabel(row.location) }}<span v-if="row.container" class="text-muted"> / {{ row.container }}</span></td>
             <td class="text-end" data-label="數量">{{ row.delta > 0 ? '+' : '' }}{{ row.delta }}</td>
@@ -772,7 +772,7 @@
           <tr v-for="row in inventorySort.sorted.value" :key="row.item_id + row.location + (row.container || '')">
             <td class="ps-3 sf-stack__title">
               <span class="fw-semibold">{{ row.item_name_zh || row.item_name }}</span>
-              <span v-if="row.item_name_zh" class="small text-muted ms-1">{{ row.item_name }}</span>
+              <span v-if="row.item_name_zh" class="sf-name__en">{{ row.item_name }}</span>
               <div v-if="stockFilter.dismantle.length" class="small text-muted">
                 拆解回收：{{ dismantleHits(dismantleMap[row.item_id], stockFilter.dismantle).join('、') || '—' }}
               </div>
@@ -892,9 +892,9 @@
                 {{ bp.master?.name_zh || bp.name }}
               </button>
               <span v-else class="fw-semibold">{{ bp.master?.name_zh || bp.name }}</span>
-              <span v-if="bp.master?.name_zh" class="small text-muted ms-1">{{ bp.name }}</span>
               <i v-if="!bp.blueprint_uuid" class="bi bi-pencil text-muted ms-1"
                  title="自由輸入，沒有對應到遊戲配方"></i>
+              <span v-if="bp.master?.name_zh" class="sf-name__en">{{ bp.name }}</span>
               <!-- 手機藏了備註欄，改顯示在名稱下面 -->
               <div v-if="bp.notes" class="small text-muted d-md-none">{{ bp.notes }}</div>
             </td>
@@ -1152,10 +1152,10 @@
           <tr>
             <td class="ps-3 sf-stack__title">
               <span class="fw-semibold">{{ row.vehicle?.name_zh || row.name }}</span>
-              <span v-if="row.vehicle?.name_zh" class="small text-muted ms-1">{{ row.name }}</span>
               <span v-if="row.vehicle?.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ row.vehicle.system_note }}</span>
               <span v-if="row.vehicle && row.vehicle.is_current === false"
                 class="sf-tree-chip ms-1" title="目前遊戲版本的資料裡已經沒有這款">已下架</span>
+              <span v-if="row.vehicle?.name_zh" class="sf-name__en">{{ row.name }}</span>
               <!-- 配件網址直接列在船名下面（好幾艘時按鈕前面標是哪一艘） -->
               <VehicleLoadoutLinks v-for="u in fleetUnitLoadouts(row)" :key="u.n" :links="u.links" :prefix="u.prefix"
                 button-class="btn-loadout" hide-label />
@@ -1163,7 +1163,7 @@
             <!-- 手機／平板藏次要欄位（「詳細」裡都看得到）；尺寸 ≥992、租用 ≥1200、aUEC／美金 ≥1400 才顯示，平板與一般筆電不用橫向捲 -->
             <td class="d-none d-md-table-cell" data-label="類型">{{ vehicleTypeLabel(row.vehicle?.vehicle_type) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="尺寸">{{ vehicleSizeLabel(row.vehicle?.size_class) || '—' }}</td>
-            <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) || '—' }}</td>
+            <td class="d-none d-lg-table-cell" data-label="廠商" :title="row.vehicle?.manufacturer_name || row.vehicle?.manufacturer_code">{{ manufacturerShort(row.vehicle?.manufacturer_name, row.vehicle?.manufacturer_code) }}</td>
             <td class="d-none d-lg-table-cell" data-label="角色">{{ vehicleRoleLabel(row.vehicle?.role, row.vehicle?.role_zh) || '—' }}</td>
             <td class="text-end text-nowrap" data-label="載貨">{{ scuLabel(row.vehicle?.cargo_capacity_scu) }}</td>
             <td class="text-end text-nowrap" data-label="美金">{{ fmtUsd(row.vehicle?.msrp) }}</td>
@@ -1424,7 +1424,7 @@ import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
 import ItemDataBrowser from '@/components/ItemDataBrowser.vue'
 import StockWizard from '@/components/StockWizard.vue'
 import SfModal from '@/components/SfModal.vue'
-import { itemTypeLabel, itemTypeOption, loadItemTypeZh } from '@/utils/itemType'
+import { itemTypeLabel, itemTypeOption, itemTypeTreeOptions, loadItemTypeZh } from '@/utils/itemType'
 import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { auecPerUsd, fmtAuec, fmtAuecPerUsd, fmtUsd, vehicleInRanges, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
@@ -1452,7 +1452,7 @@ import AutocompleteField from '@/components/AutocompleteField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
 import { dismantleHits, materialLabel } from '@/utils/blueprintMaterial'
-import { manufacturerLabel, vehicleNameLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
+import { manufacturerLabel, manufacturerShort, vehicleNameLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 // 地點中文：跟全站一樣查資料庫的翻譯（utils/translations.js），不在前端放對照表
 import { loadKnownLocations, loadStorageLocations, loadTranslations, translate } from '@/utils/translations'
 
@@ -1800,7 +1800,7 @@ function setSub(key) {
 function loadForTab(tab, sub) {
   const pane = paneOf(tab, sub)
   // 資料庫（不用登入）：搜尋卡的類型、尺寸、廠商等選項
-  if (pane === 'data' && !itemTypes.value.length) loadItemTypes()
+  if (pane === 'data' && !itemTypeTree.value.length) loadItemTypeTree()
   if (pane === 'data' && !dismantleMaterials.value.length) loadDismantleMaterials()
   if (pane === 'bpdata' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
   if (pane === 'vehicles' && !vehicleFacetsLoaded) loadVehicleFacets()
@@ -2059,6 +2059,18 @@ async function loadItemTypes() {
 // 物品類型選項：中文（代碼），依中文排序（倉庫共用搜尋卡、查詢持有資訊 › 持有物品）
 const itemTypeOptions = computed(() => itemTypes.value.map(itemTypeOption)
   .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant')))
+
+// 資料庫 › 物品：類型再細分到子類型（例如 個人武器 › 附件 › 瞄具），值是「類型」或「類型/子類型」
+const itemTypeTree = ref([])
+async function loadItemTypeTree() {
+  const res = await playerAuth.playerFetch('/item/types?with_sub=1')
+  const data = res ? await res.json().catch(() => null) : null
+  if (res?.ok && data?.success) {
+    itemTypeTree.value = data.data || []
+    loadItemTypeZh(itemTypeTree.value.map(n => n.type), itemTypeTree.value.flatMap(n => n.sub_types || []))
+  }
+}
+const itemTypeTreeOpts = computed(() => itemTypeTreeOptions(itemTypeTree.value))
 
 const blueprintOutputTypes = ref([])
 async function loadBlueprintOutputTypes() {

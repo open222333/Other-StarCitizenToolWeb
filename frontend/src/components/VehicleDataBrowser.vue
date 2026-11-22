@@ -54,15 +54,17 @@
                 @change="toggleOne(v._id, $event.target.checked)">
             </td>
             <td class="sf-stack__title" :class="{ 'ps-3': !canRegister }">
-              <span class="fw-semibold">{{ v.name_zh || v.name }}</span>
-              <span v-if="v.name_zh" class="small text-muted ms-1">{{ v.name }}</span>
-              <span v-if="v.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
-              <span v-if="isRegistered(v)" class="sf-chip sf-chip--ok ms-1">已登記</span>
+              <span class="sf-name">
+                <span class="fw-semibold">{{ v.name_zh || v.name }}</span>
+                <span v-if="v.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
+                <span v-if="isRegistered(v)" class="sf-chip sf-chip--ok ms-1">已登記</span>
+                <span v-if="v.name_zh" class="sf-name__en">{{ v.name }}</span>
+              </span>
             </td>
             <!-- 手機／平板藏次要欄位（「詳細」裡都看得到；手機卡片照樣顯示） -->
             <td class="d-none d-md-table-cell text-nowrap" data-label="類型">{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</td>
             <td class="d-none d-lg-table-cell" data-label="尺寸">{{ vehicleSizeLabel(v.size_class) || '—' }}</td>
-            <td class="d-none d-lg-table-cell" data-label="廠商">{{ manufacturerLabel(v.manufacturer_name, v.manufacturer_code) || '—' }}</td>
+            <td class="d-none d-lg-table-cell" data-label="廠商" :title="v.manufacturer_name || v.manufacturer_code">{{ manufacturerShort(v.manufacturer_name, v.manufacturer_code) }}</td>
             <td class="d-none d-xl-table-cell" data-label="角色">{{ vehicleRoleLabel(v.role, v.role_zh) || '—' }}</td>
             <td class="text-end text-nowrap" data-label="載貨">{{ v.cargo_capacity_scu ? `${fmtNum(v.cargo_capacity_scu)} SCU` : '—' }}</td>
             <td class="text-end text-nowrap" data-label="美金">{{ fmtUsd(v.msrp) }}</td>
@@ -158,7 +160,7 @@ import CargoGridButton from '@/components/CargoGridButton.vue'
 import ShipPriceButton from '@/components/ShipPriceButton.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUsd, auecPerUsd, fmtAuecPerUsd, vehicleRangeParams } from '@/utils/uexCommodity'
-import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
+import { manufacturerLabel, manufacturerShort, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */

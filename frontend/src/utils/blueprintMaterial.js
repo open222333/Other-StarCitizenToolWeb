@@ -11,11 +11,13 @@ export function isResource(m) {
   return m.kind === 'resource' || (!m.kind && !!(m.resource_type_uuid || m.resourceUuid))
 }
 
-/** 材料的中文名稱，查不到回 ''。礦物先查礦物、再退回物品。 */
+/** 材料的中文名稱，查不到回 ''。礦物先查礦物、再退回物品；物品類材料先查物品、再退回礦物
+ *（寶石類：Hadanite、Aphorite、Beradom… 遊戲資料標成 item，翻譯卻在礦物／商品那邊）。 */
 export function materialZh(m) {
   const name = m?.name || ''
   if (!name) return ''
-  return (isResource(m) ? translate('mining_resource', name) : '') || translate('item', name) || ''
+  if (isResource(m)) return translate('mining_resource', name) || translate('item', name) || ''
+  return translate('item', name) || translate('mining_resource', name) || ''
 }
 
 /** 「中文（English）」，沒有中文就只有英文。 */
@@ -30,7 +32,8 @@ export function loadMaterialZh(recipe) {
   const mats = [...(recipe?.ingredients || []), ...(recipe?.dismantle_returns || [])]
   const names = mats.map(m => m.name).filter(Boolean)
   if (!names.length) return
-  loadTranslations('mining_resource', mats.filter(isResource).map(m => m.name).filter(Boolean))
+  // 物品類材料也查礦物（見 materialZh）
+  loadTranslations('mining_resource', names)
   loadTranslations('item', names)
 }
 

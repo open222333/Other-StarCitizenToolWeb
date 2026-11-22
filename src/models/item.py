@@ -195,7 +195,17 @@ class ItemMaster(_MasterBase):
                 {'name_zh': {'$regex': escaped}},
                 {'class_name': {'$regex': escaped, '$options': 'i'}},
             ]
-        for field, values in (('type', types), ('sub_type', sub_types),
+        # 類型可以帶「類型/子類型」（例如 WeaponAttachment/IronSight＝附件裡的瞄具），跟整個類型混著多選、取聯集
+        type_values = _clean_list(types)
+        whole = [t for t in type_values if TYPE_SEP not in t]
+        pairs = [t.split(TYPE_SEP, 1) for t in type_values if TYPE_SEP in t]
+        if pairs:
+            ors = [{'type': {'$in': whole}}] if whole else []
+            ors += [{'type': t, 'sub_type': st} for t, st in pairs]
+            filt.setdefault('$and', []).append({'$or': ors})
+        elif whole:
+            filt['type'] = {'$in': whole}
+        for field, values in (('sub_type', sub_types),
                               ('manufacturer_code', manufacturer_codes), ('item_class', item_classes)):
             values = _clean_list(values)
             if values:
@@ -344,6 +354,20 @@ class ItemMaster(_MasterBase):
         return sorted(t for t in cls._col().distinct('type', filt) if t)
 
     @classmethod
+    def type_tree(cls, visible_only: bool = False) -> list:
+        """類型＋底下有資料的子類型：[{type, sub_types: [...]}]（子類型 UNDEFINED／空的不列）。
+        給「物品資料」的類型多選細分（例如 個人武器 › 附件 › 瞄具）。"""
+        filt = add_visibility_filter({'is_current': True, 'type': {'$nin': [None, '']}}, visible_only=visible_only)
+        tree: dict = {}
+        for row in cls._col().aggregate([{'$match': filt},
+                                         {'$group': {'_id': {'t': '$type', 's': '$sub_type'}}}]):
+            t, st = row['_id'].get('t'), row['_id'].get('s')
+            subs = tree.setdefault(t, set())
+            if st and st != 'UNDEFINED' and TYPE_SEP not in str(st):
+                subs.add(st)
+        return [{'type': t, 'sub_types': sorted(tree[t])} for t in sorted(tree)]
+
+    @classmethod
     def ids_of_type(cls, item_type, limit: int = 1000) -> list:
         """某個類型底下所有現行物品的 uuid，給「查詢 › 物品庫存」的
         「物品類型」欄位篩選當 join key 用（先解析成一組 item_id，
@@ -404,6 +428,10 @@ class ItemMaster(_MasterBase):
             'game_version': row.get('game_version'),
             'source': 'wiki',
         } for row in embedded[:limit]]
+
+
+#: 「類型/子類型」篩選值的分隔字元（見 ItemMaster.list_all）
+TYPE_SEP = '/'
 
 
 def _clean_list(value) -> list:
@@ -906,6 +934,43 @@ class BlueprintMaster(_MasterBase):
                     hits.append({'name': ret.get('name'), 'resource_type_uuid': ret.get('resource_type_uuid'),
                                  'quantity_scu': ret.get('quantity_scu')})
                     seen.add(ret.get('name'))
+        return out
+
+    #: 礦物名稱 → 藍圖材料名稱的特例（礦床裡是 Raw Ice，藍圖材料是 Pressurized Ice）
+    _MATERIAL_ALIASES = {'ice': ['pressurized ice']}
+
+    @classmethod
+    def by_material(cls, materials, visible_only: bool = False) -> list:
+        """用到這些材料（礦物）的藍圖，依名稱排序；每筆附 `hits`（符合的材料與用量）。
+
+        礦物資料庫的名稱有 (Ore)／(Raw)／(Pure)／(R) 後綴或 Raw 前綴（Iron (Ore)、Raw Ice），
+        藍圖材料用的是精煉後的名稱（Iron、Pressurized Ice），比對時兩邊都去掉後綴、不分大小寫
+        （規則同 src/models/uex_commodity.base_name）。
+        """
+        from src.models.uex_commodity import base_name
+
+        wanted = set()
+        for m in _clean_list(materials):
+            b = base_name(m)
+            if b:
+                wanted.add(b)
+                wanted.update(cls._MATERIAL_ALIASES.get(b, []))
+        if not wanted:
+            return []
+        filt: dict = {'is_current': True}
+        names = [n for n in cls._col().distinct('ingredients.name', filt) if n and base_name(n) in wanted]
+        if not names:
+            return []
+        filt['ingredients.name'] = {'$in': names}
+        add_visibility_filter(filt, visible_only=visible_only)
+        hit_names = set(names)
+        out = []
+        for row in cls._col().find(filt, {**cls.PROJECTION, 'ingredients': 1}).sort('name', ASCENDING):
+            ings = row.pop('ingredients', None) or []
+            row['hits'] = [{'name': i.get('name'), 'kind': i.get('kind'), 'quantity': i.get('quantity'),
+                            'quantity_scu': i.get('quantity_scu')}
+                           for i in ings if i.get('name') in hit_names]
+            out.append(row)
         return out
 
     @classmethod

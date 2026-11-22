@@ -240,6 +240,29 @@ def master_dismantle_items():
     return jsonify({'success': True, 'data': BlueprintMaster.dismantle_by_item(materials)})
 
 
+@app_blueprint.route('/master/by-material', methods=['GET'])
+@public_api
+def master_by_material():
+    """用到這種材料（礦物）的藍圖（玩家頁「資料庫 › 礦物」展開的「用在哪些藍圖」）。
+    ---
+    tags: [Blueprint]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: query, name: material, type: string, required: true, description: "材料名稱，可重複帶多個（取聯集）；Iron (Ore)、Raw Ice 這種礦物名稱也可以，會去掉後綴比對"}
+    responses:
+      200:
+        description: 成功，每筆附 hits（符合的材料與用量）、mission_count
+    """
+    materials = [m.strip() for m in request.args.getlist('material') if m.strip()][:20]
+    hide = not viewer_sees_hidden()
+    rows = BlueprintMaster.by_material(materials, visible_only=hide)
+    counts = Mission.counts_for_blueprints([r['_id'] for r in rows], visible_only=hide)
+    for r in rows:
+        r['mission_count'] = counts.get(r['_id'], 0)
+    return jsonify({'success': True, 'data': rows})
+
+
 @app_blueprint.route('/master/search', methods=['GET'])
 @public_api
 def search_master():

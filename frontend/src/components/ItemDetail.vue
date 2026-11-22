@@ -35,6 +35,7 @@ import { computed, onMounted, ref } from 'vue'
 import { apiFetch } from '@/api'
 import ItemPriceDetail from '@/components/ItemPriceDetail.vue'
 import { itemTypeLabel } from '@/utils/itemType'
+import { manufacturerLabel } from '@/utils/vehicle'
 
 const props = defineProps({
   /** 列表的那一筆（GET /item/ 回來的） */
@@ -61,7 +62,7 @@ const fields = computed(() => {
     { label: '分類', value: it.classification || '—' },
     { label: '尺寸', value: it.size ?? '—' },
     { label: '等級', value: it.grade ?? '—' },
-    { label: '製造商', value: it.manufacturer_name || it.manufacturer_code || '—' },
+    { label: '製造商', value: manufacturerLabel(it.manufacturer_name, it.manufacturer_code) },
     { label: '體積', value: it.volume_scu ? `${fmtNum(it.volume_scu, 6)} SCU` : '—' },
     { label: '重量', value: it.mass ? `${fmtNum(it.mass)} kg` : '—' },
     { label: '可製造', value: yesNo(it.is_craftable) },

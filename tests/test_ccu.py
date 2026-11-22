@@ -264,3 +264,32 @@ def test_ship_price_api(app, client):
     assert client.get('/item/ship-prices/detail', query_string={'key': 'rsi:1'}).get_json()['data']['periods'] == []
     assert client.get('/item/ship-prices/detail', query_string={'key': 'nope'}).status_code == 404
     assert client.get('/item/ship-prices/detail', query_string={'key': 'rsi:x'}).status_code == 404
+
+
+def test_match_vehicle_name_variants(app):
+    """商店船名對載具主檔：遊戲全名、標點空白、商店名稱較短（只有一艘符合）都對得到。"""
+    from src.models import ccu
+    db = get_db()
+    db.vehicle_master.insert_many([
+        {'_id': 'v-m2', 'name': 'M2 Hercules Starlifter', 'game_name': 'Crusader M2 Hercules Starlifter',
+         'manufacturer_name': 'Crusader Industries', 'is_current': True},
+        {'_id': 'v-c2', 'name': 'C2 Hercules Starlifter', 'manufacturer_name': 'Crusader Industries', 'is_current': True},
+        {'_id': 'v-p', 'name': 'RSI Perseus', 'is_current': True},
+    ])
+    index = ccu._vehicle_index()
+    assert ccu.match_vehicle('M2 Hercules Starlifter', 'Crusader Industries', index) == 'v-m2'
+    assert ccu.match_vehicle('Crusader M2 Hercules  Starlifter', '', index) == 'v-m2'
+    assert ccu.match_vehicle('M2 Hercules', 'Crusader Industries', index) == 'v-m2'
+    assert ccu.match_vehicle('Perseus', 'RSI', index) == 'v-p'
+    assert ccu.match_vehicle('Hercules', 'Crusader Industries', index) is None, '好幾艘都符合時不亂猜'
+
+
+def test_price_rows_relink_unmatched_history(app):
+    """同步時還對不到載具（vehicle_uuid=None）的歷史，讀取時再對一次。"""
+    from src.models import ccu
+    db = get_db()
+    db.ship_sale_history.insert_one({'_id': 'M2 Hercules', 'name': 'M2 Hercules', 'manufacturer': 'Crusader Industries',
+                                     'vehicle_uuid': None, 'rsi_id': None, 'periods': []})
+    db.vehicle_master.insert_one({'_id': 'v-m2', 'name': 'M2 Hercules Starlifter', 'is_current': True})
+    rows = ccu.ship_price_list()
+    assert [r['vehicle_uuid'] for r in rows if r['name'] == 'M2 Hercules'] == ['v-m2']

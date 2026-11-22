@@ -386,6 +386,24 @@ def by_key_pattern(pattern: str, lang: str = DEFAULT_LANG) -> dict:
     return _cached(('p', pattern, lang), load)
 
 
+def by_key_prefix(prefix: str, lang: str = DEFAULT_LANG) -> dict:
+    """key 以 prefix 開頭（不分大小寫）的全部條目 {key 去掉前綴（小寫）: 翻譯}，只收有翻譯的。
+
+    給「以代碼為 key」的小型清單一次載入用（例如廠商 manufacturer_Name<代碼>）。
+    """
+    pre = (prefix or '').strip().lower()
+
+    def load():
+        out = {}
+        for row in _col().find({'key_lower': {'$regex': '^' + re.escape(pre)}}, {'key_lower': 1, 'text': 1}):
+            suffix = row['key_lower'][len(pre):]
+            value = _translation_of(row, lang)
+            if suffix and value and suffix not in out:
+                out[suffix] = value
+        return out
+    return _cached(('pre', pre, lang), load)
+
+
 def manual_domain(domain: str, lang: str = DEFAULT_LANG) -> dict:
     """某個人工條目 domain 的完整對照 {id: 翻譯}（給前端一次載入的小型封閉清單用）。"""
     prefix = manual_key(domain, '')

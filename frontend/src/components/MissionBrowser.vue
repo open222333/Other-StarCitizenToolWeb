@@ -49,9 +49,11 @@
                     @click="toggle(m)" @keydown.enter.self="toggle(m)" @keydown.space.self.prevent="toggle(m)">
                     <td class="ps-3 sf-stack__title">
                       <i class="bi me-1 small text-muted" :class="expandedId === m._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-                      <span class="fw-semibold">{{ m.title_zh || m.title }}</span>
-                      <span v-if="m.title_zh" class="small text-muted ms-1">{{ m.title }}</span>
-                      <span v-if="m.illegal" class="sf-chip sf-chip--warn ms-1">違法</span>
+                      <span class="sf-name">
+                        <span class="fw-semibold">{{ m.title_zh || m.title }}</span>
+                        <span v-if="m.illegal" class="sf-chip sf-chip--warn ms-1">違法</span>
+                        <span v-if="m.title_zh" class="sf-name__en">{{ m.title }}</span>
+                      </span>
                     </td>
                     <td data-label="類型">{{ m.reward_scope ? typeLabel(m.reward_scope) : '—' }}</td>
                     <td class="d-none d-md-table-cell" data-label="勢力">{{ factionLabel(m) }}</td>

@@ -9,6 +9,10 @@
   的任何東西就會自動收起來，checkbox 要多勾幾個的話每勾一次就關一次，
   除非額外設 data-bs-auto-close="outside" 而且還要處理 focus 陷阱。
   自己用一個 ref + 點外面關閉更好控制，跟 FieldHint.vue 的理由一樣。
+
+  選項可以有一層子項目：{value, label, parent: 父選項的 value}（例如物品類型「附件」底下的「瞄具」）。
+  子項目要緊接在父選項後面；勾了父選項＝整類都要，子項目顯示為已勾、不能單獨取消（勾父選項時會清掉已勾的子項目）。
+  搜尋時子項目符合也會帶出它的父選項；群組標題整組勾選只勾父選項。
 -->
 <template>
   <div ref="rootEl" class="multi-select-filter" :class="{ 'multi-select-filter--block': block }">
@@ -38,10 +42,12 @@
           <span class="small ms-1 multi-select-filter__count">{{ g.options.length }}</span>
         </label>
         <label v-for="opt in g.options" :key="opt.value" class="multi-select-filter__item"
-          :class="{ 'multi-select-filter__item--sub': g.label }">
+          :class="{ 'multi-select-filter__item--sub': g.label, 'multi-select-filter__item--child': opt.parent != null,
+                    'is-implied': opt.parent != null && modelValue.includes(opt.parent) }">
           <input
             type="checkbox" class="form-check-input me-1"
-            :checked="modelValue.includes(opt.value)"
+            :checked="modelValue.includes(opt.value) || (opt.parent != null && modelValue.includes(opt.parent))"
+            :disabled="opt.parent != null && modelValue.includes(opt.parent)"
             @change="toggle(opt.value, $event.target.checked)"
           >
           <span class="small">{{ opt.label }}</span>
@@ -82,8 +88,11 @@ const normalizedOptions = computed(() => props.options.map((o) =>
 const visibleOptions = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return normalizedOptions.value
-  return normalizedOptions.value.filter(o =>
-    `${o.label} ${o.value}`.toLowerCase().includes(q))
+  const hit = o => `${o.label} ${o.value}`.toLowerCase().includes(q)
+  // 子項目符合時把父選項也帶出來（不然看不出是哪一類底下的）；父選項符合時子項目全部列出
+  const keepParents = new Set(normalizedOptions.value.filter(o => o.parent != null && hit(o)).map(o => o.parent))
+  const hitParents = new Set(normalizedOptions.value.filter(o => o.parent == null && hit(o)).map(o => o.value))
+  return normalizedOptions.value.filter(o => hit(o) || keepParents.has(o.value) || (o.parent != null && hitParents.has(o.parent)))
 })
 
 // 分段：沒有 group 的選項整批一段（不顯示標題）；有 group 的照 groupIndex（沒給就照出現順序）排
@@ -98,14 +107,20 @@ function groupsOf(options) {
   return list.some(g => g.label) ? list.sort((a, b) => a.index - b.index) : list
 }
 const visibleGroups = computed(() => groupsOf(visibleOptions.value))
+// 群組的勾選狀態、整組勾選只看父選項（子項目由父選項代表）
+const topOf = g => g.options.filter(o => o.parent == null)
 function groupState(g) {
-  const n = g.options.filter(o => props.modelValue.includes(o.value)).length
-  return n === 0 ? 'none' : n === g.options.length ? 'all' : 'some'
+  const top = topOf(g)
+  const n = top.filter(o => props.modelValue.includes(o.value)).length
+  const anyChild = g.options.some(o => o.parent != null && props.modelValue.includes(o.value))
+  return n === 0 ? (anyChild ? 'some' : 'none') : n === top.length ? 'all' : 'some'
 }
 function toggleGroup(g, checked) {
   const next = new Set(props.modelValue)
   for (const o of g.options) {
-    if (checked) next.add(o.value); else next.delete(o.value)
+    if (o.parent != null) next.delete(o.value)
+    else if (checked) next.add(o.value)
+    else next.delete(o.value)
   }
   emit('update:modelValue', Array.from(next))
 }
@@ -116,7 +131,8 @@ const selectedSummary = computed(() => {
   const selected = new Set(props.modelValue)
   const parts = []
   for (const g of groupsOf(normalizedOptions.value)) {
-    if (g.label && g.options.length > 1 && g.options.every(o => selected.has(o.value))) {
+    const top = topOf(g)
+    if (g.label && top.length > 1 && top.every(o => selected.has(o.value))) {
       parts.push(g.label)
       g.options.forEach(o => selected.delete(o.value))
     }
@@ -135,7 +151,11 @@ async function toggleOpen() {
 
 function toggle(value, checked) {
   const next = new Set(props.modelValue)
-  if (checked) next.add(value); else next.delete(value)
+  if (checked) {
+    next.add(value)
+    // 勾了父選項＝整類都要：清掉已勾的子項目
+    for (const o of normalizedOptions.value) if (o.parent === value) next.delete(o.value)
+  } else next.delete(value)
   emit('update:modelValue', Array.from(next))
 }
 function clear() {
@@ -181,7 +201,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   left: 0;
   min-width: 12rem;
   max-width: min(18rem, 80vw);
-  max-height: 16rem;
+  max-height: min(24rem, 60vh);
   overflow-y: auto;
   padding: .35rem;
   /* 底色／邊框／文字用 Bootstrap 變數：.scifi-page 已把它們對到 --sf-*（亮底、深底都跟著換），
@@ -207,6 +227,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 .multi-select-filter__group { margin-top: .2rem; border-top: 1px solid var(--bs-border-color); }
 .multi-select-filter__group:first-of-type { margin-top: 0; border-top: 0; }
 .multi-select-filter__item--sub { padding-left: 1.4rem; }
+/* 子項目（例如物品類型「附件」底下的「瞄具」）再縮一層；父選項已勾時顯示為已含、不能單獨取消 */
+.multi-select-filter__item--child { padding-left: 2.2rem; }
+.multi-select-filter__item--sub.multi-select-filter__item--child { padding-left: 3rem; }
+.multi-select-filter__item.is-implied { opacity: .6; cursor: default; }
 .multi-select-filter__count { opacity: .7; }
 .multi-select-filter__item:hover { background: var(--sf-popover-hover, var(--bs-tertiary-bg)); }
 

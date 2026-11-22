@@ -310,6 +310,9 @@ export const useScifiThemeStore = defineStore('scifiTheme', () => {
     root.style.setProperty('--sf-bg-2', v.bg2)
     root.style.setProperty('--sf-panel', v.panel)
     root.style.setProperty('--sf-panel-2', v.panel2)
+    // 半透明卡片用（scifi-theme.css 的 .scifi-card）：rgba(var(--sf-panel-rgb), α)
+    root.style.setProperty('--sf-panel-rgb', hexToRgb(v.panel) || '18, 26, 43')
+    root.style.setProperty('--sf-panel-2-rgb', hexToRgb(v.panel2) || '12, 18, 32')
     // 亮底必須把文字整組翻成深色 —— 只換背景的話 --sf-text (#dce6f2)
     // 在白底上是完全看不見的
     root.style.setProperty('--sf-text', v.text)

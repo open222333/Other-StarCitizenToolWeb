@@ -159,3 +159,15 @@ def test_builtin_parts_hidden_and_type_options(client, auth_headers, player_head
     assert [r['_id'] for r in client.get('/item/search?q=internal', headers=auth_headers).get_json()['data']] == ['tank']
     got = client.post('/item/match', json={'names': ['Remote Turret']}, headers=player_headers).get_json()['data'][0]
     assert got['item'] is None and got['candidates'] == []
+
+
+def test_type_with_sub_type_filter(client, auth_headers, items):
+    """類型可以細分到子類型（「類型/子類型」），跟整個類型混著帶取聯集；/item/types?with_sub=1 列出子類型。"""
+    assert _ids(client, auth_headers, 'type=WeaponPersonal/Sniper') == ['a']
+    assert _ids(client, auth_headers, 'type=WeaponPersonal/Sniper&type=Cooler') == ['a', 'b']
+    assert _ids(client, auth_headers, 'type=WeaponPersonal/Pistol') == []
+    assert _ids(client, auth_headers, 'type=WeaponPersonal') == ['a', 'c']
+    tree = client.get('/item/types?with_sub=1', headers=auth_headers).get_json()['data']
+    assert {'type': 'WeaponPersonal', 'sub_types': ['Sniper']} in tree
+    assert {'type': 'Cooler', 'sub_types': []} in tree
+    assert 'Cooler' in client.get('/item/types', headers=auth_headers).get_json()['data']

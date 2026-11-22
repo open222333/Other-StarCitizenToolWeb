@@ -226,6 +226,27 @@ def blueprint_type_names(lang: str = DEFAULT_LANG) -> dict:
     return T.manual_domain('blueprint_type', lang)
 
 
+# ── 廠商 ────────────────────────────────────────────────────────────
+#
+# 翻譯包以廠商代碼為 key：manufacturer_NameCRUS＝十字軍工業、manufacturer_NameRSI＝羅伯茲太空工業…
+# （同一前綴下的 manufacturer_Desc<代碼> 是介紹文字，不收）。
+
+_MFR_PREFIX = 'manufacturer_Name'
+
+
+def manufacturer_zh(text: str, lang: str = DEFAULT_LANG) -> Optional[str]:
+    """廠商代碼（CRUS）或英文全名（Crusader Industries）→ 翻譯。"""
+    text = (text or '').strip()
+    if not text:
+        return None
+    return T.by_key(f'{_MFR_PREFIX}{text}', lang) or T.by_english(text, [_MFR_PREFIX.lower()], lang)
+
+
+def manufacturer_names(lang: str = DEFAULT_LANG) -> dict:
+    """全部廠商 {代碼（大寫）: 翻譯}，給前端一次載入。"""
+    return {code.upper(): zh for code, zh in T.by_key_prefix(_MFR_PREFIX, lang).items()}
+
+
 # ── 任務／勢力 ──────────────────────────────────────────────────────
 #
 # 任務、勢力資料來自 Star Citizen Wiki API，沒有附 localization key，只能拿英文
@@ -600,4 +621,5 @@ LOOKUPS = {
     'rep_rank':        rep_rank_zh,
     'starmap_type':    starmap_type_zh,
     'amenity':         amenity_zh,
+    'manufacturer':    manufacturer_zh,
 }

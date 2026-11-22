@@ -71,3 +71,22 @@ export function itemTypeLabel(type, subType) {
   const sub = subType && subType !== 'UNDEFINED' ? (itemSubTypeZh(subType) || subType) : ''
   return [type ? (itemTypeZh(type) || type) : '', sub].filter(Boolean).join(' › ')
 }
+
+/** 類型＋子類型的多選選項（物品資料的類型細分，例如 個人武器 › 附件 › 瞄具）。
+ *  tree：GET /item/types?with_sub=1 的 [{type, sub_types}]。子類型的值是「類型/子類型」（後端 list_all 認得），
+ *  緊接在父類型後面（MultiSelectFilter 的 parent）；同群組內依中文排序。 */
+export const TYPE_SEP = '/'
+export function itemTypeTreeOptions(tree) {
+  const tops = (tree || []).map(n => ({ n, opt: itemTypeOption(n.type) }))
+    .sort((a, b) => (a.opt.groupIndex ?? 0) - (b.opt.groupIndex ?? 0) || a.opt.label.localeCompare(b.opt.label, 'zh-Hant'))
+  const out = []
+  for (const { n, opt } of tops) {
+    out.push(opt)
+    const subs = (n.sub_types || []).map(st => {
+      const o = itemSubTypeOption(st)
+      return { ...o, value: `${n.type}${TYPE_SEP}${st}`, parent: n.type, group: opt.group, groupIndex: opt.groupIndex }
+    }).sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'))
+    out.push(...subs)
+  }
+  return out
+}

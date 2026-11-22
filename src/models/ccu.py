@@ -27,6 +27,7 @@ ship_sale_history（_id = Open Hangar 的船名，同步項目「Open Hangar 歷
     第三方整理的歷史，跟 rsi/ccu_offers 重疊的期間以 RSI 為準；授權 CC BY 4.0，顯示時要標註來源。
 """
 
+import re
 from datetime import datetime
 
 from pymongo import UpdateOne
@@ -44,20 +45,38 @@ def offer_id(offer: dict) -> str:
     return f'{offer["kind"]}:{offer["sku_id"]}:{offer["ship_rsi_id"]}'
 
 
+def _norm(text) -> str:
+    """比對用：小寫、只留英數字與空白（"Hercules Starlifter M2"、"M2  Hercules" 這種空白／標點差異不影響）。"""
+    return ' '.join(re.sub(r'[^0-9a-z]+', ' ', str(text or '').lower()).split())
+
+
 def _vehicle_index() -> dict:
-    """載具主檔：小寫名稱 → uuid（只看現役的；同名取第一筆）。"""
+    """載具主檔：正規化名稱 → uuid（只看現役的；同名取第一筆）。
+
+    名稱收 name、game_name（遊戲內全名，例如「Crusader M2 Hercules Starlifter」）、「廠商全名 + name」。"""
     out = {}
-    for v in get_db()['vehicle_master'].find({'is_current': {'$ne': False}}, {'name': 1}):
-        name = str(v.get('name') or '').strip().lower()
-        if name and name not in out:
-            out[name] = v['_id']
+    for v in get_db()['vehicle_master'].find({'is_current': {'$ne': False}},
+                                             {'name': 1, 'game_name': 1, 'manufacturer_name': 1}):
+        names = [v.get('name'), v.get('game_name')]
+        if v.get('manufacturer_name') and v.get('name'):
+            names.append(f"{v['manufacturer_name']} {v['name']}")
+        for n in names:
+            key = _norm(n)
+            if key and key not in out:
+                out[key] = v['_id']
     return out
 
 
 def match_vehicle(name: str, manufacturer: str, index: dict):
-    """RSI 的船名對到載具主檔：先比全名，再比「廠商＋船名」與去掉廠商字首的名稱。"""
-    n = (name or '').strip().lower()
-    m = (manufacturer or '').strip().lower()
+    """RSI／Open Hangar 的船名對到載具主檔。依序：
+      1. 全名、「廠商＋船名」、去掉廠商字首的名稱（不分大小寫、忽略標點）
+      2. 主檔名稱的結尾是這個船名（主檔常帶廠商縮寫，例如「RSI Perseus」）
+      3. 主檔名稱以這個船名開頭、而且只有一艘（商店寫「M2 Hercules」、主檔是「M2 Hercules Starlifter」）
+    """
+    n = _norm(name)
+    m = _norm(manufacturer)
+    if not n:
+        return None
     candidates = [n]
     if m:
         candidates.append(f'{m} {n}')
@@ -66,10 +85,14 @@ def match_vehicle(name: str, manufacturer: str, index: dict):
     for c in candidates:
         if c in index:
             return index[c]
-    # 主檔名稱常帶廠商縮寫（例如「RSI Perseus」）：比對最後是船名的
-    for key, uuid in index.items():
-        if key.endswith(' ' + n):
-            return uuid
+    for c in candidates:
+        for key, uuid in index.items():
+            if key.endswith(' ' + c):
+                return uuid
+    for c in candidates:
+        hits = {uuid for key, uuid in index.items() if key.startswith(c + ' ')}
+        if len(hits) == 1:
+            return hits.pop()
     return None
 
 
@@ -260,6 +283,7 @@ def _price_rows(history_filter=None, ship_filter=None) -> list:
     for o in db[OFFERS].find({'kind': 'ship'}, {'price_history': 0, '_sync': 0}):
         offers_by_ship.setdefault(o.get('ship_rsi_id'), []).append(o)
     rows, used = [], set()
+    index = None
     for h in histories:
         rid = h.get('rsi_id')
         used.add(rid)
@@ -269,6 +293,11 @@ def _price_rows(history_filter=None, ship_filter=None) -> list:
         for rid, s in ships.items():
             if rid not in used and s.get('is_current', True):
                 rows.append(_price_row(f'rsi:{rid}', None, s, offers_by_ship.get(rid) or [], now))
+    # 同步當下對不到載具的（例如載具主檔比商店資料晚同步、或之後比對規則改進了），讀取時再對一次
+    for r in rows:
+        if not r['vehicle_uuid'] and r['name']:
+            index = index if index is not None else _vehicle_index()
+            r['vehicle_uuid'] = match_vehicle(r['name'], r.get('manufacturer'), index)
     zh = _zh_names(r['vehicle_uuid'] for r in rows)
     for r in rows:
         r['name_zh'] = zh.get(r['vehicle_uuid'])

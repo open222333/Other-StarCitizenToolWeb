@@ -8,7 +8,7 @@
 import { reactive } from 'vue'
 
 const DOMAINS = ['location', 'item', 'vehicle', 'vehicle_role',
-  'mining_resource', 'mining_deposit', 'blueprint_type', 'item_type', 'item_sub_type', 'item_class', 'mission_type', 'faction', 'rep_rank']
+  'mining_resource', 'mining_deposit', 'blueprint_type', 'item_type', 'item_sub_type', 'item_class', 'mission_type', 'faction', 'rep_rank', 'manufacturer']
 
 const cache = reactive(Object.fromEntries(DOMAINS.map(d => [d, {}])))
 const inflight = Object.fromEntries(DOMAINS.map(d => [d, new Set()]))
@@ -82,7 +82,7 @@ export function loadStorageLocations() {
   return loadStorageLocationRows().then(rows => rows.map(row => row.name))
 }
 
-/** 一次載入整個小型 domain（目前只有 blueprint_type）。 */
+/** 一次載入整個小型 domain（blueprint_type、manufacturer）。 */
 export async function loadTranslationDomain(domain) {
   if (!cache[domain] || loadedDomains.has(domain)) return
   loadedDomains.add(domain)

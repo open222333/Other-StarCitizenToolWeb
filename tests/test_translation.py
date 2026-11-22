@@ -365,3 +365,20 @@ def test_search_game_text(client):
     player = _register_player(client, 'TextPilot', 'Text')
     body = client.get(url, query_string={'q': '泰坦'}, headers=player).get_json()
     assert body['mode'] == 'zh' and body['data'][0]['key'] == 'vehicle_NameAEGS_Avenger_Titan'
+
+
+def test_manufacturer_names_by_code(client, seed_translations):
+    """廠商：翻譯包以代碼為 key（manufacturer_Name<代碼>），介紹文字 manufacturer_Desc<代碼> 不收。"""
+    seed_translations({
+        'manufacturer_NameCRUS': ('Crusader Industries', '十字軍工業'),
+        'manufacturer_NameRSI': ('Roberts Space Industries', '羅伯茲太空工業'),
+        'manufacturer_DescCRUS': ('Crusader is…', '十字軍是…'),
+        'manufacturer_NameXNAA': ('Aopoa', None),
+    })
+    assert Z.manufacturer_names() == {'CRUS': '十字軍工業', 'RSI': '羅伯茲太空工業'}
+    assert Z.manufacturer_zh('CRUS') == '十字軍工業'
+    assert Z.manufacturer_zh('Crusader Industries') == '十字軍工業'
+    data = client.get('/item/translations?domain=manufacturer').get_json()['data']
+    assert data['RSI'] == '羅伯茲太空工業' and 'XNAA' not in data
+    data = client.get('/item/translations?domain=manufacturer&text=CRUS').get_json()['data']
+    assert data == {'CRUS': '十字軍工業'}

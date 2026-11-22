@@ -51,17 +51,19 @@
                     @click="toggle(it)" @keydown.enter.self="toggle(it)" @keydown.space.self.prevent="toggle(it)">
                     <td class="ps-3 sf-stack__title">
                       <i class="bi me-1 small text-muted" :class="openId === it._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-                      <span class="fw-semibold">{{ it.name_zh || it.name }}</span>
-                      <span v-if="it.name_zh" class="small text-muted ms-1">{{ it.name }}</span>
-                      <!-- 拆解會回收的材料（有選材料時只列那幾種；後端 dismantle_hits） -->
-                      <span v-if="it.dismantle_hits?.length" class="d-block small text-muted">
-                        拆解回收：{{ dismantleHits(it.dismantle_hits, filters?.dismantle).join('、') }}
+                      <span class="sf-name">
+                        <span class="fw-semibold">{{ it.name_zh || it.name }}</span>
+                        <span v-if="it.name_zh" class="sf-name__en">{{ it.name }}</span>
+                        <!-- 拆解會回收的材料（有選材料時只列那幾種；後端 dismantle_hits） -->
+                        <span v-if="it.dismantle_hits?.length" class="d-block small text-muted">
+                          拆解回收：{{ dismantleHits(it.dismantle_hits, filters?.dismantle).join('、') }}
+                        </span>
                       </span>
                     </td>
                     <td data-label="類型">{{ itemTypeLabel(it.type, it.sub_type) || '—' }}</td>
                     <td class="d-none d-md-table-cell" data-label="尺寸">{{ it.size !== null && it.size !== undefined ? `S${it.size}` : '—' }}</td>
                     <td class="d-none d-md-table-cell" data-label="等級">{{ it.grade ?? '—' }}</td>
-                    <td class="d-none d-lg-table-cell" data-label="廠商">{{ it.manufacturer_name || it.manufacturer_code || '—' }}</td>
+                    <td class="d-none d-lg-table-cell" data-label="廠商" :title="it.manufacturer_name || it.manufacturer_code">{{ manufacturerShort(it.manufacturer_name, it.manufacturer_code) }}</td>
                     <td v-if="showDismantle" class="text-end text-nowrap" data-label="拆解回收">{{ fmtScu(dismantleScu(it)) }}</td>
                     <td class="text-end text-nowrap pe-3" data-label="最低價">
                       <template v-if="it.uex_price?.buy_min">{{ fmtAuec(it.uex_price.buy_min) }} 起</template>
@@ -98,6 +100,7 @@ import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import ItemDetail from '@/components/ItemDetail.vue'
+import { manufacturerShort } from '@/utils/vehicle'
 import { itemTypeLabel, loadItemTypeZh } from '@/utils/itemType'
 import { fmtAuec } from '@/utils/uexCommodity'
 import { dismantleHits } from '@/utils/blueprintMaterial'

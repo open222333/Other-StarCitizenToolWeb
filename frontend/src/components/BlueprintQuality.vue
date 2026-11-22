@@ -497,7 +497,9 @@ function minQualityOf(slot) {
 
 function optionLabel(o) {
   if (!o) return '—'
-  const zh = o.name_zh || translate(o.kind === 'resource' ? 'mining_resource' : 'item', o.name) || ''
+  // 寶石類材料（Hadanite…）遊戲資料標成 item，翻譯卻在礦物那邊：兩邊都查
+  const [a, b] = o.kind === 'resource' ? ['mining_resource', 'item'] : ['item', 'mining_resource']
+  const zh = o.name_zh || translate(a, o.name) || translate(b, o.name) || ''
   return zh ? `${zh}（${o.name}）` : o.name
 }
 

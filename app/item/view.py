@@ -24,7 +24,7 @@ from src.models.sync_schedule import (JOB_KEYS, SCHEDULE_TZ, SyncJobs, SyncSched
 from src.permissions import (READ_ROLES, WRITE_ROLES, admin_api, public_api, require_role, viewer_sees_hidden,
                              visibility_arg)
 from src.models.translation import DEFAULT_LANG
-from src.sc_zh import LOOKUPS, blueprint_type_names, known_location_names
+from src.sc_zh import LOOKUPS, blueprint_type_names, known_location_names, manufacturer_names
 
 app_item = Blueprint('app_item', __name__)
 
@@ -56,7 +56,7 @@ def list_items():
       - Bearer: []
     parameters:
       - {in: query, name: q,                 type: string,  description: "名稱（中英文）或 class name 的一部分"}
-      - {in: query, name: type,              type: array, items: {type: string}, description: "類型，可重複帶多個（見 /item/facets）"}
+      - {in: query, name: type,              type: array, items: {type: string}, description: "類型，可重複帶多個（見 /item/facets）；也可以帶「類型/子類型」只看某個子類型（例如 WeaponAttachment/IronSight），跟整個類型混著帶取聯集"}
       - {in: query, name: sub_type,          type: array, items: {type: string}, description: "子類型，可重複帶多個"}
       - {in: query, name: manufacturer_code, type: array, items: {type: string}, description: "製造商代碼，可重複帶多個"}
       - {in: query, name: size,              type: array, items: {type: integer}, description: "尺寸，可重複帶多個"}
@@ -220,11 +220,16 @@ def list_types():
     tags: [Item]
     security:
       - Bearer: []
+    parameters:
+      - {in: query, name: with_sub, type: integer, description: "1＝連子類型一起回：[{type, sub_types}]（篩選值可用「類型/子類型」）"}
     responses:
       200:
         description: 成功
     """
-    return jsonify({'success': True, 'data': ItemMaster.types(visible_only=not viewer_sees_hidden())})
+    hide = not viewer_sees_hidden()
+    if request.args.get('with_sub') == '1':
+        return jsonify({'success': True, 'data': ItemMaster.type_tree(visible_only=hide)})
+    return jsonify({'success': True, 'data': ItemMaster.types(visible_only=hide)})
 
 
 @app_item.route('/type-groups', methods=['GET'])
@@ -745,9 +750,9 @@ def lookup_translations():
     tags: [Item]
     parameters:
       - {in: query, name: domain, type: string, required: true,
-         description: "location／item／vehicle／vehicle_role／mining_resource／mining_deposit／blueprint_type"}
+         description: "location／item／vehicle／vehicle_role／mining_resource／mining_deposit／blueprint_type／manufacturer…（見 src/sc_zh.py 的 LOOKUPS）"}
       - {in: query, name: text, type: array, items: {type: string},
-         description: "要翻譯的英文（可重複帶多個）；domain=blueprint_type／location 時可省略，回傳整份清單"}
+         description: "要翻譯的英文（可重複帶多個）；domain=blueprint_type／location／manufacturer 時可省略，回傳整份清單（manufacturer：{代碼: 翻譯}）"}
       - {in: query, name: lang, type: string, default: zh-TW}
     responses:
       200:
@@ -769,6 +774,8 @@ def lookup_translations():
             return jsonify({'success': True, 'data': blueprint_type_names(lang)})
         if domain == 'location':
             return jsonify({'success': True, 'data': known_location_names(lang)})
+        if domain == 'manufacturer':
+            return jsonify({'success': True, 'data': manufacturer_names(lang)})
         return jsonify({'success': False, 'message': '請帶 text 參數'}), 400
     if len(texts) > MAX_TRANSLATION_TEXTS:
         return jsonify({'success': False,

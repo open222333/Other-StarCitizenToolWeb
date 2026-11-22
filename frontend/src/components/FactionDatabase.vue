@@ -60,8 +60,10 @@
                 <template v-for="f in sort.sorted.value" :key="f._id">
                   <tr>
                     <td class="ps-3 sf-stack__title">
-                      <span class="fw-semibold">{{ zhName(f) || f.name }}</span>
-                      <span v-if="zhName(f)" class="small text-muted ms-1">{{ f.name }}</span>
+                      <span class="sf-name">
+                        <span class="fw-semibold">{{ zhName(f) || f.name }}</span>
+                        <span v-if="zhName(f)" class="sf-name__en">{{ f.name }}</span>
+                      </span>
                     </td>
                     <td class="d-none d-md-table-cell" data-label="合法性">
                       <span v-if="f.lawful === true" class="sf-chip sf-chip--ok mb-0">合法</span>

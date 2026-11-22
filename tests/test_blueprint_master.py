@@ -833,3 +833,17 @@ def test_master_available_filter(client, player_headers, seeded_master):
     client.post('/player/blueprints', headers=player_headers, json={'blueprint_uuid': 'bp-2'})
     rows = client.get('/player/blueprints', headers=player_headers).get_json()['data']
     assert rows[0]['master']['is_available_by_default'] is True
+
+
+def test_by_material_matches_mineral_names(client, auth_headers, seeded_master):
+    """礦物資料庫「用在哪些藍圖」：礦物名稱的 (Ore)／(Raw) 後綴、大小寫不影響比對，每筆附用量。"""
+    rows = client.get('/blueprint/master/by-material?material=Agricium (Ore)', headers=auth_headers).get_json()['data']
+    names = [r['name'] for r in rows]
+    assert 'Omnisky III Cannon' in names and 'Retired Gun' not in names, '已下架的藍圖不算'
+    cannon = next(r for r in rows if r['name'] == 'Omnisky III Cannon')
+    assert cannon['hits'] == [{'name': 'Agricium', 'kind': 'resource', 'quantity': None, 'quantity_scu': 0.36}]
+    assert 'mission_count' in cannon and 'raw' not in cannon
+    assert [r['name'] for r in client.get('/blueprint/master/by-material?material=hadanite',
+                                          headers=auth_headers).get_json()['data']] == names
+    assert client.get('/blueprint/master/by-material?material=NoSuchOre', headers=auth_headers).get_json()['data'] == []
+    assert client.get('/blueprint/master/by-material', headers=auth_headers).get_json()['data'] == []

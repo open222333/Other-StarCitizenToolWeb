@@ -130,12 +130,12 @@
                         @click.stop="toggle(bp)">
                         <i class="bi" :class="expandedId === bp._id ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                       </button>
-                      <template v-if="player">
+                      <span v-if="player" class="sf-name">
                         <button v-if="bp.mission_count" type="button" class="btn btn-sm btn-info px-2 text-start fw-semibold"
                           @click.stop="openMissions(bp)">{{ bp.name_zh || bp.name }}</button>
                         <span v-else class="fw-semibold">{{ bp.name_zh || bp.name }}</span>
-                        <span v-if="bp.name_zh" class="small text-muted ms-1">{{ bp.name }}</span>
-                      </template>
+                        <span v-if="bp.name_zh" class="sf-name__en">{{ bp.name }}</span>
+                      </span>
                       <template v-else>
                         <span class="fw-semibold">{{ bp.name }}</span>
                         <div class="small text-muted font-monospace ms-3">{{ bp.key }}</div>
