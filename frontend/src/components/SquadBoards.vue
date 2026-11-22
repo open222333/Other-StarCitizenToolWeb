@@ -123,7 +123,7 @@
                 <input :value="shareUrl" type="text" readonly class="form-control form-control-sm sqb-share__url" aria-label="分享連結"
                   @focus="$event.target.select()">
                 <button type="button" class="btn btn-sm btn-primary" @click="copyShare">
-                  <i class="bi me-1" :class="copied ? 'bi-check-lg' : 'bi-clipboard'"></i>{{ copied ? '已複製' : '複製連結' }}</button>
+                  <i class="bi bi-clipboard me-1"></i>複製連結</button>
                 <a class="btn btn-sm btn-outline-secondary" :href="shareUrl" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>預覽</a>
                 <button type="button" class="btn btn-sm btn-warning" :disabled="sharing" @click="regenerateShare">
                   <i class="bi bi-arrow-repeat me-1"></i>重新產生（舊連結失效）</button>
@@ -236,6 +236,8 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import SfState from '@/components/SfState.vue'
 import SquadBoardView from '@/components/SquadBoardView.vue'
 import { toast } from '@/utils/toast'
+import { copyText } from '@/utils/clipboard'
+import { escapeHtml } from '@/utils/html'
 import {
   DEFAULT_ROLES, MAX_PEOPLE, MAX_SHIPS_PER_SQUAD, MAX_SQUADS, boardPayload, countPeople, countShips,
   duplicateScids, emptySquad, fmtEventAt, moveItem, movePerson, newId, personLocation, personTargets,
@@ -266,7 +268,6 @@ async function api(path, options = {}) {
   return { ok: res.ok && !!data?.success, status: res.status, data: data || {} }
 }
 
-const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 function fmtTs(ts) {
   if (!ts) return ''
   const d = new Date(ts)
@@ -398,7 +399,6 @@ function syncBoardUrl() {
 }
 // ── 分享 ──
 const sharing = ref(false)
-const copied = ref(false)
 const shareUrl = computed(() => (board.value?.share_token
   ? new URL(router.resolve(`/player/squad/${board.value.share_token}`).href, window.location.origin).toString() : ''))
 async function callShare(enabled, regenerate = false) {
@@ -417,11 +417,7 @@ async function regenerateShare() {
   if (ok) callShare(true, true)
 }
 async function copyShare() {
-  try {
-    await navigator.clipboard.writeText(shareUrl.value)
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 1500)
-  } catch { /* 瀏覽器不給複製就算了，輸入框可以手動複製 */ }
+  await copyText(shareUrl.value, { okText: '已複製連結' })
 }
 
 // ── 小隊、艦船 ──

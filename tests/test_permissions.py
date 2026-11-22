@@ -351,7 +351,6 @@ UNGUARDED_ALLOWLIST = {
 # 完全公開、不需要任何 token 的藍圖
 PUBLIC_BLUEPRINTS = {
     'app_docs',   # 說明頁
-    'sample',     # 腳手架殘留的範例路由（建議移除，見審查報告 E8）
     'flasgger',   # Swagger UI：Swagger(decorators=...) 已限 admin token（tests/test_api_docs.py 驗證）
     'static',
     'status',     # GET / healthcheck

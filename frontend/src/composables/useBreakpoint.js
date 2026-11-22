@@ -7,6 +7,8 @@ import { onBeforeUnmount, ref } from 'vue'
 export const PHONE_QUERY = '(max-width: 767.98px)'
 export const TABLET_QUERY = '(min-width: 768px) and (max-width: 1199.98px)'
 export const TOUCH_QUERY = '(pointer: coarse)'
+// 寬版（≥992px，Bootstrap lg）：新聞頭條排版之類「夠寬才多放一欄」用
+export const WIDE_QUERY = '(min-width: 992px)'
 
 export function useBreakpoint() {
   const cleanups = []
@@ -23,6 +25,7 @@ export function useBreakpoint() {
   const isPhone = watchQuery(PHONE_QUERY)
   const isTablet = watchQuery(TABLET_QUERY)
   const isTouch = watchQuery(TOUCH_QUERY)
+  const isWide = watchQuery(WIDE_QUERY)
   onBeforeUnmount(() => cleanups.forEach(fn => fn()))
-  return { isPhone, isTablet, isTouch }
+  return { isPhone, isTablet, isTouch, isWide }
 }

@@ -407,27 +407,15 @@
           :aria-controls="`panel-${activeTab}-${sub.key}`"
           :id="`subtab-${activeTab}-${sub.key}`"
           @click="setSub(sub.key)"
-        >{{ sub.label }}<i v-if="isGuest && sub.member" class="bi bi-lock-fill ms-1 sf-tab-lock" aria-label="需要登入"></i></button>
+        >{{ sub.label }}</button>
       </div>
     </nav>
 
     <!-- ══════════ 內容區（滿版） ══════════ -->
     <div class="scifi-body sf-split">
-    <!-- 沒登入點到會員功能分頁（我的、查詢持有資訊、工具箱 › 戰術小隊）：登入提示 -->
-    <div v-if="guestLock" class="card scifi-card sf-guest" role="tabpanel" :id="`panel-${activeTab}`">
-      <div class="card-body text-center py-5">
-        <i class="bi bi-lock-fill sf-guest__icon" aria-hidden="true"></i>
-        <h2 class="sf-guest__title">「{{ guestLock.label }}」登入後才能使用</h2>
-        <p class="sf-guest__text">{{ GUEST_LOCKED_TEXT[guestLock.key] || '這個功能需要會員帳號。' }}</p>
-        <div class="d-flex justify-content-center flex-wrap gap-2">
-          <button type="button" class="btn btn-primary" @click="openAuth('login')"><i class="bi bi-box-arrow-in-right me-1"></i>登入</button>
-          <button type="button" class="btn btn-success" @click="openAuth('register')"><i class="bi bi-person-plus me-1"></i>註冊</button>
-        </div>
-      </div>
-    </div>
     <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
     <!-- 「艦長室」上方：置頂公告（沒有置頂就是最新 3 則），點「全部新聞」切到新聞分頁 -->
-    <NewsBanner v-if="!isGuest && myMounted" v-show="activeTab === 'my'" :fetcher="playerAuth.playerFetch"
+    <NewsBanner v-if="!isGuest && tabOnce('my')" v-show="activeTab === 'my'" :fetcher="playerAuth.playerFetch"
       card-class="card scifi-card" @all="setTab('news')" />
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="!isGuest && activePane === 'warehouse'" class="sf-toolbar">
@@ -481,7 +469,7 @@
     </div>
 
     <!-- ══════════ 資料庫 › 勢力：全部勢力（聲望種類、任務類型、任務數），展開看聲望階級與任務（見 components/FactionDatabase.vue）══════════ -->
-    <div v-if="factionsMounted" v-show="activePane === 'factions'" id="panel-items-factions">
+    <div v-if="paneOnce('factions')" v-show="activePane === 'factions'" id="panel-items-factions">
       <FactionDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'factions'" card-class="card scifi-card"
         :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest" @registered="onBulkRegistered" />
     </div>
@@ -504,7 +492,7 @@
       <div class="sf-toolbar">
         <!-- 查詢條件都記在網址裡，複製下來貼給隊友就是同一個查詢 -->
         <button type="button" class="btn btn-sm btn-primary" aria-label="複製查詢連結" @click="copySearchLink">
-          <i class="bi me-1" :class="linkCopied ? 'bi-check-lg' : 'bi-link-45deg'"></i><span class="sf-btn-text">{{ linkCopied ? '已複製' : '複製連結' }}</span>
+          <i class="bi bi-link-45deg me-1"></i><span class="sf-btn-text">複製連結</span>
         </button>
       </div>
       <div class="card scifi-card sf-search mb-3">
@@ -1252,7 +1240,7 @@
     </div>
 
     <!-- 工具箱 › 戰術小隊：分配表（小隊 → 艦船 → 人員，可分享唯讀連結；見 components/SquadBoards.vue、src/models/squad.py）。會員功能 -->
-    <div v-if="!isGuest && squadsMounted" v-show="activePane === 'squads'" role="tabpanel" id="panel-toolbox-squads"
+    <div v-if="!isGuest && paneOnce('squads')" v-show="activePane === 'squads'" role="tabpanel" id="panel-toolbox-squads"
       aria-labelledby="subtab-toolbox-squads">
       <SquadBoards :fetcher="playerAuth.playerFetch" :active="activePane === 'squads'"
         :fleet-uuids="fleetVehicleUuids" :me="playerAuth.starCitizenId" card-class="card scifi-card" />
@@ -1265,7 +1253,7 @@
     </div>
 
     <!-- 工具箱 › 貨櫃試算（總量拆成哪幾種貨櫃、各幾個；純前端，見 components/CrateCalculator.vue） -->
-    <div v-if="cratesMounted" v-show="activePane === 'crates'" role="tabpanel" id="panel-toolbox-crates" aria-labelledby="subtab-toolbox-crates">
+    <div v-if="paneOnce('crates')" v-show="activePane === 'crates'" role="tabpanel" id="panel-toolbox-crates" aria-labelledby="subtab-toolbox-crates">
       <CrateCalculator card-class="card scifi-card" />
     </div>
 
@@ -1286,7 +1274,7 @@
     </div>
 
     <!-- ══════════ 新聞（後台或外部程式寫入，不登入也能看；見 components/NewsBoard.vue） ══════════ -->
-    <div v-if="newsMounted" v-show="activeTab === 'news'" role="tabpanel" id="panel-news" aria-labelledby="tab-news">
+    <div v-if="tabOnce('news')" v-show="activeTab === 'news'" role="tabpanel" id="panel-news" aria-labelledby="tab-news">
       <NewsBoard :fetcher="playerAuth.playerFetch" :active="activeTab === 'news'" card-class="card scifi-card" />
     </div>
 
@@ -1360,8 +1348,6 @@
       </div>
       </SfState>
     </div>
-    <!-- 最下方：資料來源與使用條款（components/SiteFooter.vue） -->
-    <SiteFooter />
   </div>
 
   <!-- 玩家登入／註冊（右上角按鈕；舊網址 /player/login、/player/register 導過來時帶 ?login=1／?register=1） -->
@@ -1378,7 +1364,7 @@
     <button v-for="tab in bottomTabs" :key="tab.key" type="button" class="sf-bottom-nav__item"
       :class="{ active: activeTab === tab.key }" :aria-current="activeTab === tab.key ? 'page' : null"
       @click="setTab(tab.key); moreOpen = false">
-      <i :class="tab.icon"></i>{{ tab.short || tab.label }}<i v-if="isGuest && tab.member" class="bi bi-lock-fill sf-tab-lock" aria-label="需要登入"></i>
+      <i :class="tab.icon"></i>{{ tab.short || tab.label }}
     </button>
     <button type="button" class="sf-bottom-nav__item" :class="{ active: moreOpen || moreTabActive }"
       :aria-expanded="moreOpen ? 'true' : 'false'" @click="moreOpen = !moreOpen">
@@ -1407,7 +1393,6 @@ import { usePlayerAuthStore } from '@/stores/playerAuth'
 import { PLAYER_HELP_PATH, PLAYER_HOME, safeRedirect } from '@/router'
 import PlayerAuthModal from '@/components/PlayerAuthModal.vue'
 import MineralDatabase from '@/components/MineralDatabase.vue'
-import SiteFooter from '@/components/SiteFooter.vue'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
@@ -1458,6 +1443,8 @@ import { dismantleHits, materialLabel } from '@/utils/blueprintMaterial'
 import { manufacturerLabel, manufacturerShort, vehicleNameLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 // 地點中文：跟全站一樣查資料庫的翻譯（utils/translations.js），不在前端放對照表
 import { loadKnownLocations, loadStorageLocations, loadTranslations, translate } from '@/utils/translations'
+import { copyText } from '@/utils/clipboard'
+import { useMountOnce } from '@/composables/useMountOnce'
 
 const router     = useRouter()
 const playerAuth = usePlayerAuthStore()
@@ -1674,33 +1661,12 @@ const activePane = computed(() => paneOf(activeTab.value, activeSub.value))
 const initPane = paneOf(initTab, initSub)
 const activeTabMeta = computed(() => tabs.find(t => t.key === activeTab.value) || null)
 // 沒登入時要顯示登入提示的分頁（整個主分頁是會員功能，或下層分頁是，例如工具箱 › 戰術小隊）
-const guestLock = computed(() => {
-  if (!isGuest.value) return null
-  if (activeTabMeta.value?.member) return activeTabMeta.value
-  const sub = subTabsOf(activeTab.value).find(t => t.key === activeSub.value)
-  return sub?.member ? sub : null
-})
-// 戰術小隊第一次打開才建立元件（多數人不會用到，不必一開頁就載入）
-const squadsMounted = ref(false)
-watch(activePane, p => { if (p === 'squads') squadsMounted.value = true }, { immediate: true })
-// 資料庫 › 勢力：第一次切到才建立、載入程式
-const factionsMounted = ref(false)
-watch(activePane, p => { if (p === 'factions') factionsMounted.value = true }, { immediate: true })
-const newsMounted = ref(false)
-watch(activeTab, t => { if (t === 'news') newsMounted.value = true }, { immediate: true })
-const myMounted = ref(false)
-watch(activeTab, t => { if (t === 'my') myMounted.value = true }, { immediate: true })
-const cratesMounted = ref(false)
-watch(activePane, p => { if (p === 'crates') cratesMounted.value = true }, { immediate: true })
+// 第一次切到才建立的分頁（之後 v-show 切換）：戰術小隊、勢力、貨櫃試算、新聞、艦長室公告（composables/useMountOnce.js）
+const paneOnce = useMountOnce(activePane)
+const tabOnce = useMountOnce(activeTab)
 // 資料庫 › 藍圖、艦船：搜尋卡跟「艦長室 › 藍圖／艦隊」共用（Teleport 移過來）
 const itemsBpActive = computed(() => activeTab.value === 'items' && activeSub.value === 'bpdata')
 const itemsVehActive = computed(() => activeTab.value === 'items' && activeSub.value === 'vehicles')
-// 沒登入點到會員功能分頁的說明
-const GUEST_LOCKED_TEXT = {
-  my: '登記自己的倉庫、藍圖、艦隊需要會員帳號；遊戲的物品、藍圖、艦船資料在「資料庫」不用登入就能看。',
-  search: '查詢公會成員持有的物品、藍圖、船艦，需要會員帳號。',
-  squads: '建立與編輯戰術小隊分配表需要會員帳號；隊長分享的連結不用登入就能看。',
-}
 // ── 登入／註冊視窗（components/PlayerAuthModal.vue）──
 // ?login=1／?register=1（舊的登入頁、註冊頁導過來）開場就打開；?redirect= 是登入後要去的頁面（只接受 /player/ 底下）
 const authMode = ref(route.query.register ? 'register' : 'login')
@@ -1842,6 +1808,16 @@ function loadSearchSections() {
 
 // 使用者直接改網址（或按上一頁）時，畫面要跟著走
 watch(() => [route.query.tab, route.query.sub], ([tab, sub]) => {
+  // 訪客在頁面裡被導到會員分頁（返回鍵、站內連結）：不切過去，跳登入視窗、網址改回目前這頁
+  // （以前會切過去顯示「登入後才能使用」的鎖定畫面；現在會員分頁一律走登入視窗，見待辦 C7）
+  const target = LEGACY_TABS[tab]?.tab || tab
+  const targetSub = LEGACY_TABS[tab]?.sub || sub
+  if (isGuest.value && (tabs.find(t => t.key === target)?.member
+    || tabs.find(t => t.key === target)?.subTabs?.find(x => x.key === targetSub)?.member)) {
+    openAuth('login')
+    syncUrl()
+    return
+  }
   // 舊網址（?tab=warehouse、?tab=missions…）換到「艦長室」「資料庫」
   const legacy = LEGACY_TABS[tab]
   if (legacy) {
@@ -3276,14 +3252,7 @@ watch([whoKind, whoName, whoPick, whoPlayerScid, ...Object.values(SEARCH_URL_ARR
   }, 300)
 }, { deep: true })
 
-const linkCopied = ref(false)
-async function copySearchLink() {
-  try {
-    await navigator.clipboard.writeText(window.location.href)
-    linkCopied.value = true
-    setTimeout(() => { linkCopied.value = false }, 2000)
-  } catch { /* 瀏覽器不給複製就算了 */ }
-}
+const copySearchLink = () => copyText(window.location.href, { okText: '已複製連結' })
 
 // ── 工具列的展開區塊：同一個分頁一次只開一個，開了一個就收起其他的 ──
 function exclusiveDrawers(refs) {
@@ -3322,11 +3291,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* 沒登入點到會員功能分頁的登入提示 */
-.sf-guest { max-width: 40rem; margin: 2rem auto; }
-.sf-guest__icon { font-size: 2.5rem; color: var(--sf-accent); }
-.sf-guest__title { font-size: 1.3rem; font-weight: 700; color: var(--sf-text-strong); margin: .8rem 0 .5rem; }
-.sf-guest__text { color: var(--sf-text-muted); margin-bottom: 1.2rem; }
-.sf-tab-lock { font-size: .8em; opacity: .7; }
 .stock-paste-raw { font-size: 1rem; color: var(--sf-text-muted); }
 /* 工具網站分組（列的樣式在 scifi-theme.css 的 .sf-tree-*） */
 .holder-ship { margin-bottom: .4rem; }

@@ -32,7 +32,7 @@ watch(() => props.item.cover_url, () => { coverBroken.value = false })
 
 <style scoped>
 .na-cover { width: 100%; max-height: 22rem; object-fit: cover; border-radius: .5rem; margin-bottom: .75rem; }
-.na-date { color: var(--sf-text-muted); font-size: .9rem; }
+.na-date { color: var(--sf-text-muted); font-size: var(--sf-fs-sm); }
 .na-body { line-height: 1.75; word-break: break-word; }
 .na-body :deep(img) { max-width: 100%; border-radius: .4rem; margin: .4rem 0; }
 .na-body :deep(pre) { background: var(--sf-chip-bg); padding: .6rem .8rem; border-radius: .4rem; overflow-x: auto; }

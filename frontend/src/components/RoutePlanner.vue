@@ -250,29 +250,14 @@
                 油量不足：有段落單趟就超過油箱</span>
               <span v-if="current.warnings.includes('step_over_range')" class="sf-chip sf-chip--warn">單段超過可達距離</span>
             </div>
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-              <div class="btn-group btn-group-sm" role="group" aria-label="顯示方式">
-                <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab text-nowrap"
-                  :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
-                  @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
-              </div>
-<!-- 總覽的排列方向：橫向（左右來回）／直向（上下來回） -->
-              <div v-if="view === 'flow'" class="btn-group btn-group-sm" role="group" aria-label="總覽排列方向">
-                <button v-for="d in FLOW_DIRS" :key="d.key" type="button" class="btn btn-subtab text-nowrap"
-                  :class="{ active: flowDir === d.key }" :aria-pressed="flowDir === d.key ? 'true' : 'false'"
-                  :title="d.title" @click="flowDir = d.key"><i :class="d.icon" class="me-1"></i>{{ d.label }}</button>
-              </div>
-              <!-- 貨物規劃（可選）：航段表每站多「貨物」按鈕設定裝卸，顯示貨艙用量與貨櫃拆法 -->
-              <div class="form-check form-switch mb-0 ms-md-2">
-                <input id="rp-cargo-plan" v-model="cargoPlanOn" class="form-check-input" type="checkbox" role="switch">
-                <label class="form-check-label" for="rp-cargo-plan">貨物規劃</label>
-              </div>
+            <!-- 顯示方式／排列方向／貨物規劃（components/RouteViewBar.vue，跟合約分配共用） -->
+            <RouteViewBar v-model:view="view" v-model:flow-dir="flowDir" v-model:cargo-on="cargoPlanOn" id-prefix="rp">
               <!-- 這趟的船：看貨艙網格、算貨櫃怎麼拆（總量預設帶船的貨艙容量） -->
               <div class="ms-auto d-flex flex-wrap gap-2">
                 <CargoGridButton v-if="result.ship?.id" :vehicle-uuid="result.ship.id" :name="shipLabel(result.ship)" />
                 <CrateCalcButton :total="Number(result.ship?.cargo_scu) || 0" />
               </div>
-            </div>
+            </RouteViewBar>
             <RouteMap3D v-if="view === 'map'" :plan="current" :map="result.map || {}" />
             <RouteFlowView v-if="view === 'flow'" v-model:visited="visited" :plan="current" :direction="flowDir"
               :fuel-capacity="result.ship.qt_fuel_capacity" :cargo-on="cargoPlanOn && !SHOW_CARGO" :stop-cargo="stopCargo"
@@ -309,6 +294,9 @@ import FuelStartInput from '@/components/FuelStartInput.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import RouteFlowView from '@/components/RouteFlowView.vue'
+import RouteViewBar from '@/components/RouteViewBar.vue'
+import { persistState, readStored } from '@/composables/useStoredState'
+import { flowDirOr, viewOr } from '@/utils/routeRows'
 import SfState from '@/components/SfState.vue'
 import SfModal from '@/components/SfModal.vue'
 import PlaceSlot from '@/components/PlaceSlot.vue'
@@ -342,26 +330,11 @@ const newPlace = (p = {}) => ({ key: ++keySeq, id: p.id || '', text: p.text || '
 const newCargo = (c = {}) => ({ key: ++keySeq, pickup: newPlace(c.pickup), dropoff: newPlace(c.dropoff),
   scu: Number(c.scu) > 0 ? Number(c.scu) : null })
 
-function loadSaved() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || {}
-  } catch {
-    return {}
-  }
-}
-const saved = loadSaved()
+
+const saved = readStored(STORAGE_KEY)
 // 顯示方式：航段表、總覽（一頁看完整條航線，滑鼠移上去看細節；預設）、3D 星圖；選過的記在這台瀏覽器
-const VIEWS = [
-  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
-  { key: 'flow', label: '總覽', icon: 'bi bi-grid-3x3-gap' },
-  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
-]
-const view = ref(VIEWS.some(v => v.key === saved.view) ? saved.view : 'flow')
-const FLOW_DIRS = [
-  { key: 'horizontal', label: '橫向', icon: 'bi bi-arrow-left-right', title: '一行一行排，左右來回' },
-  { key: 'vertical', label: '直向', icon: 'bi bi-arrow-down-up', title: '一欄一欄排，上下來回' },
-]
-const flowDir = ref(saved.flowDir === 'vertical' ? 'vertical' : 'horizontal')
+const view = ref(viewOr(saved.view))
+const flowDir = ref(flowDirOr(saved.flowDir))
 const start = reactive(newPlace(saved.start))
 const endPlace = reactive(newPlace(saved.end))
 const endMode = ref(['none', 'start', 'fixed'].includes(saved.endMode) ? saved.endMode : 'none')
@@ -440,19 +413,15 @@ const hubReady = computed(() => !hubOn.value || (!!hubPlace.id && hubEvery.value
 
 const plain = p => ({ id: p.id, text: p.text })
 const plainStop = s => ({ ...plain(s), on: s.on, auto: s.auto, cargo: s.cargo })
-watch([start, endPlace, endMode, stops, cargo, autoOrder, shipId, shipText, qdId, externalCargo, startFuel,
-  hubOn, hubPlace, hubEvery, popupResult, cargoPlanOn, startCargo, endCargo, view, flowDir], () => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plainStop),
-      cargo: cargo.map(c => ({ pickup: plain(c.pickup), dropoff: plain(c.dropoff), scu: c.scu })),
-      autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
-      externalCargo: externalCargo.value, startFuel: startFuel.value,
-      hubOn: hubOn.value, hub: plain(hubPlace), hubEvery: hubEvery.value, popupResult: popupResult.value,
-      cargoPlanOn: cargoPlanOn.value, startCargo: startCargo.value, endCargo: endCargo.value, view: view.value, flowDir: flowDir.value,
-    }))
-  } catch { /* 存不了就算了 */ }
-}, { deep: true })
+// 記在這台瀏覽器（composables/useStoredState.js：getter 讀到的都會自動追蹤，加設定只要改這裡跟讀的地方）
+persistState(STORAGE_KEY, () => ({
+  start: plain(start), end: plain(endPlace), endMode: endMode.value, stops: stops.map(plainStop),
+  cargo: cargo.map(c => ({ pickup: plain(c.pickup), dropoff: plain(c.dropoff), scu: c.scu })),
+  autoOrder: autoOrder.value, shipId: shipId.value, shipText: shipText.value, qdId: qdId.value,
+  externalCargo: externalCargo.value, startFuel: startFuel.value,
+  hubOn: hubOn.value, hub: plain(hubPlace), hubEvery: hubEvery.value, popupResult: popupResult.value,
+  cargoPlanOn: cargoPlanOn.value, startCargo: startCargo.value, endCargo: endCargo.value, view: view.value, flowDir: flowDir.value,
+}))
 
 // ── 地點、船、量子引擎（跟「合約分配」共用，見 utils/navBase.js）──
 const base = useNavBase(props.fetcher)

@@ -17,7 +17,7 @@
           <button type="button" class="btn-close" aria-label="關閉" @click="resolve(false)"></button>
         </div>
 
-        <!-- v-html 可渲染 <strong> 等標記；呼叫端應自行 escHtml 使用者輸入 -->
+        <!-- v-html 可渲染 <strong> 等標記；呼叫端應自行用 utils/html.js 的 escapeHtml 跳脫使用者輸入 -->
         <div class="modal-body" v-html="message"></div>
 
         <div class="modal-footer border-0">

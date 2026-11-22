@@ -211,6 +211,8 @@ import SortTh from '@/components/SortTh.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
+import { escapeHtml } from '@/utils/html'
+import { downloadJson } from '@/utils/download'
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
@@ -278,17 +280,7 @@ const importing = ref(false)
 const exporting = ref(false)
 const fileEl = ref(null)
 
-function downloadFile(filename, obj) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
+const downloadFile = (filename, obj) => downloadJson(obj, filename)
 
 function downloadExample() {
   downloadFile('tool-links-example.json', EXAMPLE)
@@ -437,12 +429,9 @@ async function submit() {
   await load()
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}
 
 async function remove(link) {
-  if (!(await confirmModalRef.value?.confirm(`確定要刪除 <strong>${escHtml(link.title)}</strong>？`))) return
+  if (!(await confirmModalRef.value?.confirm(`確定要刪除 <strong>${escapeHtml(link.title)}</strong>？`))) return
   const res = await toolLinkApi.remove(link._id)
   const data = await readJson(res)
   if (!res?.ok || !data?.success) {

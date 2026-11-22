@@ -312,24 +312,8 @@
             </div>
             <div v-if="!squad.plan" class="cp-muted py-2">沒有分到貨物</div>
             <template v-else>
-              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                <div class="btn-group btn-group-sm" role="group" aria-label="顯示方式">
-                  <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-subtab text-nowrap"
-                    :class="{ active: view === v.key }" :aria-pressed="view === v.key ? 'true' : 'false'"
-                    @click="view = v.key"><i :class="v.icon" class="me-1"></i>{{ v.label }}</button>
-                </div>
-<!-- 總覽的排列方向：橫向（左右來回）／直向（上下來回） -->
-                <div v-if="view === 'flow'" class="btn-group btn-group-sm" role="group" aria-label="總覽排列方向">
-                  <button v-for="d in FLOW_DIRS" :key="d.key" type="button" class="btn btn-subtab text-nowrap"
-                    :class="{ active: flowDir === d.key }" :aria-pressed="flowDir === d.key ? 'true' : 'false'"
-                    :title="d.title" @click="flowDir = d.key"><i :class="d.icon" class="me-1"></i>{{ d.label }}</button>
-                </div>
-                <!-- 貨物規劃（可選）：取貨＝裝、送貨＝卸自動帶入，拆成貨櫃、算每站貨艙用量，每站「貨物」視窗可以調整 -->
-                <div class="form-check form-switch mb-0 ms-md-2">
-                  <input id="cp-cargo-plan" v-model="cargoPlanOn" class="form-check-input" type="checkbox" role="switch">
-                  <label class="form-check-label" for="cp-cargo-plan">貨物規劃</label>
-                </div>
-              </div>
+              <!-- 顯示方式／排列方向／貨物規劃（components/RouteViewBar.vue，跟航線規劃共用）；貨物規劃：取貨＝裝、送貨＝卸自動帶入 -->
+              <RouteViewBar v-model:view="view" v-model:flow-dir="flowDir" v-model:cargo-on="cargoPlanOn" :id-prefix="`cp-${squad.index}`" />
               <RouteMap3D v-if="view === 'map'" :key="`${planKey}-${squad.index}`" :plan="squad.plan" :map="result.map || {}" />
               <RouteFlowView v-if="view === 'flow'" :visited="visitedOf(squad)" :plan="squad.plan" :direction="flowDir"
                 :fuel-capacity="squad.ship.qt_fuel_capacity" :cargo-on="cargoPlanOn" :stop-cargo="cargoOf(squad)"
@@ -359,6 +343,9 @@ import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import { SIZES as CRATE_SIZES_ASC } from '@/utils/cargoPack'
 import RouteMap3D from '@/components/RouteMap3D.vue'
 import RouteFlowView from '@/components/RouteFlowView.vue'
+import RouteViewBar from '@/components/RouteViewBar.vue'
+import { persistState, readStored } from '@/composables/useStoredState'
+import { flowDirOr, viewOr } from '@/utils/routeRows'
 import SfState from '@/components/SfState.vue'
 import SystemStopsFill from '@/components/SystemStopsFill.vue'
 import FuelStartInput from '@/components/FuelStartInput.vue'
@@ -441,26 +428,10 @@ function newItem(it = {}) {
 const newContract = (c = {}) => ({ key: ++keySeq, name: c.name || '', on: c.on !== false,
   items: (Array.isArray(c.items) && c.items.length ? c.items : [{}]).slice(0, MAX_ITEMS).map(newItem) })
 
-function loadSaved() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || {}
-  } catch {
-    return {}
-  }
-}
-const saved = loadSaved()
+const saved = readStored(STORAGE_KEY)
 // 顯示方式：航段表、總覽（一頁看完整條航線，滑鼠移上去看細節；預設）、3D 星圖；選過的記在這台瀏覽器
-const VIEWS = [
-  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
-  { key: 'flow', label: '總覽', icon: 'bi bi-grid-3x3-gap' },
-  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
-]
-const view = ref(VIEWS.some(v => v.key === saved.view) ? saved.view : 'flow')
-const FLOW_DIRS = [
-  { key: 'horizontal', label: '橫向', icon: 'bi bi-arrow-left-right', title: '一行一行排，左右來回' },
-  { key: 'vertical', label: '直向', icon: 'bi bi-arrow-down-up', title: '一欄一欄排，上下來回' },
-]
-const flowDir = ref(saved.flowDir === 'vertical' ? 'vertical' : 'horizontal')
+const view = ref(viewOr(saved.view))
+const flowDir = ref(flowDirOr(saved.flowDir))
 // 結果的「貨物規劃」開關（記在這台瀏覽器）
 const cargoPlanOn = ref(saved.cargoPlanOn === true)
 const start = reactive(newPlace(saved.start))
@@ -527,19 +498,16 @@ watch(dropSig, (sig, old) => {
 }, { immediate: true })
 
 const savePoint = pt => ({ place: plain(pt.place), scu: pt.scu, on: isOn(pt) })
-watch([start, endMode, commonStart, startFuel, squads, contracts, commonDrop, commonDrops, cargoPlanOn, view, flowDir], () => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      start: plain(start), endMode: endMode.value, commonStart: commonStart.value, startFuel: startFuel.value,
-      commonDrop: commonDrop.value, commonDrops: commonDrops.map(cd => ({ place: plain(cd.place), on: cd.on })),
-      squads: squads.map(s => ({ name: s.name, shipId: s.shipId, shipText: s.shipText, qdId: s.qdId,
-        ownStart: s.ownStart, start: plain(s.start), mine: s.mine })),
-      cargoPlanOn: cargoPlanOn.value, view: view.value, flowDir: flowDir.value,
-      contracts: contracts.map(c => ({ name: c.name, on: c.on, items: c.items.map(it => ({ cargo: it.cargo, maxBox: it.maxBox,
-        pickups: it.pickups.map(savePoint), dropoffs: it.dropoffs.map(savePoint) })) })),
-    }))
-  } catch { /* 存不了就算了 */ }
-}, { deep: true })
+// 記在這台瀏覽器（composables/useStoredState.js：getter 讀到的都會自動追蹤）
+persistState(STORAGE_KEY, () => ({
+  start: plain(start), endMode: endMode.value, commonStart: commonStart.value, startFuel: startFuel.value,
+  commonDrop: commonDrop.value, commonDrops: commonDrops.map(cd => ({ place: plain(cd.place), on: cd.on })),
+  squads: squads.map(s => ({ name: s.name, shipId: s.shipId, shipText: s.shipText, qdId: s.qdId,
+    ownStart: s.ownStart, start: plain(s.start), mine: s.mine })),
+  cargoPlanOn: cargoPlanOn.value, view: view.value, flowDir: flowDir.value,
+  contracts: contracts.map(c => ({ name: c.name, on: c.on, items: c.items.map(it => ({ cargo: it.cargo, maxBox: it.maxBox,
+    pickups: it.pickups.map(savePoint), dropoffs: it.dropoffs.map(savePoint) })) })),
+}))
 
 const base = useNavBase(props.fetcher)
 const placeByIdMap = computed(() => new Map(base.places.value.map(p => [p.id, p])))

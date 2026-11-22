@@ -55,10 +55,9 @@
         <div class="d-flex align-items-center gap-2 mb-2">
           <span class="sf-tree-chip">{{ result.type === 'chinese' ? '中文 → 代碼' : '代碼 → 中文' }}</span>
           <button type="button" class="btn btn-sm btn-primary ms-auto" @click="copy">
-            <i class="bi me-1" :class="copied ? 'bi-check-lg' : 'bi-clipboard'"></i>{{ copied ? '已複製' : '複製' }}
+            <i class="bi bi-clipboard me-1"></i>複製
           </button>
         </div>
-        <div v-if="copyError" class="text-danger small mb-1" role="alert">{{ copyError }}</div>
         <pre class="chat-code-output mb-0">{{ result.output }}</pre>
         <div v-if="result.unknown.length" class="mt-2">
           <span class="chat-code-meta me-1">字典裡沒有：</span>
@@ -84,8 +83,7 @@
       <span v-if="textSearching" class="chat-code-meta">查詢中…</span>
     </div>
     <div v-if="textError" class="alert alert-danger py-2">{{ textError }}</div>
-    <div v-if="textCopyError" class="text-danger small mb-1" role="alert">{{ textCopyError }}</div>
-    <div v-else-if="textQuery.trim().length >= 2 && !textSearching && textRows" :class="cardClass">
+    <div v-if="textQuery.trim().length >= 2 && !textSearching && textRows" :class="cardClass">
       <div class="card-body p-0">
         <div style="overflow-x: auto">
           <table class="table table-hover align-middle mb-0 game-text-table sf-stack">
@@ -104,11 +102,11 @@
                 <td class="fw-semibold" data-label="中文">{{ r.zh || '—' }}</td>
                 <td data-label="英文">{{ r.en || '—' }}</td>
                 <td class="pe-3 text-end text-nowrap sf-stack__actions">
-                  <button type="button" class="btn btn-sm btn-primary" @click="copyText(r.key, 'k' + r.key)">
-                    <i class="bi me-1" :class="copiedKey === 'k' + r.key ? 'bi-check-lg' : 'bi-clipboard'"></i>代碼
+                  <button type="button" class="btn btn-sm btn-primary" @click="copyText(r.key)">
+                    <i class="bi bi-clipboard me-1"></i>代碼
                   </button>
-                  <button v-if="r.zh" type="button" class="btn btn-sm btn-primary ms-1" @click="copyText(r.zh, 'z' + r.key)">
-                    <i class="bi me-1" :class="copiedKey === 'z' + r.key ? 'bi-check-lg' : 'bi-clipboard'"></i>中文
+                  <button v-if="r.zh" type="button" class="btn btn-sm btn-primary ms-1" @click="copyText(r.zh)">
+                    <i class="bi bi-clipboard me-1"></i>中文
                   </button>
                 </td>
               </tr>
@@ -126,6 +124,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import { autoTranslate, parseDictionary } from '@/utils/chatCode'
 import SortTh from '@/components/SortTh.vue'
+import { copyText } from '@/utils/clipboard'
 import { useTableSort } from '@/composables/useTableSort'
 
 const props = defineProps({
@@ -144,8 +143,6 @@ const error = ref('')
 const stale = ref(false)
 const fetchedAt = ref('')
 const input = ref('')
-const copied = ref(false)
-const copyError = ref('')
 
 async function load() {
   loading.value = true
@@ -196,8 +193,6 @@ const textSort = useTableSort(textRows)
 const textUsedMode = ref('')
 const textSearching = ref(false)
 const textError = ref('')
-const copiedKey = ref('')
-const textCopyError = ref('')   // 複製失敗只顯示一行小字，不蓋掉查詢結果
 let textTimer = null
 let textSeq = 0
 
@@ -234,27 +229,8 @@ watch([textQuery, textMode], () => {
   textTimer = setTimeout(searchText, 350)
 })
 
-async function copyText(text, id) {
-  try {
-    await navigator.clipboard.writeText(text)
-    copiedKey.value = id
-    textCopyError.value = ''
-    setTimeout(() => { if (copiedKey.value === id) copiedKey.value = '' }, 1500)
-  } catch {
-    textCopyError.value = '無法複製，請手動選取文字'
-  }
-}
-
-async function copy() {
-  try {
-    await navigator.clipboard.writeText(result.value.output)
-    copied.value = true
-    copyError.value = ''
-    setTimeout(() => { copied.value = false }, 1500)
-  } catch {
-    copyError.value = '無法複製，請手動選取文字'
-  }
-}
+// 複製結果用 toast 告知（utils/clipboard.js），不再在按鈕上切換「已複製」
+const copy = () => copyText(result.value.output)
 </script>
 
 <style scoped>

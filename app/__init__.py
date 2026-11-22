@@ -9,7 +9,6 @@ from flasgger import Swagger
 from flask_jwt_extended import JWTManager
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
-from app.sample.view import app_sample
 from app.auth.view import app_auth
 from app.user.view import app_user
 from app.admin.view import app_admin
@@ -28,6 +27,7 @@ from app.data.view import app_data
 from app.loadout.view import app_loadout
 from app.links.view import app_links
 from app.news.view import app_news
+from app.api_key.view import app_api_key
 from src import ADMIN_TITLE, FLASK_JSON_PATH
 from src.limiter import limiter
 
@@ -178,7 +178,6 @@ def handle_exception(e):
 
 
 def create_app(config_object=None):
-    app.register_blueprint(blueprint=app_sample, url_prefix='/sample')
     app.register_blueprint(blueprint=app_auth, url_prefix='/auth')
     app.register_blueprint(blueprint=app_user, url_prefix='/user')
     app.register_blueprint(blueprint=app_admin, url_prefix='/admin')
@@ -198,6 +197,7 @@ def create_app(config_object=None):
     app.register_blueprint(blueprint=app_links, url_prefix='/links')
     app.register_blueprint(blueprint=app_data, url_prefix='/data')
     app.register_blueprint(blueprint=app_news, url_prefix='/news')
+    app.register_blueprint(blueprint=app_api_key, url_prefix='/data/api-keys')
     if config_object:
         app.config.from_object(config_object)
     return app

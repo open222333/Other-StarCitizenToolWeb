@@ -2,8 +2,7 @@
   後台「新聞」：管理玩家頁「新聞」分頁與「艦長室」上方公告的內容（後端 app/news/view.py）。
   - 新增／編輯：標題、內文（Markdown，可預覽；轉換見 utils/markdown.js）、封面圖片網址、來源連結、標籤、置頂、發布時間
     （未來的時間＝排程，到時間才出現在玩家頁）。admin、operator 可以寫，viewer 只能看。
-  - API 金鑰（只有 admin）：給外部程式寫入新聞用（POST /news/ingest，標頭 X-API-Key）。金鑰只在建立時顯示一次，
-    資料庫只存雜湊；停用後立刻失效。下面附呼叫範例。
+  - 外部程式寫入新聞（POST /news/ingest，標頭 X-API-Key）用的金鑰在後台「API 金鑰」頁（views/ApiKeysView.vue）。
 -->
 <template>
   <div>
@@ -11,7 +10,7 @@
       <h5 class="mb-0 fw-bold"><i class="bi bi-newspaper me-2 text-primary"></i>新聞</h5>
       <div class="d-flex flex-wrap gap-2">
         <button v-if="canWrite" class="btn btn-primary btn-sm" @click="startNew"><i class="bi bi-plus-lg me-1"></i>新增新聞</button>
-        <button class="btn btn-outline-secondary btn-sm" :disabled="loading" @click="load">
+        <button class="btn btn-outline-secondary btn-sm" :disabled="loading" @click="load()">
           <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
           <i v-else class="bi bi-arrow-clockwise me-1"></i>重新整理</button>
       </div>
@@ -82,7 +81,7 @@
         <MultiSelectFilter id="nw-tag" v-model="tagSel" :options="allTags.map(t => ({ value: t.tag, label: `${t.tag}（${t.count}）` }))"
           label="標籤" placeholder="全部" block />
       </AdminSearchField>
-      <template #summary>共 {{ items.length }} 則，符合 {{ shown.length }} 則</template>
+      <template #summary>{{ filtering ? '符合' : '共' }} {{ total }} 則</template>
     </AdminSearchCard>
 
     <div class="card shadow-sm border-0 mb-4">
@@ -101,9 +100,9 @@
             <tbody>
               <tr v-if="loading && !items.length"><td :colspan="canWrite ? 5 : 4" class="text-center py-4 text-muted">
                 <span class="spinner-border spinner-border-sm me-2"></span>載入中…</td></tr>
-              <tr v-else-if="!shown.length"><td :colspan="canWrite ? 5 : 4" class="text-center py-4 text-muted">
-                {{ items.length ? '沒有符合篩選條件的新聞' : '尚無新聞' }}</td></tr>
-              <tr v-for="n in shown" :key="n._id">
+              <tr v-else-if="!items.length"><td :colspan="canWrite ? 5 : 4" class="text-center py-4 text-muted">
+                {{ filtering ? '沒有符合篩選條件的新聞' : '尚無新聞' }}</td></tr>
+              <tr v-for="n in items" :key="n._id">
                 <td class="ps-3">
                   <i v-if="n.pinned" class="bi bi-pin-angle-fill text-warning me-1" title="置頂"></i>
                   <span class="fw-semibold">{{ n.title }}</span>
@@ -124,64 +123,22 @@
         </div>
       </div>
     </div>
-
-    <!-- API 金鑰（只有 admin）：外部程式寫入新聞 -->
-    <div v-if="auth.isAdmin" class="card shadow-sm border-0 mb-3">
-      <div class="card-body">
-        <h6 class="fw-semibold mb-1"><i class="bi bi-key me-1"></i>API 金鑰（外部程式寫入新聞）</h6>
-        <p class="small text-muted mb-3">外部程式用金鑰呼叫 <code>POST /news/ingest</code>；同一個來源連結再送一次是更新，不會重複。
-          金鑰只在建立時顯示一次，請馬上複製保存；不用了就停用（立刻失效）。</p>
-        <form class="d-flex flex-wrap gap-2 align-items-end mb-3" @submit.prevent="createKey">
-          <div>
-            <label class="form-label small fw-semibold mb-1" for="nw-key-name">名稱</label>
-            <input id="nw-key-name" v-model.trim="keyName" type="text" maxlength="50" class="form-control form-control-sm" placeholder="例如：RSI 新聞爬蟲" required>
-          </div>
-          <button type="submit" class="btn btn-sm btn-success" :disabled="creatingKey || !keyName">
-            <i class="bi bi-plus-lg me-1"></i>建立金鑰</button>
-        </form>
-        <div v-if="newKey" class="alert alert-warning py-2">
-          <div class="small fw-semibold mb-1">新金鑰「{{ newKey.name }}」（只會顯示這一次）</div>
-          <div class="d-flex flex-wrap align-items-center gap-2">
-            <code class="nw-key">{{ newKey.key }}</code>
-            <button type="button" class="btn btn-sm btn-outline-dark" @click="copy(newKey.key)"><i class="bi bi-clipboard me-1"></i>複製</button>
-            <button type="button" class="btn btn-sm btn-link" @click="newKey = null">我已保存</button>
-          </div>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-3">
-            <thead><tr><th>名稱</th><th>金鑰</th><th>權限</th><th>建立</th><th>最後使用</th><th class="text-end">次數</th><th></th></tr></thead>
-            <tbody>
-              <tr v-if="!keys.length"><td colspan="7" class="text-center text-muted py-3">還沒有金鑰</td></tr>
-              <tr v-for="k in keys" :key="k._id" :class="{ 'text-muted': k.revoked }">
-                <td>{{ k.name }}<span v-if="k.revoked" class="badge text-bg-secondary ms-1">已停用</span></td>
-                <td><code>{{ k.prefix }}…</code></td>
-                <td class="small">{{ k.scopes.join('、') }}</td>
-                <td class="small text-nowrap">{{ fmtNewsDate(k.created_at) }}<span class="text-muted"> · {{ k.created_by }}</span></td>
-                <td class="small text-nowrap">{{ fmtNewsDate(k.last_used_at) || '—' }}</td>
-                <td class="text-end small">{{ k.use_count }}</td>
-                <td class="text-end"><button v-if="!k.revoked" class="btn btn-sm btn-outline-danger" @click="revokeKey(k)">停用</button></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <details>
-          <summary class="small fw-semibold">呼叫範例</summary>
-          <pre class="nw-example mt-2 mb-0">{{ example }}</pre>
-        </details>
-      </div>
-    </div>
+    <SfPager class="mb-3" :total="total" :offset="offset" :limit="PAGE" :loading="loading" admin @page="load" />
 
     <ConfirmModal ref="confirmModalRef" />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { newsApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { toast } from '@/utils/toast'
 import { renderMarkdown } from '@/utils/markdown'
 import { fmtNewsDate } from '@/utils/news'
+import { scrollBehavior } from '@/utils/motion'
+import { escapeHtml } from '@/utils/html'
+import SfPager from '@/components/SfPager.vue'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -191,28 +148,30 @@ const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
 const confirmModalRef = ref(null)
 
+// 列表：後端篩選＋分頁（關鍵字、標籤多選取聯集），每頁 PAGE 則
+const PAGE = 50
 const items = ref([])
 const allTags = ref([])
 const loading = ref(false)
-async function load() {
+const total = ref(0)
+const offset = ref(0)
+const query = ref('')
+const tagSel = ref([])
+async function load(newOffset = offset.value) {
   loading.value = true
-  const res = await newsApi.listAdmin()
+  const res = await newsApi.listAdmin({ q: query.value, tag: tagSel.value, limit: PAGE, offset: newOffset })
   const body = res ? await res.json().catch(() => null) : null
   loading.value = false
   if (!res?.ok || !body?.success) { toast(body?.message || '讀取新聞失敗', 'error'); return }
   items.value = body.data || []
+  total.value = body.total || 0
+  offset.value = newOffset
   allTags.value = body.tags || []
-  if (auth.isAdmin) loadKeys()
 }
-onMounted(load)
-
-const query = ref('')
-const tagSel = ref([])
-const shown = computed(() => {
-  const q = query.value.toLowerCase()
-  return items.value.filter(n => (!tagSel.value.length || tagSel.value.some(t => n.tags.includes(t)))
-    && (!q || [n.title, n.body, ...n.tags].some(v => (v || '').toLowerCase().includes(q))))
-})
+onMounted(() => load(0))
+let qTimer = null
+watch([query, tagSel], () => { clearTimeout(qTimer); qTimer = setTimeout(() => load(0), 250) })
+const filtering = computed(() => !!(query.value || tagSel.value.length))
 
 // ── 新增／編輯 ──
 const editorOpen = ref(false)
@@ -247,7 +206,7 @@ function startEdit(n) {
   editingId.value = n._id
   preview.value = false
   editorOpen.value = true
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  window.scrollTo({ top: 0, behavior: scrollBehavior() })
 }
 function closeEditor() {
   editorOpen.value = false
@@ -266,9 +225,8 @@ async function submit() {
   closeEditor()
   load()
 }
-const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 async function remove(n) {
-  if (!(await confirmModalRef.value?.confirm(`確定要刪除 <strong>${escHtml(n.title)}</strong>？`))) return
+  if (!(await confirmModalRef.value?.confirm(`確定要刪除 <strong>${escapeHtml(n.title)}</strong>？`))) return
   const res = await newsApi.remove(n._id)
   const body = res ? await res.json().catch(() => null) : null
   if (!res?.ok || !body?.success) { toast(body?.message || '刪除失敗', 'error'); return }
@@ -276,63 +234,9 @@ async function remove(n) {
   load()
 }
 
-// ── API 金鑰 ──
-const keys = ref([])
-const keyName = ref('')
-const creatingKey = ref(false)
-const newKey = ref(null)
-async function loadKeys() {
-  const res = await newsApi.keys()
-  const body = res ? await res.json().catch(() => null) : null
-  if (res?.ok && body?.success) keys.value = body.data || []
-}
-async function createKey() {
-  creatingKey.value = true
-  const res = await newsApi.createKey({ name: keyName.value, scopes: ['news:write'] })
-  const body = res ? await res.json().catch(() => null) : null
-  creatingKey.value = false
-  if (!res?.ok || !body?.success) { toast(body?.message || '建立失敗', 'error'); return }
-  newKey.value = body.data
-  keyName.value = ''
-  loadKeys()
-}
-async function revokeKey(k) {
-  if (!(await confirmModalRef.value?.confirm(`停用金鑰 <strong>${escHtml(k.name)}</strong>（${escHtml(k.prefix)}…）？用這把金鑰的程式會立刻不能寫入。`,
-    { title: '停用金鑰', okText: '停用' }))) return
-  const res = await newsApi.revokeKey(k._id)
-  const body = res ? await res.json().catch(() => null) : null
-  if (!res?.ok || !body?.success) { toast(body?.message || '停用失敗', 'error'); return }
-  toast('已停用')
-  loadKeys()
-}
-async function copy(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast('已複製')
-  } catch {
-    toast('複製失敗，請手動選取', 'error')
-  }
-}
-const example = computed(() => `curl -X POST ${window.location.origin}/news/ingest \\
-  -H "X-API-Key: ${newKey.value?.key || 'sct_你的金鑰'}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "title": "Alpha 4.5 改版說明",
-    "body": "**重點**\\n- 新增星系\\n- [完整說明](https://robertsspaceindustries.com/comm-link)",
-    "cover_url": "https://example.com/cover.jpg",
-    "source_url": "https://robertsspaceindustries.com/comm-link/transmission/12345",
-    "tags": ["改版", "RSI"],
-    "pinned": false,
-    "published_at": "2026-11-20T08:00:00Z"
-  }'
-
-# 一次多則：送陣列（最多 50 則）。同一個 source_url 再送一次＝更新。
-# 回應：{"success": true, "data": {"created": ["…id"], "updated": []}}`)
 </script>
 
 <style scoped>
 .nw-preview { border: 1px solid var(--bs-border-color); border-radius: .375rem; padding: .5rem .75rem; min-height: 10rem; line-height: 1.7; }
 .nw-preview :deep(img) { max-width: 100%; }
-.nw-key { font-size: .95rem; word-break: break-all; }
-.nw-example { background: var(--bs-tertiary-bg); padding: .75rem; border-radius: .375rem; font-size: .8rem; white-space: pre-wrap; }
 </style>

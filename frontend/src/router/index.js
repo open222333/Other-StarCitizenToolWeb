@@ -49,7 +49,7 @@ export const PLAYER_LOGIN_PATH = playerPath('/login')
 export const PLAYER_HELP_PATH = playerPath('/help')
 
 // 改成 /admin/、/player/ 分層前的舊網址 → 新網址（只有 web build 需要；admin build 的網址沒變）
-const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles|api-docs|news'
+const ADMIN_PAGES = 'users|logs|settings|sync-schedule|players|blueprints|inventory|items|mining|commodities|missions|factions|locations|tool-links|data|vehicles|api-docs|news|api-keys'
 const keepQuery = path => to => ({ path: typeof path === 'function' ? path(to) : path, query: to.query, hash: to.hash })
 const LEGACY_REDIRECTS = PLAYER_BUILD ? [
   { path: '/me', redirect: keepQuery(PLAYER_HOME) },
@@ -208,10 +208,17 @@ const router = createRouter({
           component: () => import('@/views/DataBrowserView.vue'),
         },
         {
-          // 新聞（玩家頁「新聞」分頁與「艦長室」上方公告；API 金鑰管理只給 admin，見 NewsListView.vue 檔頭）
+          // 新聞（玩家頁「新聞」分頁與「艦長室」上方公告，見 NewsListView.vue 檔頭）
           path: 'news',
           name: 'news',
           component: () => import('@/views/NewsListView.vue'),
+        },
+        {
+          // API 金鑰（只給 admin，外部程式寫入用；後端 /data/api-keys，見 ApiKeysView.vue 檔頭）
+          path: 'api-keys',
+          name: 'api-keys',
+          component: () => import('@/views/ApiKeysView.vue'),
+          meta: { requiresAdmin: true },
         },
         {
           // API 文件（只給 admin，後端 GET /data/api-spec；見 ApiDocsView.vue 檔頭）

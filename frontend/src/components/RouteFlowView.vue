@@ -77,6 +77,7 @@ import RouteCargoSummary from '@/components/RouteCargoSummary.vue'
 import { actionClass, actionLabel, buildRouteRows, traitsOf } from '@/utils/routeRows'
 import { cargoFlow } from '@/utils/stopCargo'
 import { fmtDist, fmtNum, fmtTime, placeLabel, placePath } from '@/utils/navFormat'
+import { isSnakeTurn, snakeDir, snakePos } from '@/utils/routeFlow'
 
 const props = defineProps({
   plan: { type: Object, required: true },
@@ -149,29 +150,17 @@ function measure() {
 // 直向：欄數一樣（寬度決定），行數＝站數÷欄數；第一欄上→下、第二欄下→上…
 const rowsN = computed(() => Math.max(1, Math.ceil(nodes.value.length / cols.value)))
 const vertical = computed(() => props.direction === 'vertical')
-const posOf = (i) => {
-  if (vertical.value) {
-    const col = Math.floor(i / rowsN.value)
-    const k = i % rowsN.value
-    return { col, row: col % 2 === 0 ? k : rowsN.value - 1 - k }
-  }
-  const row = Math.floor(i / cols.value)
-  const k = i % cols.value
-  return { row, col: row % 2 === 0 ? k : cols.value - 1 - k }
-}
+// 蛇形排列的計算在 utils/routeFlow.js（純函式、有測試）
+const layout = computed(() => ({ vertical: vertical.value, cols: cols.value, rows: rowsN.value }))
+const posOf = i => snakePos(i, layout.value)
 const cellOf = (i) => {
   const p = posOf(i)
   return { gridRow: p.row + 1, gridColumn: p.col + 1 }
 }
 // 這一格跟上一站的關係：r＝上一站在左邊、l＝在右邊、d＝在正上方、u＝在正下方
-function dirOf(i) {
-  if (i === 0) return 'first'
-  const a = posOf(i - 1), b = posOf(i)
-  if (a.row === b.row) return a.col < b.col ? 'r' : 'l'
-  return a.row < b.row ? 'd' : 'u'
-}
+const dirOf = i => snakeDir(i, layout.value)
 // 換行（橫向）／換欄（直向）的那一格
-const isTurn = i => i > 0 && (vertical.value ? i % rowsN.value === 0 : i % cols.value === 0)
+const isTurn = i => isSnakeTurn(i, layout.value)
 function arrowIcon(i, jump) {
   const d = dirOf(i)
   if (d === 'd') return jump ? 'bi-chevron-double-down' : 'bi-arrow-down'

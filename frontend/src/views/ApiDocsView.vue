@@ -117,6 +117,7 @@ import { dataApi } from '@/api'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
+import { downloadJson } from '@/utils/download'
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete']
 const IN_LABEL = { query: '網址參數', path: '路徑', body: '內容', formData: '表單', header: '標頭' }
@@ -222,12 +223,7 @@ function toggle(id) {
 }
 
 function download() {
-  const blob = new Blob([JSON.stringify(spec.value, null, 2)], { type: 'application/json' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = 'api-spec.json'
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  downloadJson(spec.value, 'api-spec.json')
 }
 </script>
 

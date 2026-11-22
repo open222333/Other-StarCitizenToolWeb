@@ -64,6 +64,7 @@
 import { toast } from '@/utils/toast'
 import { onMounted, ref, watch } from 'vue'
 import { apiFetch } from '@/api'
+import { downloadBlob } from '@/utils/download'
 
 const sets = ref([])
 const loading = ref(true)
@@ -114,12 +115,7 @@ async function doExport() {
   }
   const blob = await res.blob()
   const name = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'sc-tool-backup.json.gz'
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, name)
   say('已匯出。')
 }
 

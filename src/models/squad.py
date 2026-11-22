@@ -26,6 +26,7 @@ from bson.errors import InvalidId
 from pymongo import ReturnDocument
 
 from src.models.item import VehicleMaster
+from src.timeutil import iso_utc
 from src.models.player import Player
 from src.mongo import get_db
 
@@ -197,7 +198,8 @@ def _iter_people(board: dict):
 
 
 def _iso(dt):
-    return dt.isoformat(timespec='seconds') + 'Z' if isinstance(dt, datetime) else dt
+    """datetime 轉 ISO；其他值（已是字串、None）原樣回傳。"""
+    return iso_utc(dt) if isinstance(dt, datetime) else dt
 
 
 def _stats(board: dict) -> dict:

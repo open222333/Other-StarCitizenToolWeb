@@ -9,25 +9,31 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 const safeUrl = u => (/^https?:\/\/[^\s"'<>]+$/i.test(u) ? u : '')
 
+const emph = t => t
+  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>')
+  .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>').replace(/(^|[\s(])_([^_\s][^_]*)_/g, '$1<em>$2</em>')
+  .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+
 function inline(text) {
-  // 先把行內程式碼抽出來，裡面不再處理其他標記
-  const codes = []
-  let t = text.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000` })
+  // 已經做好的標籤（行內程式碼、圖片、連結、裸網址）先換成佔位符，最後才放回：
+  // 後面的步驟（裸網址轉連結、粗斜體）就碰不到標籤的屬性。以前圖片 alt 裡的裸網址會被換成 <a href="…">，
+  // 引號把 alt 提前關掉、網址後段變成屬性（例如 onerror），見 markdown.test.mjs。
+  const slots = []
+  const hold = html => { slots.push(html); return `\u0000${slots.length - 1}\u0000` }
+  let t = text.replace(/`([^`]+)`/g, (_, c) => hold(`<code>${c}</code>`))
   t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, url) => {
     const u = safeUrl(url)
-    return u ? `<img src="${u}" alt="${alt}" loading="lazy">` : m
+    return u ? hold(`<img src="${u}" alt="${alt}" loading="lazy">`) : m
   })
   t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
     const u = safeUrl(url)
-    return u ? `<a href="${u}" target="_blank" rel="noopener noreferrer">${label}</a>` : m
+    // 連結文字只做粗斜體，不再轉網址
+    return u ? hold(`<a href="${u}" target="_blank" rel="noopener noreferrer">${emph(label)}</a>`) : m
   })
-  // 裸網址（不在已經做好的標籤屬性裡）
-  t = t.replace(/(^|[\s(（])(https?:\/\/[^\s<>"')）]+)/g, (_, pre, url) =>
-    `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
-  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>')
-  t = t.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>').replace(/(^|[\s(])_([^_\s][^_]*)_/g, '$1<em>$2</em>')
-  t = t.replace(/~~([^~]+)~~/g, '<del>$1</del>')
-  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`)
+  t = t.replace(/(^|[\s(（])(https?:\/\/[^\s<>"')）\u0000]+)/g, (_, pre, url) =>
+    `${pre}${hold(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)}`)
+  t = emph(t)
+  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => slots[Number(i)])
 }
 
 export function renderMarkdown(src) {

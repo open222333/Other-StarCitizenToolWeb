@@ -94,6 +94,9 @@
         <RouterLink class="nav-link" :to="adminPath('/data')" @click="sidebarOpen = false">
           <i class="bi bi-database"></i>資料庫檢視
         </RouterLink>
+        <RouterLink v-if="auth.isAdmin" class="nav-link" :to="adminPath('/api-keys')" @click="sidebarOpen = false">
+          <i class="bi bi-key"></i>API 金鑰
+        </RouterLink>
         <RouterLink v-if="auth.isAdmin" class="nav-link" :to="adminPath('/api-docs')" @click="sidebarOpen = false">
           <i class="bi bi-braces"></i>API 文件
         </RouterLink>

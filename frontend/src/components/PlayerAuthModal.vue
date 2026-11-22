@@ -52,7 +52,6 @@
             <label class="form-label small fw-semibold" for="pam-rscid">遊戲ID（Star Citizen ID） <span class="text-danger">*</span></label>
             <input id="pam-rscid" v-model.trim="regForm.star_citizen_id" type="text" class="form-control" required
               autocomplete="username" placeholder="你的 Star Citizen 帳號 ID" :disabled="submitting">
-            <div class="form-text">要唯一，之後用來對應你的倉庫、藍圖，請填正確</div>
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold" for="pam-rpw">密碼 <span class="text-danger">*</span></label>

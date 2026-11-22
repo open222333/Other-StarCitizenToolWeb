@@ -92,15 +92,15 @@ REDIS_HOST=localhost
 ; Gunicorn 監聽埠號，預設讀取環境變數 FLASK_PORT（未設定則為 5000）
 ; PORT=5000
 
-; Worker 進程數量，預設 CPU 數 × 2 + 1（例：4 核心 → 9 個 worker）
-; WORKERS=5
+; Worker 進程數量（沒設定時是 CPU 數 × 2 + 1，4 核心就開 9 個、每個都載一份 app，記憶體吃很兇）
+; 建議值：2 個 worker × 4 執行緒（gthread），API 多半在等 MongoDB／上游，執行緒比行程省記憶體（docs/現版本優化方案.md 0-2）
+WORKERS=2
 
-; Worker 類型：sync（預設）、gthread（多執行緒）、gevent（非同步）
-; 使用 gevent 需額外安裝：pip install gevent
-; WORKER_CLASS=sync
+; Worker 類型：sync、gthread（多執行緒，建議）、gevent（非同步，需額外 pip install gevent）
+WORKER_CLASS=gthread
 
-; 每個 Worker 的執行緒數（WORKER_CLASS=gthread 時有效），預設 1
-; THREADS=1
+; 每個 Worker 的執行緒數（WORKER_CLASS=gthread 時有效）
+THREADS=4
 
 ; Worker 逾時秒數，超過此時間無回應則自動重啟，預設 120
 ; TIMEOUT=120

@@ -16,6 +16,7 @@ from bson import ObjectId
 from flask import g, jsonify, request
 
 from src.mongo import get_db
+from src.timeutil import iso_utc
 
 COLLECTION = 'api_keys'
 PREFIX = 'sct_'
@@ -41,12 +42,11 @@ def _hash(key: str) -> str:
 
 
 def _public(doc: dict) -> dict:
-    iso = lambda d: d.isoformat(timespec='seconds') + 'Z' if isinstance(d, datetime) else None  # noqa: E731
     return {'_id': str(doc['_id']), 'name': doc.get('name'), 'prefix': doc.get('prefix'),
-            'scopes': doc.get('scopes') or [], 'created_at': iso(doc.get('created_at')),
-            'created_by': doc.get('created_by'), 'last_used_at': iso(doc.get('last_used_at')),
+            'scopes': doc.get('scopes') or [], 'created_at': iso_utc(doc.get('created_at')),
+            'created_by': doc.get('created_by'), 'last_used_at': iso_utc(doc.get('last_used_at')),
             'use_count': doc.get('use_count') or 0, 'revoked': bool(doc.get('revoked_at')),
-            'revoked_at': iso(doc.get('revoked_at'))}
+            'revoked_at': iso_utc(doc.get('revoked_at'))}
 
 
 def list_keys() -> list:

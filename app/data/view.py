@@ -15,6 +15,10 @@ from src.permissions import READ_ROLES, admin_api
 app_data = Blueprint('app_data', __name__)
 
 
+#: API 規格快取（走過所有路由、解析 docstring YAML 才組得出來）
+_spec_cache: dict = {}
+
+
 @app_data.route('/api-spec', methods=['GET'])
 @admin_api('admin')
 def api_spec():
@@ -29,8 +33,11 @@ def api_spec():
       403:
         description: 權限不足
     """
+    # 規格只在部署（程式改了）時才會變：同一個行程算一次就留著（待辦 B6；測試換 app 時 swagger 物件不同會重算）
     from app import swagger
-    return jsonify({'success': True, 'data': swagger.get_apispecs('apispec_1')})
+    if _spec_cache.get('owner') is not swagger:
+        _spec_cache.update(owner=swagger, spec=swagger.get_apispecs('apispec_1'))
+    return jsonify({'success': True, 'data': _spec_cache['spec']})
 
 
 @app_data.route('/collections', methods=['GET'])

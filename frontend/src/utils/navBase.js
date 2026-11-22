@@ -1,4 +1,5 @@
 // 航線規劃的基本資料（地點、船、量子引擎），「航線規劃」「合約分配」共用同一份，只載一次。
+import { getJson } from '@/utils/getJson'
 import { computed, reactive, ref, watch } from 'vue'
 import { maxOf } from '@/utils/cargoPack'
 
@@ -13,11 +14,6 @@ const error = ref('')
 const loaded = ref(false)
 let pending = null
 
-async function getJson(fetcher, path) {
-  const res = await fetcher(path)
-  const body = res ? await res.json().catch(() => null) : null
-  return { ok: !!res?.ok && !!body?.success, body }
-}
 
 // 選船的篩選（components/ShipFilter.vue），兩個分頁共用，記在這台瀏覽器
 const FILTER_KEY = 'sc_route_ship_filter'

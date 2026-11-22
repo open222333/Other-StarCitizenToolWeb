@@ -1,14 +1,14 @@
-# Template-PythonFlaskAPI — Claude Code 專案指令
+# Star Citizen 公會工具 — Claude Code 專案指令
 
 ## 專案概覽
 
-Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者管理後台、操作日誌、Rate Limiting、Celery 排程任務等開箱即用功能。
+Star Citizen 公會工具網站：玩家頁（艦長室、資料庫、規劃工具、新聞）與管理後台。Flask API + Vue 3 SPA，含 JWT 驗證、角色權限、操作日誌、Rate Limiting、Celery 排程同步遊戲資料。
 
 - **後端入口**：`run.py`（開發）、`gunicorn.py`（生產）
 - **排程任務**：`celery_worker.py`（Celery Worker + Beat）
 - **前端**：Vue 3 SPA，編譯後由 Flask 的 `/admin/` 路徑提供服務
-- **資料庫**：MongoDB（使用者 / 日誌）、MySQL（可擴充）、Redis（Rate Limiting + Celery Broker）
-- **部署**：Docker multi-stage build + docker-compose（nginx + app + worker + beat + mongo + mysql + redis）
+- **資料庫**：MongoDB（全部資料）、Redis（Rate Limiting + Celery Broker）
+- **部署**：Docker multi-stage build + docker-compose（nginx + api + web + worker + beat + mongo + redis；mysql 需 --profile mysql 才啟動）
 
 ## 介面文字原則（使用者要求，務必遵守）
 
@@ -72,7 +72,7 @@ Flask + Vue 3 全端模板，提供 JWT 身份驗證、角色權限、使用者�
   - 標籤膠囊 `.sf-chip`（`--warn` 紅、`--ok` 綠、`--todo` 虛線、`--accent` 強調色；裡面的小字 `.sf-chip__state`、
     小按鈕 `btn btn-sm btn-* sf-chip__btn`）；正負數值文字 `.sf-good`／`.sf-bad`；「標籤：值」清單 `<dl class="sf-facts">`。
   - 自訂下拉／浮出面板用 `.sf-popover`（項目 `.sf-popover__item`，作用中加 `.is-active`）。會同時用在後台的共用元件
-    （AutocompleteField、MultiSelectFilter、FieldHint）底色／邊框／文字改用 `--bs-body-bg`／`--bs-border-color`／
+    （AutocompleteField、MultiSelectFilter）底色／邊框／文字改用 `--bs-body-bg`／`--bs-border-color`／
     `--bs-body-color`（`.scifi-page` 已對到 `--sf-*`），hover／陰影用 `var(--sf-popover-hover, …)`／`var(--sf-popover-shadow, …)`
     帶後台 fallback；不要用 `--sf-*` 直接當後台 fallback（`--sf-*` 掛在 `:root`，後台也會讀到深色值）。
 - **地點搜尋一律是「星系／行星／地點」三段**（`utils/locationArea.js`、`components/LocationAreaFilter.vue`；
@@ -145,12 +145,10 @@ Template-PythonFlaskAPI/
 │   ├── user/           ← /user/ CRUD + /user/templates/ CRUD
 │   ├── log/            ← /log/ 操作日誌
 │   ├── admin/          ← /admin/ 靜態 SPA
-│   ├── docs/           ← /docs/ 說明文件
-│   └── sample/         ← /sample/ 範例路由
+│   └── docs/           ← /docs/ 說明文件
 ├── src/                ← 核心模組
 │   ├── __init__.py     ← config.ini 讀取，匯出所有設定值
 │   ├── mongo.py        ← MongoDB 連線 + ensure_indexes()
-│   ├── mysql.py        ← MySQL 連線池
 │   ├── redis_client.py ← Redis 連線
 │   ├── limiter.py      ← Flask-Limiter（Redis 後端）
 │   ├── celery_app.py   ← Celery 實例（Redis DB 1 作為 Broker）
@@ -178,7 +176,6 @@ Template-PythonFlaskAPI/
 | 新增 API 模組 | **容易** | Blueprint pattern 清晰，照既有 6 個模組範例即可 |
 | 新增 MongoDB 模型 | **容易** | `src/models/` 結構固定，照 user.py / log.py 複製 |
 | 新增前端頁面 | **容易** | Vue Router + Pinia 已到位，照 views/ 範例複製 |
-| 新增 MySQL 模型 | **容易** | `src/mysql.py` 已有 query/execute helpers |
 | 新增排程任務 | **容易** | 在 `tasks/` 加任務檔，在 `celeryconfig.py` 加一行排程即可 |
 | 新增角色（RBAC）| **中等** | 需改 `src/models/user.py` 的 ROLES + permissions.py |
 | API 版本控制 | **中等** | 需建 `app/api/v1/` 結構並統一 Blueprint 前綴 |

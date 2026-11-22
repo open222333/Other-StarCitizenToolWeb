@@ -92,7 +92,7 @@
                     <td class="text-end text-nowrap" data-label="最高出現率">{{ m.chance == null ? '—' : pct(m.chance * 100, 2) }}</td>
                     <td class="d-none d-lg-table-cell small" data-label="主要地點">
                       <template v-if="m.places">{{ m.top.map(o => placeLabel(o)).join('、') }}<template v-if="m.places > m.top.length"> …</template></template>
-                      <span v-else-if="sources[m.key]" class="text-muted">需{{ (sources[m.key].methods || []).map(sourceLabel).join('、') || '特殊方式' }}取得，見詳細</span>
+                      <span v-else-if="sources[m.key]" class="text-muted">{{ sourceSummary(sources[m.key]) }}</span>
                       <span v-else class="text-muted">遊戲資料未標出產地</span>
                     </td>
                     <td class="text-end pe-3 sf-stack__actions">
@@ -118,8 +118,7 @@
                         <template v-if="sources[m.key].auto">
                           <p v-if="sources[m.key].description_zh || sources[m.key].description_en" class="small mb-1">
                             {{ sources[m.key].description_zh || sources[m.key].description_en }}</p>
-                          <p class="small text-muted mb-1">遊戲資料把它列為可開採，但沒有標出任何產地，通常要先完成特殊行動、任務或活動才挖得到。
-                            資料來源：{{ sources[m.key].source }}（排程同步）</p>
+                          <p class="small text-muted mb-1">遊戲資料沒有標出產地（來源：{{ sources[m.key].source }}）</p>
                         </template>
                         <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 先跳脫整段 HTML，只產生白名單標籤 -->
                         <div v-else-if="sources[m.key].description" class="mdb-md small" v-html="renderMarkdown(sources[m.key].description)"></div>
@@ -127,12 +126,12 @@
                           <span class="text-muted me-1">相關地點</span>{{ sources[m.key].locations.map(locText).join('、') }}
                         </div>
                         <a v-if="sources[m.key].source_url || sources[m.key].web_url" :href="sources[m.key].source_url || sources[m.key].web_url"
-                          target="_blank" rel="noopener noreferrer" class="small"><i class="bi bi-box-arrow-up-right me-1"></i>參考資料</a>
+                          target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary"><i class="bi bi-box-arrow-up-right me-1"></i>參考資料</a>
                         <div class="mb-3"></div>
                       </template>
                       <div v-if="m.occurrences.length || !sources[m.key]" class="mdb-sec">產地</div>
                       <p v-if="!m.occurrences.length && !sources[m.key]" class="small text-muted mb-2">
-                        遊戲資料有這種礦物的礦床，但沒有標出會出現在哪些地點（可能是任務、洞穴或還沒開放的地點）。
+                        遊戲資料沒有標出產地。
                       </p>
                       <table v-else-if="m.occurrences.length" class="table table-sm align-middle mb-0 mdb-sub">
                         <thead>
@@ -267,6 +266,11 @@ const SOURCE_FILTER = '__source'
 const sources = ref({})
 const sourceLabels = ref({})
 const sourceLabel = k => sourceLabels.value[k] || k
+/** 主要地點欄的摘要：自動判斷只有「需特殊取得」；手填的寫「需特殊行動、洞穴取得」 */
+function sourceSummary(src) {
+  const ms = (src.methods || []).filter(k => k !== 'unplaced').map(sourceLabel)
+  return ms.length ? `需${ms.join('、')}取得` : '需特殊取得'
+}
 const locText = en => { const zh = translate('location', en); return zh && zh !== en ? `${zh}（${en}）` : en }
 async function loadSources() {
   const res = await props.fetcher('/mining/sources')
@@ -428,6 +432,6 @@ const { isPhone } = useBreakpoint()
 .mdb-sub { --bs-table-bg: transparent; font-size: .95rem; }
 .mdb-sub th { font-size: .8rem; color: var(--sf-text-muted); font-weight: 600; }
 .mdb-md :deep(p) { margin-bottom: .4rem; }
-.mdb-sec { font-weight: 700; font-size: .9rem; color: var(--sf-accent-text, var(--sf-accent)); margin-bottom: .35rem; }
+.mdb-sec { font-weight: 700; font-size: var(--sf-fs-sm); color: var(--sf-accent-text, var(--sf-accent)); margin-bottom: .35rem; }
 .mdb-bpq { max-width: 20rem; }
 </style>

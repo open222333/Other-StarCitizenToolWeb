@@ -29,16 +29,27 @@ def _int(name, default):
         return default
 
 
+#: 公開端點的快取秒數（新聞改動不頻繁；後台改完最多晚這麼久出現）
+PUBLIC_MAX_AGE = 60
+
+
+def _cached(resp, seconds: int = PUBLIC_MAX_AGE):
+    resp.headers['Cache-Control'] = f'public, max-age={seconds}'
+    return resp
+
+
 @app_news.route('/', methods=['GET'])
 @public_api
+@limiter.limit('120 per minute')
 def list_public():
     """已發布的新聞（玩家頁）。
     ---
     tags: [News]
     parameters:
       - {name: tag, in: query, type: string, description: 只看這個標籤}
-      - {name: q, in: query, type: string, description: 搜尋標題、內文、標籤}
+      - {name: q, in: query, type: string, description: 搜尋標題、內文、標籤（最多 100 字）}
       - {name: pinned, in: query, type: string, description: "1＝只看置頂"}
+      - {name: sort, in: query, type: string, description: "latest＝只依發布時間新到舊（不管置頂）"}
       - {name: limit, in: query, type: integer, default: 20, description: 每頁幾則（最多 100）}
       - {name: offset, in: query, type: integer, default: 0}
     responses:
@@ -47,12 +58,13 @@ def list_public():
     """
     rows, total = news.list_news(public=True, tag=request.args.get('tag', ''), q=request.args.get('q', ''),
                                  limit=_int('limit', 20), offset=_int('offset', 0),
-                                 pinned_only=request.args.get('pinned') == '1')
-    return jsonify({'success': True, 'data': rows, 'total': total})
+                                 pinned_only=request.args.get('pinned') == '1', sort=request.args.get('sort', ''))
+    return _cached(jsonify({'success': True, 'data': rows, 'total': total}))
 
 
 @app_news.route('/tags', methods=['GET'])
 @public_api
+@limiter.limit('120 per minute')
 def list_tags():
     """新聞標籤與數量（玩家頁篩選用）。
     ---
@@ -61,11 +73,12 @@ def list_tags():
       200:
         description: "data: [{tag, count}]"
     """
-    return jsonify({'success': True, 'data': news.tags(public=True)})
+    return _cached(jsonify({'success': True, 'data': news.tags(public=True)}))
 
 
 @app_news.route('/<news_id>', methods=['GET'])
 @public_api
+@limiter.limit('120 per minute')
 def get_public(news_id):
     """一則新聞全文（Markdown）。
     ---
@@ -81,7 +94,7 @@ def get_public(news_id):
     doc = news.get(news_id, public=True)
     if not doc:
         return jsonify({'success': False, 'message': '找不到這則新聞'}), 404
-    return jsonify({'success': True, 'data': doc})
+    return _cached(jsonify({'success': True, 'data': doc}), 300)
 
 
 # ── 後台 ──────────────────────────────────────────────────────────
@@ -95,15 +108,15 @@ def list_admin():
     security:
       - Bearer: []
     parameters:
-      - {name: tag, in: query, type: string}
-      - {name: q, in: query, type: string}
+      - {name: tag, in: query, type: array, items: {type: string}, description: 可重複帶多個（取聯集）}
+      - {name: q, in: query, type: string, description: 搜尋標題、內文、標籤（最多 100 字）}
       - {name: limit, in: query, type: integer, default: 50}
       - {name: offset, in: query, type: integer, default: 0}
     responses:
       200:
         description: "data: [{_id, title, body, cover_url, source_url, tags, pinned, published_at, scheduled, created_by, …}]、total"
     """
-    rows, total = news.list_news(public=False, tag=request.args.get('tag', ''), q=request.args.get('q', ''),
+    rows, total = news.list_news(public=False, tag=request.args.getlist('tag'), q=request.args.get('q', ''),
                                  limit=_int('limit', 50), offset=_int('offset', 0))
     return jsonify({'success': True, 'data': rows, 'total': total, 'tags': news.tags(public=False)})
 
@@ -251,75 +264,3 @@ def ingest():
     Log.create(by, 'ingest_news', f'外部寫入新聞：新增 {len(result["created"])}、更新 {len(result["updated"])}',
                success=True)
     return jsonify({'success': True, 'data': result})
-
-
-# ── API 金鑰管理（只給 admin） ────────────────────────────────────
-
-@app_news.route('/keys', methods=['GET'])
-@admin_api('admin')
-def list_keys():
-    """API 金鑰列表（不含金鑰本身，只有前 8 碼）。
-    ---
-    tags: [News]
-    security:
-      - Bearer: []
-    responses:
-      200:
-        description: "data: [{_id, name, prefix, scopes, created_at, created_by, last_used_at, use_count, revoked}]、scopes: {權限: 說明}"
-    """
-    return jsonify({'success': True, 'data': api_key.list_keys(), 'scopes': api_key.SCOPES})
-
-
-@app_news.route('/keys', methods=['POST'])
-@admin_api('admin')
-def create_key():
-    """建立 API 金鑰；回傳的 key 只有這一次看得到。
-    ---
-    tags: [News]
-    security:
-      - Bearer: []
-    parameters:
-      - in: body
-        name: body
-        schema:
-          type: object
-          required: [name]
-          properties:
-            name: {type: string, description: 名稱（例如「新聞爬蟲」）}
-            scopes: {type: array, items: {type: string}, description: "權限，目前只有 news:write（預設）"}
-    responses:
-      200:
-        description: "data: {key, _id, name, prefix, scopes, …}"
-      400:
-        description: 欄位不合法
-    """
-    data = request.get_json(silent=True) or {}
-    try:
-        created = api_key.create(data.get('name'), data.get('scopes') or ['news:write'], by=get_jwt_identity())
-    except api_key.ApiKeyError as err:
-        return jsonify({'success': False, 'message': str(err)}), 400
-    Log.create(get_jwt_identity(), 'create_api_key', f'建立 API 金鑰「{created["name"]}」（{created["prefix"]}…）',
-               success=True)
-    return jsonify({'success': True, 'data': created})
-
-
-@app_news.route('/keys/<key_id>', methods=['DELETE'])
-@admin_api('admin')
-def revoke_key(key_id):
-    """停用 API 金鑰（立刻失效，紀錄保留）。
-    ---
-    tags: [News]
-    security:
-      - Bearer: []
-    parameters:
-      - {name: key_id, in: path, type: string, required: true}
-    responses:
-      200:
-        description: 已停用
-      404:
-        description: 找不到或已經停用
-    """
-    if not api_key.revoke(key_id, by=get_jwt_identity()):
-        return jsonify({'success': False, 'message': '找不到這把金鑰，或已經停用'}), 404
-    Log.create(get_jwt_identity(), 'revoke_api_key', f'停用 API 金鑰 {key_id}', success=True)
-    return jsonify({'success': True})

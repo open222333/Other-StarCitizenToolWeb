@@ -148,6 +148,21 @@ def _ensure_fleet_unique_index(db):
         logging.warning('[index] 無法建立 %s：%s', _FLEET_UNIQUE_INDEX, e)
 
 
+#: sync_runs（同步執行紀錄）保留天數 → 秒（docs/現版本優化方案.md 0-4）
+SYNC_RUNS_TTL_SECONDS = 90 * 86400
+
+
+def _ensure_ttl(col, keys, seconds: int):
+    """建立（或把既有的同欄位一般索引換成）TTL 索引。同名索引已存在但選項不同時 create_index 會失敗，
+    所以先看 index_information()，不一樣就刪掉重建。"""
+    name = '_'.join(f'{k}_{d}' for k, d in keys)
+    info = col.index_information().get(name)
+    if info and info.get('expireAfterSeconds') != seconds:
+        col.drop_index(name)
+        logging.getLogger(__name__).info('mongo: %s 的索引 %s 改成 TTL（%d 秒）', col.name, name, seconds)
+    col.create_index(keys, expireAfterSeconds=seconds)
+
+
 def ensure_indexes():
     db = get_db()
     db['users'].create_index('username', unique=True)
@@ -213,7 +228,9 @@ def ensure_indexes():
     db['login_failures'].create_index([('ip', ASCENDING), ('at', DESCENDING)])
     db['uex_vehicles_purchases'].create_index('id_vehicle')
     db['uex_vehicles_rentals'].create_index('id_vehicle')
-    db['sync_runs'].create_index([('started_at', DESCENDING)])
+    # 同步執行紀錄只保留 90 天（TTL 索引，MongoDB 每分鐘清一次；started_at 是 datetime）。
+    # 舊版是同一個欄位的一般索引，選項不同不能直接 create_index，見 _ensure_ttl。
+    _ensure_ttl(db['sync_runs'], [('started_at', DESCENDING)], SYNC_RUNS_TTL_SECONDS)
 
     # ── 庫存 ──────────────────────────────────────────────────────────
     # 同一儲位的同物品只能有一筆，入庫靠這個索引做 $inc upsert

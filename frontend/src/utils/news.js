@@ -1,25 +1,24 @@
 // 新聞（玩家頁「新聞」分頁 NewsBoard.vue、「艦長室」上方 NewsBanner.vue 共用）：抓資料與日期格式。
 // 後端見 app/news/view.py（GET /news/、/news/tags、/news/<id>，公開）。
+import { getJson } from '@/utils/getJson'
 
+/** params：tag、q、pinned、limit、offset、sort（latest＝只依發布時間，跑馬燈用） */
 export async function fetchNews(fetcher, params = {}) {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) if (v !== '' && v !== null && v !== undefined) sp.append(k, v)
-  const res = await fetcher(`/news/?${sp.toString()}`)
-  const body = res ? await res.json().catch(() => null) : null
-  if (!res?.ok || !body?.success) return { ok: false, message: body?.message || '讀取新聞失敗' }
-  return { ok: true, data: body.data || [], total: body.total || 0 }
+  const r = await getJson(fetcher, `/news/?${sp.toString()}`, undefined, '讀取新聞失敗')
+  if (!r.ok) return { ok: false, message: r.message }
+  return { ok: true, data: r.data || [], total: r.body.total || 0 }
 }
 
 export async function fetchNewsItem(fetcher, id) {
-  const res = await fetcher(`/news/${encodeURIComponent(id)}`)
-  const body = res ? await res.json().catch(() => null) : null
-  return res?.ok && body?.success ? body.data : null
+  const r = await getJson(fetcher, `/news/${encodeURIComponent(id)}`)
+  return r.ok ? r.data : null
 }
 
 export async function fetchNewsTags(fetcher) {
-  const res = await fetcher('/news/tags')
-  const body = res ? await res.json().catch(() => null) : null
-  return res?.ok && body?.success ? body.data || [] : []
+  const r = await getJson(fetcher, '/news/tags')
+  return r.ok ? r.data || [] : []
 }
 
 /** ISO → 「2026-11-20 16:00」（瀏覽器時區） */

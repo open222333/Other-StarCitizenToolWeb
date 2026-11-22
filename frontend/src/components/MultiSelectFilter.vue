@@ -8,7 +8,7 @@
   不用 Bootstrap 的 dropdown（data-bs-toggle）：它一點擊 dropdown-menu 裡面
   的任何東西就會自動收起來，checkbox 要多勾幾個的話每勾一次就關一次，
   除非額外設 data-bs-auto-close="outside" 而且還要處理 focus 陷阱。
-  自己用一個 ref + 點外面關閉更好控制，跟 FieldHint.vue 的理由一樣。
+  自己用一個 ref + 點外面關閉更好控制。
 
   選項可以有一層子項目：{value, label, parent: 父選項的 value}（例如物品類型「附件」底下的「瞄具」）。
   子項目要緊接在父選項後面；勾了父選項＝整類都要，子項目顯示為已勾、不能單獨取消（勾父選項時會清掉已勾的子項目）。

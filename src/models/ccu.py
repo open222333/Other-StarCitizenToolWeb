@@ -274,13 +274,14 @@ def _price_row(key: str, history: dict, ship: dict, offers: list, now: datetime)
     }
 
 
-def _price_rows(history_filter=None, ship_filter=None) -> list:
+def _price_rows(history_filter=None, ship_filter=None, offer_filter=None) -> list:
+    """history_filter 為 None＝全部船（列表）；給了就只組那幾艘（明細，連 RSI 船、SKU 也只查那幾艘）。"""
     db = get_db()
     now = datetime.utcnow()
     histories = list(db[SALE_HISTORY].find(history_filter or {}, {'_sync': 0}))
     ships = {d['_id']: d for d in db[SHIPS].find(ship_filter or {}, {'msrp_history': 0, '_sync': 0})}
     offers_by_ship = {}
-    for o in db[OFFERS].find({'kind': 'ship'}, {'price_history': 0, '_sync': 0}):
+    for o in db[OFFERS].find({'kind': 'ship', **(offer_filter or {})}, {'price_history': 0, '_sync': 0}):
         offers_by_ship.setdefault(o.get('ship_rsi_id'), []).append(o)
     rows, used = [], set()
     index = None
@@ -304,12 +305,29 @@ def _price_rows(history_filter=None, ship_filter=None) -> list:
     return rows
 
 
+#: 列表快取：資料只在「CCU」「Open Hangar 歷史」「艦船」三個同步項目跑完時才會變（艦船影響船名比對與中文名），
+#: 用這三項最後一次的 run_id 當版本；版本沒變就直接回上次組好的（每個 gunicorn worker 各一份，見待辦 A2）
+PRICE_LIST_JOBS = ('ccu', 'openhangar', 'vehicles')
+_list_cache: dict = {'version': None, 'rows': None}
+
+
+def price_list_version() -> str:
+    """三個同步項目最後的 run_id 串起來（ETag 也用這個）。"""
+    runs = {d['_id']: d.get('last_run_id') or '' for d in get_db()['sync_jobs'].find(
+        {'_id': {'$in': list(PRICE_LIST_JOBS)}}, {'last_run_id': 1})}
+    return '|'.join(str(runs.get(k, '')) for k in PRICE_LIST_JOBS)
+
+
 def ship_price_list() -> list:
-    """每艘船一列（不含各段明細）。"""
+    """每艘船一列（不含各段明細）。同一個版本（price_list_version）只組一次。"""
+    version = price_list_version()
+    if _list_cache['version'] == version and _list_cache['rows'] is not None and version.strip('|'):
+        return _list_cache['rows']
     rows = _price_rows()
     for r in rows:
         r.pop('_periods')
     rows.sort(key=lambda r: (r['name'] or '').lower())
+    _list_cache.update(version=version, rows=rows)
     return rows
 
 
@@ -327,10 +345,16 @@ def ship_price_detail(key: str):
         offers = list(get_db()[OFFERS].find({'kind': 'ship', 'ship_rsi_id': rid}, {'price_history': 0, '_sync': 0}))
         row = _price_row(key, None, ship, offers, datetime.utcnow())
     else:
-        rows = _price_rows({'_id': key})
+        # 只查這一艘：先拿歷史那筆的 rsi_id，RSI 船與單買 SKU 也只查它（不要把整張表讀回來，待辦 A1）
+        hist = get_db()[SALE_HISTORY].find_one({'_id': key}, {'rsi_id': 1})
+        if not hist:
+            return None
+        rid = hist.get('rsi_id')
+        rows = _price_rows({'_id': key}, {'_id': rid}, {'ship_rsi_id': rid})
         if not rows:
             return None
         row = rows[0]
     row['periods'] = row.pop('_periods')
-    row.setdefault('name_zh', _zh_names([row['vehicle_uuid']]).get(row['vehicle_uuid']))
+    if 'name_zh' not in row:   # rsi: 路徑沒經過 _price_rows（待辦 A3：history 路徑已經查過中文，不再查一次）
+        row['name_zh'] = _zh_names([row['vehicle_uuid']]).get(row['vehicle_uuid'])
     return row

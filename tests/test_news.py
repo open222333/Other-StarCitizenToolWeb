@@ -58,10 +58,10 @@ def test_ingest_with_api_key(client, auth_headers):
     # 後台 JWT 不能拿來 ingest
     assert client.post('/news/ingest', json={'title': 'x'}, headers=auth_headers).status_code in (401, 403)
 
-    created = client.post('/news/keys', json={'name': '新聞爬蟲'}, headers=auth_headers).get_json()['data']
+    created = client.post('/data/api-keys', json={'name': '新聞爬蟲', 'scopes': ['news:write']}, headers=auth_headers).get_json()['data']
     key = created['key']
     assert key.startswith('sct_') and created['prefix'] == key[:12]
-    listed = client.get('/news/keys', headers=auth_headers).get_json()['data']
+    listed = client.get('/data/api-keys', headers=auth_headers).get_json()['data']
     assert 'key' not in listed[0] and 'key_hash' not in listed[0]
 
     h = {'X-API-Key': key}
@@ -82,9 +82,9 @@ def test_ingest_with_api_key(client, auth_headers):
     assert client.post('/news/ingest', json={'title': 'C'}, headers={'Authorization': f'Bearer {key}'}).get_json()['success']
 
     # 停用後立刻失效
-    assert client.delete(f'/news/keys/{created["_id"]}', headers=auth_headers).get_json()['success']
+    assert client.delete(f'/data/api-keys/{created["_id"]}', headers=auth_headers).get_json()['success']
     assert client.post('/news/ingest', headers=h, json={'title': 'x'}).status_code == 403
-    keys = client.get('/news/keys', headers=auth_headers).get_json()['data']
+    keys = client.get('/data/api-keys', headers=auth_headers).get_json()['data']
     assert keys[0]['revoked'] is True and keys[0]['use_count'] == 4, '每次用金鑰（含被擋下的內容）都算'
 
 
@@ -94,7 +94,42 @@ def test_key_management_is_admin_only(client):
     User.create('op1', 'Operator1234!', role='operator', template_id=UserTemplate.ensure_defaults())
     token = client.post('/auth/login', json={'username': 'op1', 'password': 'Operator1234!'}).get_json()['token']
     h = {'Authorization': f'Bearer {token}'}
-    assert client.get('/news/keys', headers=h).status_code == 403
-    assert client.post('/news/keys', json={'name': 'x'}, headers=h).status_code == 403
+    assert client.get('/data/api-keys', headers=h).status_code == 403
+    assert client.post('/data/api-keys', json={'name': 'x'}, headers=h).status_code == 403
     # operator 可以管新聞
     assert client.post('/news/admin', json={'title': 'op 發的'}, headers=h).get_json()['success']
+
+
+def test_public_sort_latest_query_cap_and_cache_headers(client, auth_headers):
+    """跑馬燈用 sort=latest（不管置頂）；搜尋字串截到 100 字；公開端點有短時間快取。"""
+    old = (datetime.utcnow() - timedelta(days=3)).isoformat() + 'Z'
+    _create(client, auth_headers, title='舊的置頂', pinned=True, published_at=old)
+    _create(client, auth_headers, title='最新一則')
+    res = client.get('/news/?sort=latest')
+    assert [n['title'] for n in res.get_json()['data']] == ['最新一則', '舊的置頂']
+    assert [n['title'] for n in client.get('/news/').get_json()['data']][0] == '舊的置頂'
+    assert 'max-age' in res.headers.get('Cache-Control', '')
+    assert 'max-age' in client.get('/news/tags').headers.get('Cache-Control', '')
+    assert client.get('/news/?q=' + '最' + 'x' * 300).get_json()['total'] == 0
+    from src.models import news
+    assert len(news._filter(True, q='a' * 500)['$or'][0]['title']['$regex']) == news.Q_MAX
+
+
+def test_admin_list_filters_and_pages(client, auth_headers):
+    """後台列表：後端篩選（關鍵字、多個標籤取聯集）＋分頁。"""
+    _create(client, auth_headers, title='A', tags=['改版'])
+    _create(client, auth_headers, title='B', tags=['活動'])
+    _create(client, auth_headers, title='C', tags=['其他'])
+    r = client.get('/news/admin?tag=改版&tag=活動', headers=auth_headers).get_json()
+    assert r['total'] == 2 and {n['title'] for n in r['data']} == {'A', 'B'}
+    r = client.get('/news/admin?limit=1&offset=1', headers=auth_headers).get_json()
+    assert r['total'] == 3 and len(r['data']) == 1
+    assert client.get('/news/admin?q=C', headers=auth_headers).get_json()['total'] == 1
+
+
+def test_api_key_requires_scope(client, auth_headers):
+    """金鑰管理獨立在 /data/api-keys：建立時要選權限（之後新功能加 scope 就好）。"""
+    r = client.post('/data/api-keys', json={'name': '沒權限'}, headers=auth_headers)
+    assert r.status_code == 400
+    body = client.get('/data/api-keys', headers=auth_headers).get_json()
+    assert 'news:write' in body['scopes']

@@ -16,6 +16,7 @@ from flask_jwt_extended import (
 
 from src import WMS_SCOPE_ID
 from src.limiter import limiter
+from src.timeutil import iso_utc
 from src.models.blueprint import (ACQUISITION_METHODS, DEFAULT_UNLOCK_STATUS,
                                   UNLOCK_STATUSES, Blueprint as BlueprintModel)
 from src.models.inventory import OWNER_PLAYER, Inventory, InventoryLog, StockError
@@ -650,7 +651,7 @@ def issue_my_discord_code():
                f'產生 Discord 綁定碼：{player.get("star_citizen_id")}', success=True)
     return jsonify({'success': True,
                     'code': issued['code'],
-                    'expires_at': issued['expires_at'].isoformat() + 'Z',
+                    'expires_at': iso_utc(issued['expires_at']),
                     'star_citizen_id': player.get('star_citizen_id')})
 
 

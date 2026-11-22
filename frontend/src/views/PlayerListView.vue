@@ -105,6 +105,7 @@ import AdminSearchCard  from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import PlayerFormModal   from '@/components/PlayerFormModal.vue'
 import ConfirmModal      from '@/components/ConfirmModal.vue'
+import { escapeHtml } from '@/utils/html'
 
 const router = useRouter()
 const store  = usePlayerStore()
@@ -143,7 +144,7 @@ function toggleDeleted(checked) { store.load(checked) }
 
 async function handleDelete(p) {
   const ok = await confirmModalRef.value.confirm(
-    `確定要移除玩家 <strong>${escHtml(p.player_name)}</strong>？<br>`
+    `確定要移除玩家 <strong>${escapeHtml(p.player_name)}</strong>？<br>`
     + '<span class="small text-muted">資料會保留，之後可以用「顯示已移除」找回來。</span>'
   )
   if (!ok) return
@@ -156,7 +157,7 @@ async function handleDelete(p) {
 
 async function handleRestore(p) {
   const ok = await confirmModalRef.value.confirm(
-    `確定要還原玩家 <strong>${escHtml(p.player_name)}</strong>？<br>`
+    `確定要還原玩家 <strong>${escapeHtml(p.player_name)}</strong>？<br>`
     + '<span class="small text-muted">他原本的庫存與藍圖會一併回到名下。</span>'
   )
   if (!ok) return
@@ -171,9 +172,6 @@ async function handleRestore(p) {
   }
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-}
 
 onMounted(() => store.load())
 </script>

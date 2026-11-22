@@ -102,6 +102,7 @@ import SfModal from '@/components/SfModal.vue'
 import SfState from '@/components/SfState.vue'
 import NewsArticle from '@/components/NewsArticle.vue'
 import { fetchNews, fetchNewsItem, fetchNewsTags, fmtNewsDate } from '@/utils/news'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -136,16 +137,14 @@ const reload = () => load(0)
 // 頭條：沒有搜尋／篩選時前 4 則；跑馬燈：依時間最新 8 則（不管置頂）
 const showHero = computed(() => !query.value && !tag.value && items.value.length > 0)
 // 寬螢幕 4 則（右邊直長那格）、平板以下 3 則，多的接到下面的卡片
-const wide = ref(typeof window !== 'undefined' && window.matchMedia('(min-width: 992px)').matches)
-if (typeof window !== 'undefined') {
-  window.matchMedia('(min-width: 992px)').addEventListener('change', (e) => { wide.value = e.matches })
-}
+const { isWide: wide } = useBreakpoint()   // 監聽器卸載時由 composable 移除
 const hero = computed(() => (showHero.value ? items.value.slice(0, wide.value ? 4 : 3) : []))
 const rest = computed(() => (showHero.value ? items.value.slice(hero.value.length) : items.value))
 const latest = ref([])
 async function loadLatest() {
-  const r = await fetchNews(props.fetcher, { limit: 30 })
-  if (r.ok) latest.value = [...r.data].sort((a, b) => String(b.published_at).localeCompare(String(a.published_at))).slice(0, 8)
+  // 後端 sort=latest 只依發布時間排，不用再抓 30 則在前端排
+  const r = await fetchNews(props.fetcher, { limit: 8, sort: 'latest' })
+  if (r.ok) latest.value = r.data
 }
 const loadMore = () => load(items.value.length)
 let timer = null
@@ -185,8 +184,8 @@ defineExpose({ openItem })
 /* ── 跑馬燈 ── */
 .nb-ticker { display: flex; flex-direction: row; align-items: stretch; overflow: hidden; margin-bottom: .9rem; padding: 0 !important; }
 .nb-ticker__label {
-  flex: 0 0 auto; display: inline-flex; align-items: center; padding: .45rem .9rem; font-weight: 700; font-size: .9rem;
-  color: #0b1020; background: var(--sf-accent-2); white-space: nowrap;
+  flex: 0 0 auto; display: inline-flex; align-items: center; padding: .45rem .9rem; font-weight: 700; font-size: var(--sf-fs-sm);
+  color: var(--sf-accent-2-ink, #0b1020); background: var(--sf-accent-2); white-space: nowrap;
 }
 .nb-ticker__view { flex: 1 1 auto; min-width: 0; overflow: hidden; display: flex; align-items: center;
   mask-image: linear-gradient(90deg, transparent, #000 2rem, #000 calc(100% - 2rem), transparent); }
@@ -197,8 +196,8 @@ defineExpose({ openItem })
   .nb-ticker__track { animation: none; }
   .nb-ticker__view { overflow-x: auto; }
 }
-.nb-ticker__item { background: none; border: 0; padding: .45rem 0; color: var(--sf-text); font-size: .9rem; font-weight: 600; }
-.nb-ticker__item:hover { color: var(--sf-accent-text, var(--sf-accent)); text-decoration: underline; }
+.nb-ticker__item { background: none; border: 0; padding: .45rem 0; color: var(--sf-text); font-size: var(--sf-fs-sm); font-weight: 600; }
+.nb-ticker__item:hover { color: var(--sf-accent-text, var(--sf-accent)); }
 .nb-ticker__dot { display: inline-block; width: .4rem; height: .4rem; border-radius: 50%; background: var(--sf-accent-2); margin-right: .55rem; vertical-align: middle; }
 
 /* ── 頭條 ── */
@@ -228,19 +227,19 @@ defineExpose({ openItem })
 .nb-tile:focus-visible, .nb-card:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
 .nb-tile__shade { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 35%, rgba(4, 8, 18, .88) 100%); }
 .nb-tile__body { position: absolute; left: 0; right: 0; bottom: 0; padding: .9rem 1rem; display: flex; flex-direction: column; }
-.nb-tile__title { font-weight: 800; font-size: 1.05rem; line-height: 1.35; text-shadow: 0 1px 3px rgba(0, 0, 0, .6);
+.nb-tile__title { font-weight: 800; font-size: var(--sf-fs-md); line-height: 1.35; text-shadow: 0 1px 3px rgba(0, 0, 0, .6);
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.nb-tile--0 .nb-tile__title { font-size: 1.6rem; }
+.nb-tile--0 .nb-tile__title { font-size: var(--sf-fs-xl); }
 .nb-badge {
-  display: inline-flex; align-items: center; padding: .1rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 700;
-  color: #0b1020; background: var(--sf-accent-2);
+  display: inline-flex; align-items: center; padding: .1rem .5rem; border-radius: .25rem; font-size: var(--sf-fs-xs); font-weight: 700;
+  color: var(--sf-accent-2-ink, #0b1020); background: var(--sf-accent-2);
 }
 .nb-badge--pin { background: var(--sf-accent); }
-.nb-meta { display: inline-flex; align-items: center; margin-top: .35rem; font-size: .8rem; color: rgba(255, 255, 255, .85); }
+.nb-meta { display: inline-flex; align-items: center; margin-top: .35rem; font-size: var(--sf-fs-xs); color: rgba(255, 255, 255, .85); }
 .nb-meta--muted { color: var(--sf-text-muted); }
 
 /* ── 更多新聞 ── */
-.nb-section { display: flex; align-items: center; gap: .75rem; font-size: 1.05rem; font-weight: 800; margin: .25rem 0 .75rem;
+.nb-section { display: flex; align-items: center; gap: .75rem; font-size: var(--sf-fs-md); font-weight: 800; margin: .25rem 0 .75rem;
   color: var(--sf-text-strong); }
 .nb-section span { padding-left: .6rem; border-left: 4px solid var(--sf-accent-2); }
 .nb-section::after { content: ''; flex: 1; border-bottom: 1px solid var(--sf-border); }
@@ -251,9 +250,9 @@ defineExpose({ openItem })
 .nb-card__media img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s ease; }
 .nb-card__badges { position: absolute; left: .6rem; bottom: .6rem; display: flex; flex-wrap: wrap; gap: .25rem; }
 .nb-card__body { display: flex; flex-direction: column; padding: .7rem .85rem .85rem; flex: 1 1 auto; }
-.nb-card__title { font-weight: 700; font-size: 1rem; line-height: 1.4; color: var(--sf-text-strong);
+.nb-card__title { font-weight: 700; font-size: var(--sf-fs-base); line-height: 1.4; color: var(--sf-text-strong);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.nb-card__excerpt { color: var(--sf-text-muted); font-size: .88rem; margin-top: .3rem;
+.nb-card__excerpt { color: var(--sf-text-muted); font-size: var(--sf-fs-sm); margin-top: .3rem;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .nb-card .nb-meta { margin-top: auto; padding-top: .45rem; }
 
@@ -265,10 +264,10 @@ defineExpose({ openItem })
   .nb-hero .nb-tile--2 { grid-column: 2; grid-row: 2; }
   .nb-hero--2 .nb-tile--1 { grid-column: 1 / span 2; }
   .nb-hero--1 { grid-template-rows: 16rem; }
-  .nb-tile--0 .nb-tile__title { font-size: 1.25rem; }
+  .nb-tile--0 .nb-tile__title { font-size: var(--sf-fs-lg); }
 }
 @media (max-width: 575.98px) {
   .nb-hero, .nb-hero--2, .nb-hero--3 { grid-template-rows: 13rem 9.5rem; gap: .6rem; }
-  .nb-tile__title { font-size: .95rem; }
+  .nb-tile__title { font-size: var(--sf-fs-sm); }
 }
 </style>

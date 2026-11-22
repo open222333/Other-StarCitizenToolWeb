@@ -20,6 +20,7 @@ from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 
 from src.mongo import get_db
+from src.timeutil import iso_utc
 
 COLLECTION = 'news'
 MAX_TITLE = 200
@@ -47,7 +48,11 @@ def ensure_indexes(db=None):
     col = (db if db is not None else get_db())[COLLECTION]
     col.create_index([('deleted_at', ASCENDING), ('pinned', DESCENDING), ('published_at', DESCENDING)])
     col.create_index('tags')
-    col.create_index('source_url', sparse=True)
+    # 沒來源時存的是 None，sparse 照樣會收進索引；改成只收字串。舊的 sparse 索引同名，先拿掉
+    if 'source_url_1' in col.index_information():
+        col.drop_index('source_url_1')
+    col.create_index('source_url', name='source_url_str',
+                     partialFilterExpression={'source_url': {'$type': 'string'}})
 
 
 # ── 驗證 ──────────────────────────────────────────────────────────
@@ -145,9 +150,7 @@ def _excerpt(body: str) -> str:
     return t[:EXCERPT] + ('…' if len(t) > EXCERPT else '')
 
 
-def _iso(dt) -> Optional[str]:
-    """naive UTC → ISO 8601（帶 Z），前端 new Date() 直接吃。"""
-    return dt.isoformat(timespec='seconds') + 'Z' if isinstance(dt, datetime) else None
+_iso = iso_utc
 
 
 def to_public(doc: dict, full: bool = False) -> dict:
@@ -171,12 +174,20 @@ def to_admin(doc: dict) -> dict:
     return out
 
 
+#: 搜尋字串上限（$regex 掃標題、內文、標籤，太長的字串沒有意義又耗運算）
+Q_MAX = 100
+
+
 def _filter(public: bool, tag: str = '', q: str = '') -> dict:
+    q = (q or '')[:Q_MAX]
     f = {'deleted_at': None}
     if public:
         f['published_at'] = {'$lte': datetime.utcnow()}
-    if tag:
-        f['tags'] = tag
+    tags_ = [t for t in (tag if isinstance(tag, (list, tuple)) else [tag]) if t]
+    if len(tags_) == 1:
+        f['tags'] = tags_[0]
+    elif tags_:
+        f['tags'] = {'$in': list(tags_)}   # 多個標籤取聯集（後台多選篩選）
     if q:
         import re
         rx = {'$regex': re.escape(q), '$options': 'i'}
@@ -185,14 +196,19 @@ def _filter(public: bool, tag: str = '', q: str = '') -> dict:
 
 
 def list_news(public: bool = True, tag: str = '', q: str = '', limit: int = 20, offset: int = 0,
-              pinned_only: bool = False) -> tuple:
-    """(列表, 總數)：置頂在前，再依發布時間新到舊。public：只列已發布的。"""
-    f = _filter(public, tag.strip(), q.strip())
+              pinned_only: bool = False, sort: str = '') -> tuple:
+    """(列表, 總數)：置頂在前，再依發布時間新到舊。public：只列已發布的。
+    sort='latest'：只依發布時間新到舊（不管置頂，玩家頁跑馬燈用）。"""
+    tag = [t.strip() for t in tag] if isinstance(tag, (list, tuple)) else (tag or '').strip()
+    f = _filter(public, tag, (q or '').strip())
     if pinned_only:
         f['pinned'] = True
     limit = max(1, min(int(limit or 20), MAX_LIMIT))
     offset = max(0, int(offset or 0))
-    cur = _col().find(f).sort([('pinned', DESCENDING), ('published_at', DESCENDING), ('_id', DESCENDING)])
+    order = [('published_at', DESCENDING), ('_id', DESCENDING)]
+    if sort != 'latest':
+        order.insert(0, ('pinned', DESCENDING))
+    cur = _col().find(f).sort(order)
     total = _col().count_documents(f)
     rows = list(cur.skip(offset).limit(limit))
     return [(to_public(d) if public else to_admin(d)) for d in rows], total

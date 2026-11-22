@@ -120,3 +120,17 @@ export function norm(text) {
   return (m ? m[1] : t).trim().toLowerCase()
 }
 
+
+// ── 航線結果的顯示方式（RouteViewBar.vue；兩個規劃器共用）──
+export const ROUTE_VIEWS = [
+  { key: 'table', label: '航段表', icon: 'bi bi-list-ol' },
+  { key: 'flow', label: '總覽', icon: 'bi bi-grid-3x3-gap' },
+  { key: 'map', label: '3D 星圖', icon: 'bi bi-globe2' },
+]
+export const FLOW_DIRS = [
+  { key: 'horizontal', label: '橫向', icon: 'bi bi-arrow-left-right', title: '一行一行排，左右來回' },
+  { key: 'vertical', label: '直向', icon: 'bi bi-arrow-down-up', title: '一欄一欄排，上下來回' },
+]
+/** 存起來的顯示方式／方向不認得就用預設（總覽、橫向） */
+export const viewOr = v => (ROUTE_VIEWS.some(x => x.key === v) ? v : 'flow')
+export const flowDirOr = d => (d === 'vertical' ? 'vertical' : 'horizontal')

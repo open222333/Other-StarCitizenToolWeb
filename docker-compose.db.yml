@@ -5,6 +5,12 @@
 #    要從別台機器連，請用 SSH tunnel，不要改成 0.0.0.0。
 services:
   mongo:
+    # 容器 log 上限（docs/現版本優化方案.md 0-5）：每個檔 10MB、最多 3 個，不會無限長大塞滿硬碟
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     image: mongo:7
     hostname: flask-api-mongo
     ports:
@@ -42,6 +48,12 @@ services:
   #    留空的把關交給 mysql image 自己：沒有密碼它會拒絕初始化並印出原因，
   #    而且只有真的啟用 profile 時才會發生。
   mysql:
+    # 容器 log 上限（docs/現版本優化方案.md 0-5）：每個檔 10MB、最多 3 個，不會無限長大塞滿硬碟
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     profiles: ["mysql"]
     image: mysql:8.0
     hostname: flask-api-mysql
@@ -70,6 +82,12 @@ services:
           memory: 192m
 
   redis:
+    # 容器 log 上限（docs/現版本優化方案.md 0-5）：每個檔 10MB、最多 3 個，不會無限長大塞滿硬碟
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     image: redis:7-alpine
     hostname: flask-api-redis
     ports:

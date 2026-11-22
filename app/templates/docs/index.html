@@ -145,7 +145,6 @@
   <a class="nav-link" href="#api-auth">認證 — /auth</a>
   <a class="nav-link" href="#api-user">使用者 — /user</a>
   <a class="nav-link" href="#api-log">日誌 — /log</a>
-  <a class="nav-link" href="#api-sample">範例 — /sample</a>
 
   <div class="nav-section">系統</div>
   <a class="nav-link" href="#roles">角色與權限</a>
@@ -464,20 +463,6 @@ Authorization: Bearer &lt;token&gt;</code></pre>
     }
   ]
 }</code></pre>
-
-  <!-- ────────────────── API：範例 ────────────────── -->
-  <h2 class="section-title" id="api-sample">
-    <i class="bi bi-braces me-2 text-primary"></i>API — 範例端點 <span class="url-pill">/sample</span>
-  </h2>
-  <p>內建示範路由，展示帶有 Swagger 文件的 API 寫法。</p>
-
-  <h3 class="sub-title"><span class="method-get">GET</span> &nbsp;<code>/sample/check/&lt;domain&gt;</code> — 網域驗證</h3>
-  <pre><code>GET /sample/check/google.com</code></pre>
-  <p>回傳指定網域是否可解析，用於展示帶路徑參數的 API 範例。</p>
-  <div class="tip-box">
-    <i class="bi bi-lightbulb me-1"></i>
-    <strong>新增 Blueprint：</strong>複製 <code>app/sample/</code> 目錄結構作為新模組的起點，在 <code>app/__init__.py</code> 中以 <code>app.register_blueprint()</code> 掛載即可。
-  </div>
 
   <!-- ────────────────── 角色與權限 ────────────────── -->
   <h2 class="section-title" id="roles">

@@ -131,6 +131,7 @@ import AdminSearchCard       from '@/components/AdminSearchCard.vue'
 import SortTh from '@/components/SortTh.vue'
 import SfPager from '@/components/SfPager.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { escapeHtml } from '@/utils/html'
 import AdminSearchField      from '@/components/AdminSearchField.vue'
 
 const playerStore = usePlayerStore()
@@ -255,7 +256,7 @@ async function reload(newOffset = 0) {
 
 async function handleDelete(bp) {
   const ok = await confirmModalRef.value.confirm(
-    `確定要刪除藍圖 <strong>${escHtml(bp.name)}</strong>？`
+    `確定要刪除藍圖 <strong>${escapeHtml(bp.name)}</strong>？`
   )
   if (!ok) return
   const res = await blueprintApi.remove(bp._id)
@@ -265,9 +266,6 @@ async function handleDelete(bp) {
   else flash(data.message || '刪除失敗')
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-}
 
 </script>
 

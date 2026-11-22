@@ -196,6 +196,7 @@ import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import AdminSearchCard   from '@/components/AdminSearchCard.vue'
 import AdminSearchField  from '@/components/AdminSearchField.vue'
 import SortTh from '@/components/SortTh.vue'
+import { escapeHtml } from '@/utils/html'
 import { useTableSort } from '@/composables/useTableSort'
 
 const auth = useAuthStore()
@@ -358,7 +359,7 @@ async function onTemplateSaved(syncedUsers) {
 
 async function handleDeleteUser(u) {
   const ok = await confirmModalRef.value.confirm(
-    `確定要刪除使用者 <strong>${escHtml(u.username)}</strong>？`
+    `確定要刪除使用者 <strong>${escapeHtml(u.username)}</strong>？`
   )
   if (!ok) return
   const res  = await userApi.remove(u._id)
@@ -370,7 +371,7 @@ async function handleDeleteUser(u) {
 
 async function handleDeleteTemplate(t) {
   const ok = await confirmModalRef.value.confirm(
-    `確定要刪除模板 <strong>${escHtml(t.name)}</strong>？`
+    `確定要刪除模板 <strong>${escapeHtml(t.name)}</strong>？`
   )
   if (!ok) return
   const res  = await userApi.removeTemplate(t._id)
@@ -380,9 +381,6 @@ async function handleDeleteTemplate(t) {
   else flash(data.message || '刪除失敗')
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-}
 
 onMounted(loadAll)
 </script>

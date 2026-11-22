@@ -1,5 +1,5 @@
 <!--
-  玩家頁、說明頁最下方的「資料來源與使用條款」：本站用到的每個外部資料來源、它的授權／使用條款連結，
+  說明頁最下方的「資料來源與使用條款」：本站用到的每個外部資料來源、它的授權／使用條款連結，
   以及本站的使用範圍（非官方、非商業粉絲工具）。新增同步來源時這裡也要加一列（後端來源清單見 src/scdata.py 的 PROVIDERS）。
 
   只列有公開 API／公開授權的來源；每列的「條款」連結就是可以這樣使用的依據。
@@ -12,13 +12,12 @@
     </div>
     <ul class="site-footer__list">
       <li v-for="s in SOURCES" :key="s.name">
-        <a :href="s.url" target="_blank" rel="noopener noreferrer" class="site-footer__name">{{ s.name }}</a>
+        <span class="site-footer__name">{{ s.name }}</span>
         <span class="site-footer__use">{{ s.use }}</span>
+        <!-- 玩家頁不用文字連結：開外部網址用有底色的按鈕樣式（CLAUDE.md 介面文字原則） -->
         <span class="site-footer__terms">
-          <template v-for="(t, i) in s.terms" :key="t.url">
-            <template v-if="i">・</template>
-            <a :href="t.url" target="_blank" rel="noopener noreferrer">{{ t.label }}</a>
-          </template>
+          <a v-for="t in s.terms" :key="t.url" :href="t.url" target="_blank" rel="noopener noreferrer"
+            class="btn btn-sm btn-primary"><i class="bi bi-box-arrow-up-right me-1"></i>{{ t.label }}</a>
         </span>
       </li>
     </ul>
@@ -55,15 +54,14 @@ const SOURCES = [
 <style scoped>
 .site-footer {
   margin-top: 2.5rem; padding: 1rem 0 .5rem; border-top: 1px solid var(--sf-border);
-  color: var(--sf-text-muted); font-size: .82rem; line-height: 1.5;
+  color: var(--sf-text-muted); font-size: var(--sf-fs-sm); line-height: var(--sf-lh-body);
 }
 .site-footer__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; margin-bottom: .5rem; }
 .site-footer__title { font-weight: 700; color: var(--sf-text); }
-.site-footer__list { list-style: none; padding: 0; margin: 0 0 .5rem; display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: .35rem 1.25rem; }
-.site-footer__list li { display: flex; flex-direction: column; }
-.site-footer__name { font-weight: 600; color: var(--sf-text); text-decoration: none; }
-.site-footer__name:hover { text-decoration: underline; }
-.site-footer__terms a { color: var(--sf-accent-text, var(--sf-accent)); }
-.site-footer__legal { margin: 0; font-size: .75rem; opacity: .85; }
+.site-footer__list { list-style: none; padding: 0; margin: 0 0 .75rem; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: .75rem 1.25rem; }
+.site-footer__list li { display: flex; flex-direction: column; gap: .15rem; }
+.site-footer__name { font-weight: 600; color: var(--sf-text); }
+.site-footer__terms { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .1rem; }
+.site-footer__legal { margin: 0; font-size: var(--sf-fs-xs); }
 </style>

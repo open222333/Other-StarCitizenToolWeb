@@ -1,5 +1,11 @@
 services:
   web:
+    # 容器 log 上限（docs/現版本優化方案.md 0-5）：每個檔 10MB、最多 3 個，不會無限長大塞滿硬碟
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # multi-stage build（見 docker/Dockerfile.web）：容器內自動跑 npm run build:web，
     # 不需要在本機手動 build，`docker-compose up --build` 就會產生最新的靜態檔。
     build:

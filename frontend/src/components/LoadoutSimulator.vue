@@ -27,7 +27,7 @@
                 <button type="button" class="btn btn-sm btn-warning ms-auto" :disabled="!changes.length" @click="resetLoadout">
                   <i class="bi bi-arrow-counterclockwise me-1"></i>重設配裝</button>
                 <button type="button" class="btn btn-sm btn-info" @click="copyLink">
-                  <i class="bi bi-link-45deg me-1"></i>{{ copied ? '已複製' : '複製連結' }}</button>
+                  <i class="bi bi-link-45deg me-1"></i>複製連結</button>
               </div>
             </div>
           </div>
@@ -225,6 +225,7 @@ import {
   SECTIONS, WEAPON_GROUPS, decodeChanges, diff, encodeChanges, equip, findNode, fits, groupNodes, itemMap,
   pathTo, sectionOf, summarize, tagsFor,
 } from '@/utils/loadoutCalc'
+import { copyText } from '@/utils/clipboard'
 import {
   autoAllocate, consumers, efficiency, generation, maxAllocate, powerPlantEm, setWithinGen, powerSummary,
 } from '@/utils/loadoutPower'
@@ -381,7 +382,6 @@ watch([() => ship.value?.id, encoded], ([id, lo]) => {
     router.replace({ query })
   }
 })
-const copied = ref(false)
 async function copyLink() {
   const url = new URL(window.location.href)
   url.search = ''
@@ -389,11 +389,7 @@ async function copyLink() {
   url.searchParams.set('sub', 'loadout')
   url.searchParams.set('ship', ship.value.id)
   if (encoded.value) url.searchParams.set('lo', encoded.value)
-  try {
-    await navigator.clipboard.writeText(url.toString())
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 1500)
-  } catch { /* 瀏覽器不給複製就算了 */ }
+  await copyText(url.toString(), { okText: '已複製連結' })
 }
 
 // ── 顯示 ──

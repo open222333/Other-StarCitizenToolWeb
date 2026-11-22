@@ -6,7 +6,7 @@ import { useScifiThemeStore } from './stores/scifiTheme'
 
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
-import 'bootstrap/dist/js/bootstrap.bundle.min.js'
+// Bootstrap 的 JS 只在用到的元件裡 import { Modal } from 'bootstrap'（全站沒有 data-bs-* 自動綁定），不再整包載入 bundle
 // 玩家端公開頁面（登入／註冊／個人頁）用的深色科幻主題，見檔案內註解
 import './assets/scifi-theme.css'
 

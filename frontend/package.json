@@ -15,7 +15,9 @@
     "test:crates": "node src/utils/crateCombos.test.mjs",
     "test:cargo": "node src/utils/stopCargo.test.mjs",
     "test:markdown": "node src/utils/markdown.test.mjs",
-    "test:power": "node src/utils/loadoutPower.test.mjs"
+    "test:power": "node src/utils/loadoutPower.test.mjs",
+    "test:flow": "node src/utils/routeFlow.test.mjs",
+    "test": "node --test \"src/utils/*.test.mjs\""
   },
   "dependencies": {
     "bootstrap":       "^5.3.3",

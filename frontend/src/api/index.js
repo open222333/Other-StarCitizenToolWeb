@@ -265,13 +265,24 @@ export const dataApi = {
 
 // ── 新聞 API（後台；app/news/view.py）───────────────────────────────
 export const newsApi = {
-  listAdmin: () => apiFetch('/news/admin?limit=100'),
+  // params：q、tag（陣列，取聯集）、limit、offset（後端篩選＋分頁）
+  listAdmin: (params = {}) => {
+    const sp = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      for (const x of (Array.isArray(v) ? v : [v])) if (x !== '' && x !== null && x !== undefined) sp.append(k, x)
+    }
+    return apiFetch(`/news/admin?${sp.toString()}`)
+  },
   create: data => apiFetch('/news/admin', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => apiFetch(`/news/admin/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: id => apiFetch(`/news/admin/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  keys: () => apiFetch('/news/keys'),
-  createKey: data => apiFetch('/news/keys', { method: 'POST', body: JSON.stringify(data) }),
-  revokeKey: id => apiFetch(`/news/keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
+// ── API 金鑰（後台「API 金鑰」頁，只有 admin；app/api_key/view.py）────────────
+export const apiKeyApi = {
+  list:   () => apiFetch('/data/api-keys'),
+  create: data => apiFetch('/data/api-keys', { method: 'POST', body: JSON.stringify(data) }),
+  revoke: id => apiFetch(`/data/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 }
 
 // ── 遊戲主檔同步 API ─────────────────────────────────────────────

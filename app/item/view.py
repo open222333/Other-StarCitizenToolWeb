@@ -8,7 +8,9 @@
 
 import re
 
-from flask import Blueprint, jsonify, request
+import hashlib
+
+from flask import Blueprint, jsonify, make_response, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from src.limiter import limiter
@@ -690,6 +692,10 @@ def vehicle_facets():
     return jsonify({'success': True, 'data': VehicleMaster.facets()})
 
 
+#: 船價（列表、明細）的瀏覽器快取秒數：資料最快 6 小時同步一次
+SHIP_PRICE_MAX_AGE = 300
+
+
 @app_item.route('/ship-prices', methods=['GET'])
 @public_api
 def ship_prices():
@@ -704,7 +710,18 @@ def ship_prices():
     """
     from src.models import ccu
     from src import openhangar
-    return jsonify({'success': True, 'data': ccu.ship_price_list(), 'attribution': openhangar.ATTRIBUTION})
+    # 資料只在同步後才變：用三個同步項目的 run_id 當 ETag，瀏覽器帶 If-None-Match 一樣就回 304（待辦 A2）
+    version = ccu.price_list_version()
+    # hashlib 而不是 hash()：hash() 每個行程不同，多個 worker 給的 ETag 會不一樣
+    etag = f'"sp-{hashlib.md5(version.encode()).hexdigest()[:16]}"' if version.strip('|') else ''
+    if etag and request.headers.get('If-None-Match') == etag:
+        resp = make_response('', 304)
+    else:
+        resp = jsonify({'success': True, 'data': ccu.ship_price_list(), 'attribution': openhangar.ATTRIBUTION})
+    if etag:
+        resp.headers['ETag'] = etag
+    resp.headers['Cache-Control'] = f'public, max-age={SHIP_PRICE_MAX_AGE}'
+    return resp
 
 
 @app_item.route('/ship-prices/detail', methods=['GET'])
@@ -727,7 +744,9 @@ def ship_price_detail():
     row = ccu.ship_price_detail(request.args.get('key', ''))
     if not row:
         return jsonify({'success': False, 'message': '找不到這艘船'}), 404
-    return jsonify({'success': True, 'data': row})
+    resp = jsonify({'success': True, 'data': row})
+    resp.headers['Cache-Control'] = f'public, max-age={SHIP_PRICE_MAX_AGE}'   # 待辦 A4
+    return resp
 
 
 #: /item/translations 一次最多查幾段文字、每段最長幾個字
