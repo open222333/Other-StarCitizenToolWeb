@@ -12,6 +12,7 @@
   <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短 -->
   <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
     <SortSelect v-if="isPhone" class="mb-2" :sort="sort" :options="SORT_OPTIONS" />
+    <p v-if="looseMatch" class="small text-muted mb-2 sf-loose-note"><i class="bi bi-info-circle me-1"></i>沒有以這些字開頭的名稱，以下是名稱中間含有這串字的結果。</p>
     <div class="card scifi-card">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
@@ -164,6 +165,8 @@ function query(params) {
 
 // 點表頭排序（後端，見 src/models/mission.py 的 SORT_FIELDS）
 const sort = useTableSort(null, { onChange: () => reload(0) })
+// 名稱關鍵字照「字首」規則找不到、後端放寬成任意位置才找到（回應 match='loose'，見 src/models/name_search.py）
+const looseMatch = ref(false)
 
 let seq = 0
 async function reload(newOffset = 0) {
@@ -189,6 +192,7 @@ async function reload(newOffset = 0) {
   if (body?.success) {
     rows.value = body.data || []
     total.value = body.total || 0
+    looseMatch.value = body.match === 'loose'
     loadTranslations('mission_type', rows.value.map(m => m.reward_scope))
     loadTranslations('location', rows.value.flatMap(m => m.star_systems || []))
     loadTranslations('faction', rows.value.flatMap(m => (m.reputation_gained || []).map(r => r.faction)))

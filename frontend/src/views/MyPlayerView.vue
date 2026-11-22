@@ -193,7 +193,7 @@
               <label class="form-label small fw-semibold mb-1" for="home-select">定居點</label>
               <select id="home-select" v-model="homeDraft" class="form-select form-select-sm">
                 <option value="">未設定</option>
-                <optgroup v-for="g in homeGroups" :key="g.system" :label="g.system_zh ? `${g.system}（${g.system_zh}）` : g.system">
+                <optgroup v-for="g in homeGroups" :key="g.system" :label="g.system_zh ? `${g.system_zh}（${g.system}）` : g.system">
                   <option v-for="h in g.items" :key="h.name" :value="h.name">{{ homeOptionLabel(h) }}</option>
                 </optgroup>
               </select>
@@ -1469,7 +1469,8 @@ function openBpMissions(bp) {
 const scifiTheme = useScifiThemeStore()
 
 function locZh(en) { return translate('location', en) }
-function locLabel(en) { const zh = locZh(en); return zh ? `${en}（${zh}）` : en }
+// 中文為主、英文為輔：「中文（English）」，沒有中文就只有英文
+function locLabel(en) { const zh = locZh(en); return zh && zh !== en ? `${zh}（${en}）` : en }
 
 /** 持有者顯示成「暱稱（遊戲ID）」。
  *

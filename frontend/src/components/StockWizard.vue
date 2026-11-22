@@ -108,7 +108,7 @@
                       :aria-label="`第 ${i + 1} 行的物品`">
                       <option value="">{{ r.candidates.length ? '選擇物品（不加入）' : '找不到物品（不加入）' }}</option>
                       <option v-for="c in r.candidates" :key="c._id" :value="c._id">
-                        {{ c.name }}{{ c.name_zh ? `（${c.name_zh}）` : '' }}</option>
+                        {{ c.name_zh ? `${c.name_zh}（${c.name}）` : c.name }}</option>
                     </select>
                   </div>
                   <div class="col-4 col-md-2">

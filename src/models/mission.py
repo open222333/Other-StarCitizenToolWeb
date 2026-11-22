@@ -14,6 +14,7 @@ from typing import Optional
 
 from pymongo import ASCENDING
 
+from src.models import name_search
 from src.models.item import BlueprintMaster, escape_regex
 from src.mongo import get_db
 from src.models.visibility import add_filter as add_visibility_filter
@@ -87,13 +88,8 @@ class Mission:
         if (blueprint_uuid or '').strip():
             filt['blueprint_uuids'] = blueprint_uuid.strip()
         if (query or '').strip():
-            pattern = escape_regex(query)
-            filt['$or'] = [
-                {'title_lower': {'$regex': pattern.lower()}},
-                {'title_zh': {'$regex': pattern}},
-                {'debug_name': {'$regex': pattern, '$options': 'i'}},
-                {'mission_giver': {'$regex': pattern, '$options': 'i'}},
-            ]
+            # 名稱關鍵字（規則見 src/models/name_search.py）
+            filt = name_search.merge(filt, name_search.strict_filter(query, cls.NAME_FIELDS))
         return filt
 
     @staticmethod
@@ -122,16 +118,25 @@ class Mission:
         'reputation': 'reputation_gained.amount', 'cooldown': 'cooldown_seconds',
     }
 
+    #: 列表的名稱搜尋欄位：標題（英文比字首、中文任意位置）、發布者、debug name（底線分段）
+    NAME_FIELDS = name_search.NameFields(en=['title_lower'], zh=['title_zh', 'mission_giver'], code=['debug_name'],
+                                         sort_field='title_lower')
+
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0, sort_by: str = '', sort_dir: str = 'asc',
-                 **filters) -> tuple:
+                 meta: Optional[dict] = None, **filters) -> tuple:
+        """名稱關鍵字規則見 src/models/name_search.py：字首找不到時放寬成任意位置（meta['match']='loose'），
+        沒有指定排序時依相符程度排。"""
         from src.models.sorting import sort_spec
+        query = filters.pop('query', '')
         filt = cls._filter(**filters)
         limit = max(1, min(int(limit or 50), MAX_LIMIT))
         offset = max(0, int(offset or 0))
-        total = cls._col().count_documents(filt)
         spec = sort_spec(sort_by, sort_dir, cls.SORT_FIELDS, [('title_lower', ASCENDING), ('_id', ASCENDING)])
-        rows = list(cls._col().find(filt, cls.PROJECTION).sort(spec).skip(offset).limit(limit))
+        rows, total, match = name_search.find(cls._col(), filt, query, cls.NAME_FIELDS, cls.PROJECTION,
+                                              sort=spec, offset=offset, limit=limit, relevance=not sort_by)
+        if meta is not None:
+            meta['match'] = match
         return cls._attach_blueprint_names(rows), total
 
     @classmethod

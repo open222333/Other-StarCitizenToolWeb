@@ -186,8 +186,9 @@ def list_master():
     limit, offset = _paging()
     hide = not viewer_sees_hidden()
     sort_by, sort_dir = sort_args(request.args)
+    meta: dict = {}
     rows, total = BlueprintMaster.list_all(
-        limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir,
+        limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir, meta=meta,
         output_type=[t.strip() for t in request.args.getlist('output_type') if t.strip()],
         available_only=request.args.get('available') == '1',
         exclude_available=request.args.get('available') == '0',
@@ -203,8 +204,9 @@ def list_master():
     counts = Mission.counts_for_blueprints([r['_id'] for r in rows], visible_only=hide)
     for r in rows:
         r['mission_count'] = counts.get(r['_id'], 0)
+    # match：loose＝照「字首」規則找不到，放寬成任意位置才找到的（前端會提示）
     return jsonify({'success': True, 'data': rows, 'total': total,
-                    'limit': limit, 'offset': offset})
+                    'limit': limit, 'offset': offset, 'match': meta.get('match', '')})
 
 
 @app_blueprint.route('/master/dismantle-materials', methods=['GET'])

@@ -21,6 +21,7 @@
       empty-text="沒有符合條件的船艦。" @retry="reload(offset)">
       <!-- 列表外觀跟「我的艦隊」一致：卡片＋hover 表格＋表頭排序（後端排序）；第一欄勾選（批量登記），最後一欄「詳細」「登記」 -->
       <SortSelect v-if="isPhone" class="mb-2" :sort="sort" :options="SORT_OPTIONS" />
+      <p v-if="looseMatch" class="small text-muted mb-2 sf-loose-note"><i class="bi bi-info-circle me-1"></i>沒有以這些字開頭的名稱，以下是名稱中間含有這串字的結果。</p>
       <div class="card scifi-card">
       <div class="card-body p-0">
       <div style="overflow-x: auto">
@@ -284,6 +285,8 @@ const SORT_OPTIONS = [
 ]
 const { isPhone } = useBreakpoint()
 const sort = useTableSort(null, { onChange: () => reload(0) })
+// 名稱關鍵字照「字首」規則找不到、後端放寬成任意位置才找到（回應 match='loose'，見 src/models/name_search.py）
+const looseMatch = ref(false)
 
 let seq = 0
 async function reload(nextOffset = 0) {
@@ -313,6 +316,7 @@ async function reload(nextOffset = 0) {
   }
   rows.value = data.data || []
   total.value = data.total ?? null
+  looseMatch.value = data.match === 'loose'
   openId.value = ''
 }
 

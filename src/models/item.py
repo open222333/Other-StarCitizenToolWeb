@@ -14,6 +14,7 @@ from typing import Optional
 from pymongo import ASCENDING, UpdateOne
 
 from src.mongo import get_db
+from src.models import name_search
 from src.models.visibility import STATE_FIELDS as _VIS_FIELDS
 from src.models.visibility import add_filter as add_visibility_filter
 
@@ -178,23 +179,20 @@ class ItemMaster(_MasterBase):
     DISMANTLE_SORT_MAX = 5000
     #: list_all 可以排序的欄位（白名單）
     SORTABLE_FIELDS = ('name', 'type', 'size', 'grade', 'volume_uscu', 'mass', 'manufacturer_name')
+    #: 列表的名稱搜尋欄位（規則見 src/models/name_search.py）
+    NAME_FIELDS = name_search.NameFields(en=['name_lower'], zh=['name_zh'], code=['class_name'], sort_field='name')
 
     @classmethod
     def list_all(cls, *, query: str = '', types=None, sub_types=None, manufacturer_codes=None,
                  sizes=None, grades=None, item_classes=None, source: str = '', ids=None,
-                 visible_only: bool = False, visibility=None, sort_by: str = 'name', sort_dir: int = 1, limit: int = 50, offset: int = 0) -> tuple:
-        """「物品資料」列表：名稱（中英文、class name 任一段）＋多選篩選，回傳 (該頁資料, 總筆數)。
+                 visible_only: bool = False, visibility=None, sort_by: str = 'name', sort_dir: int = 1, limit: int = 50, offset: int = 0,
+                 relevance: bool = False, meta: Optional[dict] = None) -> tuple:
+        """「物品資料」列表：名稱＋多選篩選，回傳 (該頁資料, 總筆數)。
+        名稱搜尋規則見 src/models/name_search.py（多個關鍵字、英文比字首、中文任意位置、class name 比每段開頭）；
+        relevance＝有關鍵字時依相符程度排（沒有指定排序時）；meta 給了就填 meta['match']（''／strict／loose）。
         ids 傳 None 代表不限；傳清單（例如「買得到」的物品）就只看這些。
         source：vehicle＝只看飛船組件（Wiki /vehicle-items）、personal＝只看其他物品，其他值不限。"""
         filt: dict = {'is_current': True}
-        q = (query or '').strip()
-        if q:
-            escaped = escape_regex(q)
-            filt['$or'] = [
-                {'name_lower': {'$regex': escaped.lower()}},
-                {'name_zh': {'$regex': escaped}},
-                {'class_name': {'$regex': escaped, '$options': 'i'}},
-            ]
         # 類型可以帶「類型/子類型」（例如 WeaponAttachment/IronSight＝附件裡的瞄具），跟整個類型混著多選、取聯集
         type_values = _clean_list(types)
         whole = [t for t in type_values if TYPE_SEP not in t]
@@ -229,8 +227,10 @@ class ItemMaster(_MasterBase):
         order = [(field, -1 if sort_dir == -1 else 1)]
         if field != 'name':
             order.append(('name', ASCENDING))
-        total = cls._col().count_documents(filt)
-        rows = list(cls._col().find(filt, cls.LIST_PROJECTION).sort(order).skip(offset).limit(limit))
+        rows, total, match = name_search.find(cls._col(), filt, query, cls.NAME_FIELDS, cls.LIST_PROJECTION,
+                                              sort=order, offset=offset, limit=limit, relevance=relevance)
+        if meta is not None:
+            meta['match'] = match
         return rows, total
 
     @classmethod
@@ -495,7 +495,9 @@ class VehicleMaster(_MasterBase):
     @classmethod
     def _build_query(cls, *, careers=None, roles=None, manufacturer_codes=None,
                       size_classes=None, query: str = '', types=None,
-                      visible_only: bool = False, visibility=None, ids=None, ranges=None) -> dict:
+                      visible_only: bool = False, visibility=None, ids=None, ranges=None,
+                      skip_name: bool = False) -> dict:
+        """skip_name：名稱條件交給 name_search.find（list_all 用，才能在字首找不到時放寬）。"""
         filt: dict = {'is_current': True}
         # 數值範圍（官網售價 msrp、貨艙 cargo_capacity_scu）：{欄位: (下限, 上限)}，None 表示不限
         for field, (low, high) in (ranges or {}).items():
@@ -531,35 +533,40 @@ class VehicleMaster(_MasterBase):
                     continue
             if sizes:
                 filt['size_class'] = {'$in': sizes}
-        keyword = (query or '').strip()
-        if keyword and _CJK.search(keyword):
-            # 中文名稱沒有存在 DB，改成先查表拿到 uuid 再篩
-            filt['_id'] = {'$in': cls.ids_matching_zh(keyword)}
-        elif keyword:
-            pattern = escape_regex(keyword)
-            filt['name_lower'] = {'$regex': pattern.lower()}
         if ids is not None:
-            # 限定在這些 uuid 裡（例如「只看可租船／可用遊戲幣購買」，見 uex_vehicle_price.vehicle_ids_with）；
-            # 中文名稱搜尋已經限定過 _id 的話取交集
-            allowed = set(ids)
-            if '_id' in filt:
-                allowed &= set(filt['_id']['$in'])
-            filt['_id'] = {'$in': sorted(allowed)}
+            # 限定在這些 uuid 裡（例如「只看可租船／可用遊戲幣購買」，見 uex_vehicle_price.vehicle_ids_with）
+            filt['_id'] = {'$in': sorted(set(ids))}
+        # 名稱關鍵字（規則見 src/models/name_search.py；中文名稱不在 DB，用 ids_matching_zh 查表）
+        if (query or '').strip() and not skip_name:
+            filt = name_search.merge(filt, name_search.strict_filter(query, cls.name_fields()))
         return filt
+
+    @classmethod
+    def name_fields(cls):
+        """艦船的名稱搜尋欄位：英文名稱、class name，中文名稱讀取時才查表（見 ids_matching_zh）。"""
+        return name_search.NameFields(
+            en=['name_lower'], code=['class_name'], zh_ids=cls.ids_matching_zh,
+            zh_of=lambda d: vehicle_name_zh(d.get('class_name'), d.get('name'), game_name=d.get('game_name')) or '',
+            sort_field='name')
 
     @classmethod
     def list_all(cls, limit: int = 50, offset: int = 0, careers=None, roles=None,
                  manufacturer_codes=None, size_classes=None, query: str = '',
                  sort_by: str = 'name', sort_dir: int = 1, types=None,
-                 visible_only: bool = False, visibility=None, ids=None, ranges=None) -> tuple:
+                 visible_only: bool = False, visibility=None, ids=None, ranges=None,
+                 relevance: bool = False, meta: Optional[dict] = None) -> tuple:
+        """名稱搜尋規則見 src/models/name_search.py；relevance＝有關鍵字時依相符程度排；meta 填 meta['match']。"""
         filt = cls._build_query(careers=careers, roles=roles,
                                  manufacturer_codes=manufacturer_codes,
                                  size_classes=size_classes, query=query, types=types,
-                                 visible_only=visible_only, visibility=visibility, ids=ids, ranges=ranges)
+                                 visible_only=visible_only, visibility=visibility, ids=ids, ranges=ranges,
+                                 skip_name=True)
         sort_field = sort_by if sort_by in cls.SORTABLE_FIELDS else 'name'
-        total = cls._col().count_documents(filt)
-        rows = list(cls._col().find(filt, cls.PROJECTION)
-                    .sort(sort_field, sort_dir).skip(offset).limit(limit))
+        rows, total, match = name_search.find(cls._col(), filt, query, cls.name_fields(), cls.PROJECTION,
+                                              sort=[(sort_field, sort_dir)], offset=offset, limit=limit,
+                                              relevance=relevance)
+        if meta is not None:
+            meta['match'] = match
         return cls.with_type(rows), total
 
     @classmethod
@@ -777,6 +784,8 @@ class BlueprintMaster(_MasterBase):
     """
 
     COLLECTION = 'blueprint_master'
+    #: 列表的名稱搜尋欄位（規則見 src/models/name_search.py）
+    NAME_FIELDS = name_search.NameFields(en=['name_lower'], zh=['name_zh'], code=['key'], sort_field='name')
     PROJECTION = {
         'name': 1, 'name_zh': 1, 'key': 1, 'output_item_uuid': 1,
         'output_type': 1, 'output_type_label': 1, 'output_grade': 1,
@@ -832,8 +841,11 @@ class BlueprintMaster(_MasterBase):
                  output_type='', available_only: bool = False, exclude_available: bool = False,
                  query: str = '', missing_zh: bool = False, only_ids=None, exclude_ids=None,
                  visible_only: bool = False, visibility=None,
-                 sort_by: str = '', sort_dir: str = 'asc') -> tuple:
+                 sort_by: str = '', sort_dir: str = 'asc', meta: Optional[dict] = None) -> tuple:
         """分頁列出藍圖主檔。
+
+        名稱搜尋規則見 src/models/name_search.py（多個關鍵字、英文比字首、中文任意位置、key 比每段開頭）；
+        沒有指定排序（sort_by 空）時依相符程度排；meta 給了就填 meta['match']。
 
         `query` 是名稱關鍵字（中英文都比對）。有這個參數，前端「瀏覽整份清單
         並勾選」才能一邊篩名稱一邊翻頁 —— search() 只回前 25 筆、沒有分頁，
@@ -862,16 +874,12 @@ class BlueprintMaster(_MasterBase):
             filt['is_available_by_default'] = {'$ne': True}
         if missing_zh:
             filt['name_zh'] = {'$in': [None, '']}
-        if (query or '').strip():
-            pattern = escape_regex(query)
-            filt['$or'] = [
-                {'name_lower': {'$regex': pattern.lower()}},
-                {'name_zh': {'$regex': pattern}},
-            ]
 
-        total = cls._col().count_documents(filt)
-        rows = list(cls._col().find(filt, cls.PROJECTION)
-                    .sort('name', ASCENDING).skip(offset).limit(limit))
+        rows, total, match = name_search.find(cls._col(), filt, query, cls.NAME_FIELDS, cls.PROJECTION,
+                                              sort=[('name', ASCENDING)], offset=offset, limit=limit,
+                                              relevance=not sort_by)
+        if meta is not None:
+            meta['match'] = match
         return rows, total
 
     @classmethod

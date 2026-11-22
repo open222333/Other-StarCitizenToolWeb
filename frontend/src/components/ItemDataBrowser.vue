@@ -14,6 +14,7 @@
        列表外觀跟艦隊（我的艦隊）、任務一致：卡片＋hover 表格＋表頭排序（後端排序），點整列展開物品詳細 -->
   <div ref="rootEl" class="sf-scroll-anchor" :class="{ 'sf-list-loading': loading }">
     <SortSelect v-if="isPhone" class="mb-2" :sort="sort" :options="sortOptions" />
+    <p v-if="looseMatch" class="small text-muted mb-2 sf-loose-note"><i class="bi bi-info-circle me-1"></i>沒有以這些字開頭的名稱，以下是名稱中間含有這串字的結果。</p>
     <div class="card scifi-card">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
@@ -148,6 +149,7 @@ async function reload(nextOffset = 0) {
   }
   rows.value = data.data || []
   total.value = data.total || 0
+  looseMatch.value = data.match === 'loose'
   loadItemTypeZh(rows.value.map(r => r.type), rows.value.map(r => r.sub_type))
   openId.value = ''
 }
@@ -169,6 +171,8 @@ function toggle(it) {
   openId.value = openId.value === it._id ? '' : it._id
 }
 const sort = useTableSort(null, { onChange: () => reload(0) })
+// 名稱關鍵字照「字首」規則找不到、後端放寬成任意位置才找到（回應 match='loose'，見 src/models/name_search.py）
+const looseMatch = ref(false)
 
 /** 這個物品拆解回收的 SCU（有選材料時只算那幾種，跟後端 dismantle_scu 排序一致） */
 function dismantleScu(it) {

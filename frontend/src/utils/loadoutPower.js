@@ -12,7 +12,7 @@
 //   - 發電格數：資料集只有預設發電機的總格數，換發電機時依發電量比例換算（估算）
 // 其他固定耗電者（飛控、維生…）用船的預設值，可以調格數，EM／冷卻依格數等比例。
 
-import { sectionOf, walk } from './loadoutCalc'
+import { sectionOf, walk } from './loadoutCalc.js'
 
 /** 這裡自己算的類別；其餘照船的預設值當固定耗電者（MODELED 的類別在掛點樹裡找不到時也用預設值補） */
 export const MODELED = new Set(['Shield', 'Cooler', 'Radar', 'WeaponGun', 'TractorBeam', 'WeaponMining', 'SalvageHead',
@@ -165,12 +165,59 @@ export function autoAllocate(list, gen, keep = {}) {
       changed = true
     }
   }
-  return pips
+  // 固定耗電者開滿、保留的格數加起來就可能超過（例如換了發電量較小的發電機）：從優先度低的往下扣
+  return fitToGen(list, pips, gen)
 }
 
-/** 全部開滿 */
-export function maxAllocate(list) {
-  return Object.fromEntries(list.map(c => [c.key, c.off || c.fixed ? 0 : c.max]))
+/** 已用電量（格數換算成實際耗電，武器池等規則見 consumerLoad） */
+export function usedPower(list, pips) {
+  return list.reduce((a, c) => a + consumerLoad(c, pips[c.key] ?? 0).power, 0)
+}
+
+/** 超過發電量時從優先度低的往下扣（其他 → 雷達 → 冷卻 → 武器 → 護盾 → 固定耗電者），一次扣一格，
+ *  扣到最小值以下就整個關掉，直到不超過發電量。電力永遠不會超出。 */
+export function fitToGen(list, pips, gen) {
+  const out = { ...pips }
+  const CUT = ['utility', 'quantum', 'radar', 'cooler', 'weapons', 'shield', 'static']
+  const order = list.filter(c => !c.off && !c.fixed)
+    .sort((a, b) => CUT.indexOf(a.kind) - CUT.indexOf(b.kind))
+  let used = usedPower(list, out)
+  while (used > gen + 1e-9) {
+    const c = order.find(x => (out[x.key] ?? 0) > 0)
+    if (!c) break
+    const p = out[c.key]
+    out[c.key] = p - 1 < (c.min || 1) ? 0 : p - 1
+    used = usedPower(list, out)
+  }
+  return out
+}
+
+/** 手動設定某一格：超過剩下的電力就自動降到放得下的最大格數（放不下最小值就維持原本的格數） */
+export function setWithinGen(list, pips, key, want, gen) {
+  const c = list.find(x => x.key === key)
+  if (!c) return pips
+  const others = usedPower(list.filter(x => x.key !== key), pips)
+  let p = clampPips(c, want)
+  while (p > 0 && others + consumerLoad(c, p).power > gen + 1e-9) {
+    p = p - 1 < (c.min || 1) ? 0 : p - 1
+  }
+  if (p === 0 && want > 0) return pips   // 連最小值都放不下：不動
+  return { ...pips, [key]: p }
+}
+
+/** 盡量開滿：依優先度（固定耗電者 → 護盾 → 武器 → 冷卻 → 雷達 → 其他）一個一個開到最大，
+ *  電力不夠的開到放得下的格數為止；不會超出發電量 */
+export function maxAllocate(list, gen = Infinity) {
+  const ORDER = ['static', 'shield', 'weapons', 'cooler', 'radar', 'utility', 'quantum']
+  const pips = Object.fromEntries(list.map(c => [c.key, 0]))
+  const order = list.filter(c => !c.off && !c.fixed).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind))
+  for (const c of order) {
+    let p = c.max
+    const others = usedPower(list, pips)
+    while (p > 0 && others + consumerLoad(c, p).power > gen + 1e-9) p = p - 1 < (c.min || 1) ? 0 : p - 1
+    pips[c.key] = p
+  }
+  return pips
 }
 
 /** 依目前的格數算出電力、冷卻、訊號 */

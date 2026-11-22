@@ -62,8 +62,9 @@ def list_missions():
     limit, offset = _paging()
     sees_hidden = viewer_sees_hidden()
     sort_by, sort_dir = sort_args(request.args)
+    meta: dict = {}
     rows, total = Mission.list_all(
-        limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir,
+        limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir, meta=meta,
         query=(request.args.get('q') or '').strip(),
         reward_scopes=_multi('reward_scope'),
         star_systems=_multi('star_system'),
@@ -77,8 +78,9 @@ def list_missions():
         visible_only=not sees_hidden,
         visibility=visibility_arg(request.args) if sees_hidden else None,
     )
+    # match：loose＝照「字首」規則找不到，放寬成任意位置才找到的（前端會提示）
     return jsonify({'success': True, 'data': rows, 'total': total,
-                    'limit': limit, 'offset': offset})
+                    'limit': limit, 'offset': offset, 'match': meta.get('match', '')})
 
 
 @app_mission.route('/facets', methods=['GET'])

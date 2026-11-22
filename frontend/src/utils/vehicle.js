@@ -30,11 +30,11 @@ export function vehicleRoleLabel(role, roleZh) {
   return zh ? `${zh}（${en}）` : en
 }
 
-/** 載具名稱顯示「English（中文）」，給單行文字（例如自動完成候選）用。 */
+/** 載具名稱顯示「中文（English）」（中文為主），給單行文字（例如自動完成候選）用。 */
 export function vehicleNameLabel(name, nameZh) {
   const en = (name || '').trim()
   const zh = (nameZh || '').trim()
-  return zh ? `${en}（${zh}）` : en
+  return zh && zh !== en ? `${zh}（${en}）` : en
 }
 
 /** 廠商中文（翻譯包以代碼為 key：manufacturer_Name<代碼>），查不到回 ''。第一次用到時載入整份對照。 */

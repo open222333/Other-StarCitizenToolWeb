@@ -555,3 +555,13 @@ def test_glued_title_and_translated_fills(seed_translations):
     assert got['title_key'] == 'covalex_haulcargo_multitosingle_title'
     # 一般標題照舊整段比對
     assert Z.mission_text_zh('Master Rank - Large Cargo Haul')['title_zh'] == '大師 等級 - 大型 貨物運送'
+
+
+def test_list_name_search_rules(missions):
+    """任務名稱搜尋：多個關鍵字都要符合、英文比字首、中文任意位置；字首找不到才放寬（meta['match']）。"""
+    assert [r['_id'] for r in Mission.list_all(query='job alpha')[0]] == ['m1']
+    assert [r['_id'] for r in Mission.list_all(query='甲')[0]] == ['m1']
+    meta = {}
+    assert [r['_id'] for r in Mission.list_all(query='eta', meta=meta)[0]] == ['m2'] and meta['match'] == 'loose'
+    # 沒指定排序時依相符程度：名稱開頭就符合的排前面
+    assert [r['_id'] for r in Mission.list_all(query='job')[0]] == ['m1', 'm2', 'm3']

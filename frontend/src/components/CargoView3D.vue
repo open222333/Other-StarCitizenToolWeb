@@ -26,7 +26,8 @@ const props = defineProps({
 })
 
 // 貨櫃顏色（依 SCU 大小）
-const COLORS = { 1: '#8fa3b8', 2: '#d88cb0', 4: '#7fc69a', 8: '#e3b65c', 16: '#6fa8e6', 32: '#c3cbd6' }
+// 各尺寸貨櫃的顏色：飽和一點、彼此好分辨（深底亮底都看得清楚）
+const COLORS = { 1: '#4fb8ff', 2: '#ff6fa3', 4: '#43d18f', 8: '#ffb03b', 16: '#9b87ff', 32: '#ff7a4d' }
 const GAP = 6
 
 const wrap = ref(null)
@@ -176,7 +177,15 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   const text = cssVar('--sf-text', '#dce6f2')
   const muted = cssVar('--sf-text-muted', '#8a9bb0')
-  ctx.fillStyle = cssVar('--sf-panel', '#121a26')
+  // 背景：面板色＋中間一圈主色的淡光（不是單一平塗）
+  const panel = cssVar('--sf-panel', '#121a26')
+  ctx.fillStyle = panel
+  ctx.fillRect(0, 0, size.w, size.h)
+  const accentRgb = cssVar('--sf-accent-rgb', '62, 166, 255')
+  const glow = ctx.createRadialGradient(size.w / 2, size.h * 0.55, 0, size.w / 2, size.h * 0.55, Math.max(size.w, size.h) * 0.65)
+  glow.addColorStop(0, `rgba(${accentRgb}, .14)`)
+  glow.addColorStop(1, `rgba(${accentRgb}, 0)`)
+  ctx.fillStyle = glow
   ctx.fillRect(0, 0, size.w, size.h)
   const c = camera()
 
@@ -237,11 +246,33 @@ function draw() {
   for (const f of faces) {
     const sp = f.pts.map(p => project(c, p))
     if (!sp.every(Boolean)) continue
+    const base = COLORS[f.size] || '#999999'
+    // 面：對角漸層（亮 → 暗），比單色平塗有立體感
     poly(ctx, sp)
-    ctx.fillStyle = shade(COLORS[f.size] || '#999999', f.k)
+    const grad = ctx.createLinearGradient(sp[0][0], sp[0][1], sp[2][0], sp[2][1])
+    grad.addColorStop(0, shade(base, f.k * 1.14))
+    grad.addColorStop(1, shade(base, f.k * 0.82))
+    ctx.fillStyle = grad
     ctx.fill()
-    ctx.strokeStyle = 'rgba(20, 28, 40, .55)'
+    ctx.strokeStyle = 'rgba(12, 18, 28, .7)'
+    ctx.lineWidth = 1
     ctx.stroke()
+    // 貨櫃的內框（像真的貨櫃面板）：往面中心縮一圈畫細線，頂面用亮線、側面用暗線
+    const ctr = f.pts.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0])
+    const inset = f.pts.map(p => project(c, p.map((v, i) => v + (ctr[i] - v) * 0.16)))
+    if (inset.every(Boolean)) {
+      poly(ctx, inset)
+      ctx.strokeStyle = f.top ? 'rgba(255, 255, 255, .38)' : 'rgba(10, 16, 26, .32)'
+      ctx.stroke()
+    }
+    // 頂面四邊加一道亮邊（受光）
+    if (f.top) {
+      poly(ctx, sp)
+      ctx.strokeStyle = shade(base, 1.45)
+      ctx.globalAlpha = 0.55
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
     if (f.top) {
       const cx = sp.reduce((a, p) => a + p[0], 0) / 4, cy = sp.reduce((a, p) => a + p[1], 0) / 4
       const span = Math.hypot(sp[0][0] - sp[2][0], sp[0][1] - sp[2][1])

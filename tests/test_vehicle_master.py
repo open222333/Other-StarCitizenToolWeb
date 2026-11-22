@@ -120,3 +120,14 @@ def test_manufacturers_returns_code_and_label(seeded_vehicles):
         'MISC': 'Musashi Industrial and Starflight Concern',
         'AEGS': 'Aegis Dynamics',
     }
+
+
+def test_name_search_rules(seeded_vehicles):
+    """名稱搜尋規則（src/models/name_search.py）：多個關鍵字、英文比字首、找不到才放寬。"""
+    meta = {}
+    rows, total = VehicleMaster.list_all(query='hornet f7c', meta=meta)
+    assert [r['_id'] for r in rows] == ['v-hornet'] and meta['match'] == 'strict'
+    rows, total = VehicleMaster.list_all(query='ornet', meta=meta)
+    assert [r['_id'] for r in rows] == ['v-hornet'] and meta['match'] == 'loose'
+    rows, total = VehicleMaster.list_all(query='lancer free', meta=meta)
+    assert total == 0

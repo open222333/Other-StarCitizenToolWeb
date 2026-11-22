@@ -1146,12 +1146,17 @@ function locationsFor(group) {
   /* 顏色一律取網站主題（assets/scifi-theme.css 的 --sf-*），換強調色、切亮底會跟著變 */
   --me-bg: var(--sf-bg-2);
   --me-panel: var(--sf-panel);
+  /* 大區塊（搜尋框、結果面板）半透明，透出頁面背景，跟其他分頁的卡片一致；下拉選單維持不透明 */
+  --me-panel-glass: linear-gradient(165deg, rgba(var(--sf-panel-rgb, 18, 26, 43), .55) 0%, rgba(var(--sf-panel-2-rgb, 12, 18, 32), .45) 100%);
   --me-border: rgba(var(--sf-accent-rgb), .35);
   --me-border-hi: rgba(var(--sf-accent-rgb), .7);
   --me-accent: var(--sf-accent);
   --me-text: var(--sf-text);
   --me-text-dim: var(--sf-text-muted);
   font-variant-numeric: tabular-nums;
+}
+:root[data-sf-mode='light'] .mining-echo {
+  --me-panel-glass: linear-gradient(165deg, rgba(var(--sf-panel-rgb, 255, 255, 255), .78) 0%, rgba(var(--sf-panel-2-rgb, 246, 248, 252), .70) 100%);
 }
 
 .mining-echo__label {
@@ -1177,7 +1182,7 @@ function locationsFor(group) {
   display: flex;
   align-items: center;
   gap: .5rem;
-  background: var(--me-panel);
+  background: var(--me-panel-glass);
   border: 1px solid var(--me-border);
   border-radius: .4rem;
   padding: .55rem .75rem;
@@ -1237,7 +1242,7 @@ function locationsFor(group) {
 }
 
 .mining-echo__panel {
-  background: var(--me-panel);
+  background: var(--me-panel-glass);
   border: 1px solid var(--me-border);
   border-radius: .5rem;
   color: var(--me-text);
@@ -1342,7 +1347,7 @@ function locationsFor(group) {
 
 .mining-echo__diagnostics-toggle {
   width: 100%;
-  background: var(--me-panel);
+  background: var(--me-panel-glass);
   border: 1px dashed var(--me-border);
   border-radius: .4rem;
   color: var(--me-text-dim);

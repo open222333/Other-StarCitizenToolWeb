@@ -189,7 +189,7 @@ const selectedCommodities = computed(() => selected.value.map(id => byId.value.g
 
 const kindOptions = computed(() =>
   [...new Set(commodities.value.map(c => c.kind).filter(Boolean))].sort().map(k => ({ value: k, label: k })))
-const areaLabel = v => (locationZh(v) && locationZh(v) !== v ? `${v}（${locationZh(v)}）` : v)
+const areaLabel = v => (locationZh(v) && locationZh(v) !== v ? `${locationZh(v)}（${v}）` : v)
 const uniqOpts = vals => [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b))
   .map(v => ({ value: v, label: areaLabel(v) }))
 const systemOptions = computed(() => starSystems.value.map(s => ({ value: s, label: areaLabel(s) })))

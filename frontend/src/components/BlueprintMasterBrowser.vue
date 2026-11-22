@@ -71,7 +71,7 @@
       </template>
     </AdminSearchCard>
 
-
+    <p v-if="looseMatch" class="small text-muted mb-2 sf-loose-note"><i class="bi bi-info-circle me-1"></i>沒有以這些字開頭的名稱，以下是名稱中間含有這串字的結果。</p>
     <div :class="cardClass">
       <div class="card-body p-0">
         <div style="overflow-x:auto">
@@ -441,6 +441,8 @@ function query(params) {
 
 // 點表頭排序（後端，見 src/models/item.py 的 BlueprintMaster.list_all）
 const sort = useTableSort(null, { onChange: () => reload(0) })
+// 名稱關鍵字照「字首」規則找不到、後端放寬成任意位置才找到（回應 match='loose'，見 src/models/name_search.py）
+const looseMatch = ref(false)
 
 async function reload(newOffset = 0) {
   offset.value = newOffset
@@ -462,6 +464,7 @@ async function reload(newOffset = 0) {
   if (body?.success) {
     rows.value = body.data || []
     total.value = body.total || 0
+    looseMatch.value = body.match === 'loose'
   } else {
     rows.value = []
     total.value = 0

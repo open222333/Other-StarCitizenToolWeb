@@ -95,6 +95,7 @@ def list_items():
     # 依拆解回收量排序（所選材料的 SCU 加總；只勾「只看可拆解」時是全部拆解回收的加總）：
     # 這不是 item_master 的欄位，先把符合條件的全部撈出來在這裡排，再切出這一頁
     by_dismantle = sort_by == 'dismantle_scu' and (dismantle or dismantlable)
+    meta: dict = {}
     rows, total = ItemMaster.list_all(
         query=(request.args.get('q') or '').strip(),
         types=request.args.getlist('type'),
@@ -109,6 +110,8 @@ def list_items():
         sort_by='name' if by_dismantle else sort_by,
         sort_dir=1 if by_dismantle else sort_dir,
         limit=ItemMaster.DISMANTLE_SORT_MAX if by_dismantle else limit, offset=0 if by_dismantle else offset,
+        # 沒有指定排序時，有關鍵字就依相符程度排（見 src/models/name_search.py）
+        relevance=not request.args.get('sort_by'), meta=meta,
     )
     if by_dismantle:
         returns = hits if dismantle else BlueprintMaster.dismantlable_items([r['_id'] for r in rows])
@@ -125,8 +128,9 @@ def list_items():
             row['dismantle_hits'] = returns.get(row['_id'], [])
     if request.args.get('with_prices') == '1':
         uex_item_price.attach_summaries(rows)
+    # match：loose＝照「字首」規則找不到，放寬成任意位置才找到的（前端會提示）
     return jsonify({'success': True, 'data': rows, 'total': total,
-                    'limit': limit, 'offset': offset})
+                    'limit': limit, 'offset': offset, 'match': meta.get('match', '')})
 
 
 @app_item.route('/facets', methods=['GET'])
@@ -409,7 +413,7 @@ def list_vehicles():
     security:
       - Bearer: []
     parameters:
-      - {in: query, name: q,                 type: string, description: "名稱前綴搜尋"}
+      - {in: query, name: q,                 type: string, description: "名稱關鍵字（空白分開都要符合；英文比字首、中文任意位置，見 src/models/name_search.py）"}
       - {in: query, name: career,             type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/careers）"}
       - {in: query, name: role,               type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/roles）"}
       - {in: query, name: manufacturer_code,  type: array, items: {type: string}, description: "可重複帶多個（見 /item/vehicles/manufacturers）"}
@@ -450,28 +454,19 @@ def list_vehicles():
     rent_range = (_num_arg('rent_min'), _num_arg('rent_max'))
     scu_range = (_num_arg('scu_min'), _num_arg('scu_max'))
     ranges = {'msrp': usd_range, 'cargo_capacity_scu': scu_range}
-    has_ranges = any(v is not None for v in (*usd_range, *auec_range, *rent_range, *scu_range))
 
     hide = not viewer_sees_hidden()
     visibility = None if hide else visibility_arg(request.args)
-    has_filters = bool(careers or roles or manufacturer_codes or size_classes or types
-                       or visibility is not None or acquire or has_ranges or request.args.get('sort_by'))
 
-    if query and not has_filters:
-        # ⚠️ search() 只回前 limit 筆，所以 total 只能是「本頁筆數」。
-        #    照舊回 len(rows) 的話 total == limit，前端算出「只有一頁」，
-        #    使用者永遠翻不到第二頁（而且不會有任何錯誤徵兆）。
-        #    回 None 讓前端知道「總數未知」，分頁改用「本頁滿了就還有下一頁」。
-        #    帶了其他篩選條件時 search() 沒辦法一起套用，改走 list_all()。
-        rows = VehicleMaster.with_type(VehicleMaster.search(query, limit=limit, visible_only=hide))
-        total = None
-    elif sort_by in PRICE_SORTS:
+    # 名稱搜尋規則見 src/models/name_search.py（多個關鍵字、英文比字首、中文任意位置；沒指定排序時依相符程度排）
+    meta: dict = {}
+    if sort_by in PRICE_SORTS:
         all_rows, total = VehicleMaster.list_all(
             limit=0, offset=0, careers=careers, roles=roles,
             manufacturer_codes=manufacturer_codes, size_classes=size_classes,
             query=query, sort_by='name', sort_dir=1, types=types,
             visible_only=hide, visibility=visibility, ranges=ranges,
-            ids=_vehicle_id_limits(acquire, auec_range, rent_range))
+            ids=_vehicle_id_limits(acquire, auec_range, rent_range), meta=meta)
         uex_vehicle_price.attach_summaries(all_rows)
         key = PRICE_SORTS[sort_by]
         with_value = [r for r in all_rows if key(r) is not None]
@@ -484,14 +479,15 @@ def list_vehicles():
             manufacturer_codes=manufacturer_codes, size_classes=size_classes,
             query=query, sort_by=sort_by, sort_dir=sort_dir, types=types,
             visible_only=hide, visibility=visibility, ranges=ranges,
-            ids=_vehicle_id_limits(acquire, auec_range, rent_range))
+            ids=_vehicle_id_limits(acquire, auec_range, rent_range),
+            relevance=not request.args.get('sort_by'), meta=meta)
 
     for row in rows:
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
     if request.args.get('with_prices') == '1' and not any('uex_price' in r for r in rows):
         uex_vehicle_price.attach_summaries(rows)
     return jsonify({'success': True, 'data': rows, 'total': total,
-                    'limit': limit, 'offset': offset})
+                    'limit': limit, 'offset': offset, 'match': meta.get('match', '')})
 
 
 @app_item.route('/vehicles/<vehicle_id>/prices', methods=['GET'])

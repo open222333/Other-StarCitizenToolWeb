@@ -847,3 +847,14 @@ def test_by_material_matches_mineral_names(client, auth_headers, seeded_master):
                                           headers=auth_headers).get_json()['data']] == names
     assert client.get('/blueprint/master/by-material?material=NoSuchOre', headers=auth_headers).get_json()['data'] == []
     assert client.get('/blueprint/master/by-material', headers=auth_headers).get_json()['data'] == []
+
+
+def test_list_all_name_search_rules(seeded_master):
+    """藍圖名稱搜尋：英文比字首（omni 找得到、nisky 要放寬）、多個關鍵字、key 比每段開頭。"""
+    meta = {}
+    rows, _ = BlueprintMaster.list_all(query='cannon omni', meta=meta)
+    assert [r['name'] for r in rows] == ['Omnisky III Cannon'] and meta['match'] == 'strict'
+    rows, _ = BlueprintMaster.list_all(query='nisky', meta=meta)
+    assert [r['name'] for r in rows] == ['Omnisky III Cannon'] and meta['match'] == 'loose'
+    rows, _ = BlueprintMaster.list_all(query='medpen', meta=meta)
+    assert [r['name'] for r in rows] == ['Medical Pen'], 'key 以底線分段比開頭'

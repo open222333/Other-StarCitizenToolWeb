@@ -171,3 +171,34 @@ def test_type_with_sub_type_filter(client, auth_headers, items):
     assert {'type': 'WeaponPersonal', 'sub_types': ['Sniper']} in tree
     assert {'type': 'Cooler', 'sub_types': []} in tree
     assert 'Cooler' in client.get('/item/types', headers=auth_headers).get_json()['data']
+
+
+def test_name_search_matches_word_start(client, auth_headers, items):
+    """英文名稱、class name 只比字首：LL 找得到 Delta LL，找不到字中間有 ll 的（Telescopic、Collector）。"""
+    get_db()['item_master'].insert_many([
+        {'_id': 'd', 'name': 'Delta LL (1x Reflex)', 'name_lower': 'delta ll (1x reflex)', 'class_name': 'optics_delta_ll',
+         'type': 'WeaponAttachment', 'is_current': True},
+        {'_id': 'e', 'name': 'FarSight "Snow Camo" (8x Telescopic)', 'name_lower': 'farsight "snow camo" (8x telescopic)',
+         'class_name': 'optics_collector_farsight', 'type': 'WeaponAttachment', 'is_current': True},
+    ])
+    assert _ids(client, auth_headers, 'q=LL') == ['d']
+    assert _ids(client, auth_headers, 'q=tele') == ['e']
+    # 多個關鍵字都要符合、順序不拘；前後標點會去掉
+    assert _ids(client, auth_headers, 'q=ll delta') == ['d']
+    assert _ids(client, auth_headers, 'q="snow camo"') == ['e']
+    assert _ids(client, auth_headers, 'q=delta tele') == []
+    # 字首找不到才放寬成任意位置，回 match=loose 讓前端提示
+    body = client.get('/item/?q=lescopic', headers=auth_headers).get_json()
+    assert [r['_id'] for r in body['data']] == ['e'] and body['match'] == 'loose'
+    assert client.get('/item/?q=LL', headers=auth_headers).get_json()['match'] == 'strict'
+
+
+def test_name_search_relevance_order(client, auth_headers, items):
+    """沒指定排序時依相符程度：名稱完全相同 → 開頭符合 → 字首符合 → 只在 class name；指定排序就照排序。"""
+    get_db()['item_master'].insert_many([
+        {'_id': 'x1', 'name': 'Gemini Arrow Edition', 'name_lower': 'gemini arrow edition', 'type': 'X', 'is_current': True},
+        {'_id': 'x2', 'name': 'Arrow', 'name_lower': 'arrow', 'type': 'X', 'is_current': True},
+        {'_id': 'x3', 'name': 'Zeta', 'name_lower': 'zeta', 'class_name': 'arrow_zeta', 'type': 'X', 'is_current': True},
+    ])
+    assert _ids(client, auth_headers, 'q=arrow&type=X') == ['x2', 'x1', 'x3']
+    assert _ids(client, auth_headers, 'q=arrow&type=X&sort_by=name&sort_dir=desc') == ['x3', 'x1', 'x2']

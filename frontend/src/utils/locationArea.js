@@ -32,11 +32,11 @@ export function areaOf(name) {
   return areas[(name || '').toLowerCase()] || { system: '', planet: '' }
 }
 
-/** 星系／行星／地點的顯示文字：英文（中文）。 */
+/** 星系／行星／地點的顯示文字：中文（英文），中文為主；沒有中文就只有英文。 */
 export function placeLabel(en) {
   if (!en) return ''
   const zh = translate('location', en)
-  return zh && zh !== en ? `${en}（${zh}）` : en
+  return zh && zh !== en ? `${zh}（${en}）` : en
 }
 
 const byLabel = (a, b) => a.label.localeCompare(b.label, 'zh-Hant')

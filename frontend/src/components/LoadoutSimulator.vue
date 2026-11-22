@@ -226,7 +226,7 @@ import {
   pathTo, sectionOf, summarize, tagsFor,
 } from '@/utils/loadoutCalc'
 import {
-  autoAllocate, consumers, efficiency, generation, maxAllocate, powerPlantEm, powerSummary,
+  autoAllocate, consumers, efficiency, generation, maxAllocate, powerPlantEm, setWithinGen, powerSummary,
 } from '@/utils/loadoutPower'
 
 const props = defineProps({
@@ -426,11 +426,12 @@ function autoPips(all = false) {
   lastItems = Object.fromEntries(listOf('scm').map(c => [c.key, c.item?.id || c.key]))
 }
 watch(powerSig, () => autoPips(false))
+// 手動調格數、全部開滿都不會超出發電量（見 utils/loadoutPower.js 的 setWithinGen／maxAllocate）
 function setPips(key, p) {
-  pipsByMode[powerMode.value] = { ...pipsByMode[powerMode.value], [key]: p }
+  pipsByMode[powerMode.value] = setWithinGen(powerList.value, pipsByMode[powerMode.value], key, p, powerGen.value)
 }
 function maxPips() {
-  pipsByMode[powerMode.value] = maxAllocate(powerList.value)
+  pipsByMode[powerMode.value] = maxAllocate(powerList.value, powerGen.value)
 }
 // 護盾回充依戰鬥模式分到的格數打折
 const shieldEff = computed(() => {
