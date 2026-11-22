@@ -276,6 +276,9 @@ export const newsApi = {
   create: data => apiFetch('/news/admin', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => apiFetch(`/news/admin/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: id => apiFetch(`/news/admin/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  // 標籤上架／下架（見 components/NewsTagSettings.vue）
+  tagSettings: () => apiFetch('/news/admin/tag-settings'),
+  setTag: data => apiFetch('/news/admin/tag-settings', { method: 'PUT', body: JSON.stringify(data) }),
 }
 
 // ── API 金鑰（後台「API 金鑰」頁，只有 admin；app/api_key/view.py）────────────

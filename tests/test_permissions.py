@@ -232,6 +232,7 @@ UNGUARDED_ALLOWLIST = {
 
     # ── 新聞（app/news/view.py）：玩家頁公開讀；外部寫入用 API 金鑰（@api_key_required，不是 JWT）──
     'app_news.list_public',
+    'app_news.list_featured',
     'app_news.list_tags',
     'app_news.get_public',
     'app_news.ingest',

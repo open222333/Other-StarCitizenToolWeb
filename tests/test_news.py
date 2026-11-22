@@ -17,7 +17,7 @@ def test_admin_create_and_public_list(client, auth_headers):
 
     body = client.get('/news/').get_json()
     titles = [n['title'] for n in body['data']]
-    assert titles[0] == '置頂公告', '置頂排最前面'
+    assert titles[0] == '置頂公告', '最新的在最前面'
     assert '明天才發布' not in titles, '未來的發布時間還不能出現在玩家頁'
     assert body['total'] == 2
     first = next(n for n in body['data'] if n['title'] == '4.5 改版')
@@ -107,7 +107,8 @@ def test_public_sort_latest_query_cap_and_cache_headers(client, auth_headers):
     _create(client, auth_headers, title='最新一則')
     res = client.get('/news/?sort=latest')
     assert [n['title'] for n in res.get_json()['data']] == ['最新一則', '舊的置頂']
-    assert [n['title'] for n in client.get('/news/').get_json()['data']][0] == '舊的置頂'
+    assert [n['title'] for n in client.get('/news/').get_json()['data']][0] == '最新一則', '玩家頁列表只依時間'
+    assert [n['title'] for n in client.get('/news/admin', headers=auth_headers).get_json()['data']][0] == '舊的置頂', '後台置頂在前'
     assert 'max-age' in res.headers.get('Cache-Control', '')
     assert 'max-age' in client.get('/news/tags').headers.get('Cache-Control', '')
     assert client.get('/news/?q=' + '最' + 'x' * 300).get_json()['total'] == 0
@@ -133,3 +134,33 @@ def test_api_key_requires_scope(client, auth_headers):
     assert r.status_code == 400
     body = client.get('/data/api-keys', headers=auth_headers).get_json()
     assert 'news:write' in body['scopes']
+
+
+def test_featured_and_unlisted_tags(client, auth_headers):
+    """置頂區：官方優先、再置頂、再最新，最多 4 則；下架的標籤：玩家看不到也搜不到，後台照常。"""
+    t = lambda d: (datetime.utcnow() - timedelta(days=d)).isoformat() + 'Z'   # noqa: E731
+    _create(client, auth_headers, title='官方舊', tags=['官方'], published_at=t(5))
+    _create(client, auth_headers, title='官方新', tags=['官方'], published_at=t(4))
+    _create(client, auth_headers, title='置頂', pinned=True, published_at=t(6))
+    _create(client, auth_headers, title='一般1', published_at=t(1))
+    _create(client, auth_headers, title='一般2', published_at=t(2))
+    _create(client, auth_headers, title='外流', tags=['外流', '社群'], published_at=t(0))
+    f = [n['title'] for n in client.get('/news/featured').get_json()['data']]
+    assert f == ['官方新', '官方舊', '置頂', '外流']
+
+    assert client.put('/news/admin/tag-settings', json={'tag': '外流', 'listed': False}, headers=auth_headers).get_json()['success']
+    body = client.get('/news/').get_json()
+    assert [n['title'] for n in body['data']] == ['一般1', '一般2', '官方新', '官方舊', '置頂'] and body['total'] == 5
+    assert [n['title'] for n in client.get('/news/featured').get_json()['data']][-1] == '一般1'
+    assert client.get('/news/?q=外流').get_json()['total'] == 0
+    assert client.get('/news/?tag=社群').get_json()['total'] == 0, '下架標籤的新聞連其他標籤也篩不到'
+    assert '外流' not in {x['tag'] for x in client.get('/news/tags').get_json()['data']}
+    hid = next(n for n in client.get('/news/admin', headers=auth_headers).get_json()['data'] if n['title'] == '外流')
+    assert client.get(f'/news/{hid["_id"]}').status_code == 404
+    rows = {r['tag']: r for r in client.get('/news/admin/tag-settings', headers=auth_headers).get_json()['data']}
+    assert rows['外流']['listed'] is False and rows['官方']['listed'] is True
+
+    client.put('/news/admin/tag-settings', json={'tag': '外流', 'listed': True}, headers=auth_headers)
+    assert client.get('/news/').get_json()['total'] == 6
+    assert client.put('/news/admin/tag-settings', json={'tag': '', 'listed': False}, headers=auth_headers).status_code == 400
+    assert client.put('/news/admin/tag-settings', json={'tag': 'x', 'listed': False}).status_code in (401, 403)

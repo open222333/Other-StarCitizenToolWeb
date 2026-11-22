@@ -2,6 +2,7 @@
   後台「新聞」：管理玩家頁「新聞」分頁與「艦長室」上方公告的內容（後端 app/news/view.py）。
   - 新增／編輯：標題、內文（Markdown，可預覽；轉換見 utils/markdown.js）、封面圖片網址、來源連結、標籤、置頂、發布時間
     （未來的時間＝排程，到時間才出現在玩家頁）。admin、operator 可以寫，viewer 只能看。
+  - 標籤上架／下架：右上「標籤」打開（components/NewsTagSettings.vue）。
   - 外部程式寫入新聞（POST /news/ingest，標頭 X-API-Key）用的金鑰在後台「API 金鑰」頁（views/ApiKeysView.vue）。
 -->
 <template>
@@ -10,11 +11,15 @@
       <h5 class="mb-0 fw-bold"><i class="bi bi-newspaper me-2 text-primary"></i>新聞</h5>
       <div class="d-flex flex-wrap gap-2">
         <button v-if="canWrite" class="btn btn-primary btn-sm" @click="startNew"><i class="bi bi-plus-lg me-1"></i>新增新聞</button>
+        <button class="btn btn-sm" :class="tagPanel ? 'btn-secondary' : 'btn-outline-secondary'" :aria-expanded="tagPanel ? 'true' : 'false'"
+          @click="tagPanel = !tagPanel"><i class="bi bi-tags me-1"></i>標籤</button>
         <button class="btn btn-outline-secondary btn-sm" :disabled="loading" @click="load()">
           <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
           <i v-else class="bi bi-arrow-clockwise me-1"></i>重新整理</button>
       </div>
     </div>
+
+    <NewsTagSettings v-if="tagPanel" :can-write="canWrite" @changed="load()" />
 
     <!-- 新增／編輯 -->
     <div v-if="canWrite && editorOpen" class="card shadow-sm border-0 mb-3">
@@ -143,10 +148,12 @@ import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import NewsTagSettings from '@/components/NewsTagSettings.vue'
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.role === 'admin' || auth.role === 'operator')
 const confirmModalRef = ref(null)
+const tagPanel = ref(false)
 
 // 列表：後端篩選＋分頁（關鍵字、標籤多選取聯集），每頁 PAGE 則
 const PAGE = 50

@@ -1,8 +1,8 @@
 <!--
   玩家頁「新聞」分頁（不登入也能看）：後台或外部程式（API 金鑰，POST /news/ingest）寫入的新聞。
   雜誌式版面（配色用網站主題的 --sf-* 變數，跟著「配色」切換）：最上面「最新消息」跑馬燈；沒有搜尋／篩選時，
-  前 4 則（置頂在前）是頭條大圖（標題、標籤疊在圖上，沒有封面用主題色漸層代替），其餘是下面的卡片。
-  搜尋關鍵字、標籤篩選；一次 20 則，「載入更多」接著讀。
+  置頂區 4 則大圖（官方優先、再置頂、再最新；標題、標籤疊在圖上，沒有封面用主題色漸層代替），下面是依時間新到舊的卡片。
+  搜尋關鍵字、標籤篩選；一次 20 則，往下捲自動載入更舊的。後台下架的標籤，帶它的新聞不會出現。
   點一則跳出視窗看全文（components/NewsArticle.vue）。網址 ?news=<id> 直接打開那一則（分享用）。
 -->
 <template>
@@ -19,44 +19,45 @@
       </div>
     </div>
 
+    <!-- 搜尋＋分類（像新聞網站的頂端列）：圓角搜尋框；下面一排分類分頁，只放幾個主要分類，其餘收在「更多」 -->
+    <div class="nb-filter">
+      <div class="nb-search">
+        <i class="bi bi-search nb-search__icon" aria-hidden="true"></i>
+        <input id="news-q" v-model.trim="query" type="search" class="nb-search__input" placeholder="搜尋標題、內文和標籤"
+          aria-label="搜尋新聞">
+      </div>
+      <nav class="nb-tabs" aria-label="分類">
+        <button type="button" class="nb-tab" :class="{ active: !tag }" :aria-pressed="!tag ? 'true' : 'false'" @click="pickTag('')">全部</button>
+        <span v-if="mainTags.length" class="nb-tabs__sep" aria-hidden="true"></span>
+        <button v-for="t in mainTags" :key="t" type="button" class="nb-tab" :class="{ active: tag === t }"
+          :aria-pressed="tag === t ? 'true' : 'false'" @click="pickTag(t)">{{ t }}</button>
+        <button v-if="moreTags.length" type="button" class="nb-tab nb-tab--more" :class="{ open: showMore }" :aria-expanded="showMore ? 'true' : 'false'"
+          aria-controls="news-more-tags" @click="showMore = !showMore">更多<i class="bi bi-chevron-down ms-1"></i></button>
+      </nav>
+      <div v-if="showMore && moreTags.length" id="news-more-tags" class="nb-tags" role="group" aria-label="更多分類">
+        <button v-for="t in moreTags" :key="t.tag" type="button" class="nb-tag" :style="{ '--h': tagHue(t.tag) }"
+          :class="{ active: tag === t.tag }" :aria-pressed="tag === t.tag ? 'true' : 'false'" @click="pickTag(t.tag)">
+          <span class="nb-tag__dot" aria-hidden="true"></span>{{ t.tag }}<span class="nb-tag__n">{{ t.count }}</span></button>
+      </div>
+    </div>
+
     <!-- 頭條：沒有搜尋／篩選時，前 4 則排成雜誌版面（左大、中兩小、右直長） -->
     <section v-if="showHero" class="nb-hero" :class="`nb-hero--${hero.length}`" aria-label="頭條">
       <button v-for="(n, i) in hero" :key="n._id" type="button" class="nb-tile" :class="`nb-tile--${i}`" @click="openItem(n)">
         <img v-if="n.cover_url && !broken.has(n._id)" :src="n.cover_url" alt="" class="nb-tile__img" loading="lazy"
           referrerpolicy="no-referrer" @error="broken.add(n._id)">
-        <span v-else class="nb-tile__ph" aria-hidden="true"><i class="bi bi-newspaper"></i></span>
+        <span v-else class="nb-tile__ph" aria-hidden="true"></span>
         <span class="nb-tile__shade" aria-hidden="true"></span>
         <span class="nb-tile__body">
           <span class="d-flex flex-wrap gap-1 mb-1">
             <span v-if="n.pinned" class="nb-badge nb-badge--pin"><i class="bi bi-pin-angle-fill me-1"></i>置頂</span>
-            <span v-for="t in n.tags.slice(0, 2)" :key="t" class="nb-badge">{{ t }}</span>
+            <span v-for="t in n.tags.slice(0, 2)" :key="t" class="nb-badge" :style="{ '--h': tagHue(t) }">{{ t }}</span>
           </span>
           <span class="nb-tile__title">{{ n.title }}</span>
           <span class="nb-meta"><i class="bi bi-clock me-1"></i>{{ fmtNewsDate(n.published_at) }}</span>
         </span>
       </button>
     </section>
-
-    <div :class="[cardClass, 'sf-search', 'mb-3']">
-      <div class="card-body py-3">
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-5">
-            <label class="form-label small mb-1" for="news-q">搜尋</label>
-            <input id="news-q" v-model.trim="query" type="search" class="form-control form-control-sm" placeholder="標題、內文、標籤…">
-          </div>
-          <div class="col-12 col-md-7">
-            <span class="form-label small mb-1 d-block" id="news-tags-label">分類</span>
-            <div class="d-flex flex-wrap gap-1" role="group" aria-labelledby="news-tags-label">
-              <button type="button" class="btn btn-sm btn-subtab" :class="{ active: !tag }" :aria-pressed="!tag ? 'true' : 'false'"
-                @click="tag = ''">全部</button>
-              <button v-for="t in tags" :key="t.tag" type="button" class="btn btn-sm btn-subtab"
-                :class="{ active: tag === t.tag }" :aria-pressed="tag === t.tag ? 'true' : 'false'" @click="tag = tag === t.tag ? '' : t.tag">
-                {{ t.tag }}<span class="ms-1 nb-count">{{ t.count }}</span></button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <SfState :loading="loading && !items.length" :error="error" :empty="loaded && !items.length"
       :empty-text="query || tag ? '沒有符合的新聞。' : '目前沒有新聞。'" @retry="reload">
@@ -66,10 +67,10 @@
           <span class="nb-card__media">
             <img v-if="n.cover_url && !broken.has(n._id)" :src="n.cover_url" alt="" loading="lazy" referrerpolicy="no-referrer"
               @error="broken.add(n._id)">
-            <span v-else class="nb-tile__ph" aria-hidden="true"><i class="bi bi-newspaper"></i></span>
+            <span v-else class="nb-tile__ph" aria-hidden="true"></span>
             <span class="nb-card__badges">
               <span v-if="n.pinned" class="nb-badge nb-badge--pin"><i class="bi bi-pin-angle-fill me-1"></i>置頂</span>
-              <span v-for="t in n.tags.slice(0, 2)" :key="t" class="nb-badge">{{ t }}</span>
+              <span v-for="t in n.tags.slice(0, 2)" :key="t" class="nb-badge" :style="{ '--h': tagHue(t) }">{{ t }}</span>
             </span>
           </span>
           <span class="nb-card__body">
@@ -79,9 +80,9 @@
           </span>
         </button>
       </div>
-      <div v-if="items.length < total" class="text-center mt-3">
-        <button type="button" class="btn btn-sm btn-primary" :disabled="loading" @click="loadMore">
-          <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>載入更多（{{ items.length }} / {{ total }}）</button>
+      <!-- 捲到這裡自動載入更舊的（IntersectionObserver） -->
+      <div ref="sentinel" class="nb-more" aria-hidden="true">
+        <span v-if="loading && items.length" class="spinner-border spinner-border-sm"></span>
       </div>
     </SfState>
 
@@ -97,11 +98,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import SfModal from '@/components/SfModal.vue'
 import SfState from '@/components/SfState.vue'
 import NewsArticle from '@/components/NewsArticle.vue'
-import { fetchNews, fetchNewsItem, fetchNewsTags, fmtNewsDate } from '@/utils/news'
+import { fetchNews, fetchNewsFeatured, fetchNewsItem, fetchNewsTags, fmtNewsDate, tagHue } from '@/utils/news'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 
 const props = defineProps({
@@ -122,6 +123,20 @@ const loaded = ref(false)
 const error = ref('')
 const query = ref('')
 const tag = ref('')
+// 分類分頁只放這幾個（有這個標籤的新聞才出現；後台下架的標籤不會出現）；選到「更多」裡的標籤時，它也暫時排進分頁列
+const MAIN_TAGS = ['官方', '社群']
+const showMore = ref(false)
+const mainTags = computed(() => {
+  const have = new Set(tags.value.map(t => t.tag))
+  const list = MAIN_TAGS.filter(t => have.has(t))
+  if (tag.value && !list.includes(tag.value)) list.push(tag.value)
+  return list
+})
+const moreTags = computed(() => tags.value.filter(t => !MAIN_TAGS.includes(t.tag)))
+function pickTag(t) {
+  tag.value = tag.value === t ? '' : t
+  showMore.value = false
+}
 
 async function load(offset = 0) {
   loading.value = true
@@ -134,28 +149,60 @@ async function load(offset = 0) {
   total.value = r.total
 }
 const reload = () => load(0)
-// 頭條：沒有搜尋／篩選時前 4 則；跑馬燈：依時間最新 8 則（不管置頂）
-const showHero = computed(() => !query.value && !tag.value && items.value.length > 0)
-// 寬螢幕 4 則（右邊直長那格）、平板以下 3 則，多的接到下面的卡片
+// 置頂區：沒有搜尋／篩選時顯示，後端挑好（官方優先、再置頂、再最新，見 src/models/news.py featured()）；
+// 下面的列表一律新到舊，已經在置頂區的不重複列。寬螢幕 4 則（右邊直長那格）、平板以下 3 則
+const featured = ref([])
+const showHero = computed(() => !query.value && !tag.value && featured.value.length > 0)
 const { isWide: wide } = useBreakpoint()   // 監聽器卸載時由 composable 移除
-const hero = computed(() => (showHero.value ? items.value.slice(0, wide.value ? 4 : 3) : []))
-const rest = computed(() => (showHero.value ? items.value.slice(hero.value.length) : items.value))
+const hero = computed(() => (showHero.value ? featured.value.slice(0, wide.value ? 4 : 3) : []))
+const rest = computed(() => {
+  if (!showHero.value) return items.value
+  const ids = new Set(hero.value.map(n => n._id))
+  return items.value.filter(n => !ids.has(n._id))
+})
+async function loadFeatured() {
+  const r = await fetchNewsFeatured(props.fetcher)
+  if (r.ok) featured.value = r.data
+}
+// 跑馬燈：最新 8 則
 const latest = ref([])
 async function loadLatest() {
-  // 後端 sort=latest 只依發布時間排，不用再抓 30 則在前端排
-  const r = await fetchNews(props.fetcher, { limit: 8, sort: 'latest' })
+  const r = await fetchNews(props.fetcher, { limit: 8 })
   if (r.ok) latest.value = r.data
 }
-const loadMore = () => load(items.value.length)
 let timer = null
 watch([query, tag], () => { clearTimeout(timer); timer = setTimeout(reload, 250) })
+
+// ── 往下捲自動載入更舊的 ──
+// 底部哨兵進到畫面（提前 600px）就載下一頁；載完哨兵還在畫面裡（一頁不夠填滿）就再載
+const sentinel = ref(null)
+const hasMore = computed(() => items.value.length < total.value)
+function sentinelInView() {
+  const el = sentinel.value
+  if (!el || !el.offsetParent) return false        // 分頁沒顯示時 offsetParent 是 null
+  return el.getBoundingClientRect().top < window.innerHeight + 600
+}
+async function loadMore() {
+  if (loading.value || error.value || !hasMore.value) return
+  await load(items.value.length)
+  if (sentinelInView()) loadMore()
+}
+let observer = null
+watch(sentinel, (el) => {
+  observer?.disconnect()
+  if (!el || typeof IntersectionObserver === 'undefined') return
+  observer = new IntersectionObserver((entries) => { if (entries.some(e => e.isIntersecting)) loadMore() },
+    { rootMargin: '0px 0px 600px 0px' })
+  observer.observe(el)
+})
+onBeforeUnmount(() => observer?.disconnect())
 
 let started = false
 async function start() {
   if (started || !props.active) return
   started = true
   tags.value = await fetchNewsTags(props.fetcher)
-  await Promise.all([reload(), loadLatest()])
+  await Promise.all([reload(), loadLatest(), loadFeatured()])
   // 分享連結 ?news=<id>：直接打開那一則
   const id = new URLSearchParams(window.location.search).get('news')
   if (id) openItem({ _id: id })
@@ -179,7 +226,54 @@ defineExpose({ openItem })
 
 <style scoped>
 .nb-host { display: contents; }
-.nb-count { opacity: .7; font-size: .85em; }
+.nb-more { display: flex; justify-content: center; min-height: 2.5rem; padding-top: 1rem; color: var(--sf-text-muted); }
+
+/* ── 搜尋＋分類：圓角搜尋框＋底線分頁（像新聞網站頂端列）；「更多」展開其餘標籤（每個標籤的色點見 utils/news.js tagHue） ── */
+.nb-filter { margin-bottom: 1rem; }
+.nb-search { position: relative; max-width: 46rem; margin: 0 auto .5rem; }
+.nb-search__icon { position: absolute; left: 1.15rem; top: 50%; transform: translateY(-50%); font-size: var(--sf-fs-md);
+  color: var(--sf-text-muted); pointer-events: none; }
+.nb-search__input {
+  width: 100%; height: 3rem; padding: 0 1.25rem 0 3rem; border-radius: 999px; font-size: var(--sf-fs-base);
+  color: var(--sf-text-strong); background: rgba(var(--sf-panel-rgb, 18, 26, 43), .6);
+  border: 1px solid var(--sf-border); outline: none; transition: border-color .15s, background-color .15s, box-shadow .15s;
+}
+.nb-search__input::placeholder { color: var(--sf-text-muted); }
+.nb-search__input:hover { background: rgba(var(--sf-panel-rgb, 18, 26, 43), .8); }
+.nb-search__input:focus { border-color: var(--sf-accent); box-shadow: 0 0 0 3px rgba(var(--sf-accent-rgb), .2); }
+.nb-tabs { display: flex; align-items: stretch; justify-content: center; gap: .25rem; border-bottom: 1px solid var(--sf-border);
+  overflow-x: auto; scrollbar-width: none; }
+.nb-tabs::-webkit-scrollbar { display: none; }
+.nb-tabs__sep { width: 1px; margin: .55rem .5rem; background: var(--sf-border); flex: 0 0 auto; }
+.nb-tab {
+  position: relative; flex: 0 0 auto; padding: .6rem 1rem .7rem; background: none; border: 0; border-radius: .4rem .4rem 0 0;
+  font-size: var(--sf-fs-base); font-weight: 600; color: var(--sf-text); white-space: nowrap; transition: color .15s, background-color .15s;
+}
+.nb-tab:hover { color: var(--sf-text-strong); background: var(--sf-hover-bg); }
+.nb-tab:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: -2px; }
+.nb-tab.active { color: var(--sf-accent-text, var(--sf-accent)); }
+.nb-tab.active::after { content: ''; position: absolute; left: .75rem; right: .75rem; bottom: 0; height: 3px;
+  border-radius: 3px 3px 0 0; background: var(--sf-accent); }
+.nb-tab--more .bi { font-size: .8em; transition: transform .15s; display: inline-block; }
+.nb-tab--more.open { color: var(--sf-text-strong); }
+.nb-tab--more.open .bi { transform: rotate(180deg); }
+.nb-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; padding: .75rem 0 .25rem; }
+.nb-tag {
+  --h: 210;
+  display: inline-flex; align-items: center; gap: .35rem; padding: .28rem .7rem; border-radius: 999px;
+  font-size: var(--sf-fs-sm); font-weight: 600; line-height: 1.3; white-space: nowrap;
+  color: var(--sf-text); background: var(--sf-chip-bg); border: 1px solid var(--sf-border);
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+/* 顏色只用在色點；滑過、選中才帶一點該標籤的色調 */
+.nb-tag:hover { color: var(--sf-text-strong); border-color: hsla(var(--h), 55%, 60%, .7); }
+.nb-tag:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
+.nb-tag.active { color: var(--sf-text-strong); background: hsla(var(--h), 45%, 50%, .2); border-color: hsla(var(--h), 55%, 60%, .8); }
+.nb-tag__dot { width: .5rem; height: .5rem; border-radius: 50%; background: hsl(var(--h), 55%, 58%); flex: 0 0 auto; }
+.nb-tag__n { font-size: var(--sf-fs-xs); font-weight: 600; color: var(--sf-text-muted); }
+.nb-tag.active .nb-tag__n { color: var(--sf-text); }
+:root[data-sf-mode='light'] .nb-search__input { background: rgba(var(--sf-panel-rgb, 255, 255, 255), .85); }
+:root[data-sf-mode='light'] .nb-tag.active { background: hsla(var(--h), 45%, 50%, .14); }
 
 /* ── 跑馬燈 ── */
 .nb-ticker { display: flex; flex-direction: row; align-items: stretch; overflow: hidden; margin-bottom: .9rem; padding: 0 !important; }
@@ -213,7 +307,7 @@ defineExpose({ openItem })
 .nb-hero--3 { grid-template-columns: 2fr 1fr; }
 .nb-tile {
   position: relative; display: block; overflow: hidden; border-radius: .6rem; padding: 0; text-align: left;
-  border: 1px solid var(--sf-border); background: var(--sf-panel); color: #fff; min-height: 0;
+  border: 1px solid var(--sf-border); background: rgba(var(--sf-panel-rgb, 18, 26, 43), .5); color: #fff; min-height: 0;
 }
 .nb-tile__img, .nb-tile__ph { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .5s ease; }
 .nb-tile__ph {
@@ -221,7 +315,7 @@ defineExpose({ openItem })
   background:
     radial-gradient(ellipse 80% 70% at 20% 10%, rgba(var(--sf-accent-rgb), .45), transparent 60%),
     radial-gradient(ellipse 70% 60% at 90% 90%, rgba(var(--sf-accent-2-rgb), .35), transparent 60%),
-    var(--sf-panel);
+    rgba(var(--sf-panel-rgb, 18, 26, 43), .45);
 }
 .nb-tile:hover .nb-tile__img, .nb-tile:hover .nb-tile__ph, .nb-card:hover .nb-card__media img { transform: scale(1.05); }
 .nb-tile:focus-visible, .nb-card:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
@@ -234,6 +328,7 @@ defineExpose({ openItem })
   display: inline-flex; align-items: center; padding: .1rem .5rem; border-radius: .25rem; font-size: var(--sf-fs-xs); font-weight: 700;
   color: var(--sf-accent-2-ink, #0b1020); background: var(--sf-accent-2);
 }
+.nb-badge[style] { color: #fff; background: rgba(4, 8, 18, .62); box-shadow: inset 3px 0 0 hsl(var(--h), 55%, 58%); padding-left: .55rem; }
 .nb-badge--pin { background: var(--sf-accent); }
 .nb-meta { display: inline-flex; align-items: center; margin-top: .35rem; font-size: var(--sf-fs-xs); color: rgba(255, 255, 255, .85); }
 .nb-meta--muted { color: var(--sf-text-muted); }
@@ -267,6 +362,9 @@ defineExpose({ openItem })
   .nb-tile--0 .nb-tile__title { font-size: var(--sf-fs-lg); }
 }
 @media (max-width: 575.98px) {
+  .nb-search__input { height: 2.6rem; }
+  .nb-tabs { justify-content: flex-start; }
+  .nb-tab { padding: .5rem .75rem .6rem; }
   .nb-hero, .nb-hero--2, .nb-hero--3 { grid-template-rows: 13rem 9.5rem; gap: .6rem; }
   .nb-tile__title { font-size: var(--sf-fs-sm); }
 }

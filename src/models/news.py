@@ -8,6 +8,11 @@
 
 刪除一律軟刪除（開發原則：重要資料不永久刪除）。
 
+玩家頁的排法：列表一律依發布時間新到舊；最上面的「置頂區」（featured()）最多 4 則，
+先放「官方」標籤的、再放置頂的、不夠再用最新的補。
+標籤可以「下架」（collection news_tag_settings，後台「新聞」頁設定）：帶下架標籤的新聞對玩家整則隱藏
+（列表、全文、標籤統計、篩選、搜尋都找不到；後台照常看得到）。
+
 ⚠️ 封面、來源連結只接受 http:// 或 https://（玩家頁會做成連結／圖片，`javascript:` 一點就會執行），
 寫入時就擋，不能只靠前端。
 """
@@ -23,6 +28,10 @@ from src.mongo import get_db
 from src.timeutil import iso_utc
 
 COLLECTION = 'news'
+TAG_COLLECTION = 'news_tag_settings'
+#: 置頂區優先放這個標籤的新聞
+FEATURED_TAG = '官方'
+FEATURED_MAX = 4
 MAX_TITLE = 200
 MAX_BODY = 20000
 MAX_URL = 2000
@@ -44,6 +53,10 @@ def _col():
     return get_db()[COLLECTION]
 
 
+def _tag_col():
+    return get_db()[TAG_COLLECTION]
+
+
 def ensure_indexes(db=None):
     col = (db if db is not None else get_db())[COLLECTION]
     col.create_index([('deleted_at', ASCENDING), ('pinned', DESCENDING), ('published_at', DESCENDING)])
@@ -53,6 +66,32 @@ def ensure_indexes(db=None):
         col.drop_index('source_url_1')
     col.create_index('source_url', name='source_url_str',
                      partialFilterExpression={'source_url': {'$type': 'string'}})
+
+
+# ── 標籤上架／下架 ────────────────────────────────────────────────
+
+def unlisted_tags() -> list:
+    """下架的標籤。"""
+    return [d['_id'] for d in _tag_col().find({'listed': False}, {'_id': 1})]
+
+
+def admin_tags() -> list:
+    """後台：所有用過的標籤（含排程中的新聞，不含刪除）＋則數、是否上架；下架的排最後。"""
+    off = set(unlisted_tags())
+    rows = [{**r, 'listed': r['tag'] not in off} for r in tags(public=False)]
+    rows += [{'tag': t, 'count': 0, 'listed': False} for t in off - {r['tag'] for r in rows}]
+    rows.sort(key=lambda r: (not r['listed'], -r['count'], r['tag']))
+    return rows
+
+
+def set_tag_listed(tag, listed: bool, by: str) -> dict:
+    tag = str(tag or '').strip()
+    if not tag or len(tag) > MAX_TAG:
+        raise NewsError(f'標籤要 1～{MAX_TAG} 字')
+    listed = listed is not False
+    _tag_col().update_one({'_id': tag}, {'$set': {'listed': listed, 'updated_at': datetime.utcnow(), 'updated_by': by}},
+                          upsert=True)
+    return {'tag': tag, 'listed': listed}
 
 
 # ── 驗證 ──────────────────────────────────────────────────────────
@@ -179,15 +218,20 @@ Q_MAX = 100
 
 
 def _filter(public: bool, tag: str = '', q: str = '') -> dict:
+    """public：只列已發布、不帶下架標籤的。"""
     q = (q or '')[:Q_MAX]
     f = {'deleted_at': None}
+    tags_ = [t for t in (tag if isinstance(tag, (list, tuple)) else [tag]) if t]
+    cond = {}
     if public:
         f['published_at'] = {'$lte': datetime.utcnow()}
-    tags_ = [t for t in (tag if isinstance(tag, (list, tuple)) else [tag]) if t]
-    if len(tags_) == 1:
-        f['tags'] = tags_[0]
-    elif tags_:
-        f['tags'] = {'$in': list(tags_)}   # 多個標籤取聯集（後台多選篩選）
+        off = unlisted_tags()
+        if off:
+            cond['$nin'] = off
+    if tags_:
+        cond['$in'] = list(tags_)     # 多個標籤取聯集（後台多選篩選）
+    if cond:
+        f['tags'] = cond
     if q:
         import re
         rx = {'$regex': re.escape(q), '$options': 'i'}
@@ -197,8 +241,8 @@ def _filter(public: bool, tag: str = '', q: str = '') -> dict:
 
 def list_news(public: bool = True, tag: str = '', q: str = '', limit: int = 20, offset: int = 0,
               pinned_only: bool = False, sort: str = '') -> tuple:
-    """(列表, 總數)：置頂在前，再依發布時間新到舊。public：只列已發布的。
-    sort='latest'：只依發布時間新到舊（不管置頂，玩家頁跑馬燈用）。"""
+    """(列表, 總數)。public：只列已發布的，依發布時間新到舊（置頂的另外放在置頂區，見 featured()）。
+    後台：置頂在前，再依發布時間；sort='latest' 也只依發布時間。"""
     tag = [t.strip() for t in tag] if isinstance(tag, (list, tuple)) else (tag or '').strip()
     f = _filter(public, tag, (q or '').strip())
     if pinned_only:
@@ -206,12 +250,28 @@ def list_news(public: bool = True, tag: str = '', q: str = '', limit: int = 20, 
     limit = max(1, min(int(limit or 20), MAX_LIMIT))
     offset = max(0, int(offset or 0))
     order = [('published_at', DESCENDING), ('_id', DESCENDING)]
-    if sort != 'latest':
+    if not public and sort != 'latest':
         order.insert(0, ('pinned', DESCENDING))
     cur = _col().find(f).sort(order)
     total = _col().count_documents(f)
     rows = list(cur.skip(offset).limit(limit))
     return [(to_public(d) if public else to_admin(d)) for d in rows], total
+
+
+def featured(limit: int = FEATURED_MAX) -> list:
+    """玩家頁置頂區：先「官方」標籤的（新到舊）、再置頂的、不夠再用最新的補，最多 limit 則。"""
+    limit = max(1, min(int(limit or FEATURED_MAX), FEATURED_MAX))
+    base = _filter(True)
+    order = [('published_at', DESCENDING), ('_id', DESCENDING)]
+    picked, seen = [], set()
+    official = {**base, 'tags': {**base.get('tags', {}), '$in': [FEATURED_TAG]}}
+    for f in (official, {**base, 'pinned': True}, base):
+        if len(picked) >= limit:
+            break
+        for d in _col().find({**f, '_id': {'$nin': list(seen)}}).sort(order).limit(limit - len(picked)):
+            seen.add(d['_id'])
+            picked.append(to_public(d))
+    return picked
 
 
 def tags(public: bool = True) -> list:

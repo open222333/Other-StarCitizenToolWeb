@@ -1,6 +1,7 @@
 """新聞（src/models/news.py）：玩家頁讀（公開）、後台管理（後台帳號）、外部程式寫入（API 金鑰）。
 
-    GET    /news/                 公開：已發布的新聞（置頂在前），tag、q、limit、offset、pinned=1
+    GET    /news/                 公開：已發布的新聞（新到舊），tag、q、limit、offset、pinned=1
+    GET    /news/featured         公開：置頂區（官方優先、再置頂、再最新，最多 4 則）
     GET    /news/tags             公開：標籤與數量
     GET    /news/<id>             公開：一則全文
     GET    /news/admin            後台：全部（含排程中的）
@@ -8,7 +9,9 @@
     PUT    /news/admin/<id>       後台：修改
     DELETE /news/admin/<id>       後台：刪除（軟刪除）
     POST   /news/ingest           外部：API 金鑰（X-API-Key，權限 news:write）寫入一則或多則，來源連結相同就更新
-    GET/POST /news/keys、DELETE /news/keys/<id>   後台 admin：API 金鑰管理（金鑰只在建立時回傳一次）
+    GET    /news/admin/tag-settings  後台：標籤與是否上架（下架＝帶這標籤的新聞玩家看不到也搜不到）
+    PUT    /news/admin/tag-settings  後台：上架／下架一個標籤
+    （API 金鑰管理在 /data/api-keys，見 app/api_key/view.py）
 """
 
 from flask import Blueprint, g, jsonify, request
@@ -60,6 +63,22 @@ def list_public():
                                  limit=_int('limit', 20), offset=_int('offset', 0),
                                  pinned_only=request.args.get('pinned') == '1', sort=request.args.get('sort', ''))
     return _cached(jsonify({'success': True, 'data': rows, 'total': total}))
+
+
+@app_news.route('/featured', methods=['GET'])
+@public_api
+@limiter.limit('120 per minute')
+def list_featured():
+    """玩家頁置頂區：先「官方」標籤的、再置頂的、不夠用最新的補（各自新到舊），最多 4 則。
+    ---
+    tags: [News]
+    parameters:
+      - {name: limit, in: query, type: integer, default: 4, description: 最多 4}
+    responses:
+      200:
+        description: "data: [{_id, title, excerpt, cover_url, source_url, tags, pinned, published_at}]"
+    """
+    return _cached(jsonify({'success': True, 'data': news.featured(_int('limit', news.FEATURED_MAX))}))
 
 
 @app_news.route('/tags', methods=['GET'])
@@ -217,6 +236,54 @@ def delete_admin(news_id):
         return jsonify({'success': False, 'message': '找不到這則新聞'}), 404
     Log.create(get_jwt_identity(), 'delete_news', f'刪除新聞 {news_id}', success=True)
     return jsonify({'success': True})
+
+
+@app_news.route('/admin/tag-settings', methods=['GET'])
+@admin_api(*READ_ROLES)
+def tag_settings_admin():
+    """後台：所有標籤、則數、是否上架。
+    ---
+    tags: [News]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: "data: [{tag, count, listed}]"
+    """
+    return jsonify({'success': True, 'data': news.admin_tags()})
+
+
+@app_news.route('/admin/tag-settings', methods=['PUT'])
+@admin_api(*WRITE_ROLES)
+def set_tag_setting():
+    """後台：上架／下架一個標籤。下架＝帶這個標籤的新聞對玩家隱藏（列表、全文、篩選、搜尋都找不到）。
+    ---
+    tags: [News]
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required: [tag, listed]
+          properties:
+            tag: {type: string}
+            listed: {type: boolean}
+    responses:
+      200:
+        description: "data: {tag, listed}"
+      400:
+        description: 輸入不合法
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        row = news.set_tag_listed(data.get('tag'), data.get('listed', True), by=get_jwt_identity())
+    except news.NewsError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
+    Log.create(get_jwt_identity(), 'set_news_tag', f'新聞標籤「{row["tag"]}」{"上架" if row["listed"] else "下架"}', success=True)
+    return jsonify({'success': True, 'data': row})
 
 
 # ── 外部寫入（API 金鑰） ──────────────────────────────────────────

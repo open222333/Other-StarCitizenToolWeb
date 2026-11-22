@@ -29,7 +29,7 @@
 import { onMounted, ref } from 'vue'
 import SfModal from '@/components/SfModal.vue'
 import NewsArticle from '@/components/NewsArticle.vue'
-import { fetchNews, fetchNewsItem, fmtNewsDate } from '@/utils/news'
+import { fetchNewsFeatured, fetchNewsItem, fmtNewsDate } from '@/utils/news'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -38,9 +38,9 @@ const props = defineProps({
 const emit = defineEmits(['all'])
 
 const items = ref([])
-// 一次請求：後端預設置頂在前、再依時間，取前 3 則＝置頂的＋最新的補滿
+// 跟新聞分頁的置頂區同一套：官方優先、再置頂、再最新（後端 GET /news/featured）
 onMounted(async () => {
-  const r = await fetchNews(props.fetcher, { limit: 3 })
+  const r = await fetchNewsFeatured(props.fetcher, 3)
   if (r.ok) items.value = r.data
 })
 
