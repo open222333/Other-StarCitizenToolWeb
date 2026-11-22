@@ -11,6 +11,7 @@ import re
 
 from src.mongo import get_db
 from src.models.nav import _VARIANT_RE
+from src.models import uex_item_price
 
 SHIP_COLLECTION = 'ship_loadout_master'
 ITEM_COLLECTION = 'ship_item_master'
@@ -88,6 +89,7 @@ def ship(ship_id: str):
     ids: set = set()
     _slot_items(doc.get('slots'), ids)
     doc['items'] = items_by_ids(ids)
+    annotate(list(doc['items'].values()))
     return doc
 
 
@@ -102,4 +104,26 @@ def items(types=None, ids=None) -> list:
             found[d['id']] = d
     if ids:
         found.update(items_by_ids(ids[:MAX_IDS]))
+    annotate(list(found.values()))
     return sorted(found.values(), key=lambda d: (d.get('type') or '', d.get('size') or 0, (d.get('name') or '').lower()))
+
+
+def annotate(rows: list) -> list:
+    """配件附上取得方式（配件的 UUID 跟 Wiki 物品主檔、藍圖的產出物同一套）：
+    price＝UEX 最低購買價（aUEC，買不到是 None）、buyable、blueprint＝做得出這個配件的藍圖 UUID（沒有是 None）。
+    配裝模擬用來標「可購買／可製作」、算購物車；可製作的才能調品質（見 frontend/src/utils/loadoutCraft.js）。"""
+    if not rows:
+        return rows
+    tmp = [{'_id': d['id']} for d in rows]
+    uex_item_price.attach_summaries(tmp)
+    price = {t['_id']: (t.get('uex_price') or {}).get('buy_min') for t in tmp}
+    bp = {}
+    for b in get_db()['blueprint_master'].find(
+            {'output_item_uuid': {'$in': [d['id'] for d in rows]}, 'is_current': True},
+            {'_id': 1, 'output_item_uuid': 1}).sort('_id', 1):
+        bp.setdefault(b['output_item_uuid'], b['_id'])
+    for d in rows:
+        d['price'] = price.get(d['id'])
+        d['buyable'] = d['price'] is not None
+        d['blueprint'] = bp.get(d['id'])
+    return rows

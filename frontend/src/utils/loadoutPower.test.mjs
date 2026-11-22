@@ -1,6 +1,6 @@
 // 電源分配不超出發電量：node src/utils/loadoutPower.test.mjs
 import assert from 'node:assert/strict'
-import { autoAllocate, maxAllocate, setWithinGen, usedPower } from './loadoutPower.js'
+import { autoAllocate, consumerLoad, consumers, maxAllocate, setWithinGen, usedPower } from './loadoutPower.js'
 
 const item = max => ({ stats: { power_use: [1, max], power_ranges: [] } })
 const list = [
@@ -22,4 +22,15 @@ assert.equal(setWithinGen(list, lower, 'r', 3, gen).r, 2)
 // 自動分配：保留的格數加起來超過時從優先度低的扣
 const a = autoAllocate(list, 6, { r: 3, sh: 3 })
 assert.ok(usedPower(list, a) <= 6, JSON.stringify(a))
+// 兩個護盾產生器合成一欄：格數相加，分到的格數依上限比例分給每一個
+const sh = id => ({ id, type: 'Shield', stats: { power_use: [1, 3], power_ranges: [], em: 100, hp: 1000 } })
+const items = { a: sh('a'), b: sh('b') }
+const slots = [{ id: 'p1', item: 'a' }, { id: 'p2', item: 'b' }]
+const cs = consumers({ shield_slots: 2, power: { groups: { Shield: { power: 6, em: 1, coolant: 1 } } } }, slots, id => items[id])
+const shields = cs.filter(c => c.kind === 'shield')
+assert.equal(shields.length, 1, '護盾只有一欄')
+assert.ok(!cs.some(c => c.kind === 'static' && c.group === 'Shield'), '不會再用船的預設值多補一欄護盾')
+assert.deepEqual([shields[0].min, shields[0].max], [2, 6])
+assert.equal(consumerLoad(shields[0], 6).em, 200)
+assert.equal(consumerLoad(shields[0], 3).power, 3)
 console.log('loadoutPower ok')

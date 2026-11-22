@@ -6,6 +6,7 @@
 
 from flask import Blueprint, jsonify, request
 
+from src.limiter import limiter
 from src.models import loadout
 from src.permissions import public_api
 
@@ -55,8 +56,9 @@ def loadout_ship(ship_id):
 
 @app_loadout.route('/items', methods=['GET'])
 @public_api
+@limiter.limit('120 per minute')
 def loadout_items():
-    """配件清單（types＝主類，逗號分隔，例如 WeaponGun,Turret；ids＝UUID，逗號分隔）。
+    """配件清單（types＝主類，逗號分隔，例如 WeaponGun,Turret；ids＝UUID，逗號分隔）；每筆帶 buyable（UEX 買得到）。
     ---
     tags: [Loadout]
     security:

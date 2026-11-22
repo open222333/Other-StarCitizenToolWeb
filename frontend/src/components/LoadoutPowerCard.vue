@@ -1,5 +1,7 @@
 <!--
-  配裝模擬的「電源與訊號」卡（components/LoadoutSimulator.vue）：每個耗電者一欄電格（pips），點格子調整；
+  配裝模擬的「電源與訊號」卡（components/LoadoutSimulator.vue）：每個耗電者一欄電格（pips，仿遊戲的電源畫面），
+  點格子調整；最少格數合成一塊（護盾每個產生器各一塊），目前格數標在最上面那格；點下方圖示整欄關掉／再點恢復。
+  飛控（FlightController）就是推進器（遊戲電源畫面上的 >>> 那欄）。
   上方是電力、冷卻用量，下方是 EM／IR／截面訊號。計算在 utils/loadoutPower.js，狀態由 LoadoutSimulator 管。
 -->
 <template>
@@ -44,15 +46,25 @@
         <span v-if="summary.coolShort" class="sf-chip sf-chip--warn">冷卻不足</span>
       </div>
 
-      <div class="lp-cols" role="group" aria-label="電源分配">
-        <div v-for="c in list" :key="c.key" class="lp-col" :class="{ 'lp-col--off': c.off || c.fixed }" :title="titleOf(c)">
-          <div class="lp-num">{{ c.off ? '關' : c.fixed ? '—' : pips[c.key] ?? 0 }}</div>
-          <div class="lp-cells" :style="{ '--cell-h': `${cellH(c)}px` }">
-            <button v-for="k in cellsOf(c)" :key="k" type="button" class="lp-cell"
-              :class="{ 'is-on': k <= (pips[c.key] ?? 0), 'is-min': k <= (c.min || 0) }"
-              :disabled="c.off || c.fixed" :aria-label="`${labelOf(c)} ${k} 格`" @click="click(c, k)"></button>
+      <div class="lp-cols" role="group" aria-label="電源分配" :style="{ '--cell-h': `${cellH}px` }">
+        <div v-for="c in list" :key="c.key" class="lp-col" :class="[`lp-col--${c.kind}`, { 'lp-col--off': c.off || c.fixed || !(pips[c.key] > 0) }]"
+          :title="titleOf(c)">
+          <div class="lp-cells">
+            <template v-for="b in blocksOf(c)" :key="b.id">
+              <!-- 固定／關閉（例如戰鬥模式的量子引擎）：一整塊灰色 -->
+              <div v-if="b.fixed" class="lp-cell lp-cell--fixed" :style="{ height: blockH(b.n) }">{{ b.text }}</div>
+              <button v-else type="button" class="lp-cell"
+                :class="{ 'is-on': (pips[c.key] ?? 0) >= b.k, 'is-top': (pips[c.key] ?? 0) === b.k && !b.sub, 'is-min': b.n > 1 || b.min }"
+                :style="b.n > 1 ? { height: blockH(b.n) } : null"
+                :aria-label="`${labelOf(c)} ${b.k} 格`" @click="click(c, b.k)">
+                <span v-if="(pips[c.key] ?? 0) === b.k && !b.sub" class="lp-cell__num">{{ b.k }}</span>
+                <span v-else-if="b.n > 1" class="lp-cell__min">{{ b.n }}</span>
+              </button>
+            </template>
           </div>
-          <i :class="iconOf(c)" class="lp-icon" aria-hidden="true"></i>
+          <button type="button" class="lp-icon" :disabled="c.off || c.fixed"
+            :aria-label="(pips[c.key] ?? 0) > 0 ? `關掉${labelOf(c)}` : `打開${labelOf(c)}`" @click="toggle(c)">
+            <i :class="iconOf(c)" aria-hidden="true"></i></button>
           <div class="lp-label">{{ labelOf(c) }}</div>
         </div>
       </div>
@@ -87,16 +99,44 @@ const KIND = {
   shield: ['bi bi-shield-fill', '護盾'], weapons: ['bi bi-crosshair', '武器'], cooler: ['bi bi-snow', '冷卻'],
   radar: ['bi bi-broadcast', '雷達'], quantum: ['bi bi-stars', '量子'], utility: ['bi bi-tools', '工具'],
 }
-const STATIC_ICON = { FlightController: 'bi bi-airplane', LifeSupportGenerator: 'bi bi-heart-pulse' }
+const STATIC_ICON = { FlightController: 'bi bi-chevron-double-right', LifeSupportGenerator: 'bi bi-heart-pulse' }
 const iconOf = c => (c.kind === 'static' ? STATIC_ICON[c.group] || 'bi bi-cpu' : KIND[c.kind]?.[0] || 'bi bi-cpu')
 const labelOf = c => (c.kind === 'static' ? c.label : KIND[c.kind]?.[1] || c.kind)
-const titleOf = c => [c.item ? props.itemLabel(c.item) : labelOf(c), c.min ? `最少 ${c.min} 格` : '', `最多 ${c.max} 格`]
+const titleOf = c => [c.items?.length > 1 ? c.items.map(props.itemLabel).join('、') : c.item ? props.itemLabel(c.item) : labelOf(c), c.min ? `最少 ${c.min} 格` : '', `最多 ${c.max} 格`]
   .filter(Boolean).join(' · ')
-const cellsOf = c => Array.from({ length: Math.max(c.max, 0) }, (_, i) => c.max - i)
+/** 一欄由上到下的格子：最少格數以上一格一格；最少格數合成一塊（護盾每個產生器的最少格數各一塊）。
+ *  k＝點這塊會設成的格數（也是「分到 k 格以上就亮」的門檻），n＝這塊佔幾格高 */
+function blocksOf(c) {
+  if (c.off || c.fixed) return [{ id: 'fixed', fixed: true, n: Math.max(1, Math.min(c.max || 1, 6)), text: c.off ? '關' : c.max || '—' }]
+  const out = []
+  const min = c.min || 0
+  for (let k = c.max; k > Math.max(min, 1); k--) out.push({ id: k, k, n: 1 })
+  if (min <= 1) {
+    if (c.max >= 1) out.push({ id: 1, k: 1, n: 1, min: min === 1 })
+    return out
+  }
+  // 最少格數：護盾依產生器分塊（點哪一塊都是開到最少格數；分到最少格數以上才全部亮）
+  const parts = c.parts?.length > 1 ? c.parts.map(p => p.min || 0).filter(Boolean) : [min]
+  parts.forEach((n, i) => out.push({ id: `min${i}`, k: min, n, min: true, sub: i > 0 }))
+  return out
+}
 const maxCells = computed(() => Math.max(1, ...props.list.map(c => c.max || 0)))
-const cellH = () => Math.max(6, Math.min(14, Math.floor(150 / maxCells.value)))
+const GAP = 3
+const cellH = computed(() => Math.max(8, Math.min(16, Math.floor(190 / maxCells.value) - GAP)))
+const blockH = n => `${n * cellH.value + (n - 1) * GAP}px`
 const pct = (a, b) => (b ? Math.min(100, (a / b) * 100) : 0)
 
+// 點圖示：整欄關掉；再點恢復成關掉前的格數（沒有就開到最少格數）
+const lastPips = {}
+function toggle(c) {
+  const p = props.pips[c.key] ?? 0
+  if (p > 0) {
+    lastPips[c.key] = p
+    emit('set', c.key, 0)
+  } else {
+    emit('set', c.key, lastPips[c.key] || Math.max(c.min || 1, 1))
+  }
+}
 function click(c, k) {
   const p = props.pips[c.key] ?? 0
   let next = p === k ? k - 1 : k
@@ -117,19 +157,31 @@ const emRows = computed(() => Object.entries(props.summary.emBy || {})
 .lp-bar .progress-bar { background: var(--sf-accent); }
 .lp-bar .lp-bar--cool { background: var(--sf-accent-2); }
 .lp-bar .lp-bar--over { background: var(--bs-danger); }
-.lp-cols { display: flex; align-items: flex-end; gap: .5rem; overflow-x: auto; padding-bottom: .25rem; }
-.lp-col { flex: 0 0 auto; width: 3.1rem; display: flex; flex-direction: column; align-items: center; gap: .2rem; }
-.lp-col--off { opacity: .45; }
-.lp-num { font-weight: 700; color: var(--sf-text-strong); }
-.lp-cells { display: flex; flex-direction: column; gap: 2px; width: 100%; }
-.lp-cell { height: var(--cell-h); width: 100%; padding: 0; border: 1px solid var(--sf-border); border-radius: 2px;
-  background: var(--sf-chip-bg); cursor: pointer; }
-.lp-cell.is-min { border-style: dashed; }
-.lp-cell.is-on { background: var(--sf-accent); border-color: var(--sf-accent); }
-.lp-cell:disabled { cursor: default; }
+.lp-cols { display: flex; align-items: flex-end; gap: .5rem; overflow-x: auto; padding: .5rem 0 .25rem; }
+.lp-col { flex: 0 0 auto; width: 2.9rem; display: flex; flex-direction: column; align-items: center; gap: .35rem; }
+.lp-cells { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+.lp-cell { position: relative; height: var(--cell-h); width: 100%; padding: 0; border: 0; border-radius: 3px;
+  background: rgba(var(--sf-accent-rgb), .1); cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background-color .12s; }
+.lp-cell:hover { background: rgba(var(--sf-accent-rgb), .25); }
+.lp-cell.is-on { background: rgba(var(--sf-accent-rgb), .55); }
+.lp-cell.is-min.is-on { background: rgba(var(--sf-accent-rgb), .35); }
+.lp-cell.is-top { background: var(--sf-accent); box-shadow: 0 0 10px rgba(var(--sf-accent-rgb), .45); }
 .lp-cell:focus-visible { outline: 2px solid var(--sf-accent-2); outline-offset: 1px; }
-.lp-icon { color: var(--sf-accent); font-size: 1.1rem; }
-.lp-label { font-size: .75rem; color: var(--sf-text-muted); text-align: center; line-height: 1.1; min-height: 1.7em; }
+/* 武器的電源池：沒分到的格子只畫外框（跟遊戲一樣） */
+.lp-col--weapons .lp-cell:not(.is-on) { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-border); }
+.lp-cell__num { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); font-weight: 800;
+  font-size: var(--sf-fs-md); line-height: 1; color: var(--sf-text-strong); text-shadow: 0 1px 2px rgba(0, 0, 0, .6); pointer-events: none; }
+.lp-cell__min { font-size: var(--sf-fs-sm); font-weight: 700; color: var(--sf-text); opacity: .8; pointer-events: none; }
+.lp-cell--fixed { cursor: default; background: var(--sf-chip-bg); color: var(--sf-text-muted); font-weight: 700;
+  font-size: var(--sf-fs-sm); }
+.lp-icon { width: 2.4rem; height: 2.4rem; border-radius: 50%; border: 0; padding: 0; background: none; font-size: 1.35rem;
+  color: var(--sf-accent); transition: background-color .12s, color .12s, opacity .12s; }
+.lp-icon:hover:not(:disabled) { background: var(--sf-hover-bg); }
+.lp-icon:focus-visible { outline: 2px solid var(--sf-accent); }
+.lp-icon:disabled { cursor: default; }
+.lp-col--off .lp-icon { color: var(--sf-text-muted); opacity: .6; }
+.lp-label { font-size: var(--sf-fs-xs); color: var(--sf-text-muted); text-align: center; line-height: 1.1; min-height: 1.2em; margin-top: -.2rem; }
 .lp-sig { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
 .lp-tile { padding: .5rem .6rem; border: 1px solid var(--sf-border); border-radius: .4rem; background: var(--sf-chip-bg); }
 .lp-tile__v { font-size: 1.3rem; font-weight: 700; color: var(--sf-text-strong); line-height: 1.1; }

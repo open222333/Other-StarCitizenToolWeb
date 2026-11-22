@@ -186,6 +186,20 @@ def test_items_by_type(app):
     assert loadout.items(types=['$where']) == []
 
 
+def test_items_buyable_flag(app):
+    """更換視窗的「可購買／可製作」：UEX 有販售價格的帶 price（最低價）、buyable；有藍圖的帶 blueprint。"""
+    from src.mongo import get_db
+    _seed()
+    db = get_db()
+    db['uex_items'].insert_one({'id': 77, 'wiki_uuid': 'shd-1'})
+    db['uex_items_prices'].insert_many([{'id_item': 77, 'price_buy': 1200}, {'id_item': 77, 'price_buy': 990}])
+    db['blueprint_master'].insert_one({'_id': 'bp-gun', 'output_item_uuid': 'gun-1', 'is_current': True})
+    rows = {d['id']: d for d in loadout.items(types=['Shield', 'WeaponGun'])}
+    assert (rows['shd-1']['buyable'], rows['shd-1']['price'], rows['shd-1']['blueprint']) == (True, 990, None)
+    assert (rows['gun-1']['buyable'], rows['gun-1']['price'], rows['gun-1']['blueprint']) == (False, None, 'bp-gun')
+    assert loadout.ship('ship-1')['items']['gun-1']['blueprint'] == 'bp-gun'
+
+
 def test_loadout_api(client, auth_headers):
     _seed()
     r = client.get('/item/loadout/ships', headers=auth_headers)

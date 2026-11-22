@@ -157,8 +157,8 @@
                     <td v-if="registerable" class="pe-3 text-end text-nowrap sf-stack__actions" @click.stop>
                       <!-- 手機上這兩顆只留圖示（文字 d-none d-sm-inline），不然會擠出表格 -->
                       <button type="button" class="btn btn-sm btn-info me-1" aria-label="品質試算"
-                        :aria-expanded="qualityId === bp._id ? 'true' : 'false'" @click="qualityId = qualityId === bp._id ? '' : bp._id">
-                        <i class="bi" :class="qualityId === bp._id ? 'bi-chevron-up' : 'bi-sliders'"></i><span class="d-none d-sm-inline ms-1">品質試算</span>
+                        @click="qualityRef?.open({ uuid: bp._id, name: bp.name_zh || bp.name })">
+                        <i class="bi bi-sliders"></i><span class="d-none d-sm-inline ms-1">品質試算</span>
                       </button>
                       <span v-if="isRegistered(bp)" class="sf-tree-chip">已登記</span>
                       <button v-else type="button" class="btn btn-sm btn-success" :disabled="submitting"
@@ -168,17 +168,6 @@
                     </td>
                     <td v-if="!player" class="pe-3">
                       <PlayerVisibleToggle dataset="blueprints" :doc-id="bp._id" :row="bp" />
-                    </td>
-                  </tr>
-                  <!-- 品質試算（跟我的藍圖同一個元件），登記前就能先試算 -->
-                  <tr v-if="registerable && qualityId === bp._id" class="bp-detail sf-stack__detail">
-                    <td :colspan="colspan" class="px-3 py-2">
-                      <!-- 手機上這一列變成底部面板（sf-stack__detail），標題列附關閉按鈕 -->
-                      <div v-if="player" class="sf-sheet__head sf-stack__sheet-head">
-                        <h3 class="sf-sheet__title">品質試算 · {{ bp.name_zh || bp.name }}</h3>
-                        <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="qualityId = ''"><i class="bi bi-x-lg"></i></button>
-                      </div>
-                      <BlueprintQuality :fetcher="fetcher" :blueprint-uuid="bp._id" />
                     </td>
                   </tr>
                   <tr v-if="expandedId === bp._id" class="bp-detail sf-stack__detail">
@@ -269,6 +258,8 @@
       </div>
     </div>
 
+    <!-- 品質試算（跳出視窗，跟我的藍圖同一個元件），登記前就能先試算 -->
+    <BlueprintQualityModal v-if="registerable" ref="qualityRef" :fetcher="fetcher" />
     <BlueprintMissionsModal v-if="player" ref="missionsRef" :fetcher="fetcher" :registered-uuids="registeredUuids" />
   </div>
 </template>
@@ -279,7 +270,7 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 import { apiFetch } from '@/api'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
-import BlueprintQuality from '@/components/BlueprintQuality.vue'
+import BlueprintQualityModal from '@/components/BlueprintQualityModal.vue'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
 import AdminSearchField from '@/components/AdminSearchField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -343,7 +334,7 @@ const effectiveHasMissions = computed(() => (shared.value ? !!props.sharedFilter
 
 const registerable = computed(() => props.player && props.registeredUuids !== null)
 /** 正在品質試算的藍圖（登記藍圖資料） */
-const qualityId = ref('')
+const qualityRef = ref(null)
 const colspan = computed(() => (props.player ? 7 + (registerable.value ? 2 : 0) : 9))
 
 // ── 登記（玩家頁「登記藍圖資料」）────────────────────────────

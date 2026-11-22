@@ -896,9 +896,8 @@
             <td class="text-muted sf-wrap d-none d-md-table-cell">{{ bp.notes || '—' }}</td>
             <td class="text-end text-nowrap pe-3 sf-stack__actions">
               <button v-if="bp.blueprint_uuid" class="btn btn-sm btn-info me-2"
-                :aria-expanded="qualityFor === bp._id ? 'true' : 'false'"
-                @click="qualityFor = qualityFor === bp._id ? null : bp._id">
-                <i class="bi me-1" :class="qualityFor === bp._id ? 'bi-chevron-up' : 'bi-sliders'"></i>品質試算
+                @click="bpQualityRef?.open({ uuid: bp.blueprint_uuid, name: bp.master?.name_zh || bp.name })">
+                <i class="bi bi-sliders me-1"></i>品質試算
               </button>
               <!-- 刪除先確認（同一格換成「確定刪除？ 刪除／取消」），送出中停用 -->
               <template v-if="confirmDeleteKey === `bp:${bp._id}`">
@@ -910,17 +909,6 @@
                 <button class="btn btn-sm btn-secondary" :disabled="deletingKey === `bp:${bp._id}`" @click="confirmDeleteKey = ''">取消</button>
               </template>
               <button v-else class="btn btn-sm btn-danger" @click="confirmDeleteKey = `bp:${bp._id}`">刪除</button>
-            </td>
-          </tr>
-          <tr v-if="qualityFor === bp._id" class="sf-stack__detail">
-            <td colspan="6">
-              <!-- 手機上這一列變成底部面板，標題列附關閉按鈕 -->
-              <div class="sf-sheet__head sf-stack__sheet-head">
-                <h3 class="sf-sheet__title">品質試算 · {{ bp.master?.name_zh || bp.name }}</h3>
-                <button type="button" class="btn btn-sm btn-secondary" aria-label="關閉" @click="qualityFor = null"><i class="bi bi-x-lg"></i></button>
-              </div>
-              <!-- 品質試算：拖拉每個部位的材料品質，看各屬性加成（見 components/BlueprintQuality.vue） -->
-              <BlueprintQuality :fetcher="playerAuth.playerFetch" :blueprint-uuid="bp.blueprint_uuid" />
             </td>
           </tr>
           <tr v-if="recipeFor === bp._id" class="sf-stack__detail">
@@ -1236,7 +1224,7 @@
     <!-- 工具箱 › 配裝模擬（見 components/LoadoutSimulator.vue、utils/loadoutCalc.js、src/models/loadout.py） -->
     <div v-show="activePane === 'loadout'" role="tabpanel" id="panel-toolbox-loadout" aria-labelledby="subtab-toolbox-loadout">
       <LoadoutSimulator :fetcher="playerAuth.playerFetch" :active="activePane === 'loadout'"
-        :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
+        :fleet-uuids="fleetVehicleUuids" :fleet="fleet" :member="!isGuest" card-class="card scifi-card" @fleet-changed="loadFleet" />
     </div>
 
     <!-- 工具箱 › 戰術小隊：分配表（小隊 → 艦船 → 人員，可分享唯讀連結；見 components/SquadBoards.vue、src/models/squad.py）。會員功能 -->
@@ -1357,6 +1345,7 @@
   <StockWizard ref="stockWizardRef" :fetcher="playerAuth.playerFetch" :locations="locations" :loc-label="locLabel"
     :loc-zh="locZh" :home-location="homeLocation" :history="history" :type-options="itemTypeOptions"
     :dismantle-options="dismantleOptions" @done="onStockDone" />
+  <BlueprintQualityModal ref="bpQualityRef" :fetcher="playerAuth.playerFetch" />
   <BlueprintMissionsModal ref="bpMissionsRef" :fetcher="playerAuth.playerFetch" :registered-uuids="isGuest ? null : myBlueprintUuids" />
 
   <!-- ══════════ 手機底部導覽列（上方分頁列在手機上藏起來）：常用的四個＋「更多」 ══════════ -->
@@ -1406,7 +1395,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
 import { loadLocationAreas, matchArea } from '@/utils/locationArea'
 import BlueprintCalculator from '@/components/BlueprintCalculator.vue'
-import BlueprintQuality from '@/components/BlueprintQuality.vue'
+import BlueprintQualityModal from '@/components/BlueprintQualityModal.vue'
 import MiningLookup from '@/components/MiningLookup.vue'
 import CommodityBuyFinder from '@/components/CommodityBuyFinder.vue'
 import ItemDataBrowser from '@/components/ItemDataBrowser.vue'
@@ -2382,8 +2371,8 @@ async function loadBlueprints() {
 
 // ── 展開某張藍圖的完整配方（點「N 種」材料時才抓，不預載）──────────
 const recipeFor     = ref(null)
-// 品質試算展開的是哪一列（跟材料展開各自獨立）
-const qualityFor    = ref(null)
+// 品質試算：跳出視窗（components/BlueprintQualityModal.vue）
+const bpQualityRef  = ref(null)
 
 function showRecipe(bp) {
   // 再點一次收起來；配方與試算由 BlueprintCalculator 自己載入

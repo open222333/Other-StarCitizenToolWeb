@@ -8,6 +8,7 @@
 //   - 發電機的 EM＝每格 EM（發電機 EM 上限 ÷ 發電格數）× 已用格數
 //   - 冷卻需求＝各配件耗冷卻＋已用電量；IR＝冷卻器 IR 上限加總 × 冷卻需求 ÷ 冷卻產量
 //   - 最後乘上裝甲的訊號倍率（ship.power.signal）
+//   - 護盾跟遊戲的電源畫面一樣只有一欄：運作中的產生器合成一個（格數相加，依上限比例分給每一個）
 //   - 量子模式：護盾關閉、量子引擎開啟（量子引擎只算 EM 與冷卻，跟資料集一樣不佔電）
 //   - 發電格數：資料集只有預設發電機的總格數，換發電機時依發電量比例換算（估算）
 // 其他固定耗電者（飛控、維生…）用船的預設值，可以調格數，EM／冷卻依格數等比例。
@@ -20,7 +21,7 @@ export const MODELED = new Set(['Shield', 'Cooler', 'Radar', 'WeaponGun', 'Tract
 
 export const STATIC_LABEL = {
   Shield: '護盾', Cooler: '冷卻', Radar: '雷達', WeaponGun: '武器',
-  FlightController: '飛控', LifeSupportGenerator: '維生', QuantumInterdictionGenerator: '量子干擾',
+  FlightController: '推進器', LifeSupportGenerator: '維生', QuantumInterdictionGenerator: '量子干擾',
   EMP: 'EMP', TractorBeam: '牽引', TowingBeam: '拖曳', SalvageHead: '打撈', WeaponMining: '採礦',
 }
 
@@ -69,7 +70,14 @@ export function consumers(ship, slots, itemOf, mode = 'scm') {
   // 同時運作的護盾有上限，取最強的幾個（跟 loadoutCalc.summarize 一樣）
   shields.sort((a, b) => (b.item.stats?.hp || 0) - (a.item.stats?.hp || 0))
   const active = ship?.shield_slots > 0 ? shields.slice(0, ship.shield_slots) : shields
-  const list = active.map(s => ({ ...s, kind: 'shield' }))
+  // 遊戲的電源畫面護盾只有一欄：運作中的護盾產生器合成一個耗電者（格數相加，分到的格數依各自上限比例分給每一個，
+  // 見 consumerLoad）；parts 是每一個產生器（key＝掛點 id，護盾回充打折用）
+  const list = []
+  if (active.length) {
+    list.push({ key: 'shield', kind: 'shield', item: active.length === 1 ? active[0].item : null,
+      items: active.map(s => s.item), parts: active,
+      min: active.reduce((a, s) => a + s.min, 0), max: active.reduce((a, s) => a + s.max, 0) })
+  }
   const wSum = weapons.reduce((a, it) => a + (usage(it)[1] || 0), 0)
   const pool = ship?.power?.weapon_pool > 0 ? ship.power.weapon_pool : Math.ceil(wSum)
   if (weapons.length) {
@@ -79,7 +87,7 @@ export function consumers(ship, slots, itemOf, mode = 'scm') {
   }
   list.push(...out)
   // 掛點樹裡算得到的類別
-  const found = new Set(list.map(c => c.kind === 'weapons' ? 'WeaponGun' : c.item?.type).filter(Boolean))
+  const found = new Set(list.map(c => c.kind === 'weapons' ? 'WeaponGun' : c.kind === 'shield' ? 'Shield' : c.item?.type).filter(Boolean))
   for (const [group, v] of Object.entries(ship?.power?.groups || {})) {
     if (!v.power && !v.em && !v.coolant) continue
     if (MODELED.has(group) && (found.has(group) || group === 'QuantumDrive')) continue
@@ -106,6 +114,16 @@ export function consumerLoad(c, p) {
     const ratio = c.draw ? draw / c.draw : 0
     return { power: draw, em: c.em * ratio, coolant: 0, eff: ratio }
   }
+  if (c.kind === 'shield' && c.parts) {
+    const out = { power: Math.min(p, c.max), em: 0, coolant: 0, eff: 0 }
+    for (const part of shieldShares(c, p)) {
+      const s = part.item.stats || {}
+      out.em += (s.em || 0) * part.eff
+      out.coolant += (s.coolant_use?.[1] || 0) * part.eff
+      out.eff += part.eff * (c.max ? part.max / c.max : 1 / c.parts.length)
+    }
+    return out
+  }
   if (c.kind === 'static') {
     const ratio = c.max ? Math.min(p, c.max) / c.max : 1
     return { power: Math.min(p, c.max), em: c.em * ratio, coolant: c.coolant * ratio, eff: ratio }
@@ -114,6 +132,15 @@ export function consumerLoad(c, p) {
   const eff = efficiency(c.max, s.power_ranges, p)
   const coolant = c.kind === 'cooler' ? 0 : (s.coolant_use?.[1] || 0) * eff
   return { power: Math.min(p, c.max), em: (s.em || 0) * eff, coolant, eff }
+}
+
+/** 合成的護盾分到 p 格時，每個產生器分到的格數（依各自上限的比例）與效率：[{ key, item, max, pips, eff }] */
+export function shieldShares(c, p) {
+  return (c.parts || []).map(part => {
+    const share = c.max ? Math.min(p, c.max) * part.max / c.max : 0
+    return { key: part.key, item: part.item, max: part.max, pips: share,
+      eff: efficiency(part.max, part.item.stats?.power_ranges, share) }
+  })
 }
 
 /** 合法的格數：0，或最小～最大之間 */
