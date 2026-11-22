@@ -528,7 +528,7 @@
             <SfFilterSheet v-if="whoKind === 'items'" :count="itemsSheetCount" title="物品篩選" @clear="clearItemsSheet">
               <div class="col-12 col-md-3">
                 <label class="form-label small mb-1" for="items-type">物品類型</label>
-                <MultiSelectFilter id="items-type" v-model="itemsSelectedTypes" :options="itemTypeOptions"
+                <MultiSelectFilter id="items-type" v-model="itemsSelectedTypes" :options="itemTypeTreeOpts"
                   label="物品類型" placeholder="全部" block searchable />
               </div>
               <LocationAreaFilter :names="locations" :loc-label="locLabel" col-class="col-12 col-md-3"
@@ -1797,6 +1797,8 @@ let whoSectionsLoaded = false
 function loadSearchSections() {
   ensureRoster()
   if (!itemTypes.value.length) loadItemTypes()
+  // 物品類型跟資料庫 › 物品同一套（類型＋子類型，例如 個人武器 › 附件 › 瞄具）
+  if (!itemTypeTree.value.length) loadItemTypeTree()
   if (!blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
   if (!vehicleFacetsLoaded) loadVehicleFacets()
   if (whoSectionsLoaded) return

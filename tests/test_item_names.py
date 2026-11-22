@@ -148,6 +148,14 @@ def test_ids_of_type_unknown_type_returns_empty(seed_typed_items):
     assert ItemMaster.ids_of_type('NoSuchType') == []
 
 
+def test_ids_of_type_accepts_sub_type(seed_typed_items):
+    """跟資料庫 › 物品同一套：值可以是「類型/子類型」，跟整個類型混著多選取聯集。"""
+    from src.mongo import get_db
+    get_db()[ItemMaster.COLLECTION].update_one({'_id': 'ty-1'}, {'$set': {'sub_type': 'Small'}})
+    assert ItemMaster.ids_of_type('Cooler/Small') == ['ty-1']
+    assert set(ItemMaster.ids_of_type(['Cooler/Small', 'PowerPlant'])) == {'ty-1', 'ty-3'}
+
+
 def test_ids_of_type_blank_returns_empty():
     assert ItemMaster.ids_of_type('') == []
     assert ItemMaster.ids_of_type(None) == []

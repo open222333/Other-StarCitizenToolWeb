@@ -194,15 +194,9 @@ class ItemMaster(_MasterBase):
         source：vehicle＝只看飛船組件（Wiki /vehicle-items）、personal＝只看其他物品，其他值不限。"""
         filt: dict = {'is_current': True}
         # 類型可以帶「類型/子類型」（例如 WeaponAttachment/IronSight＝附件裡的瞄具），跟整個類型混著多選、取聯集
-        type_values = _clean_list(types)
-        whole = [t for t in type_values if TYPE_SEP not in t]
-        pairs = [t.split(TYPE_SEP, 1) for t in type_values if TYPE_SEP in t]
-        if pairs:
-            ors = [{'type': {'$in': whole}}] if whole else []
-            ors += [{'type': t, 'sub_type': st} for t, st in pairs]
-            filt.setdefault('$and', []).append({'$or': ors})
-        elif whole:
-            filt['type'] = {'$in': whole}
+        tf = _type_filter(types)
+        if tf:
+            filt.setdefault('$and', []).append(tf)
         for field, values in (('sub_type', sub_types),
                               ('manufacturer_code', manufacturer_codes), ('item_class', item_classes)):
             values = _clean_list(values)
@@ -377,14 +371,14 @@ class ItemMaster(_MasterBase):
         不同的是這裡不分頁 —— 呼叫端要的是「這個類型全部的 id」拿去比對，
         不是要分頁瀏覽。
 
-        item_type 可以是單一類型或多個類型（「物品類型」欄位可多選，取聯集），
-        上限依類型數放大（每個類型各 limit 筆）。
+        item_type 可以是單一類型或多個類型（「物品類型」欄位可多選，取聯集），也可以帶「類型/子類型」
+        （跟資料庫 › 物品同一套，見 _type_filter）；上限依類型數放大（每個類型各 limit 筆）。
         """
         types = _clean_list(item_type)
         if not types:
             return []
         rows = cls._col().find(
-            {'is_current': True, 'type': types[0] if len(types) == 1 else {'$in': types}},
+            {'is_current': True, **_type_filter(types)},
             {'_id': 1},
         ).limit(max(1, min(limit, 2000)) * len(types))
         return [r['_id'] for r in rows]
@@ -432,6 +426,21 @@ class ItemMaster(_MasterBase):
 
 #: 「類型/子類型」篩選值的分隔字元（見 ItemMaster.list_all）
 TYPE_SEP = '/'
+
+
+def _type_filter(values) -> dict:
+    """物品類型篩選（多選取聯集）：值是「類型」或「類型/子類型」（例如 WeaponAttachment/IronSight＝附件裡的瞄具）。
+    資料庫 › 物品（list_all）跟查詢持有資訊 › 物品（ids_of_type）共用，兩邊的類型選項才會一樣。"""
+    values = _clean_list(values)
+    whole = [t for t in values if TYPE_SEP not in t]
+    pairs = [t.split(TYPE_SEP, 1) for t in values if TYPE_SEP in t]
+    if pairs:
+        ors = [{'type': {'$in': whole}}] if whole else []
+        ors += [{'type': t, 'sub_type': st} for t, st in pairs]
+        return {'$or': ors}
+    if whole:
+        return {'type': whole[0] if len(whole) == 1 else {'$in': whole}}
+    return {}
 
 
 def _clean_list(value) -> list:
