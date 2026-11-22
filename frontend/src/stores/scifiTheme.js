@@ -343,7 +343,8 @@ export const useScifiThemeStore = defineStore('scifiTheme', () => {
     }
     if (accent2Rgb) {
       root.style.setProperty('--sf-accent-2-text', readableOn(accent2Rgb, v.panel))
-      root.style.setProperty('--sf-accent-2-ink', readableOn(accent2Rgb, v.panel))
+      // ⚠️ 不要在這裡覆寫 --sf-accent-2-ink：它是「橘底上的文字色」，readableOn() 算的是「深底上的橘色字」，
+      //    覆寫後會變成橘底橘字（新聞標籤、跑馬燈「最新消息」看不見）。ink 由上面的 inkFor() 決定。
     }
 
     // 狀態色（成功/危險/警示）在亮底上要用「深一階」的版本，
