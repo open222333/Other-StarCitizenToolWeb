@@ -1635,10 +1635,16 @@ const legacyTab = legacyItemsSub ? null : LEGACY_TABS[route.query.tab] || null
 // 「個人資料」原本是分頁，現在是點名字打開的視窗：舊網址 ?tab=profile 開場就打開視窗（分頁回到預設）
 const legacyProfile = route.query.tab === 'profile'
 const profileOpen = ref(legacyProfile && !isGuest.value)
-// 沒指定分頁時：會員從「艦長室」開始，訪客從第一個不用登入的分頁開始（照後台排的順序）
-const firstTab = () => (isGuest.value
-  ? (orderedTabs.value.find(t => !t.member && isTabShown(t.key)) || orderedTabs.value.find(t => !t.member))?.key || 'items'
-  : 'my')
+// 沒指定分頁時：會員從「新聞」、訪客從「資料庫」開始；那個分頁被後台關掉時，
+// 會員從「艦長室」、訪客從第一個不用登入的分頁開始（照後台排的順序）
+const HOME_TAB = { member: 'news', guest: 'items' }
+const firstTab = () => {
+  const home = isGuest.value ? HOME_TAB.guest : HOME_TAB.member
+  if (orderedTabs.value.some(t => t.key === home) && isTabShown(home)) return home
+  return isGuest.value
+    ? (orderedTabs.value.find(t => !t.member && isTabShown(t.key)) || orderedTabs.value.find(t => !t.member))?.key || 'items'
+    : 'my'
+}
 const requestedTab = legacyItemsSub ? 'items' : legacyTab ? legacyTab.tab
   : (validTabs.includes(route.query.tab) ? route.query.tab : '')
 // 沒登入卻指定了會員分頁（舊連結、別人分享的網址）：先停在第一個公開分頁，跳出登入視窗，登入後回到原本那頁
