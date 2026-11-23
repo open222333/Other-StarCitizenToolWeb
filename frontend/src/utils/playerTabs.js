@@ -128,3 +128,20 @@ export function orderTabs(tabs, order) {
     .sort((a, b) => (rank.get(a.t.key) ?? 1000 + a.i) - (rank.get(b.t.key) ?? 1000 + b.i))
     .map(x => x.t)
 }
+
+/** 後台設成「不開放」（tab_access 的 closed）：主分頁本身、某個下層分頁，或主分頁的下層分頁全部不開放。
+ *  玩家頁不顯示，說明頁（views/PlayerHelpView.vue）也不寫。access 先經過 normalizeTabAccess。 */
+export function isTabClosed(access, tab, sub = '') {
+  if (!tab) return false
+  if (access?.[tab] === 'closed') return true
+  if (sub) return access?.[subKey(tab, sub)] === 'closed'
+  const t = PLAYER_TABS.find(x => x.key === tab)
+  return !!t?.subTabs?.length && t.subTabs.every(s => access?.[subKey(tab, s.key)] === 'closed')
+}
+
+/** 有開放的下層分頁（照後台排的順序） */
+export function openSubTabs(access, tabKey, order) {
+  const tab = PLAYER_TABS.find(x => x.key === tabKey)
+  if (!tab || isTabClosed(access, tabKey)) return []
+  return orderSubTabs(tab, order).filter(s => !isTabClosed(access, tabKey, s.key))
+}

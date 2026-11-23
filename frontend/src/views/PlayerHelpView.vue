@@ -1,6 +1,8 @@
 <!--
   玩家頁使用說明（公開頁面，/player/help）：每個分頁能做什麼、怎麼用，附畫面截圖。玩家頁右上角「說明」按鈕進來。
   只說明玩家頁面（不含後台）。分頁有增減時，這裡跟著 utils/playerTabs.js 一起改。
+  後台設成「不開放」的分頁／下層分頁不寫（每個章節、小節標 tab／sub，見 isTabClosed；/player/tab-config）；
+  列功能清單的句子依開放狀態組字串（items 可以是函式 c => 字串）。會員功能照常寫（訪客也要知道登入後有什麼）。
   截圖放在 public/help/（webp，寬 1120），畫面改版時重拍對應的那張；截圖裡的資料都是示範資料。
 -->
 <template>
@@ -24,11 +26,11 @@
       <section v-for="s in sections" :id="s.id" :key="s.id" class="card scifi-card help-card">
         <div class="card-body">
           <h2 class="help-h2">{{ s.title }}</h2>
-          <p v-if="s.intro" class="help-intro">{{ s.intro }}</p>
+          <p v-if="s.intro" class="help-intro">{{ typeof s.intro === 'function' ? s.intro(ctx) : s.intro }}</p>
           <div v-for="(b, i) in s.blocks" :key="i" class="help-block">
             <h3 v-if="b.title" :id="blockId(s, i)" class="help-h3">{{ b.title }}</h3>
             <ul class="help-list">
-              <li v-for="(t, j) in b.items" :key="j">{{ t }}</li>
+              <li v-for="(t, j) in b.items" :key="j">{{ typeof t === 'function' ? t(ctx) : t }}</li>
             </ul>
             <figure v-for="f in b.figs || []" :key="f.src" class="help-fig" :style="f.w ? { maxWidth: f.w } : null">
               <a :href="imgUrl(f.src)" target="_blank" rel="noopener">
@@ -67,10 +69,14 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import { scrollBehavior } from '@/utils/motion'
 import { PLAYER_HOME } from '@/router'
+import { PLAYER_TABS, isTabClosed, normalizeTabAccess, openSubTabs, orderTabs } from '@/utils/playerTabs'
+import { usePlayerAuthStore } from '@/stores/playerAuth'
+
+const playerAuth = usePlayerAuthStore()
 
 // 截圖在 public/help/（玩家站與後台的 base 不同，用 BASE_URL 組）
 const imgUrl = name => `${import.meta.env.BASE_URL}help/${name}.webp`
@@ -96,13 +102,13 @@ function jump(id) {
   setTimeout(settle, 900)
 }
 
-const sections = [
+const ALL_SECTIONS = [
   {
     id: 'start', title: '開始使用', icon: 'bi bi-rocket-takeoff',
     blocks: [
       { figs: [{ src: 'login', alt: '右上角「登入／註冊」的跳出視窗', w: '22rem' }, { src: 'mobile', alt: '手機：底部分頁列與「更多」', w: '34rem' }], items: [
-        '不登入也能用遊戲資料與工具：資料庫（物品、藍圖、艦船、任務、勢力、礦物、商品購買地點）、航線、工具箱（礦物回波、配裝模擬、貨艙網格、貨櫃試算、酬勞分配、LOG 解析、中文轉碼）、工具網站。',
-        '「艦長室」（倉庫、藍圖、艦隊）、工具箱 › 戰術小隊、查詢持有資訊、個人資料（點最上方的名字）是會員功能，沒登入時不會出現；按右上角「登入／註冊」跳出視窗，上方切換登入或註冊，登入後回到原本那一頁。',
+        c => `不登入也能用：${c.publicList}。`,
+        c => `${c.memberList ? `${c.memberList}、` : ''}個人資料（點最上方的名字）是會員功能，沒登入時不會出現；按右上角「登入／註冊」跳出視窗，上方切換登入或註冊，登入後回到原本那一頁。`,
         '用遊戲ID（Star Citizen ID）註冊帳號，之後用遊戲ID＋密碼登入；勾「記住我」可以 30 天不用重新登入。',
         '右上角「說明」（問號）打開這份使用說明。',
         '上方是分頁列，放不下時可以左右滑；手機上分頁列移到畫面底部，常用的四個直接放，其餘在「更多」裡。',
@@ -118,7 +124,7 @@ const sections = [
     ],
   },
   {
-    id: 'warehouse', title: '艦長室 › 倉庫', icon: 'bi bi-box-seam',
+    id: 'warehouse', title: '艦長室 › 倉庫', icon: 'bi bi-box-seam', tab: 'my', sub: 'warehouse',
     intro: '記錄自己的物品放在哪裡、有多少。上方的按鈕可以展開新增／異動、庫存紀錄，搜尋卡的條件同時套用到列表。',
     blocks: [
       { title: '物品庫存', figs: [{ src: 'warehouse', alt: '物品庫存' }], items: [
@@ -139,7 +145,7 @@ const sections = [
     ],
   },
   {
-    id: 'blueprints', title: '艦長室 › 藍圖', icon: 'bi bi-diagram-3',
+    id: 'blueprints', title: '艦長室 › 藍圖', icon: 'bi bi-diagram-3', tab: 'my', sub: 'blueprints',
     intro: '你自己的藍圖名冊（可以新增、刪除）。',
     blocks: [
       { title: '我的藍圖', figs: [{ src: 'blueprints', alt: '展開材料' }, { src: 'blueprints_quality', alt: '品質試算' }], items: [
@@ -154,7 +160,7 @@ const sections = [
     ],
   },
   {
-    id: 'fleet', title: '艦長室 › 艦隊', icon: 'bi bi-rocket-takeoff',
+    id: 'fleet', title: '艦長室 › 艦隊', icon: 'bi bi-rocket-takeoff', tab: 'my', sub: 'fleet',
     blocks: [
       { title: '我的艦隊', figs: [{ src: 'fleet', alt: '我的艦隊' }], items: [
         '列出你登記的船／載具：類型、尺寸、廠商、角色、貨物量、美金與遊戲幣價格、租用價格。',
@@ -173,7 +179,7 @@ const sections = [
     ],
   },
   {
-    id: 'news', title: '新聞', icon: 'bi bi-newspaper',
+    id: 'news', title: '新聞', icon: 'bi bi-newspaper', tab: 'news',
     blocks: [
       { items: [
         '公會公告與遊戲新聞，不用登入也能看；置頂的排最前面，再依發布時間新到舊。',
@@ -184,46 +190,49 @@ const sections = [
     ],
   },
   {
-    id: 'items', title: '資料庫', icon: 'bi bi-database',
-    intro: '遊戲資料，分物品、藍圖、艦船、任務、勢力、礦物、商品購買地點七個子分頁，都不用登入；登入後藍圖、艦船、任務可以直接登記。',
+    id: 'items', title: '資料庫', icon: 'bi bi-database', tab: 'items',
+    intro: (c) => {
+      const reg = ['藍圖', '艦船', '任務'].filter(x => c.subs('items').includes(x))
+      return `遊戲資料，分 ${c.subs('items').length} 個子分頁：${c.subs('items').join('、')}，都不用登入${reg.length ? `；登入後${reg.join('、')}可以直接登記` : ''}。`
+    },
     blocks: [
-      { title: '物品', figs: [{ src: 'warehouse_items', alt: '物品資料' }], items: [
+      { title: '物品', sub: 'data', figs: [{ src: 'warehouse_items', alt: '物品資料' }], items: [
         '瀏覽遊戲物品資料庫（含飛船組件），點整列看詳細數值與購買地點。',
         '可以依名稱、類型篩選，只看買得到的、只看可拆解的，或依拆解後會得到的材料找物品。',
       ] },
-      { title: '藍圖、艦船', items: [
+      { title: '藍圖、艦船', sub: ['bpdata', 'vehicles'], items: [
         '藍圖：遊戲藍圖資料庫，看配方、品質試算、解鎖任務；搜尋條件跟「艦長室 › 藍圖」一樣，登入後多一個「只顯示未登記」。',
         '艦船：官網價、遊戲內購買價、租船價、貨艙網格；搜尋條件跟「艦長室 › 艦隊」一樣。',
         '艦船的「船價」按鈕：跳出視窗看 RSI 商店的美金價（真錢贊助價，不是遊戲內 aUEC）、現在有沒有在賣、上次 Warbond，以及 2021 年 11 月以來每次上架的時間軸與明細；有資料的船才有按鈕。現況來自 RSI 官方商店，歷史來自 Open Hangar（CC BY 4.0）。',
       ] },
-      { title: '任務', figs: [{ src: 'missions', alt: '展開任務看獎勵藍圖' }], items: [
+      { title: '任務', sub: 'missions', figs: [{ src: 'missions', alt: '展開任務看獎勵藍圖' }], items: [
         '依名稱、類型、星系、勢力、合法性篩選任務；列出報酬、聲望異動、冷卻時間。',
         '藍圖欄顯示這個任務會給的藍圖中，你已登記幾張／共幾張；點一列看說明、條件、每個獎勵池的藍圖與掉落機率。',
       ] },
-      { title: '勢力聲望', items: [
+      { title: '勢力聲望', sub: 'missions', items: [
         '按「勢力聲望」跳出視窗，選一個勢力，列出它的聲望階級與門檻分數，以及每個階級才能接的任務；有好幾種聲望時可以切換。',
       ] },
-      { title: '勢力', items: [
+      { title: '勢力', sub: 'factions', items: [
         '全部勢力一張表：合法性、聲望種類（例如紅風物流有立場與貨運兩種）、任務類型、任務數、有藍圖的任務數。',
         '可以依名稱、聲望種類、任務類型、有沒有任務篩選；預設只列有任務的勢力。',
         '按「聲望」展開：有好幾種聲望時上面一排按鈕切換，每種一條階級表，每一階列出要到這個階級才能接的任務。',
       ] },
-      { title: '礦物', figs: [{ src: 'db_minerals', alt: '每種礦物可以在哪裡挖到' }], items: [
+      { title: '礦物', sub: 'minerals', figs: [{ src: 'db_minerals', alt: '每種礦物可以在哪裡挖到' }], items: [
         '每種礦物一列：採集方式（船載採礦、地面載具、手持採礦、採集）、可挖的地點數、最高含量與最高出現率、主要地點。',
         '可以依礦物名稱、星系、地點、採集方式篩選；選了地點就是「這裡挖得到什麼」。',
         '按「地點」展開每個地點的星系、類型、採集方式、礦床、含量範圍與出現率（該類礦床在當地的佔比 × 含有這種礦物的機率，遊戲資料的相對值）。',
         '回波比對、售價與精煉資料在「工具箱 › 礦物回波」。',
       ] },
-      { title: '商品購買地點', figs: [{ src: 'warehouse_commodities', alt: '勾選兩種商品，列出都買得到的終端' }], items: [
+      { title: '商品購買地點', sub: 'commodities', figs: [{ src: 'warehouse_commodities', alt: '勾選兩種商品，列出都買得到的終端' }], items: [
         '勾選好幾種商品，列出「全部都買得到」的交易終端，可以再依星系、行星、地點縮小範圍；價格來自 UEX 玩家回報。',
       ] },
     ],
   },
   {
-    id: 'route', title: '航線', icon: 'bi bi-signpost-split',
-    intro: '量子航行路線規劃，分「航線規劃」和「合約分配」兩個子分頁。',
+    id: 'route', title: '航線', icon: 'bi bi-signpost-split', tab: 'route',
+    intro: c => `量子航行路線規劃：${c.subs('route').map(x => `「${x}」`).join('、')}。`,
     blocks: [
-      { title: '航線規劃', figs: [{ src: 'route_form', alt: '選船、起始油量、起點與途經站點' }, { src: 'route_fill', alt: '按「依星系填入」展開，選星系填入站點' }, { src: 'route_result', alt: '航段表' }, { src: 'route_map', alt: '3D 星圖' }], items: [
+      { title: '航線規劃', sub: 'plan', figs: [{ src: 'route_form', alt: '選船、起始油量、起點與途經站點' }, { src: 'route_fill', alt: '按「依星系填入」展開，選星系填入站點' }, { src: 'route_result', alt: '航段表' }, { src: 'route_map', alt: '3D 星圖' }], items: [
         '選船（可以篩選貨艙大小、只看我的機庫）與量子引擎；選好船會顯示速度、油耗、油箱，以及 8／16／32 SCU 貨櫃最多裝幾個；有貨艙網格資料的船旁邊有「網格」按鈕，跳出視窗看 3D 貨艙。',
         '設定起始油量（百分比或油量，空白＝滿油）、起點、途經站點、終點（最後一站／回到起點／指定地點），可以自動排序。',
         '「途經站點」按「依星系填入」可以選星系一次填入站點（填入後收起）：勾星門、行星軌道站、拉格朗日站、其他太空站、主城、地面站（地面站要先選行星；每類旁邊是符合的數量），也可以只要有貨物裝卸區或 XL 機庫的，已在清單上的不重複加。',
@@ -241,7 +250,7 @@ const sections = [
         '航段表每一站列出經過的 OM 點與跳躍點、距離、時間、油量、剩油；油不夠時在出發前那一站提示「需補充燃料」。',
         '站點會標特大機庫、外部貨運、對接口等特性。',
       ] },
-      { title: '飛行中使用航段表', figs: [{ src: 'route_visited', alt: '標記已去過，下一站自動往下移' }, { src: 'route_finish', alt: '完成：結束或終點設為起點' }], items: [
+      { title: '飛行中使用航段表', sub: 'plan', figs: [{ src: 'route_visited', alt: '標記已去過，下一站自動往下移' }, { src: 'route_finish', alt: '完成：結束或終點設為起點' }], items: [
         '點站號圓鈕標記「已去過」，再點一次取消；第一個還沒去的站會標「下一站」。',
         '最左邊的上下按鈕（或拖拉整列）可以調整順序，會重新計算。',
         '按航段表下面的「中途插入站點」跳出視窗：選要加的站（按「加插入站點」可以一次加好幾個），按「重新規劃未完成的行程」，從最後一個已去過的站出發，把剩下的重新排好。',
@@ -251,7 +260,7 @@ const sections = [
         '中途重新規劃時，艙內已有的貨會帶到新航線的起點；重新規劃整條航線或按「結束」會清掉貨物規劃。',
         '跑完這趟在結果底部的「完成」列選「結束」（清掉這次的結果）或「終點設為起點」（這趟的最後一站變成新起點、終點清空，途經站點保留，可以直接排下一趟）。',
       ] },
-      { title: '合約分配', figs: [{ src: 'contracts_form', alt: '小隊與合約' }, { src: 'contracts_result', alt: '分配結果與各隊航段表' }], items: [
+      { title: '合約分配', sub: 'contracts', figs: [{ src: 'contracts_form', alt: '小隊與合約' }, { src: 'contracts_result', alt: '分配結果與各隊航段表' }], items: [
         '設定小隊數（最多 6 隊），每隊各自選船、起點；勾「我的小隊」的才會套用「只看我的機庫」。',
         '加入合約（最多 10 份），每份填幾項貨物：商品（可以從商品資料庫選）、取貨點、送貨點與 SCU。',
         '送貨點要填 SCU；取貨點不知道各拿多少可以留空：不會猜數量，這些取貨點由同一隊一趟全部去完（貨艙預留剩下的全部量）再送，結果顯示「數量未知」。',
@@ -266,15 +275,15 @@ const sections = [
     ],
   },
   {
-    id: 'toolbox', title: '工具箱', icon: 'bi bi-tools',
-    intro: '礦物回波、配裝模擬、戰術小隊、貨艙網格、貨櫃試算、酬勞分配、LOG 解析、中文轉碼都在這個分頁的子分頁裡；除了戰術小隊，都不用登入。',
+    id: 'toolbox', title: '工具箱', icon: 'bi bi-tools', tab: 'toolbox',
+    intro: c => `${c.subs('toolbox').join('、')}都在這個分頁的子分頁裡；${c.subs('toolbox', true).length ? `除了${c.subs('toolbox', true).join('、')}，` : ''}都不用登入。`,
     blocks: [
-      { title: '礦物回波', figs: [{ src: 'mining', alt: '回波比對與礦物訊號參考' }], items: [
+      { title: '礦物回波', sub: 'mining', figs: [{ src: 'mining', alt: '回波比對與礦物訊號參考' }], items: [
         '回波比對：輸入掃描器上看到的訊號值，反查可能是哪種礦床、一叢幾顆。',
         '礦物訊號參考：每種礦床可能含哪些礦物、比例與出現機率。',
         '礦物卡片附售價（精煉品／原礦）與精煉資料（各精煉站的產量加成、容量、精煉方式）。',
       ] },
-      { title: '配裝模擬', figs: [{ src: 'loadout', alt: '選船後依掛點分區列出配件，左邊即時算出傷害與防禦' }], items: [
+      { title: '配裝模擬', sub: 'loadout', figs: [{ src: 'loadout', alt: '選船後依掛點分區列出配件，左邊即時算出傷害與防禦' }], items: [
         '選一艘船（機庫裡的船會列成按鈕），右邊依掛點分區列出每一格：駕駛武器、有人／遙控砲塔、點防禦、飛彈、護盾、電源、冷卻、量子引擎、雷達、反制。',
         '一模一樣的幾格合成一列並標「N×」，按「更換」會整組一起換；鎖頭表示這一格不能換。',
         '更換視窗只列裝得上的配件（種類、尺寸、船專屬配件都會檢查），可以搜尋、依數值排序；換砲塔、雲台或飛彈架時，原本的武器裝得下就保留，否則換上它預設的。',
@@ -283,7 +292,7 @@ const sections = [
         '分到的電格會影響護盾回充、冷卻產量，以及 EM／IR 訊號；「戰鬥」與「量子」兩種模式分開記（量子模式護盾關閉、量子引擎開啟）。換發電機時發電格數依發電量比例估算。',
         '換過的配裝會記在網址上，按「複製連結」就能分享，也可以貼到艦隊「編輯」裡的配件網址；「重設配裝」回到出廠配置。',
       ] },
-      { title: '戰術小隊（會員）', figs: [{ src: 'squads', alt: '分配表：小隊 → 艦船 → 人員，右上可以開分享連結' }], items: [
+      { title: '戰術小隊（會員）', sub: 'squads', figs: [{ src: 'squads', alt: '分配表：小隊 → 艦船 → 人員，右上可以開分享連結' }], items: [
         '排出團戰或活動的分工：小隊 → 艦船 → 人員。登入的玩家都能建立，所有人都看得到全部的表；只有建立者能編輯、刪除。',
         '「新增分配表」後填名稱、行動時間、備註，按「新增小隊」；每個小隊可以設隊長、備註，用上下箭頭調整順序。',
         '「加入艦船」打船名選船（沒打字時先列自己機庫的船）；可以填識別名稱（例如一號機），船名旁顯示「目前人數 / 建議乘員」，超過時標紅。',
@@ -293,34 +302,34 @@ const sections = [
         '「分享連結」打開後，知道連結的人不用登入就能看（唯讀，只有暱稱與職位）；「重新產生」會讓舊連結失效，關掉分享也是。',
         '別人的表打開是唯讀；按「複製成我的」可以複製一份自己改。開著的表會記在網址上，貼給公會成員會直接打開那張。',
       ] },
-      { title: '貨艙網格', figs: [{ src: 'cargo', alt: '自動裝滿後的貨艙' }], items: [
+      { title: '貨艙網格', sub: 'cargo', figs: [{ src: 'cargo', alt: '自動裝滿後的貨艙' }], items: [
         '加入幾艘船（或按「加入機庫的船」），每艘填 1／2／4／8／16／32 SCU 各種貨櫃的數量，按「裝載」擺進船的貨艙網格；放不下的會列出來。',
         '「自動裝滿」用最大的貨櫃把貨艙塞滿並填好數量。',
         '右邊 3D 檢視：拖拉旋轉、滾輪或兩指縮放，右上角可以切俯視或重設視角；貨櫃依大小上色。',
         '貨艙網格資料來自 sc-cargo.space。',
       ] },
-      { title: '貨櫃試算', items: [
+      { title: '貨櫃試算', sub: 'crates', items: [
         '輸入總量（SCU），勾可用的貨櫃尺寸（32、16、8、4、2、1），列出要幾個、怎麼拆。',
         '最少貨櫃數的拆法排第一（底色標示），也列出多 1～2 個貨櫃的其他拆法。',
         '用選的貨櫃湊不剛好時（例如 106 只用 16／8／4），列出最接近的少一點、多一點兩種。',
         '只算數量，船的網格擺不擺得下請用「貨艙網格」。',
       ] },
-      { title: '酬勞分配', figs: [{ src: 'payout', alt: '酬勞分配' }], items: [
+      { title: '酬勞分配', sub: 'payout', figs: [{ src: 'payout', alt: '酬勞分配' }], items: [
         '輸入總金額、成員與稅率，每個人可以調成數（預設平均分），列出每個人的稅前、稅、稅後金額。',
       ] },
-      { title: 'LOG 解析', items: [
+      { title: 'LOG 解析', sub: 'gamelog', items: [
         '選你電腦上的 Game.log（遊戲安裝資料夾裡），整理成中文事件時間軸與這次遊玩的回顧。',
         '檔案只在瀏覽器裡解析，不會上傳到伺服器。',
         'Chrome／Edge 可以用「選擇並監看」持續讀取新的紀錄；遊戲裝在系統資料夾時瀏覽器會擋，請改用一般的「選擇 Game.log」。',
       ] },
-      { title: '中文轉碼', figs: [{ src: 'chatcode', alt: '中文轉成代碼' }], items: [
+      { title: '中文轉碼', sub: 'chatcode', figs: [{ src: 'chatcode', alt: '中文轉成代碼' }], items: [
         '遊戲聊天打不了中文：輸入中文會轉成「[zh] @代碼」，複製到遊戲裡；收到 @代碼 也能轉回中文。',
         '下半部可以查遊戲文字代碼（localization key）對應的中文。',
       ] },
     ],
   },
   {
-    id: 'search', title: '查詢持有資訊', icon: 'bi bi-search',
+    id: 'search', title: '查詢持有資訊', icon: 'bi bi-search', tab: 'search',
     blocks: [
       { figs: [{ src: 'search', alt: '物品、藍圖、船艦整合在一張表' }], items: [
         '查公會裡誰有某個物品（數量、地點）、誰登記了某張藍圖、誰有哪款船。',
@@ -334,7 +343,7 @@ const sections = [
     ],
   },
   {
-    id: 'tools', title: '工具網站', icon: 'bi bi-link-45deg',
+    id: 'tools', title: '工具網站', icon: 'bi bi-link-45deg', tab: 'tools',
     blocks: [
       { figs: [{ src: 'tools', alt: '工具網站' }], items: ['公會整理的外部工具網站連結，依標籤分組，每張卡片有網址與說明，按「開啟」開新頁。', '可以搜尋名稱、網址、說明、標籤；上面的標籤按鈕（或卡片上的標籤）按了就只看那幾類，可以多選。'] },
     ],
@@ -350,17 +359,65 @@ const sections = [
   },
 ]
 
+// ── 後台的分頁開放狀態：不開放的分頁／下層分頁不寫（先用玩家頁存的快取，再跟後端拿最新的） ──
+const TAB_ACCESS_CACHE = 'sc_player_tab_access'
+const TAB_ORDER_CACHE = 'sc_player_tab_order'
+const readCache = (key, fallback) => {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) || 'null')
+    return v ?? fallback
+  } catch {
+    return fallback
+  }
+}
+const tabAccess = ref(normalizeTabAccess(readCache(TAB_ACCESS_CACHE, {})))
+const tabOrder = ref(readCache(TAB_ORDER_CACHE, []))
+async function loadTabConfig() {
+  const res = await playerAuth.playerFetch('/player/tab-config')
+  const body = res?.ok ? await res.json().catch(() => null) : null
+  if (!body?.success) return
+  tabAccess.value = normalizeTabAccess(body.data?.tab_access || {})
+  tabOrder.value = Array.isArray(body.data?.tab_order) ? body.data.tab_order : []
+}
+const closed = (tab, sub) => {
+  if (!tab) return false
+  if (Array.isArray(sub)) return sub.every(x => isTabClosed(tabAccess.value, tab, x))
+  return isTabClosed(tabAccess.value, tab, sub || '')
+}
+/** 說明文字用：開放的下層分頁名稱（memberOnly＝只要會員功能的） */
+function subs(tab, memberOnly = false) {
+  return openSubTabs(tabAccess.value, tab, tabOrder.value).filter(x => !memberOnly || x.member).map(x => x.label)
+}
+const ctx = computed(() => {
+  const tabs = orderTabs(PLAYER_TABS, tabOrder.value).filter(t => !closed(t.key))
+  const withSubs = (t, member) => {
+    const list = openSubTabs(tabAccess.value, t.key, tabOrder.value).filter(x => !!x.member === member).map(x => x.label)
+    return list.length ? `${t.label}（${list.join('、')}）` : t.label
+  }
+  const publicList = tabs.filter(t => !t.member).map(t => withSubs(t, false)).join('、')
+  const memberList = [
+    ...tabs.filter(t => t.member).map(t => withSubs(t, false)),
+    ...tabs.filter(t => !t.member).flatMap(t => openSubTabs(tabAccess.value, t.key, tabOrder.value)
+      .filter(x => x.member).map(x => `${t.label} › ${x.label}`)),
+  ].map(x => `「${x}」`).join('、')
+  return { publicList, memberList, subs }
+})
+const sections = computed(() => ALL_SECTIONS
+  .filter(s => !closed(s.tab, s.sub))
+  .map(s => ({ ...s, blocks: s.blocks.filter(b => !s.tab || !b.sub || !closed(s.tab, b.sub)) }))
+  .filter(s => s.blocks.length))
+
 const blockId = (s, i) => `${s.id}-${i + 1}`
 
 // ── 大綱的「目前位置」：畫面上方 1/3 處經過的最後一個章節／小節標題 ──
 const activeId = ref('')
-const activeSec = ref(sections[0]?.id || '')
+const activeSec = ref('start')
 const outlineEl = ref(null)
 function updateActive() {
   const line = window.innerHeight * 0.3
-  let sec = sections[0]?.id || ''
+  let sec = sections.value[0]?.id || ''
   let id = sec
-  for (const s of sections) {
+  for (const s of sections.value) {
     const el = document.getElementById(s.id)
     if (el && el.getBoundingClientRect().top <= line) { sec = s.id; id = s.id }
     s.blocks.forEach((b, i) => {
@@ -371,7 +428,7 @@ function updateActive() {
   }
   // 捲到底：最後一章
   if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
-    sec = sections[sections.length - 1]?.id || sec
+    sec = sections.value[sections.value.length - 1]?.id || sec
     if (!id.startsWith(sec)) id = sec
   }
   if (activeId.value !== id) {
@@ -389,6 +446,7 @@ const onScroll = () => {
   requestAnimationFrame(() => { ticking = false; updateActive() })
 }
 onMounted(() => {
+  loadTabConfig()
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('resize', onScroll)
   updateActive()
