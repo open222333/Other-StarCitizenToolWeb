@@ -1624,9 +1624,9 @@ const legacyTab = legacyItemsSub ? null : LEGACY_TABS[route.query.tab] || null
 // 「個人資料」原本是分頁，現在是點名字打開的視窗：舊網址 ?tab=profile 開場就打開視窗（分頁回到預設）
 const legacyProfile = route.query.tab === 'profile'
 const profileOpen = ref(legacyProfile && !isGuest.value)
-// 沒指定分頁時：會員從「新聞」、訪客從「資料庫」開始；那個分頁被後台關掉時，
+// 沒指定分頁時：會員、訪客都從「新聞」開始；新聞被後台關掉時，
 // 會員從「艦長室」、訪客從第一個不用登入的分頁開始（照後台排的順序）
-const HOME_TAB = { member: 'news', guest: 'items' }
+const HOME_TAB = { member: 'news', guest: 'news' }
 const firstTab = () => {
   const home = isGuest.value ? HOME_TAB.guest : HOME_TAB.member
   if (orderedTabs.value.some(t => t.key === home) && isTabShown(home)) return home
