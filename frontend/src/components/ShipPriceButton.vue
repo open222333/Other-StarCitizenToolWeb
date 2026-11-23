@@ -122,19 +122,22 @@
 import { computed, onMounted, ref } from 'vue'
 import SfModal from '@/components/SfModal.vue'
 import SfState from '@/components/SfState.vue'
-import { loadShipPrices, priceAttribution, priceByVehicle } from '@/utils/shipPrices'
+import { loadShipPrices, priceAttribution, priceByKey, priceByVehicle } from '@/utils/shipPrices'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
   /** 載具主檔 uuid */
   vehicleUuid: { type: String, default: '' },
+  /** 對不到載具的船（概念船）直接給船價摘要的 key（見 src/models/ccu.py 的 concept_ships） */
+  priceKey: { type: String, default: '' },
   name: { type: String, default: '' },
   buttonClass: { type: String, default: '' },
 })
 
 const uid = `spb-${Math.random().toString(36).slice(2, 8)}`
 const open = ref(false)
-const summary = computed(() => (props.vehicleUuid ? priceByVehicle.value.get(props.vehicleUuid) : null) || null)
+const summary = computed(() => (props.vehicleUuid ? priceByVehicle.value.get(props.vehicleUuid) : null)
+  || (props.priceKey ? priceByKey.value.get(props.priceKey) : null) || null)
 
 /** Open Hangar 的出現頻率 */
 const AVAIL = { always: '常駐', often: '常出現', sometimes: '偶爾', rarely: '少見', hardly: '極少見', events: '只在活動', new: '新船' }

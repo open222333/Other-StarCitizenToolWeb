@@ -256,7 +256,8 @@ def test_ship_price_api(app, client):
     assert gal['warbond_count'] == 1, 'Open Hangar 的 WB 跟 RSI 的 WB 重疊，只算 RSI 那段'
     assert gal['period_count'] == 3 and 'periods' not in gal and '_periods' not in gal
     assert rows['Aurora MR']['key'] == 'rsi:1' and rows['Aurora MR']['on_sale'] is False
-    assert rows['Skylark']['msrp_source'] == 'openhangar' and rows['Skylark']['last_warbond']['price'] == 40.0
+    # Skylark 的 Open Hangar Warbond 在開始抓 RSI（t0）之後才開始：以 RSI 為準，不收
+    assert rows['Skylark']['msrp_source'] == 'openhangar' and rows['Skylark']['last_warbond'] is None
 
     detail = client.get('/item/ship-prices/detail', query_string={'key': 'Galaxy'}).get_json()['data']
     assert [p['source'] for p in detail['periods']] == ['rsi', 'openhangar', 'openhangar']
@@ -264,6 +265,58 @@ def test_ship_price_api(app, client):
     assert client.get('/item/ship-prices/detail', query_string={'key': 'rsi:1'}).get_json()['data']['periods'] == []
     assert client.get('/item/ship-prices/detail', query_string={'key': 'nope'}).status_code == 404
     assert client.get('/item/ship-prices/detail', query_string={'key': 'rsi:x'}).status_code == 404
+
+
+def test_openhangar_only_before_rsi(app):
+    """開始抓 RSI 之後的期間只用 RSI：Open Hangar 在那之後開始的段不收（例如標錯的 Warbond、重複的上架），跨過那天的截到那天。"""
+    from src.models import ccu
+    t0 = datetime(2026, 11, 1)
+    _save(SHIPS, UPGRADES, 'r1', t0)
+    hist = {'periods': [
+        {'start': datetime(2026, 5, 23), 'end': datetime(2026, 5, 24), 'price': 485, 'sale_type': 'warbond'},
+        {'start': datetime(2026, 10, 1), 'end': None, 'price': 520, 'sale_type': 'standard'},
+        {'start': datetime(2026, 11, 16), 'end': None, 'price': 520, 'sale_type': 'standard'},
+        {'start': datetime(2026, 11, 14), 'end': datetime(2026, 11, 15), 'price': 480, 'sale_type': 'warbond'},
+    ]}
+    assert ccu.rsi_since() == t0
+    out = ccu._merged_periods(hist, [], datetime(2026, 11, 20), ccu.rsi_since())
+    assert [(p['start'].month, p['start'].day, p['end'].month, p['end'].day) for p in out] == [(10, 1, 11, 1), (5, 23, 5, 24)]
+    assert ccu._merged_periods(hist, [], datetime(2026, 11, 20)) and len(ccu._merged_periods(hist, [], datetime(2026, 11, 20))) == 4, '還沒抓過 RSI 時全收'
+
+
+def test_concept_ships_in_vehicle_list(app, client):
+    """資料庫 › 艦船：RSI 商店裡還沒做進遊戲的船（概念、製作中）接在列表最後，只有美金價與上架紀錄。"""
+    db = get_db()
+    assert ccu.concept_status('In Concept') == 'concept' and ccu.concept_status('in-production') == 'production'
+    assert ccu.concept_status('Flight Ready') == '' and ccu.concept_status(None) == ''
+    db.vehicle_master.insert_many([
+        {'_id': 'v-a', 'name': 'Aurora MR', 'manufacturer_name': 'Roberts Space Industries', 'manufacturer_code': 'RSIN',
+         'is_current': True, 'player_visible': True},
+    ])
+    db.rsi_ships.insert_many([
+        {'_id': 10, 'name': 'Galaxy', 'manufacturer': 'Roberts Space Industries', 'msrp': 380, 'focus': 'Multi-Role',
+         'flyable_status': 'In Concept', 'vehicle_uuid': None, 'is_current': True},
+        {'_id': 11, 'name': 'Odin', 'manufacturer': 'Anvil Aerospace', 'msrp': 900, 'flyable_status': 'In Production',
+         'vehicle_uuid': None, 'is_current': True},
+        {'_id': 12, 'name': 'Aurora MR', 'manufacturer': 'Roberts Space Industries', 'msrp': 25,
+         'flyable_status': 'Flight Ready', 'vehicle_uuid': 'v-a', 'is_current': True},
+        {'_id': 13, 'name': 'Old Concept', 'flyable_status': 'In Concept', 'is_current': False},
+    ])
+    db.ship_sale_history.insert_one({'_id': 'Galaxy', 'name': 'Galaxy', 'rsi_id': 10, 'periods': []})
+    rows = ccu.concept_ships()
+    assert [r['name'] for r in rows] == ['Galaxy', 'Odin']
+    assert rows[0]['price_key'] == 'Galaxy' and rows[1]['price_key'] == 'rsi:11' and rows[0]['manufacturer_code'] == 'RSIN'
+
+    body = client.get('/item/vehicles').get_json()
+    assert [r['name'] for r in body['data']] == ['Aurora MR', 'Galaxy', 'Odin'] and body['total'] == 3
+    assert body['data'][1]['is_concept'] and body['data'][1]['concept_status'] == 'concept'
+    assert [r['name'] for r in client.get('/item/vehicles?q=gal').get_json()['data']] == ['Galaxy']
+    assert [r['name'] for r in client.get('/item/vehicles?manufacturer_code=RSIN').get_json()['data']] == ['Aurora MR', 'Galaxy']
+    assert [r['name'] for r in client.get('/item/vehicles?usd_min=500').get_json()['data']] == ['Odin']
+    # 遊戲內數值的條件（尺寸、貨艙、取得方式…）概念船都沒有：不列
+    assert [r['name'] for r in client.get('/item/vehicles?scu_min=1').get_json()['data']] == []
+    page2 = client.get('/item/vehicles?limit=2&offset=2').get_json()
+    assert [r['name'] for r in page2['data']] == ['Odin'] and page2['total'] == 3
 
 
 def test_match_vehicle_name_variants(app):

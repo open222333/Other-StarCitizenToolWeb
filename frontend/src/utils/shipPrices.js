@@ -4,6 +4,8 @@ import { ref } from 'vue'
 
 /** 載具 uuid → 摘要列（key、msrp、on_sale、warbond_now、price_now、last_warbond、avail、period_count…） */
 export const priceByVehicle = ref(new Map())
+/** 摘要列的 key（Open Hangar 船名或 rsi:<id>）→ 摘要列：對不到載具的船（例如概念船）用這個查 */
+export const priceByKey = ref(new Map())
 export const priceAttribution = ref('')
 let pending = null
 
@@ -23,6 +25,7 @@ export function loadShipPrices(fetcher) {
       if (row.vehicle_uuid && (!old || (row.period_count || 0) > (old.period_count || 0))) map.set(row.vehicle_uuid, row)
     }
     priceByVehicle.value = map
+    priceByKey.value = new Map((body.data || []).map(r => [r.key, r]))
     priceAttribution.value = body.attribution || ''
   })()
   return pending

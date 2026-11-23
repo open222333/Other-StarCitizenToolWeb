@@ -12,6 +12,8 @@
   後端也會再擋一次（Fleet.bulk_create_for_player）。已登記清單由父層傳進來（registeredUuids，
   就是我的艦隊的 vehicle_uuid），登記完 emit('registered') 讓父層重抓艦隊。
   列表外觀跟「我的艦隊」一致：卡片＋hover 表格＋表頭排序，「詳細」展開船艦資訊與價格（手機是底部面板）。
+  概念船（is_concept，RSI 商店有、遊戲裡還沒有，後端接在列表最後，見 src/models/ccu.py 的 concept_ships）：
+  標「概念船」／「製作中」，只有美金價與「船價」（上架紀錄），沒有遊戲內數值、不能勾選登記。
 -->
 <template>
   <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
@@ -50,7 +52,7 @@
           <template v-for="v in rows" :key="v._id">
           <tr :class="{ 'is-registered': isRegistered(v) }">
             <td v-if="canRegister" class="ps-3 sf-stack__check vdb-check-col">
-              <input class="form-check-input" type="checkbox" :checked="selected.has(v._id)"
+              <input v-if="!v.is_concept" class="form-check-input" type="checkbox" :checked="selected.has(v._id)"
                 :disabled="isRegistered(v)" :aria-label="`勾選 ${v.name_zh || v.name}`"
                 @change="toggleOne(v._id, $event.target.checked)">
             </td>
@@ -59,6 +61,9 @@
                 <span class="fw-semibold">{{ v.name_zh || v.name }}</span>
                 <span v-if="v.system_note" class="sf-tree-chip ms-1" title="系統說明：同名變體的區別">{{ v.system_note }}</span>
                 <span v-if="isRegistered(v)" class="sf-chip sf-chip--ok ms-1">已登記</span>
+                <span v-if="v.is_concept" class="sf-chip sf-chip--accent ms-1"
+                  :title="v.concept_status === 'production' ? 'RSI 商店標示製作中，遊戲裡還沒有' : 'RSI 商店標示概念階段，遊戲裡還沒有'">
+                  {{ v.concept_status === 'production' ? '製作中' : '概念船' }}</span>
                 <span v-if="v.name_zh" class="sf-name__en">{{ v.name }}</span>
               </span>
             </td>
@@ -72,7 +77,10 @@
             <td class="text-end text-nowrap" data-label="遊戲幣">{{ fmtAuec(v.uex_price?.buy_min) }}</td>
             <td class="text-end text-nowrap d-none d-xl-table-cell" data-label="租用">{{ fmtAuec(v.uex_price?.rent_min) }}</td>
             <td class="text-end text-nowrap d-none d-xxl-table-cell" data-label="aUEC／美金">{{ fmtAuecPerUsd(auecPerUsd(v)) }}</td>
-            <td class="text-end text-nowrap pe-3 sf-stack__actions">
+            <td v-if="v.is_concept" class="text-end text-nowrap pe-3 sf-stack__actions">
+              <ShipPriceButton :fetcher="fetcher" :price-key="v.price_key" :name="v.name_zh || v.name" />
+            </td>
+            <td v-else class="text-end text-nowrap pe-3 sf-stack__actions">
               <CargoGridButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <ShipPriceButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <button type="button" class="btn btn-sm btn-info me-2" :aria-expanded="openId === v._id ? 'true' : 'false'"
@@ -202,7 +210,7 @@ const selected = reactive(new Set())
 const quantity = ref(1)
 const submitting = ref(false)
 
-const selectableRows = computed(() => rows.value.filter(v => !isRegistered(v)))
+const selectableRows = computed(() => rows.value.filter(v => !isRegistered(v) && !v.is_concept))
 const allSelectableChecked = computed(() =>
   selectableRows.value.length > 0 && selectableRows.value.every(v => selected.has(v._id)))
 const someSelectableChecked = computed(() => selectableRows.value.some(v => selected.has(v._id)))

@@ -371,6 +371,25 @@ def _num_arg(name):
     return value if value >= 0 else None
 
 
+def _concept_rows(query: str, manufacturer_codes, usd_range) -> list:
+    """RSI 商店的概念／製作中船（src/models/ccu.py 的 concept_ships），套名稱（每個字都要出現）、廠商、美金範圍。"""
+    from src.models import ccu
+    words = [w for w in re.split(r'\s+', (query or '').lower()) if w]
+    lo, hi = usd_range
+    out = []
+    for r in ccu.concept_ships():
+        name = r['name'].lower()
+        if words and not all(w in name for w in words):
+            continue
+        if manufacturer_codes and r.get('manufacturer_code') not in manufacturer_codes:
+            continue
+        if (lo is not None or hi is not None) and (r.get('msrp') is None or (lo is not None and r['msrp'] < lo)
+                                                   or (hi is not None and r['msrp'] > hi)):
+            continue
+        out.append(r)
+    return out
+
+
 def _vehicle_id_limits(acquire, auec_range, rent_range=(None, None)):
     """「取得方式」與「遊戲幣購買價／租船價範圍」要用 UEX 價格表先算出符合的 vehicle uuid（都有就取交集）；都沒有回 None。"""
     ids = uex_vehicle_price.vehicle_ids_with(acquire) if acquire else None
@@ -488,6 +507,19 @@ def list_vehicles():
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
     if request.args.get('with_prices') == '1' and not any('uex_price' in r for r in rows):
         uex_vehicle_price.attach_summaries(rows)
+    # 概念船（RSI 商店有、遊戲裡還沒有）接在列表最後；只在條件它們也可能符合時（沒有遊戲內數值的條件）
+    if not (careers or roles or size_classes or acquire or visibility is not None
+            or any(v is not None for v in (*auec_range, *rent_range, *scu_range))
+            or (types and 'ship' not in types)):
+        concepts = _concept_rows(query, manufacturer_codes, usd_range)
+        if total is None:
+            if len(rows) < limit:
+                rows = rows + concepts[:limit - len(rows)]
+        elif concepts:
+            start = max(0, offset - total)
+            if offset + limit > total:
+                rows = rows + concepts[start:offset + limit - total]
+            total += len(concepts)
     return jsonify({'success': True, 'data': rows, 'total': total,
                     'limit': limit, 'offset': offset, 'match': meta.get('match', '')})
 

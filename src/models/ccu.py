@@ -24,7 +24,9 @@ ship_sale_history（_id = Open Hangar 的船名，同步項目「Open Hangar 歷
     first_sold_at, on_sale, warbond_count, last_price, msrp,
     periods: [{start, end, price, msrp, sale_type, code}]   2021-11 起的每段上架（S 單買、W Warbond、U 未說明）
     source='openhangar', credibility='歷史紀錄'
-    第三方整理的歷史，跟 rsi/ccu_offers 重疊的期間以 RSI 為準；授權 CC BY 4.0，顯示時要標註來源。
+    第三方整理的歷史，只補「我們開始抓 RSI 商店之前」的期間（rsi_since()；之後一律以 RSI 官方商店為準，
+    Open Hangar 在那之後的上架段不收、跨過那天的截到那天；實際比對過 Open Hangar 有標錯 Warbond、重複上架的情形）；
+    授權 CC BY 4.0，顯示時要標註來源。
 """
 
 import re
@@ -234,22 +236,35 @@ def _rsi_periods(offers: list) -> list:
     return out
 
 
-def _merged_periods(history: dict, offers: list, now: datetime) -> list:
-    """一艘船的上架段：RSI 的全收；Open Hangar 的跟同種類的 RSI 段重疊就不收（以 RSI 為準）。新的在前。"""
+def rsi_since():
+    """我們開始抓 RSI 商店的時間（ccu_offers 最早的 first_seen_at）；還沒抓過回 None。"""
+    doc = get_db()[OFFERS].find_one({'first_seen_at': {'$ne': None}}, {'first_seen_at': 1}, sort=[('first_seen_at', 1)])
+    return (doc or {}).get('first_seen_at')
+
+
+def _merged_periods(history: dict, offers: list, now: datetime, since=None) -> list:
+    """一艘船的上架段：RSI 的全收；Open Hangar 的只收 since（開始抓 RSI 的時間）之前的部分——
+    開始時間在 since 之後的不收，跨過 since 的結束時間截到 since；跟同種類的 RSI 段重疊的也不收。新的在前。"""
     rsi = _rsi_periods(offers)
     out = list(rsi)
     for p in (history or {}).get('periods') or []:
-        if any(r['sale_type'] == p.get('sale_type') and _overlaps(p['start'], p.get('end'), r['start'], r['end'], now)
+        start, end = p['start'], p.get('end')
+        if since is not None:
+            if start >= since:
+                continue
+            if end is None or end > since:
+                end = since
+        if any(r['sale_type'] == p.get('sale_type') and _overlaps(start, end, r['start'], r['end'], now)
                for r in rsi):
             continue
-        out.append({'start': p['start'], 'end': p.get('end'), 'price': p.get('price'), 'msrp': p.get('msrp'),
+        out.append({'start': start, 'end': end, 'price': p.get('price'), 'msrp': p.get('msrp'),
                     'sale_type': p.get('sale_type'), 'source': 'openhangar', 'credibility': '歷史紀錄'})
     out.sort(key=lambda p: p['start'], reverse=True)
     return out
 
 
-def _price_row(key: str, history: dict, ship: dict, offers: list, now: datetime) -> dict:
-    periods = _merged_periods(history, offers, now)
+def _price_row(key: str, history: dict, ship: dict, offers: list, now: datetime, since=None) -> dict:
+    periods = _merged_periods(history, offers, now, since)
     wb = [p for p in periods if p['sale_type'] == 'warbond']
     open_now = [p for p in periods if p['end'] is None]
     history = history or {}
@@ -285,15 +300,16 @@ def _price_rows(history_filter=None, ship_filter=None, offer_filter=None) -> lis
         offers_by_ship.setdefault(o.get('ship_rsi_id'), []).append(o)
     rows, used = [], set()
     index = None
+    since = rsi_since()
     for h in histories:
         rid = h.get('rsi_id')
         used.add(rid)
-        rows.append(_price_row(h['_id'], h, ships.get(rid), offers_by_ship.get(rid) or [], now))
+        rows.append(_price_row(h['_id'], h, ships.get(rid), offers_by_ship.get(rid) or [], now, since))
     if history_filter is None:
         # RSI 有、Open Hangar 沒有紀錄的船（例如從沒單賣過）
         for rid, s in ships.items():
             if rid not in used and s.get('is_current', True):
-                rows.append(_price_row(f'rsi:{rid}', None, s, offers_by_ship.get(rid) or [], now))
+                rows.append(_price_row(f'rsi:{rid}', None, s, offers_by_ship.get(rid) or [], now, since))
     # 同步當下對不到載具的（例如載具主檔比商店資料晚同步、或之後比對規則改進了），讀取時再對一次
     for r in rows:
         if not r['vehicle_uuid'] and r['name']:
@@ -358,3 +374,37 @@ def ship_price_detail(key: str):
     if 'name_zh' not in row:   # rsi: 路徑沒經過 _price_rows（待辦 A3：history 路徑已經查過中文，不再查一次）
         row['name_zh'] = _zh_names([row['vehicle_uuid']]).get(row['vehicle_uuid'])
     return row
+
+
+# ── 資料庫 › 艦船：RSI 商店裡還沒做進遊戲的船（概念、製作中）───────────────
+# 艦船列表的資料（vehicle_master）來自遊戲檔案，概念船沒有遊戲內的實體所以不會出現；
+# 這裡從 RSI 商店（rsi_ships）補：還不能飛、而且對不到載具主檔的船。只有美金價與上架紀錄，沒有遊戲內數值。
+
+#: RSI 的 flyableStatus（正規化成只留小寫字母）→ 狀態
+CONCEPT_STATUSES = {'inconcept': 'concept', 'concept': 'concept', 'inproduction': 'production', 'production': 'production'}
+
+
+def concept_status(flyable_status) -> str:
+    """'In Concept'／'in-concept' → concept；'In Production' → production；可以飛或不明 → ''。"""
+    return CONCEPT_STATUSES.get(re.sub(r'[^a-z]', '', str(flyable_status or '').lower()), '')
+
+
+def concept_ships() -> list:
+    """概念／製作中的船：[{_id: 'rsi:<id>', name, manufacturer_name, manufacturer_code, msrp, role, vehicle_type,
+    is_concept, concept_status, price_key（船價明細用，見 ship_price_detail）, link}]，依名稱排。"""
+    db = get_db()
+    hist = {h['rsi_id']: h['_id'] for h in db[SALE_HISTORY].find({'rsi_id': {'$ne': None}}, {'rsi_id': 1})}
+    codes = {}
+    for v in db['vehicle_master'].find({'manufacturer_name': {'$ne': None}}, {'manufacturer_name': 1, 'manufacturer_code': 1}):
+        codes.setdefault(_norm(v.get('manufacturer_name')), v.get('manufacturer_code'))
+    rows = []
+    for s in db[SHIPS].find({'is_current': {'$ne': False}}, {'msrp_history': 0, '_sync': 0}):
+        status = concept_status(s.get('flyable_status'))
+        if not status or s.get('vehicle_uuid'):
+            continue
+        rows.append({'_id': f"rsi:{s['_id']}", 'name': s.get('name') or '', 'manufacturer_name': s.get('manufacturer'),
+                     'manufacturer_code': codes.get(_norm(s.get('manufacturer'))), 'msrp': s.get('msrp'),
+                     'role': s.get('focus'), 'vehicle_type': 'ship', 'is_concept': True, 'concept_status': status,
+                     'price_key': hist.get(s['_id']) or f"rsi:{s['_id']}", 'link': s.get('link')})
+    rows.sort(key=lambda r: r['name'].lower())
+    return rows
