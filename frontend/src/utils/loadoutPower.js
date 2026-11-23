@@ -48,6 +48,7 @@ const usage = it => it?.stats?.power_use || [0, 0]
 export function consumers(ship, slots, itemOf, mode = 'scm') {
   const out = []
   const shields = []
+  const radars = []
   const weapons = []
   walk(slots, (n, root) => {
     const it = itemOf(n.item)
@@ -61,7 +62,8 @@ export function consumers(ship, slots, itemOf, mode = 'scm') {
     const base = { key: n.id, item: it, min: Math.ceil(min || 0), max: Math.round(max || 0) }
     if (it.type === 'Shield') shields.push(base)
     else if (it.type === 'Cooler') out.push({ ...base, kind: 'cooler' })
-    else if (it.type === 'Radar') out.push({ ...base, kind: 'radar' })
+    // 雷達：不耗電的（例如 MOLE 駕駛艙的假雷達 RADR_S02_Fake）不列；好幾個就合成一欄（同護盾）
+    else if (it.type === 'Radar') { if (base.max > 0) radars.push(base) }
     else if (it.type === 'QuantumDrive') out.push({ ...base, kind: 'quantum', min: 0, max: 0, fixed: true })
     else if (['TractorBeam', 'WeaponMining', 'SalvageHead'].includes(it.type) && max) {
       out.push({ ...base, kind: 'utility', section: sectionOf(root, itemOf) })
@@ -78,6 +80,11 @@ export function consumers(ship, slots, itemOf, mode = 'scm') {
       items: active.map(s => s.item), parts: active,
       min: active.reduce((a, s) => a + s.min, 0), max: active.reduce((a, s) => a + s.max, 0) })
   }
+  if (radars.length === 1) list.push({ ...radars[0], kind: 'radar' })
+  else if (radars.length > 1) {
+    list.push({ key: 'radar', kind: 'radar', item: null, items: radars.map(r => r.item), parts: radars,
+      min: radars.reduce((a, r) => a + r.min, 0), max: radars.reduce((a, r) => a + r.max, 0) })
+  }
   const wSum = weapons.reduce((a, it) => a + (usage(it)[1] || 0), 0)
   const pool = ship?.power?.weapon_pool > 0 ? ship.power.weapon_pool : Math.ceil(wSum)
   if (weapons.length) {
@@ -87,7 +94,7 @@ export function consumers(ship, slots, itemOf, mode = 'scm') {
   }
   list.push(...out)
   // 掛點樹裡算得到的類別
-  const found = new Set(list.map(c => c.kind === 'weapons' ? 'WeaponGun' : c.kind === 'shield' ? 'Shield' : c.item?.type).filter(Boolean))
+  const found = new Set(list.map(c => ({ weapons: 'WeaponGun', shield: 'Shield', radar: 'Radar' })[c.kind] || c.item?.type).filter(Boolean))
   for (const [group, v] of Object.entries(ship?.power?.groups || {})) {
     if (!v.power && !v.em && !v.coolant) continue
     if (MODELED.has(group) && (found.has(group) || group === 'QuantumDrive')) continue
@@ -99,7 +106,15 @@ export function consumers(ship, slots, itemOf, mode = 'scm') {
   for (const c of list) {
     if (c.kind === offKind) c.off = true
   }
-  return list
+  // 照遊戲電源畫面的順序：武器 → 推進器 → 護盾 → 量子 → 雷達 → 維生 → 冷卻（每個一欄）→ 其他
+  return list.map((c, i) => ({ c, i })).sort((a, b) => columnRank(a.c) - columnRank(b.c) || a.i - b.i).map(x => x.c)
+}
+
+const COLUMN_ORDER = ['weapons', 'FlightController', 'shield', 'quantum', 'radar', 'LifeSupportGenerator', 'cooler', 'utility']
+/** 電源欄的排序位置（遊戲內順序，見 COLUMN_ORDER；其餘固定耗電者排最後） */
+export function columnRank(c) {
+  const i = COLUMN_ORDER.indexOf(c.kind === 'static' ? c.group : c.kind)
+  return i === -1 ? COLUMN_ORDER.length : i
 }
 
 /** 一個耗電者分 p 格時的耗電、EM、耗冷卻、效率 */
@@ -114,7 +129,7 @@ export function consumerLoad(c, p) {
     const ratio = c.draw ? draw / c.draw : 0
     return { power: draw, em: c.em * ratio, coolant: 0, eff: ratio }
   }
-  if (c.kind === 'shield' && c.parts) {
+  if (c.parts) {          // 合成的一欄（護盾、雷達）
     const out = { power: Math.min(p, c.max), em: 0, coolant: 0, eff: 0 }
     for (const part of shieldShares(c, p)) {
       const s = part.item.stats || {}
@@ -134,7 +149,7 @@ export function consumerLoad(c, p) {
   return { power: Math.min(p, c.max), em: (s.em || 0) * eff, coolant, eff }
 }
 
-/** 合成的護盾分到 p 格時，每個產生器分到的格數（依各自上限的比例）與效率：[{ key, item, max, pips, eff }] */
+/** 合成的一欄（護盾、雷達）分到 p 格時，每個產生器分到的格數（依各自上限的比例）與效率：[{ key, item, max, pips, eff }] */
 export function shieldShares(c, p) {
   return (c.parts || []).map(part => {
     const share = c.max ? Math.min(p, c.max) * part.max / c.max : 0

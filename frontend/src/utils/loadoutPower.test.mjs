@@ -33,4 +33,12 @@ assert.ok(!cs.some(c => c.kind === 'static' && c.group === 'Shield'), '不會再
 assert.deepEqual([shields[0].min, shields[0].max], [2, 6])
 assert.equal(consumerLoad(shields[0], 6).em, 200)
 assert.equal(consumerLoad(shields[0], 3).power, 3)
+// 雷達：不耗電的假雷達不列；遊戲順序 武器 → 推進器 → 護盾 → 量子 → 雷達 → 維生 → 冷卻
+const it2 = { r: { id: 'r', type: 'Radar', stats: { power_use: [1, 5] } }, f: { id: 'f', type: 'Radar', stats: { power_use: [0, null] } },
+  c: { id: 'c', type: 'Cooler', stats: { power_use: [1, 3] } }, s: sh('s'), g: { id: 'g', type: 'WeaponGun', stats: { power_use: [0, 1] } } }
+const cs2 = consumers({ power: { groups: { FlightController: { power: 8 }, LifeSupportGenerator: { power: 2 } } } },
+  ['c', 'r', 'f', 'f', 's', 'g'].map((id, i) => ({ id: `n${i}`, item: id })), id => it2[id])
+assert.equal(cs2.filter(c => c.kind === 'radar').length, 1, '雷達只有一欄')
+assert.deepEqual(cs2.map(c => c.kind === 'static' ? c.group : c.kind),
+  ['weapons', 'FlightController', 'shield', 'radar', 'LifeSupportGenerator', 'cooler'])
 console.log('loadoutPower ok')
