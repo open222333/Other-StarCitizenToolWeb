@@ -13,7 +13,8 @@
   就是我的艦隊的 vehicle_uuid），登記完 emit('registered') 讓父層重抓艦隊。
   列表外觀跟「我的艦隊」一致：卡片＋hover 表格＋表頭排序，「詳細」展開船艦資訊與價格（手機是底部面板）。
   概念船（is_concept，RSI 商店有、遊戲裡還沒有，後端接在列表最後，見 src/models/ccu.py 的 concept_ships）：
-  標「概念船」／「製作中」，只有美金價與「船價」（上架紀錄），沒有遊戲內數值、不能勾選登記。
+  標「概念船」／「製作中」，只有美金價與「船價」（上架紀錄），沒有遊戲內數值、不能勾選登記；
+  名稱下面列 RSI 官方借用船清單對到的借用船（loaner，同步項目「借用船」）。
 -->
 <template>
   <!-- 換頁載入中保留舊的列（只變淡），不讓頁面瞬間變短；變短會讓瀏覽器把畫面捲到下面去 -->
@@ -66,6 +67,10 @@
                   {{ v.concept_status === 'production' ? '製作中' : '概念船' }}</span>
                 <span v-if="v.name_zh" class="sf-name__en">{{ v.name }}</span>
               </span>
+              <!-- 概念船：RSI 官方借用船清單（買了先借這些船飛，src/models/ship_loaner.py） -->
+              <div v-if="v.loaner?.loaners?.length" class="vdb-loaner">
+                <i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>借用船：{{ v.loaner.loaners.map(l => l.name_zh || l.name).join('、') }}
+              </div>
             </td>
             <!-- 手機／平板藏次要欄位（「詳細」裡都看得到；手機卡片照樣顯示） -->
             <td class="d-none d-md-table-cell text-nowrap" data-label="類型">{{ vehicleTypeLabel(v.vehicle_type) || '—' }}</td>
@@ -355,6 +360,7 @@ async function goPage(newOffset) {
 </script>
 
 <style scoped>
+.vdb-loaner { font-size: var(--sf-fs-sm); color: var(--sf-text-muted); margin-top: .15rem; }
 .vdb-check-col { width: 2.5rem; }
 .is-registered > td:not(.sf-stack__actions) { opacity: .7; }
 .vdb-detail { background: var(--sf-panel-2); }

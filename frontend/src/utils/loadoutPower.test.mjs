@@ -42,3 +42,15 @@ assert.equal(cs2.filter(c => c.kind === 'radar').length, 1, '雷達只有一欄'
 assert.deepEqual(cs2.map(c => c.kind === 'static' ? c.group : c.kind),
   ['weapons', 'FlightController', 'shield', 'radar', 'LifeSupportGenerator', 'cooler'])
 console.log('loadoutPower ok')
+
+// 單格武器關電：不算進武器電源池
+{
+  const gun = id => ({ id, type: 'WeaponGun', stats: { power_use: [0, 2], em: 10 } })
+  const its = { g1: gun('g1'), g2: gun('g2') }
+  const sl = [{ id: 'w1', item: 'g1' }, { id: 'w2', item: 'g2' }]
+  const all = consumers({}, sl, id => its[id]).find(c => c.kind === 'weapons')
+  assert.equal(all.draw, 4)
+  const one = consumers({}, sl, id => its[id], 'scm', new Set(['w1'])).find(c => c.kind === 'weapons')
+  assert.equal(one.draw, 2)
+  assert.equal(consumers({}, sl, id => its[id], 'scm', new Set(['w1', 'w2'])).find(c => c.kind === 'weapons'), undefined)
+}

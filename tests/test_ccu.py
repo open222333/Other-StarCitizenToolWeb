@@ -317,10 +317,29 @@ def test_concept_ships_in_vehicle_list(app, client):
     assert [r['name'] for r in client.get('/item/vehicles?scu_min=1').get_json()['data']] == []
     page2 = client.get('/item/vehicles?limit=2&offset=2').get_json()
     assert [r['name'] for r in page2['data']] == ['Odin'] and page2['total'] == 3
+    # 依美金價排序：概念船一起排；名稱照字首規則（「ala」不是字首，放寬後才找到）
+    v = db.vehicle_master
+    v.update_one({'_id': 'v-a'}, {'$set': {'msrp': 50}})
+    by_usd = client.get('/item/vehicles?sort_by=msrp&sort_dir=desc').get_json()
+    assert [r['name'] for r in by_usd['data']] == ['Odin', 'Galaxy', 'Aurora MR'] and by_usd['total'] == 3
+    assert [r['name'] for r in client.get('/item/vehicles?sort_by=msrp&limit=1&offset=1').get_json()['data']] == ['Galaxy']
+    assert [r['name'] for r in client.get('/item/vehicles?q=ala').get_json()['data']] == ['Galaxy']
     # 只顯示概念船
     only = client.get('/item/vehicles?concept=only').get_json()
     assert [r['name'] for r in only['data']] == ['Galaxy', 'Odin'] and only['total'] == 2
     assert [r['name'] for r in client.get('/item/vehicles?concept=only&usd_max=500').get_json()['data']] == ['Galaxy']
+
+
+def test_concept_ships_cached_by_sync_version(app):
+    """有同步紀錄時，概念船清單以船價同步版本快取；同步版本變了才重算（待辦 E2）。"""
+    db = get_db()
+    db.rsi_ships.insert_one({'_id': 10, 'name': 'Galaxy', 'flyable_status': 'In Concept', 'is_current': True})
+    db.sync_jobs.insert_many([{'_id': 'ccu', 'last_run_id': 'r1'}, {'_id': 'vehicles', 'last_run_id': 'v1'}])
+    assert [r['name'] for r in ccu.concept_ships()] == ['Galaxy']
+    db.rsi_ships.insert_one({'_id': 11, 'name': 'Odin', 'flyable_status': 'In Concept', 'is_current': True})
+    assert [r['name'] for r in ccu.concept_ships()] == ['Galaxy'], '版本沒變用快取'
+    db.sync_jobs.update_one({'_id': 'ccu'}, {'$set': {'last_run_id': 'r2'}})
+    assert [r['name'] for r in ccu.concept_ships()] == ['Galaxy', 'Odin']
 
 
 def test_concept_ship_zh(app, client, seed_translations):

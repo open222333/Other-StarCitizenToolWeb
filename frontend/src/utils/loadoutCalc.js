@@ -105,8 +105,9 @@ export function walk(nodes, fn, root = null) {
 }
 
 /** 整艘船目前配裝的總數值 */
-export function summarize(ship, slots, itemOf, shieldEff = null) {
+export function summarize(ship, slots, itemOf, shieldEff = null, weaponOff = null) {
   // shieldEff：{槽位 id: 電源效率}（電源分配給護盾的格數，影響回充；見 utils/loadoutPower.js）
+  // weaponOff：關掉電源的武器格（Set，槽位 id），不算傷害
   const w = Object.fromEntries(WEAPON_GROUPS.map(k => [k, { alpha: 0, dps: 0, sustained: 0, count: 0 }]))
   const missiles = { count: 0, damage: 0, byName: new Map() }
   const shield = { hp: 0, regen: 0, count: 0, absorption: null, resistance: null }
@@ -122,6 +123,7 @@ export function summarize(ship, slots, itemOf, shieldEff = null) {
       if (!it) return
       const s = it.stats || {}
       if (it.type === 'WeaponGun') {
+        if (weaponOff?.has(n.id)) return
         const g = w[WEAPON_GROUPS.includes(sec) ? sec : 'pilot']
         g.alpha += s.alpha || 0
         g.dps += s.dps || 0

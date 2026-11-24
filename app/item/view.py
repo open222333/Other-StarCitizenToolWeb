@@ -14,6 +14,7 @@ from flask import Blueprint, jsonify, make_response, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from src.limiter import limiter
+from src.models import name_search
 from src.models.item import BlueprintMaster, CommodityMaster, ItemMaster, SyncRun, VehicleMaster
 from src.models import uex_item_price, uex_vehicle_price
 from src.models.item_stats import describe as describe_item
@@ -372,22 +373,23 @@ def _num_arg(name):
 
 
 def _concept_rows(query: str, manufacturer_codes, usd_range) -> list:
-    """RSI 商店的概念／製作中船（src/models/ccu.py 的 concept_ships），套名稱（英文或中文，每個字都要出現）、廠商、美金範圍。"""
+    """RSI 商店的概念／製作中船（src/models/ccu.py 的 concept_ships），套名稱、廠商、美金範圍。
+    名稱照 name_search 的規則（英文比字首、中文任意位置）；一艘都對不到才放寬成任意位置。"""
     from src.models import ccu
-    words = [w for w in re.split(r'\s+', (query or '').lower()) if w]
     lo, hi = usd_range
-    out = []
+    base = []
     for r in ccu.concept_ships():
-        name = f"{r['name']} {r.get('name_zh') or ''}".lower()
-        if words and not all(w in name for w in words):
-            continue
         if manufacturer_codes and r.get('manufacturer_code') not in manufacturer_codes:
             continue
         if (lo is not None or hi is not None) and (r.get('msrp') is None or (lo is not None and r['msrp'] < lo)
                                                    or (hi is not None and r['msrp'] > hi)):
             continue
-        out.append(r)
-    return out
+        base.append(r)
+    if not (query or '').strip():
+        return base
+    texts = lambda r: (r['name'], r.get('name_zh'), r.get('manufacturer_name'))   # noqa: E731
+    hits = [r for r in base if name_search.text_matches(texts(r), query)]
+    return hits or [r for r in base if name_search.text_matches(texts(r), query, loose=True)]
 
 
 def _vehicle_id_limits(acquire, auec_range, rent_range=(None, None)):
@@ -419,6 +421,7 @@ PRICE_SORTS = {
 
 @app_item.route('/vehicles', methods=['GET'])
 @public_api
+@limiter.limit('120 per minute')
 def list_vehicles():
     """載具主檔列表（太空船＋地面載具＋懸浮載具，含 SCU 貨艙容量）。
 
@@ -487,6 +490,12 @@ def list_vehicles():
 
     # 名稱搜尋規則見 src/models/name_search.py（多個關鍵字、英文比字首、中文任意位置；沒指定排序時依相符程度排）
     meta: dict = {}
+    # 概念船（RSI 商店有、遊戲裡還沒有）：只在條件它們也可能符合時（沒有遊戲內數值的條件）才列
+    with_concepts = not (careers or roles or size_classes or acquire or visibility is not None
+                         or any(v is not None for v in (*auec_range, *rent_range, *scu_range))
+                         or (types and 'ship' not in types))
+    concepts = _concept_rows(query, manufacturer_codes, usd_range) if with_concepts else []
+    merged = False
     if sort_by in PRICE_SORTS:
         all_rows, total = VehicleMaster.list_all(
             limit=0, offset=0, careers=careers, roles=roles,
@@ -496,6 +505,11 @@ def list_vehicles():
             ids=_vehicle_id_limits(acquire, auec_range, rent_range), meta=meta)
         uex_vehicle_price.attach_summaries(all_rows)
         key = PRICE_SORTS[sort_by]
+        # 依美金價排序：有美金價的概念船一起排進去（其他排序概念船沒有值，接在最後）
+        if sort_by == 'msrp' and concepts:
+            all_rows = all_rows + concepts
+            total = (total or 0) + len(concepts)
+            merged = True
         with_value = [r for r in all_rows if key(r) is not None]
         without = [r for r in all_rows if key(r) is None]
         with_value.sort(key=key, reverse=sort_dir == -1)
@@ -513,11 +527,8 @@ def list_vehicles():
         row['vehicle_inventory_scu'] = uscu_to_scu(row.get('vehicle_inventory_uscu'))
     if request.args.get('with_prices') == '1' and not any('uex_price' in r for r in rows):
         uex_vehicle_price.attach_summaries(rows)
-    # 概念船（RSI 商店有、遊戲裡還沒有）接在列表最後；只在條件它們也可能符合時（沒有遊戲內數值的條件）
-    if not (careers or roles or size_classes or acquire or visibility is not None
-            or any(v is not None for v in (*auec_range, *rent_range, *scu_range))
-            or (types and 'ship' not in types)):
-        concepts = _concept_rows(query, manufacturer_codes, usd_range)
+    # 其他排序：概念船接在列表最後
+    if concepts and not merged:
         if total is None:
             if len(rows) < limit:
                 rows = rows + concepts[:limit - len(rows)]

@@ -31,7 +31,7 @@
 <script setup>
 // 每個來源：名稱、本站拿來做什麼、使用依據（授權／條款）
 const SOURCES = [
-  { name: 'Star Citizen（RSI 官方）', url: 'https://robertsspaceindustries.com', use: '遊戲名稱、商標；船艦官網售價、商店上架（公開頁面）',
+  { name: 'Star Citizen（RSI 官方）', url: 'https://robertsspaceindustries.com', use: '遊戲名稱、商標；船艦官網售價、商店上架、借用船清單（公開頁面）',
     terms: [{ label: 'Fankit 與粉絲 FAQ', url: 'https://support.robertsspaceindustries.com/hc/en-us/articles/360006895793-Star-Citizen-Fankit-and-Fandom-FAQ' },
       { label: '服務條款', url: 'https://robertsspaceindustries.com/en/tos' }] },
   { name: 'Star Citizen Wiki API', url: 'https://api.star-citizen.wiki', use: '物品、艦船、藍圖、任務、勢力、商品（含礦物取得方式判斷）',

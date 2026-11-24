@@ -39,6 +39,7 @@ CATALOG = [
         ('rsi_ships', 'RSI 商店船價（CCU）'),
         ('ccu_offers', 'CCU／Warbond 販售紀錄（RSI 商店）'),
         ('ship_sale_history', '船艦上架歷史（Open Hangar，CC BY 4.0）'),
+        ('ship_loaners', 'RSI 借用船清單（Loaner Ship Matrix）'),
     ]),
     ('地點', [
         ('starmap_master', '地點主檔'),

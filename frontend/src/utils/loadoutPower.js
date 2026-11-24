@@ -44,8 +44,9 @@ const usage = it => it?.stats?.power_use || [0, 0]
 /**
  * 這艘船目前配裝的耗電者清單。
  * kind：shield／weapons／cooler／radar／utility／quantum／static；每個 { key, kind, label, min, max, step, items… }
+ * off：關掉電源的武器格（Set，槽位 id）
  */
-export function consumers(ship, slots, itemOf, mode = 'scm') {
+export function consumers(ship, slots, itemOf, mode = 'scm', off = null) {
   const out = []
   const shields = []
   const radars = []
@@ -55,7 +56,8 @@ export function consumers(ship, slots, itemOf, mode = 'scm') {
     if (!it) return
     if (it.type === 'Missile' || it.type === 'Bomb') return false
     if (it.type === 'WeaponGun') {
-      weapons.push(it)
+      // off：關掉電源的武器格（槽位 id），不耗電、不算進武器電源池
+      if (!off?.has(n.id)) weapons.push(it)
       return
     }
     const [min, max] = usage(it)

@@ -209,6 +209,8 @@ SYNC_JOBS = [
     ('ccu', 'CCU', '17 */6 * * *'),
     # Open Hangar 整理的商店上架歷史（2021-11 起，含 Warbond），見 src/openhangar.py；每天一次就夠
     ('openhangar', 'Open Hangar 歷史', '43 4 * * *'),
+    # RSI 官方借用船清單（Loaner Ship Matrix，客服知識庫文章），見 src/rsi_loaners.py；每天一次
+    ('loaners', '借用船', '51 4 * * *'),
 ]
 JOB_KEYS = [k for k, _, _ in SYNC_JOBS]
 JOB_LABELS = {k: label for k, label, _ in SYNC_JOBS}
@@ -408,6 +410,7 @@ class SyncJobs:
         'loadout': ('ship_loadout_master', {'is_current': True}),
         'ccu': ('rsi_ships', {'is_current': True}),
         'openhangar': ('ship_sale_history', {}),
+        'loaners': ('ship_loaners', {'is_current': True}),
     }
 
     @classmethod

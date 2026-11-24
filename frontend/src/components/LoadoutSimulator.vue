@@ -235,7 +235,8 @@
               </div>
 
               <div class="row g-3">
-            <div v-for="sec in sections" :key="sec.key" class="col-12 col-xxl-6">
+            <!-- 武器區（雲台＋武器排左右兩欄）佔整列，其他區塊寬螢幕兩欄 -->
+            <div v-for="sec in sections" :key="sec.key" class="col-12" :class="{ 'col-xxl-6': !WEAPON_GROUPS.includes(sec.key) }">
               <div :class="[cardClass, 'h-100']">
                 <div class="card-body lo-sec">
                   <!-- 區塊標題可以整區收起（再點展開） -->
@@ -293,7 +294,7 @@ import {
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/utils/toast'
 import {
-  autoAllocate, consumers, generation, maxAllocate, powerPlantEm, setWithinGen, powerSummary, shieldShares,
+  autoAllocate, consumerLoad, consumers, generation, maxAllocate, powerPlantEm, setWithinGen, powerSummary, shieldShares,
 } from '@/utils/loadoutPower'
 
 const props = defineProps({
@@ -425,6 +426,8 @@ async function ensureTypes(types) {
 
 // ── 製作品質：{配件 id: {部位: 品質}}，只有可製作的配件（有 blueprint）能調 ──
 const qualities = reactive({})
+// 單格武器關電（槽位 id）：不耗電、不算傷害；換船時清掉
+const weaponOff = reactive(new Set())
 const qCache = shallowReactive(new Map())       // 藍圖 uuid → 品質資料的部位（slots）
 const qPending = new Map()
 function qualityData(uuid) {
@@ -558,6 +561,7 @@ async function loadShip(id, lo, lq = '') {
   delete data.items
   delete data.slots
   ship.value = data
+  weaponOff.clear()
   // 掛點可裝類型的中文（「更換武器」「砲塔／雲台」）
   const nodeTypes = []
   walk(tree, n => { nodeTypes.push(...(n.types || [])) })
@@ -655,7 +659,7 @@ async function saveToFleet() {
 const powerMode = ref('scm')
 const pipsByMode = reactive({ scm: {}, quantum: {} })
 const pips = computed(() => pipsByMode[powerMode.value])
-const listOf = mode => (ship.value?.power ? consumers(ship.value, slots.value, itemOf, mode) : [])
+const listOf = mode => (ship.value?.power ? consumers(ship.value, slots.value, itemOf, mode, weaponOff) : [])
 const powerList = computed(() => listOf(powerMode.value))
 const powerGen = computed(() => (ship.value?.power ? generation(ship.value, slots.value, defaults.value, itemOf) : 0))
 const ppEm = computed(() => powerPlantEm(slots.value, itemOf))
@@ -663,7 +667,7 @@ const powerSum = computed(() => powerSummary(ship.value, powerList.value, pips.v
 // 耗電者的組成（哪一格裝什麼）變了才重新分配；合成的護盾看裡面每一個產生器
 const itemSig = c => (c.items ? c.items.map(i => i?.id || '').join('+') : c.item?.id || c.key)
 const powerSig = computed(() => JSON.stringify([powerGen.value,
-  ...listOf('scm').map(c => [c.key, itemSig(c), c.max])]))
+  ...listOf('scm').map(c => [c.key, itemSig(c), c.max, c.draw])]))
 let lastItems = {}
 function autoPips(all = false) {
   // all＝「自動分配」按鈕：目前模式全部重分；否則（換了配件）兩個模式都只重分有變動的
@@ -699,7 +703,33 @@ const shieldEff = computed(() => {
   return out
 })
 
-const summary = computed(() => summarize(ship.value, slots.value, itemOf, shieldEff.value))
+const summary = computed(() => summarize(ship.value, slots.value, itemOf, shieldEff.value, weaponOff))
+// 武器效率：武器電源池分到的格數 ÷ 武器耗電加總（遊戲電源畫面的武器欄；沒有電源資料的船當 100%）
+const weaponEff = computed(() => {
+  const c = powerList.value.find(x => x.kind === 'weapons')
+  if (!c) return ship.value?.power ? 0 : 1
+  return consumerLoad(c, pips.value[c.key] ?? c.max).eff
+})
+// 武器卡的彈速、射程長條：用這艘船目前裝的武器裡最大的當滿格
+const weaponScale = computed(() => {
+  let speed = 0
+  let range = 0
+  walk(slots.value, (n) => {
+    const it = itemOf(n.item)
+    if (it?.type !== 'WeaponGun') return
+    speed = Math.max(speed, it.stats?.speed || 0)
+    range = Math.max(range, it.stats?.range || 0)
+  })
+  return { speed, range }
+})
+const isWeaponOff = nodes => nodes.every(n => weaponOff.has(n.id))
+function toggleWeaponPower(nodes) {
+  const off = !isWeaponOff(nodes)
+  for (const n of nodes) {
+    if (off) weaponOff.add(n.id)
+    else weaponOff.delete(n.id)
+  }
+}
 const GROUP_LABEL = { pilot: '駕駛武器', manned: '有人砲塔', remote: '遙控砲塔', pdc: '點防禦' }
 const weaponRows = computed(() => WEAPON_GROUPS.map(k => ({ key: k, label: GROUP_LABEL[k], ...summary.value.weapons[k] }))
   .filter(g => g.count))
@@ -887,7 +917,8 @@ async function choose(it) {
 }
 
 provide('loadout', { itemOf, open: openPicker, primary, secondary, itemLabel, typeLabel, classLabel,
-  openInfo, addCart, qualityData, qualityOf, setQuality, avgOf, nudgeQuality })
+  openInfo, addCart, qualityData, qualityOf, setQuality, avgOf, nudgeQuality,
+  weaponEff: () => weaponEff.value, weaponScale: () => weaponScale.value, isWeaponOff, toggleWeaponPower })
 </script>
 
 <style scoped>

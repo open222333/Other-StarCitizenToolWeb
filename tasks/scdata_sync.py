@@ -517,6 +517,29 @@ def _sync_ccu(client, run_id: str, stamp: datetime) -> dict:
             'ended': offer_stats['ended'], 'linked': ship_stats['linked']}
 
 
+def _sync_loaners(client, run_id: str, stamp: datetime) -> dict:
+    """「借用船」：RSI 官方 Loaner Ship Matrix（客服知識庫文章）→ ship_loaners（見 src/models/ship_loaner.py）。
+
+    解析出的列數少於 MIN_ROWS、或低於原有的 80%，判定格式變了或抓取不完整，整輪失敗、不下架任何資料。
+    """
+    from src import rsi_loaners
+    from src.models import ship_loaner
+    _report(force=True, phase='讀取借用船清單')
+    try:
+        data = rsi_loaners.fetch_matrix(client)
+    except rsi_loaners.LoanerError as err:
+        raise ScDataError(f'loaners: {err}') from err
+    before = get_db()[ship_loaner.COLLECTION].count_documents({'is_current': True})
+    floor = int(before * 0.8)
+    if before and len(data['rows']) < floor:
+        raise ScDataError(f'loaners: 只解析出 {len(data["rows"])} 列，低於原有 {before} 列的 80%（門檻 {floor}），'
+                          '判定抓取不完整，不更新')
+    _report(force=True, phase='寫入借用船清單')
+    stats = ship_loaner.save(data['rows'], run_id, stamp, data.get('updated_at'), data.get('url'))
+    logger.info('scdata_sync: 借用船 完成 %d 列（下架 %d）', stats['seen'], stats['retired'])
+    return {'resource': 'loaners', 'collection': ship_loaner.COLLECTION, **stats}
+
+
 def _sync_openhangar(client, run_id: str, stamp: datetime) -> dict:
     """「Open Hangar 歷史」：openhangar.space 整理的 RSI 商店上架歷史（2021-11 起）→ ship_sale_history。
 
@@ -709,6 +732,13 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
         except Exception as err:
             logger.exception('scdata_sync: Open Hangar 失敗')
             errors.append(f'openhangar: {err}')
+
+    elif key == 'loaners':
+        try:
+            stats.append(_sync_loaners(client('rsi_support'), run_id, stamp))
+        except Exception as err:
+            logger.exception('scdata_sync: 借用船失敗')
+            errors.append(f'loaners: {err}')
 
     elif key in UEX_JOB_RESOURCES:
         # 後台「資料同步排程」頁設定的 token 優先，沒有就用環境變數 UEX_API_TOKEN

@@ -1477,6 +1477,15 @@ UPSTREAM_PROVIDERS: dict = {
         'limit': '非公開 API、沒有公開配額；每輪只打 4 次，排程每 6 小時一次',
         'url': 'https://robertsspaceindustries.com/pledge/ship-upgrades',
     },
+    'rsi_support': {
+        'short': 'RSI 客服',
+        'name': 'RSI 客服知識庫（Zendesk 公開 API）',
+        'base': 'https://support.robertsspaceindustries.com',
+        'auth': '不需要',
+        'limit_level': 'soft',
+        'limit': 'Zendesk 公開文章 API；每輪只打 1 次，排程每天一次',
+        'url': 'https://support.robertsspaceindustries.com/hc/en-us/articles/360003093114-Loaner-Ship-Matrix',
+    },
     'openhangar': {
         'short': 'Open Hangar',
         'name': 'Open Hangar 商店歷史（CC BY 4.0）',
@@ -1544,4 +1553,6 @@ def job_upstreams() -> dict:
     from src import openhangar
     out['openhangar'] = [{'provider': 'openhangar', 'url': openhangar.CATALOG_URL,
                           'note': '整份商店目錄與上架歷史'}]
+    from src import rsi_loaners
+    out['loaners'] = [{'provider': 'rsi_support', 'url': rsi_loaners.ARTICLE_API, 'note': '借用船清單文章（Loaner Ship Matrix）'}]
     return out

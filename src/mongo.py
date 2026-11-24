@@ -288,6 +288,7 @@ def ensure_indexes():
     db['rsi_ships'].create_index('vehicle_uuid')
     db['ship_sale_history'].create_index('rsi_id')
     db['ship_sale_history'].create_index('vehicle_uuid')
+    db['ship_loaners'].create_index('_sync.run_id')
 
     # ── 戰術小隊分配表（見 src/models/squad.py）──────────────────────
     db['squad_boards'].create_index('share_token', unique=True,

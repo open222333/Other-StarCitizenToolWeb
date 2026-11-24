@@ -101,6 +101,30 @@ def text_fields_filter(query: str, fields: list, loose: bool = False) -> Optiona
     return loose_filter(query, f) if loose else strict_filter(query, f)
 
 
+def text_matches(texts, query: str, loose: bool = False) -> bool:
+    """不查資料庫、在 Python 裡比對（例如概念船這種不在 Mongo 主檔的列）：同一套規則。
+    嚴格：每個關鍵字都要對到某個字的字首（中文任意位置）；loose：整串在任意位置（不分大小寫）。"""
+    q = (query or '').strip()
+    if not q:
+        return True
+    vals = [str(t or '') for t in texts if t]
+    if loose:
+        return any(q.lower() in v.lower() for v in vals)
+    toks = tokens(q)
+    if not toks:
+        return any(q.lower() in v.lower() for v in vals)
+    words = [w for v in vals for w in _norm(v).split()]
+    for t in toks:
+        if _CJK.search(t):
+            if not any(t in v for v in vals):
+                return False
+            continue
+        # 關鍵字本身有標點（mk-ii）時拆開，每一段都要對到某個字的字首
+        if not all(any(w.startswith(part) for w in words) for part in _norm(t).split() or [t.lower()]):
+            return False
+    return True
+
+
 def merge(base: dict, cond: Optional[dict]) -> dict:
     """把名稱條件 AND 進既有的查詢條件（不覆蓋既有的 $or／$and）。"""
     if not cond:

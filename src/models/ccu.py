@@ -390,8 +390,20 @@ def concept_status(flyable_status) -> str:
 
 
 def concept_ships() -> list:
-    """概念／製作中的船：[{_id: 'rsi:<id>', name, manufacturer_name, manufacturer_code, msrp, role, vehicle_type,
-    is_concept, concept_status, price_key（船價明細用，見 ship_price_detail）, link}]，依名稱排。"""
+    """同 _concept_ships()，結果以「船價同步版本」快取（翻譯版本變了也會重算，見 translation._cached）。
+    沒有任何同步紀錄（例如測試）時不快取。艦船列表每次請求都會用到（待辦 E2）。"""
+    from src.models import translation as T
+    version = price_list_version()
+    if not version.strip('|'):
+        return _concept_ships()
+    loaner_run = (get_db()['sync_jobs'].find_one({'_id': 'loaners'}, {'last_run_id': 1}) or {}).get('last_run_id') or ''
+    return list(T._cached(('concept_ships', version, loaner_run), _concept_ships))
+
+
+def _concept_ships() -> list:
+    """概念／製作中的船：[{_id: 'rsi:<id>', name, name_zh, manufacturer_name, manufacturer_code, msrp, role, role_zh,
+    vehicle_type, is_concept, concept_status, price_key（船價明細用，見 ship_price_detail）, link,
+    loaner（RSI 借用船清單對到的那一列，見 src/models/ship_loaner.py；對不到是 None）}]，依名稱排。"""
     db = get_db()
     hist = {h['rsi_id']: h['_id'] for h in db[SALE_HISTORY].find({'rsi_id': {'$ne': None}}, {'rsi_id': 1})}
     codes = {}
@@ -407,6 +419,10 @@ def concept_ships() -> list:
                      'role': s.get('focus'), 'vehicle_type': 'ship', 'is_concept': True, 'concept_status': status,
                      'price_key': hist.get(s['_id']) or f"rsi:{s['_id']}", 'link': s.get('link')})
     _attach_concept_zh(rows)
+    from src.models import ship_loaner
+    loaners = ship_loaner.for_ships([(r['_id'], r['name'], r.get('manufacturer_name')) for r in rows])
+    for r in rows:
+        r['loaner'] = loaners.get(r['_id'])
     rows.sort(key=lambda r: r['name'].lower())
     return rows
 
