@@ -258,11 +258,18 @@ def _excerpt(body: str) -> str:
 _iso = iso_utc
 
 
+def _edited(doc: dict) -> bool:
+    up, cr = doc.get('updated_at'), doc.get('created_at')
+    return bool(up and cr and (up - cr).total_seconds() > 60)
+
+
 def to_public(doc: dict, full: bool = False) -> dict:
     out = {
         '_id': str(doc['_id']), 'title': doc.get('title'), 'cover_url': doc.get('cover_url'),
         'source_url': doc.get('source_url'), 'tags': doc.get('tags') or [], 'pinned': bool(doc.get('pinned')),
         'published_at': _iso(doc.get('published_at')), 'updated_at': _iso(doc.get('updated_at')),
+        # 建立後真的改過（超過 1 分鐘）才有：玩家頁顯示「最後編輯」
+        'edited_at': _iso(doc['updated_at']) if _edited(doc) else None,
     }
     if full:
         out['body'] = doc.get('body') or ''
@@ -421,12 +428,16 @@ def ingest(items, by: str) -> dict:
             cleaned.append(clean(it))
         except NewsError as err:
             raise NewsError(f'第 {i} 則：{err}')
-    out = {'created': [], 'updated': []}
+    out = {'created': [], 'updated': [], 'unchanged': []}
     now = datetime.utcnow()
     for doc in cleaned:
         existing = _col().find_one({'source_url': doc['source_url'], 'deleted_at': None}) if doc['source_url'] else None
         if existing:
             fields = {k: v for k, v in doc.items() if not (k == 'published_at' and v is None)}
+            # 外部程式常常定時重送整批：內容沒變就不動（最後編輯時間才不會一直跳）
+            if all(existing.get(k) == v for k, v in fields.items()):
+                out['unchanged'].append(str(existing['_id']))
+                continue
             fields.update({'updated_at': now, 'updated_by': by})
             _col().update_one({'_id': existing['_id']}, {'$set': fields})
             out['updated'].append(str(existing['_id']))

@@ -331,7 +331,7 @@ def ingest():
             published_at: {type: string, description: "ISO 8601；空的＝現在"}
     responses:
       200:
-        description: "data: {created: [id], updated: [id]}"
+        description: "data: {created: [id], updated: [id], unchanged: [id]（同一個來源連結、內容沒變，不動）}"
       400:
         description: 內容不合法（訊息會指出第幾則）
       401:
@@ -344,6 +344,6 @@ def ingest():
         result = news.ingest(request.get_json(silent=True), by=by)
     except news.NewsError as err:
         return jsonify({'success': False, 'message': str(err)}), 400
-    Log.create(by, 'ingest_news', f'外部寫入新聞：新增 {len(result["created"])}、更新 {len(result["updated"])}',
+    Log.create(by, 'ingest_news', f'外部寫入新聞：新增 {len(result["created"])}、更新 {len(result["updated"])}、未變 {len(result["unchanged"])}',
                success=True)
     return jsonify({'success': True, 'data': result})

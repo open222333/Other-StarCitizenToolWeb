@@ -98,14 +98,15 @@
                 <th class="ps-3">標題</th>
                 <th>標籤</th>
                 <th class="text-nowrap">發布時間</th>
+                <th class="text-nowrap">最後編輯</th>
                 <th class="text-nowrap">來源</th>
                 <th v-if="canWrite" class="pe-3" style="width: 120px">操作</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-if="loading && !items.length"><td :colspan="canWrite ? 5 : 4" class="text-center py-4 text-muted">
+              <tr v-if="loading && !items.length"><td :colspan="canWrite ? 6 : 5" class="text-center py-4 text-muted">
                 <span class="spinner-border spinner-border-sm me-2"></span>載入中…</td></tr>
-              <tr v-else-if="!items.length"><td :colspan="canWrite ? 5 : 4" class="text-center py-4 text-muted">
+              <tr v-else-if="!items.length"><td :colspan="canWrite ? 6 : 5" class="text-center py-4 text-muted">
                 {{ filtering ? '沒有符合篩選條件的新聞' : '尚無新聞' }}</td></tr>
               <tr v-for="n in items" :key="n._id">
                 <td class="ps-3">
@@ -117,6 +118,9 @@
                 </td>
                 <td><span v-for="t in n.tags" :key="t" class="badge text-bg-secondary me-1">{{ t }}</span></td>
                 <td class="text-nowrap small">{{ fmtNewsDate(n.published_at) }}</td>
+                <td class="text-nowrap small">
+                  <template v-if="n.edited_at">{{ fmtNewsDate(n.edited_at) }}<span class="text-muted ms-1">{{ n.updated_by }}</span></template>
+                  <span v-else class="text-muted">—</span></td>
                 <td class="small text-muted text-nowrap">{{ n.created_by }}</td>
                 <td v-if="canWrite" class="pe-3 text-nowrap">
                   <button class="btn btn-sm btn-outline-primary me-1" :aria-label="`編輯 ${n.title}`" @click="startEdit(n)"><i class="bi bi-pencil"></i></button>

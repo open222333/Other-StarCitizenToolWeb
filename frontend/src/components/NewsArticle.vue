@@ -9,6 +9,7 @@
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
       <span v-if="item.pinned" class="sf-chip sf-chip--warn mb-0"><i class="bi bi-pin-angle-fill me-1"></i>置頂</span>
       <span class="na-date"><i class="bi bi-clock me-1"></i>{{ fmtNewsDate(item.published_at) }}</span>
+      <span v-if="item.edited_at" class="na-date"><i class="bi bi-pencil me-1"></i>最後編輯 {{ fmtNewsDate(item.edited_at) }}</span>
       <span v-for="t in item.tags" :key="t" class="sf-chip sf-chip--accent mb-0">{{ t }}</span>
     </div>
     <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 先跳脫整段 HTML，只產生白名單標籤 -->

@@ -72,7 +72,10 @@ def test_ingest_with_api_key(client, auth_headers):
     assert r['success'] and len(r['data']['created']) == 2
     # 同一個來源連結再送一次＝更新
     r = client.post('/news/ingest', headers=h, json={'title': 'Comm-Link A（更新）', 'source_url': 'https://rsi.example/a'}).get_json()
-    assert r['data'] == {'created': [], 'updated': r['data']['updated']} and len(r['data']['updated']) == 1
+    assert r['data'] == {'created': [], 'updated': r['data']['updated'], 'unchanged': []} and len(r['data']['updated']) == 1
+    # 內容一樣再送一次：不動（最後編輯時間不跳）
+    r = client.post('/news/ingest', headers=h, json={'title': 'Comm-Link A（更新）', 'source_url': 'https://rsi.example/a'}).get_json()
+    assert r['data']['updated'] == [] and len(r['data']['unchanged']) == 1
     assert client.get('/news/').get_json()['total'] == 2
     # 一則不合法整批不寫
     r = client.post('/news/ingest', headers=h, json=[{'title': 'ok'}, {'title': ''}])
@@ -85,7 +88,7 @@ def test_ingest_with_api_key(client, auth_headers):
     assert client.delete(f'/data/api-keys/{created["_id"]}', headers=auth_headers).get_json()['success']
     assert client.post('/news/ingest', headers=h, json={'title': 'x'}).status_code == 403
     keys = client.get('/data/api-keys', headers=auth_headers).get_json()['data']
-    assert keys[0]['revoked'] is True and keys[0]['use_count'] == 4, '每次用金鑰（含被擋下的內容）都算'
+    assert keys[0]['revoked'] is True and keys[0]['use_count'] == 5, '每次用金鑰（含被擋下的內容）都算'
 
 
 def test_key_management_is_admin_only(client):
@@ -202,3 +205,19 @@ def test_date_range(client, auth_headers):
     assert t(since='2026-11-22T08:00:00+08:00') == ['今天', '昨天']
     assert t(until='2026-11-22T00:00:00Z') == ['前天']
     assert client.get('/news/?since=昨天').status_code == 400
+
+
+def test_edited_at(client, auth_headers):
+    """最後編輯：建立後改過（超過 1 分鐘）才給 edited_at；後台另外有編輯者。"""
+    from src.models import news as N
+    nid = _create(client, auth_headers, title='原標題')['data']['_id']
+    one = client.get(f'/news/{nid}').get_json()['data']
+    assert one['edited_at'] is None
+    from datetime import datetime, timedelta
+    from bson import ObjectId
+    N._col().update_one({'_id': ObjectId(nid)}, {'$set': {'created_at': datetime.utcnow() - timedelta(hours=1)}})
+    assert client.put(f'/news/admin/{nid}', json={'title': '新標題'}, headers=auth_headers).status_code == 200
+    one = client.get(f'/news/{nid}').get_json()['data']
+    assert one['edited_at'] and one['edited_at'] == one['updated_at']
+    row = next(n for n in client.get('/news/admin', headers=auth_headers).get_json()['data'] if n['_id'] == nid)
+    assert row['updated_by'] and row['edited_at']
