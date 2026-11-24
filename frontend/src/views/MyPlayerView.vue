@@ -1082,6 +1082,13 @@
                   <span class="input-group-text">SCU</span>
                 </div>
               </div>
+              <!-- 只在「資料庫 › 艦船」：只列 RSI 商店的概念／製作中船（遊戲內數值的條件對它們不套） -->
+              <div v-if="itemsVehActive" class="col-12">
+                <div class="form-check form-switch mb-0">
+                  <input id="myfleet-concept" v-model="myFleetConceptOnly" class="form-check-input" type="checkbox" role="switch">
+                  <label class="form-check-label" for="myfleet-concept">只顯示概念船</label>
+                </div>
+              </div>
             </SfFilterSheet>
           </div>
           <div v-if="fleet.length || myFleetHasFilter" class="d-flex flex-wrap align-items-center gap-2 mt-2">
@@ -2715,6 +2722,8 @@ const fleetShipCount   = computed(() => fleet.value.reduce((n, r) => n + (r.quan
 const myFleetQuery = ref('')
 // 取得方式：只看可用遊戲幣購買／可租船（UEX 價格 vehicle.uex_price，多選取聯集）
 const myFleetAcquire = ref([])
+// 只顯示概念船（資料庫 › 艦船才有這個開關）
+const myFleetConceptOnly = ref(false)
 const myFleetTypes = ref([])
 const myFleetSizes = ref([])
 const myFleetMfrs  = ref([])
@@ -2724,13 +2733,16 @@ const myFleetRange = reactive({ priceCurrency: 'usd', priceMin: '', priceMax: ''
 const fleetRangeCount = computed(() => ((myFleetRange.priceMin !== '' || myFleetRange.priceMax !== '') ? 1 : 0)
   + ((myFleetRange.scuMin !== '' || myFleetRange.scuMax !== '') ? 1 : 0))
 const fleetSheetCount = computed(() => myFleetAcquire.value.length + myFleetTypes.value.length
-  + myFleetSizes.value.length + myFleetMfrs.value.length + myFleetRoles.value.length + fleetRangeCount.value)
+  + myFleetSizes.value.length + myFleetMfrs.value.length + myFleetRoles.value.length + fleetRangeCount.value
+  + (itemsVehActive.value && myFleetConceptOnly.value ? 1 : 0))
 const myFleetHasFilter = computed(() => !!(myFleetQuery.value.trim() || myFleetAcquire.value.length
   || myFleetTypes.value.length
-  || myFleetSizes.value.length || myFleetMfrs.value.length || myFleetRoles.value.length || fleetRangeCount.value))
+  || myFleetSizes.value.length || myFleetMfrs.value.length || myFleetRoles.value.length || fleetRangeCount.value
+  || (itemsVehActive.value && myFleetConceptOnly.value)))
 const fleetFilters = computed(() => ({
   q: myFleetQuery.value.trim(), types: myFleetTypes.value, sizes: myFleetSizes.value,
   manufacturers: myFleetMfrs.value, roles: myFleetRoles.value, acquire: myFleetAcquire.value,
+  conceptOnly: itemsVehActive.value && myFleetConceptOnly.value,
   ...myFleetRange,
 }))
 
@@ -2798,6 +2810,7 @@ const fleetScuOf = rows => rows.reduce((n, r) => n + (r.vehicle?.cargo_capacity_
 function clearMyFleetFilters() {
   myFleetQuery.value = ''
   myFleetAcquire.value = []
+  myFleetConceptOnly.value = false
   myFleetTypes.value = []
   myFleetSizes.value = []
   myFleetMfrs.value = []

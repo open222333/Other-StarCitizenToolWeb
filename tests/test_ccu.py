@@ -317,6 +317,26 @@ def test_concept_ships_in_vehicle_list(app, client):
     assert [r['name'] for r in client.get('/item/vehicles?scu_min=1').get_json()['data']] == []
     page2 = client.get('/item/vehicles?limit=2&offset=2').get_json()
     assert [r['name'] for r in page2['data']] == ['Odin'] and page2['total'] == 3
+    # 只顯示概念船
+    only = client.get('/item/vehicles?concept=only').get_json()
+    assert [r['name'] for r in only['data']] == ['Galaxy', 'Odin'] and only['total'] == 2
+    assert [r['name'] for r in client.get('/item/vehicles?concept=only&usd_max=500').get_json()['data']] == ['Galaxy']
+
+
+def test_concept_ship_zh(app, client, seed_translations):
+    """概念船的中文：用英文名反查（RSI 名稱少了廠商前綴時補上廠商第一個字再查），角色用 focus 查；中文也搜得到。"""
+    db = get_db()
+    db.rsi_ships.insert_many([
+        {'_id': 11, 'name': 'Odin', 'manufacturer': 'Anvil Aerospace', 'msrp': 900, 'focus': 'Heavy Fighter',
+         'flyable_status': 'In Production', 'vehicle_uuid': None, 'is_current': True},
+        {'_id': 12, 'name': 'Nobody', 'manufacturer': 'Unknown Co', 'flyable_status': 'In Concept', 'is_current': True},
+    ])
+    seed_translations({'vehicle_NameANVL_Odin': ('Anvil Odin', '奧丁'),
+                       'vehicle_class_heavyfighter': ('Heavy Fighter', '重型戰機')})
+    rows = {r['name']: r for r in ccu.concept_ships()}
+    assert rows['Odin']['name_zh'] == '奧丁' and rows['Odin']['role_zh'] == '重型戰機'
+    assert rows['Nobody']['name_zh'] is None
+    assert [r['name'] for r in client.get('/item/vehicles?concept=only&q=奧丁').get_json()['data']] == ['Odin']
 
 
 def test_match_vehicle_name_variants(app):

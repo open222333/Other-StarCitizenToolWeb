@@ -2,7 +2,7 @@
   玩家頁「艦隊 › 登記船艦資料」：瀏覽載具主檔＋登記到「我的艦隊」（原本的「批量登記」併進來）。
 
   篩選用「艦隊」分頁頂端的共用搜尋卡（MyPlayerView 傳進 filters：{ q, types, sizes, manufacturers, roles,
-  acquire（取得方式：buy 可用遊戲幣購買／rent 可租船）}），
+  acquire（取得方式：buy 可用遊戲幣購買／rent 可租船）、conceptOnly（只顯示概念船）}），
   跟「我的艦隊」同一組條件。資料是 GET /item/vehicles?with_prices=1（後端分頁），每筆帶 uex_price
   （遊戲內最低購買價／租船價與地點數）；官網現金價是 msrp（美金）。
 
@@ -310,6 +310,7 @@ async function reload(nextOffset = 0) {
   ;(f.manufacturers || []).forEach(v => params.append('manufacturer_code', v))
   ;(f.roles || []).forEach(v => params.append('role', v))
   ;(f.acquire || []).forEach(v => params.append('acquire', v))
+  if (f.conceptOnly) params.set('concept', 'only')
   for (const [k, v] of Object.entries(vehicleRangeParams(f))) params.set(k, v)
   for (const [k, v] of Object.entries(sort.params.value)) params.set(k, v)
   const res = await props.fetcher(`/item/vehicles?${params.toString()}`)

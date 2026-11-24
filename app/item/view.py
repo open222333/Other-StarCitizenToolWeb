@@ -372,13 +372,13 @@ def _num_arg(name):
 
 
 def _concept_rows(query: str, manufacturer_codes, usd_range) -> list:
-    """RSI 商店的概念／製作中船（src/models/ccu.py 的 concept_ships），套名稱（每個字都要出現）、廠商、美金範圍。"""
+    """RSI 商店的概念／製作中船（src/models/ccu.py 的 concept_ships），套名稱（英文或中文，每個字都要出現）、廠商、美金範圍。"""
     from src.models import ccu
     words = [w for w in re.split(r'\s+', (query or '').lower()) if w]
     lo, hi = usd_range
     out = []
     for r in ccu.concept_ships():
-        name = r['name'].lower()
+        name = f"{r['name']} {r.get('name_zh') or ''}".lower()
         if words and not all(w in name for w in words):
             continue
         if manufacturer_codes and r.get('manufacturer_code') not in manufacturer_codes:
@@ -453,6 +453,7 @@ def list_vehicles():
       - {in: query, name: rent_max, type: number, description: "遊戲內最低租船價（aUEC）上限"}
       - {in: query, name: scu_min,  type: number, description: "貨艙（SCU）下限"}
       - {in: query, name: scu_max,  type: number, description: "貨艙（SCU）上限"}
+      - {in: query, name: concept,  type: string, description: "only＝只列 RSI 商店的概念／製作中船（只套名稱、廠商、美金範圍）"}
       - {in: query, name: limit,              type: integer, default: 50}
       - {in: query, name: offset,             type: integer, default: 0}
     responses:
@@ -478,6 +479,11 @@ def list_vehicles():
 
     hide = not viewer_sees_hidden()
     visibility = None if hide else visibility_arg(request.args)
+    # concept=only：只列概念／製作中的船（遊戲內數值的條件對它們沒意義，不套）
+    if request.args.get('concept') == 'only':
+        concepts = _concept_rows(query, manufacturer_codes, usd_range)
+        return jsonify({'success': True, 'data': concepts[offset:offset + limit], 'total': len(concepts),
+                        'limit': limit, 'offset': offset, 'match': ''})
 
     # 名稱搜尋規則見 src/models/name_search.py（多個關鍵字、英文比字首、中文任意位置；沒指定排序時依相符程度排）
     meta: dict = {}

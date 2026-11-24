@@ -406,5 +406,18 @@ def concept_ships() -> list:
                      'manufacturer_code': codes.get(_norm(s.get('manufacturer'))), 'msrp': s.get('msrp'),
                      'role': s.get('focus'), 'vehicle_type': 'ship', 'is_concept': True, 'concept_status': status,
                      'price_key': hist.get(s['_id']) or f"rsi:{s['_id']}", 'link': s.get('link')})
+    _attach_concept_zh(rows)
     rows.sort(key=lambda r: r['name'].lower())
     return rows
+
+
+def _attach_concept_zh(rows: list) -> None:
+    """概念船的中文（遊戲資料沒有這些船，用英文名反查翻譯）：船名試「名稱」「廠商第一個字＋名稱」「廠商全名＋名稱」
+    （RSI 商店的名稱常少了廠商前綴，翻譯包是遊戲內全名），查不到就沒有 name_zh；角色用 RSI 的 focus 查。
+    翻譯包也沒有的，可以在 src/data/sc_translation_manual.json 的 vehicle 加人工條目（id＝英文船名）。"""
+    from src.sc_zh import vehicle_name_zh, vehicle_role_zh
+    for r in rows:
+        name, mfr = r.get('name') or '', (r.get('manufacturer_name') or '').strip()
+        tries = [name] + ([f'{mfr.split()[0]} {name}', f'{mfr} {name}'] if mfr else [])
+        r['name_zh'] = next((zh for t in tries if (zh := vehicle_name_zh(name=t))), None)
+        r['role_zh'] = vehicle_role_zh(r.get('role')) if r.get('role') else None
