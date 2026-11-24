@@ -34,3 +34,15 @@ assert.equal(enc, 'g:FRAME=800,EMITTER=500')
 assert.deepEqual(decodeQualities(enc), { g: { FRAME: 800, EMITTER: 500 } })
 assert.deepEqual(decodeQualities('x:A=5000;bad;y:'), { x: { A: 1000 } })
 console.log('loadoutCraft ok')
+
+// 實際數值：Q1000 傷害 ×1.05
+{
+  const { appliedStats } = await import('./loadoutCraft.js')
+  const slots = [{ key: 'BARREL', modifiers: [{ key: 'weapon_damage', name: 'Impact Force', type: 'linear', q_min: 0, q_max: 1000, at_min: 0.95, at_max: 1.05 }] }]
+  const it = { type: 'WeaponGun', hp: 100, stats: { alpha: 100, dps: 200 } }
+  const rows = appliedStats(it, slots, { BARREL: 1000 })
+  assert.deepEqual(rows.map(r => r.label), ['單發傷害', 'DPS'])
+  assert.ok(Math.abs(rows[0].after - 105) < 1e-9 && rows[0].before === 100)
+  assert.equal(it.stats.alpha, 100, '不改到原本的配件')
+  assert.deepEqual(appliedStats(null, slots, {}), [])
+}

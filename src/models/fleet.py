@@ -16,6 +16,7 @@ from bson import ObjectId
 from pymongo.errors import BulkWriteError
 
 from src.models.blueprint import _redact_contact
+from src.models import name_search
 from src.models.item import VehicleMaster
 from src.mongo import get_db
 
@@ -427,11 +428,37 @@ class Fleet:
         已軟刪除的登記、已軟刪除的玩家都不列；不回傳玩家自己寫的備註 notes。
         回傳 (rows, total)。
         """
+        rows, total = cls._admin_page(query, player, vehicle_uuids, sort, sort_dir, limit, offset)
+        if not total and vehicle_uuids is None and name_search.tokens(query):
+            # 名稱搜尋規則（見 src/models/name_search.py）：字首比對找不到才退回任意位置
+            rows, total = cls._admin_page(query, player, vehicle_uuids, sort, sort_dir, limit, offset, loose=True)
+        masters = VehicleMaster.by_ids(r.get('vehicle_uuid') for r in rows)
+        out = []
+        for r in rows:
+            p = r.get('player') or {}
+            out.append({
+                '_id': str(r['_id']),
+                'vehicle_uuid': r.get('vehicle_uuid'),
+                'name': r.get('name'),
+                'quantity': r.get('quantity'),
+                'loadout_links': r.get('loadout_links') or [],
+                'created_at': r.get('created_at'),
+                'updated_at': r.get('updated_at'),
+                'player': {'_id': str(p['_id']) if p.get('_id') else None,
+                           'star_citizen_id': p.get('star_citizen_id'),
+                           'nickname': p.get('nickname'),
+                           'player_name': p.get('player_name')} if p else None,
+                'vehicle': _vehicle_summary(masters.get(r.get('vehicle_uuid'))),
+            })
+        return out, total
+
+    @classmethod
+    def _admin_page(cls, query, player, vehicle_uuids, sort, sort_dir, limit, offset, loose=False) -> tuple:
         match: dict = {'deleted_at': None}
         if vehicle_uuids is not None:
             match['vehicle_uuid'] = {'$in': list(vehicle_uuids)}
-        elif (query or '').strip():
-            match['name'] = {'$regex': re.escape(query.strip()), '$options': 'i'}
+        else:
+            match = name_search.merge(match, name_search.text_fields_filter(query, ['name'], loose=loose))
 
         pipeline: list = [
             {'$match': match},
@@ -459,25 +486,7 @@ class Fleet:
         result = next(iter(cls._col().aggregate(pipeline, allowDiskUse=True)), {}) or {}
         rows = result.get('rows') or []
         total = (result.get('total') or [{}])[0].get('n', 0)
-        masters = VehicleMaster.by_ids(r.get('vehicle_uuid') for r in rows)
-        out = []
-        for r in rows:
-            p = r.get('player') or {}
-            out.append({
-                '_id': str(r['_id']),
-                'vehicle_uuid': r.get('vehicle_uuid'),
-                'name': r.get('name'),
-                'quantity': r.get('quantity'),
-                'loadout_links': r.get('loadout_links') or [],
-                'created_at': r.get('created_at'),
-                'updated_at': r.get('updated_at'),
-                'player': {'_id': str(p['_id']) if p.get('_id') else None,
-                           'star_citizen_id': p.get('star_citizen_id'),
-                           'nickname': p.get('nickname'),
-                           'player_name': p.get('player_name')} if p else None,
-                'vehicle': _vehicle_summary(masters.get(r.get('vehicle_uuid'))),
-            })
-        return out, total
+        return rows, total
 
     # ── 公會互查：誰有這款船 ────────────────────────────────────────
 

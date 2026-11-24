@@ -11,6 +11,8 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
+from src.limiter import limiter
+from src.timeutil import iso_utc
 from src.permissions import READ_ROLES, WRITE_ROLES, admin_api, viewer_sees_hidden, public_api
 
 from src.models.log import Log
@@ -250,19 +252,16 @@ def set_mineral_uex(resource_key):
 
 # ── 礦物取得方式（後台手動填寫，見 src/models/mineral_source.py）─────────────
 
-def _iso(v):
-    return v.isoformat() + 'Z' if hasattr(v, 'isoformat') else v
-
-
 def _source_out(doc: dict) -> dict:
     out = {k: v for k, v in doc.items() if k != '_id'}
     out['key'] = doc['_id']
-    out['updated_at'] = _iso(doc.get('updated_at'))
+    out['updated_at'] = iso_utc(doc.get('updated_at'))
     return out
 
 
 @app_mining.route('/sources', methods=['GET'])
 @public_api
+@limiter.limit('120 per minute')
 def list_mineral_sources():
     """礦物的取得方式（要先完成特殊行動、任務、活動才挖得到等，遊戲資料沒有的資訊，後台手動填寫）。
     ---
@@ -273,7 +272,7 @@ def list_mineral_sources():
     """
     auto = mineral_source.auto_sources()
     for a in auto.values():
-        a['synced_at'] = _iso(a.get('synced_at'))
+        a['synced_at'] = iso_utc(a.get('synced_at'))
     return jsonify({'success': True, 'data': [_source_out(d) for d in mineral_source.list_all()],
                     'auto': list(auto.values()), 'methods_label': mineral_source.METHOD_LABELS})
 

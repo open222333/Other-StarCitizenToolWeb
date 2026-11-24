@@ -68,24 +68,10 @@
               </span>
             </div>
             <!-- 有設多批材料時，品質＝各批的加權平均（品質 × 數量 加總 ÷ 數量加總），單一品質的拉條改成唯讀 -->
-            <div class="d-flex align-items-center gap-2">
-              <label class="bq-muted mb-0 text-nowrap" :for="`bq-${uid}-${slot.key}`">{{ hasBatches(slot) ? '平均品質' : '品質' }}</label>
-              <input :id="`bq-${uid}-${slot.key}`" v-model.number="qualities[slot.key]" type="range"
-                class="flex-grow-1 bq-range" :min="QUALITY_MIN" :max="QUALITY_MAX" step="1" :disabled="hasBatches(slot)"
-                :style="{ '--bq-fill': `${(qualities[slot.key] / QUALITY_MAX) * 100}%` }">
-              <!-- 輸入值限制在 Q0～Q1000（整數），超出就夾回端點 -->
-              <input :value="hasBatches(slot) ? Number(qualities[slot.key].toFixed(1)) : qualities[slot.key]" type="number"
-                class="form-control form-control-sm bq-qnum" :disabled="hasBatches(slot)"
-                :min="QUALITY_MIN" :max="QUALITY_MAX" step="1" :aria-label="`${slot.name} 品質`"
-                @change="qualities[slot.key] = clampQuality($event.target.value); $event.target.value = qualities[slot.key]">
-            </div>
-            <!-- MIN＝這個材料能用的最低品質、MID＝Q500、MAX＝Q1000；多批材料時改用下面每一批的品質 -->
+            <QualitySlider v-model="qualities[slot.key]" :id="`bq-${uid}-${slot.key}`" :label="hasBatches(slot) ? '平均品質' : '品質'"
+              :name="`${slot.name} 品質`" :min-quality="hasBatches(slot) ? 0 : minQualityOf(slot)" :disabled="hasBatches(slot)"
+              :decimals="hasBatches(slot) ? 1 : 0" :presets="!hasBatches(slot)" />
             <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
-              <div v-if="!hasBatches(slot)" class="btn-group btn-group-sm bq-presets" role="group" :aria-label="`${slot.name} 品質快速設定`">
-                <button type="button" class="btn btn-info" @click="qualities[slot.key] = Math.max(QUALITY_MIN, minQualityOf(slot))">MIN</button>
-                <button type="button" class="btn btn-info" @click="qualities[slot.key] = Math.round((QUALITY_MIN + QUALITY_MAX) / 2)">MID</button>
-                <button type="button" class="btn btn-info" @click="qualities[slot.key] = QUALITY_MAX">MAX</button>
-              </div>
               <button type="button" class="btn btn-sm btn-success" @click="addBatch(slot)">
                 <i class="bi bi-plus-lg me-1"></i>{{ hasBatches(slot) ? '再加一批' : '多批材料' }}
               </button>
@@ -137,8 +123,8 @@
                 <span v-else-if="requiredQty(slot) !== null && batchTotal(slot) > requiredQty(slot) + 1e-9" class="bq-warn ms-1">多了 {{ fmtQty(batchTotal(slot) - requiredQty(slot), unitOf(slot)) }}</span>
               </div>
             </div>
-            <div v-if="qualities[slot.key] < minQualityOf(slot)" class="bq-warn">
-              低於最低品質 Q{{ minQualityOf(slot) }}，這個材料不能用
+            <div v-if="hasBatches(slot) && qualities[slot.key] < minQualityOf(slot)" class="bq-warn">
+              平均品質低於最低品質 Q{{ minQualityOf(slot) }}，這個材料不能用
             </div>
             <!-- 這個部位目前品質下，各屬性的加成（直接列「屬性 加成」，不再列 Q0／Q500／Q1000 對照表） -->
             <div v-if="slot.modifiers.length" class="bq-mods mt-1">
@@ -222,10 +208,11 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import {
-  QUALITY_MAX, QUALITY_MIN, applyToBase, combine, fmtModifier, fmtPercent, fmtStat, improves, isAdditive,
+  QUALITY_MAX, QUALITY_MID, QUALITY_MIN, applyToBase, clampQuality, minQualityOf, combine, fmtModifier, fmtPercent, fmtStat, improves, isAdditive,
   modifierAt, requiredQuality, statKey,
 } from '@/utils/craftQuality'
 import { loadTranslations, translate } from '@/utils/translations'
+import QualitySlider from '@/components/QualitySlider.vue'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
@@ -233,7 +220,7 @@ const props = defineProps({
   blueprintUuid: { type: String, required: true },
 })
 
-const PRESETS = [{ q: 0, label: 'Q0 最低' }, { q: 500, label: 'Q500 中間' }, { q: 1000, label: 'Q1000 最高' }]
+const PRESETS = [{ q: QUALITY_MIN, label: 'Q0 最低' }, { q: QUALITY_MID, label: 'Q500 中間' }, { q: QUALITY_MAX, label: 'Q1000 最高' }]
 const uid = Math.random().toString(36).slice(2, 8)
 
 const data = ref(null)
@@ -451,11 +438,6 @@ watch(batches, () => {
 }, { deep: true })
 
 /** 部位品質夾在 Q0～Q1000 的整數；輸入不是數字就回到 Q0 */
-function clampQuality(value) {
-  const v = Math.round(Number(value))
-  if (Number.isNaN(v)) return QUALITY_MIN
-  return Math.min(QUALITY_MAX, Math.max(QUALITY_MIN, v))
-}
 
 function fmtTargetEnd(r, v) {
   return usesBase(r) ? fmtStat(v, baseOf(r).unit) : fmtModifier(v, r.additive)
@@ -490,10 +472,6 @@ function setAll(q) {
 }
 const allAt = q => Object.keys(qualities).length > 0 && Object.values(qualities).every(v => v === q)
 
-function minQualityOf(slot) {
-  return Math.min(...(slot.options || []).map(o => o.min_quality || 0), Infinity) === Infinity
-    ? 0 : Math.min(...slot.options.map(o => o.min_quality || 0))
-}
 
 function optionLabel(o) {
   if (!o) return '—'

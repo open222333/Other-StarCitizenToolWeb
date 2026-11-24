@@ -125,9 +125,11 @@ def auto_sources() -> dict:
 
     key 用商品的 key（遊戲內代碼，跟礦床成分的 resource_key 一樣，例如 Carinite、CarinitePure）。
     """
+    col = get_db()['commodity_master']
+    q = {'is_current': {'$ne': False}, 'is_mineable': True}
     out = {}
-    rows = get_db()['commodity_master'].find(
-        {'is_current': {'$ne': False}, 'is_mineable': True},
+    rows = col.find(
+        q,
         {'key': 1, 'name': 1, 'methods': 1, 'systems': 1, 'location_count': 1, 'description': 1, 'web_url': 1,
          'raw.methods': 1, 'raw.locations': 1, 'raw.description': 1, '_sync': 1})
     for r in rows:
@@ -141,6 +143,7 @@ def auto_sources() -> dict:
             desc = None
         out[r['key']] = {
             'key': r['key'], 'resource_name': r.get('name'), 'methods': [AUTO_METHOD],
+            # _desc_zh → T.by_english 有行程內快取（翻譯版本變了才清），每筆一次查詢只發生在冷快取
             'description_en': desc, 'description_zh': _desc_zh(desc),
             'web_url': r.get('web_url'), 'source': 'Star Citizen Wiki API',
             'synced_at': (r.get('_sync') or {}).get('at'),

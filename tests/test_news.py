@@ -164,3 +164,41 @@ def test_featured_and_unlisted_tags(client, auth_headers):
     assert client.get('/news/').get_json()['total'] == 6
     assert client.put('/news/admin/tag-settings', json={'tag': '', 'listed': False}, headers=auth_headers).status_code == 400
     assert client.put('/news/admin/tag-settings', json={'tag': 'x', 'listed': False}).status_code in (401, 403)
+
+
+def test_tag_display(client, auth_headers):
+    """標籤顯示方式：官方、社群預設在分類列，其他（含 API 新帶進來的）預設在「更多」；後台可以改、可以排分類列順序。"""
+    for tg in (['官方'], ['社群'], ['活動'], ['外部新標籤']):
+        _create(client, auth_headers, title=tg[0], tags=tg)
+    pub = {r['tag']: r for r in client.get('/news/tags').get_json()['data']}
+    assert pub['官方']['display'] == 'main' and pub['社群']['display'] == 'main'
+    assert pub['活動']['display'] == 'more' and pub['外部新標籤']['display'] == 'more'
+
+    put = lambda **b: client.put('/news/admin/tag-settings', json=b, headers=auth_headers)   # noqa: E731
+    assert put(tag='活動', display='main', order=0).get_json()['data']['display'] == 'main'
+    assert put(tag='官方', display='main', order=1).status_code == 200
+    assert put(tag='社群', display='more').status_code == 200
+    assert put(tag='x', display='bad').status_code == 400
+    from src.models import news as N
+    rows = N.public_tags()
+    assert [r['tag'] for r in rows if r['display'] == 'main'] == ['活動', '官方']
+    assert {r['tag'] for r in rows if r['display'] == 'more'} == {'社群', '外部新標籤'}
+    assert put(tag='外部新標籤', display='hidden').status_code == 200
+    assert '外部新標籤' not in {r['tag'] for r in N.public_tags()}
+    admin = client.get('/news/admin/tag-settings', headers=auth_headers).get_json()['data']
+    assert [r['tag'] for r in admin] == ['活動', '官方', '社群', '外部新標籤']
+    assert admin[-1]['display'] == 'hidden' and admin[-1]['listed'] is False
+
+
+def test_date_range(client, auth_headers):
+    """日期篩選：since 含、until 不含；格式不對回 400；未來排程的照樣不出現。"""
+    _create(client, auth_headers, title='前天', published_at='2026-11-21T10:00:00Z')
+    _create(client, auth_headers, title='昨天', published_at='2026-11-22T10:00:00Z')
+    _create(client, auth_headers, title='今天', published_at='2026-11-23T00:00:00Z')
+    _create(client, auth_headers, title='未來', published_at='2099-01-01T00:00:00Z')
+    t = lambda **p: [n['title'] for n in client.get('/news/', query_string=p).get_json()['data']]   # noqa: E731
+    assert t(since='2026-11-22T00:00:00Z', until='2026-11-23T00:00:00Z') == ['昨天']
+    assert t(since='2026-11-23T00:00:00Z') == ['今天']
+    assert t(since='2026-11-22T08:00:00+08:00') == ['今天', '昨天']
+    assert t(until='2026-11-22T00:00:00Z') == ['前天']
+    assert client.get('/news/?since=昨天').status_code == 400

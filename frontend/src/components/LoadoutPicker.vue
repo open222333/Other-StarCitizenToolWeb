@@ -7,9 +7,9 @@
 <template>
   <SfModal id="lo-picker" :open="open" :title="title" icon="bi bi-arrow-left-right" width="1180px" @update:open="$emit('update:open', $event)">
     <div class="lpk-top">
-      <div class="lpk-search">
-        <i class="bi bi-search lpk-search__icon" aria-hidden="true"></i>
-        <input v-model="query" type="search" class="lpk-search__input" :placeholder="placeholder" aria-label="搜尋配件">
+      <div class="lpk-search sf-search-pill">
+        <i class="bi bi-search sf-search-pill__icon" aria-hidden="true"></i>
+        <input v-model="query" type="search" class="sf-search-pill__input" :placeholder="placeholder" aria-label="搜尋配件">
       </div>
       <div v-for="g in groups" :key="g.key" class="lpk-filter">
         <div :id="`lpk-f-${g.key}`" class="lpk-filter__label">{{ g.label }}</div>
@@ -80,14 +80,16 @@
 </template>
 
 <script setup>
+import { filterByName } from '@/utils/nameSearch'
 import { computed, inject, reactive, ref, watch } from 'vue'
 import SfModal from '@/components/SfModal.vue'
 import SfState from '@/components/SfState.vue'
 import SortTh from '@/components/SortTh.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import { compareValues } from '@/composables/useTableSort'
-import { CLASS_LABEL, columnsFor, dmgKind, dmgLabel, filterGroups, mainType, weaponKind, weaponKindLabel } from '@/utils/loadoutPicker'
+import { columnsFor, dmgKind, dmgLabel, filterGroups, mainType, weaponKind, weaponKindLabel } from '@/utils/loadoutPicker'
 import { manufacturerShort } from '@/utils/vehicle'
+import { classLabel } from '@/utils/loadoutLabels'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -125,13 +127,12 @@ const cols = computed(() => [...columnsFor(main.value, lo.primary), PRICE_COL])
 const placeholder = computed(() => `搜尋 ${[props.slotText, main.value ? lo.typeLabel([main.value]) : '配件'].filter(Boolean).join(' ')}…`)
 
 const rows = computed(() => {
-  const q = query.value.trim().toLowerCase()
   const mf = new Set(mfrs.value)
-  return props.items.filter(it => groups.value.every(g => !picked[g.key] || g.get(it) === picked[g.key])
+  const base = props.items.filter(it => groups.value.every(g => !picked[g.key] || g.get(it) === picked[g.key])
     && (!mf.size || mf.has(mfrKey(it)))
-    && (!acquire.value || (acquire.value === 'buy' ? it.buyable : !!it.blueprint))
-    && (!q || [it.name, it.name_zh, it.manufacturer, it.manufacturer_name, it.class_name, manufacturerShort(it.manufacturer_name, it.manufacturer)]
-      .some(x => (x || '').toLowerCase().includes(q))))
+    && (!acquire.value || (acquire.value === 'buy' ? it.buyable : !!it.blueprint)))
+  return filterByName(base, query.value, it => [it.name, it.name_zh, it.manufacturer, it.manufacturer_name, it.class_name,
+    manufacturerShort(it.manufacturer_name, it.manufacturer)]).rows
 })
 
 // 排序：數值欄第一次點由大到小（越大越好的居多），名稱由小到大；同一欄再點反過來
@@ -179,7 +180,7 @@ watch(main, () => {
 function subOf(it) {
   const kind = it.type === 'WeaponGun' ? weaponKindLabel(weaponKind(it))
     : it.type !== main.value ? lo.typeLabel([`${it.type}.${it.sub_type}`])
-      : [it.grade, CLASS_LABEL[it.item_class] || it.item_class].filter(Boolean).join(' ')
+      : [it.grade, classLabel(it.item_class)].filter(Boolean).join(' ')
   const en = it.name_zh && it.name_zh !== it.name ? it.name : ''
   return [manufacturerShort(it.manufacturer_name, it.manufacturer), kind, en].filter(x => x && x !== '—').join(' · ')
 }
@@ -192,15 +193,7 @@ function pick(it) {
 <style scoped>
 /* ── 上方：大搜尋框＋分段篩選 ── */
 .lpk-top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem 1rem; margin-bottom: 1rem; }
-.lpk-search { position: relative; flex: 1 1 18rem; min-width: 14rem; }
-.lpk-search__icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--sf-text-muted); pointer-events: none; }
-.lpk-search__input {
-  width: 100%; height: 2.75rem; padding: 0 1rem 0 2.6rem; border-radius: .6rem; font-size: var(--sf-fs-base);
-  color: var(--sf-text-strong); background: var(--sf-chip-bg); border: 1px solid var(--sf-border); outline: none;
-  transition: border-color .15s, box-shadow .15s;
-}
-.lpk-search__input::placeholder { color: var(--sf-text-muted); }
-.lpk-search__input:focus { border-color: var(--sf-accent); box-shadow: 0 0 0 3px rgba(var(--sf-accent-rgb), .2); }
+.lpk-search { flex: 1 1 18rem; min-width: 14rem; }
 .lpk-filter { flex: 0 1 auto; min-width: 0; }
 .lpk-filter__label { display: block; font-size: var(--sf-fs-xs); font-weight: 700; letter-spacing: .08em; color: var(--sf-text-muted); margin-bottom: .3rem; }
 .lpk-seg { display: inline-flex; flex-wrap: wrap; gap: .2rem; padding: .25rem; border-radius: .6rem;

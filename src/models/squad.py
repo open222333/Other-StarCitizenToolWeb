@@ -1,12 +1,16 @@
 """戰術小隊分配表（玩家頁「工具箱 › 戰術小隊」，計劃見 docs/戰術小隊分配表實作計劃.md）。
 
-一張表一筆文件（squad_boards），小隊 → 艦船 → 人員都嵌在裡面，一次讀寫整張：
+一張表一筆文件（squad_boards），艦隊 → 小隊 → 艦船 → 人員都嵌在裡面，一次讀寫整張：
 
     {title, event_at, note, owner_scid, share_token, rev, created_at, updated_at, updated_by,
-     squads: [{id, name, note, leader,
-               ships:   [{id, vehicle_id, vehicle_name, label, crew: [人員…]}],
-               members: [人員…]}]}            # members＝小隊裡不在船上的人
-    人員：{id, scid, name, role}             # scid 是 None＝沒註冊網站的人，只記名字
+     fleets: [{id, name, note,
+               squads: [{id, name, note, leader,
+                         ships:   [{id, vehicle_id, vehicle_name, label, crew: [人員…]}],
+                         members: [人員…]}]}]}     # members＝小隊裡不在船上的人
+    人員：{id, scid, name, roles: [職位…]}      # scid 是 None＝沒註冊網站的人，只記名字；職位可兼職（最多 MAX_ROLES 個）
+
+- 舊資料（沒有艦隊那一層的 squads、人員只有一個 role）讀取時用 upgrade() 轉成新格式：
+  全部小隊放進一個預設艦隊、role 變成 [role]；下次儲存就寫成新格式（順便 $unset 舊的 squads）。
 
 - 登入玩家都能建立、看全部的表；只有建立者能改、刪、設定分享。
 - 分享碼（secrets.token_urlsafe）開啟後，不登入也能用 /player/squads/shared/<碼> 唯讀看。
@@ -33,7 +37,8 @@ from src.mongo import get_db
 COLLECTION = 'squad_boards'
 
 MAX_BOARDS_PER_OWNER = 50
-MAX_SQUADS = 20
+MAX_FLEETS = 10
+MAX_SQUADS = 20           # 整張表（所有艦隊加起來）
 MAX_SHIPS_PER_SQUAD = 30
 MAX_PEOPLE = 300
 MAX_TITLE = 60
@@ -41,6 +46,7 @@ MAX_NOTE = 500
 MAX_NAME = 40
 MAX_ROLE = 40
 MAX_LABEL = 40
+MAX_ROLES = 3
 
 #: 職位下拉的預設選項（前端也可以自填）
 DEFAULT_ROLES = ['駕駛', '副駕駛', '砲手', '工程師', '醫療', '陸戰', '其他']
@@ -66,6 +72,44 @@ def _oid(board_id):
         return ObjectId(str(board_id))
     except (InvalidId, TypeError):
         return None
+
+
+def _roles_of(raw: dict) -> list:
+    """人員的職位清單：新格式 roles，舊格式 role（字串）轉成 [role]；去空白、去重複，順序照原本。"""
+    roles = raw.get('roles')
+    if roles is None:
+        roles = [raw.get('role')] if raw.get('role') else []
+    if not isinstance(roles, list):
+        raise SquadError('職位資料格式錯誤')
+    out = []
+    for r in roles:
+        t = _text(r, MAX_ROLE, '職位')
+        if t and t not in out:
+            out.append(t)
+    if len(out) > MAX_ROLES:
+        raise SquadError(f'每人最多兼 {MAX_ROLES} 個職位')
+    return out
+
+
+def upgrade(doc: dict) -> dict:
+    """舊格式轉新格式（直接改 doc，回傳同一個）：沒有 fleets 的把 squads 放進預設艦隊；人員 role → roles。"""
+    if not isinstance(doc.get('fleets'), list):
+        doc['fleets'] = [{'id': 'f0', 'name': '艦隊 1', 'note': '', 'squads': doc.get('squads') or []}]
+    doc.pop('squads', None)
+    for p in _iter_people(doc):
+        if 'roles' not in p:
+            p['roles'] = [p['role']] if p.get('role') else []
+        p.pop('role', None)
+    return doc
+
+
+def _squads(board: dict):
+    """表裡全部的小隊（新格式走艦隊；還沒轉的舊格式直接看 squads）。"""
+    if isinstance(board.get('fleets'), list):
+        for f in board['fleets']:
+            yield from f.get('squads') or []
+    else:
+        yield from board.get('squads') or []
 
 
 def _text(value, limit: int, label: str, *, required: bool = False) -> str:
@@ -111,10 +155,17 @@ def clean_board(data: dict) -> dict:
         raise SquadError('行動時間格式錯誤')
     note = _text(data.get('note'), MAX_NOTE, '備註')
 
-    raw_squads = data.get('squads') or []
-    if not isinstance(raw_squads, list):
-        raise SquadError('小隊資料格式錯誤')
-    if len(raw_squads) > MAX_SQUADS:
+    # 舊版前端只送 squads（沒有艦隊）：放進一個預設艦隊
+    raw_fleets = data.get('fleets')
+    if raw_fleets is None:
+        raw_fleets = [{'name': '', 'squads': data.get('squads') or []}]
+    if not isinstance(raw_fleets, list):
+        raise SquadError('艦隊資料格式錯誤')
+    if len(raw_fleets) > MAX_FLEETS:
+        raise SquadError(f'艦隊最多 {MAX_FLEETS} 個')
+    if any(not isinstance(f, dict) or not isinstance(f.get('squads') or [], list) for f in raw_fleets):
+        raise SquadError('艦隊資料格式錯誤')
+    if sum(len(f.get('squads') or []) for f in raw_fleets) > MAX_SQUADS:
         raise SquadError(f'小隊最多 {MAX_SQUADS} 個')
 
     ids = _Ids()
@@ -126,13 +177,11 @@ def clean_board(data: dict) -> dict:
             raise SquadError('人員資料格式錯誤')
         scid = str(raw.get('scid') or '').strip() or None
         name = _text(raw.get('name'), MAX_NAME, '人員名稱', required=not scid)
-        out = {'id': ids.take(raw.get('id'), 'm'), 'scid': scid, 'name': name,
-               'role': _text(raw.get('role'), MAX_ROLE, '職位')}
+        out = {'id': ids.take(raw.get('id'), 'm'), 'scid': scid, 'name': name, 'roles': _roles_of(raw)}
         people.append(out)
         return out
 
-    squads = []
-    for i, rs in enumerate(raw_squads):
+    def squad(rs, n) -> dict:
         if not isinstance(rs, dict):
             raise SquadError('小隊資料格式錯誤')
         raw_ships = rs.get('ships') or []
@@ -156,15 +205,27 @@ def clean_board(data: dict) -> dict:
                           'label': _text(rv.get('label'), MAX_LABEL, '艦船識別名稱'),
                           'crew': [person(p) for p in crew]})
         members = [person(p) for p in raw_members]
-        squad = {'id': ids.take(rs.get('id'), 's'),
-                 'name': _text(rs.get('name'), MAX_NAME, '小隊名稱') or f'小隊 {i + 1}',
-                 'note': _text(rs.get('note'), MAX_NOTE, '小隊備註'),
-                 'leader': None, 'ships': ships, 'members': members}
+        out = {'id': ids.take(rs.get('id'), 's'),
+               'name': _text(rs.get('name'), MAX_NAME, '小隊名稱') or f'小隊 {n}',
+               'note': _text(rs.get('note'), MAX_NOTE, '小隊備註'),
+               'leader': None, 'ships': ships, 'members': members}
         member_ids = {p['id'] for p in members} | {p['id'] for v in ships for p in v['crew']}
         leader = str(rs.get('leader') or '')
         # 前端的 leader 指的是前端的人員 id；id 被重新產生時就對不上，當作沒設
-        squad['leader'] = leader if leader in member_ids else None
-        squads.append(squad)
+        out['leader'] = leader if leader in member_ids else None
+        return out
+
+    fleets = []
+    n_squad = 0
+    for fi, rf in enumerate(raw_fleets):
+        squads = []
+        for rs in rf.get('squads') or []:
+            n_squad += 1
+            squads.append(squad(rs, n_squad))
+        fleets.append({'id': ids.take(rf.get('id'), 'f'),
+                       'name': _text(rf.get('name'), MAX_NAME, '艦隊名稱') or f'艦隊 {fi + 1}',
+                       'note': _text(rf.get('note'), MAX_NOTE, '艦隊備註'),
+                       'squads': squads})
 
     if len(people) > MAX_PEOPLE:
         raise SquadError(f'人員最多 {MAX_PEOPLE} 人')
@@ -183,15 +244,16 @@ def clean_board(data: dict) -> dict:
     missing = sorted(vehicle_ids - set(vehicles))
     if missing:
         raise SquadError('找不到艦船，請重新選船')
-    for s in squads:
-        for v in s['ships']:
-            v['vehicle_name'] = vehicles[v['vehicle_id']].get('name') or v['vehicle_id']
+    for f in fleets:
+        for sq in f['squads']:
+            for v in sq['ships']:
+                v['vehicle_name'] = vehicles[v['vehicle_id']].get('name') or v['vehicle_id']
 
-    return {'title': title, 'event_at': event_at, 'note': note, 'squads': squads}
+    return {'title': title, 'event_at': event_at, 'note': note, 'fleets': fleets}
 
 
 def _iter_people(board: dict):
-    for s in board.get('squads') or []:
+    for s in _squads(board):
         for v in s.get('ships') or []:
             yield from v.get('crew') or []
         yield from s.get('members') or []
@@ -203,8 +265,9 @@ def _iso(dt):
 
 
 def _stats(board: dict) -> dict:
-    squads = board.get('squads') or []
+    squads = list(_squads(board))
     return {
+        'fleet_count': len(board['fleets']) if isinstance(board.get('fleets'), list) else 1,
         'squad_count': len(squads),
         'ship_count': sum(len(s.get('ships') or []) for s in squads),
         'people_count': sum(1 for _ in _iter_people(board)),
@@ -221,9 +284,9 @@ def _refresh(board: dict) -> dict:
         if info:
             p['name'] = info['nickname'] or p['scid']
         p['registered'] = bool(info)
-    vids = {v.get('vehicle_id') for s in board.get('squads') or [] for v in s.get('ships') or []}
+    vids = {v.get('vehicle_id') for s in _squads(board) for v in s.get('ships') or []}
     vehicles = VehicleMaster.by_ids(vids) if vids else {}
-    for s in board.get('squads') or []:
+    for s in _squads(board):
         for v in s.get('ships') or []:
             master = vehicles.get(v.get('vehicle_id')) or {}
             if master.get('name'):
@@ -238,7 +301,7 @@ def _owner_name(scids) -> dict:
 
 
 def _serialize(doc: dict, viewer_scid: str) -> dict:
-    out = {k: v for k, v in doc.items() if k != '_id'}
+    out = upgrade({k: v for k, v in doc.items() if k != '_id'})
     out['id'] = str(doc['_id'])
     for k in ('created_at', 'updated_at'):
         out[k] = _iso(out.get(k))
@@ -247,6 +310,7 @@ def _serialize(doc: dict, viewer_scid: str) -> dict:
         out['share_token'] = None     # 分享碼只給建立者看（別人看了也不能做什麼，但沒必要給）
     out['owner_name'] = _owner_name([doc.get('owner_scid')]).get(doc.get('owner_scid'))
     out['default_roles'] = DEFAULT_ROLES
+    out['max_roles'] = MAX_ROLES
     return _refresh(out)
 
 
@@ -278,7 +342,7 @@ class SquadBoard:
         if _col().count_documents({'owner_scid': owner_scid}) >= MAX_BOARDS_PER_OWNER:
             raise SquadError(f'每人最多 {MAX_BOARDS_PER_OWNER} 張分配表，請先刪掉不用的')
         if copy_from:
-            src = {k: copy_from.get(k) for k in ('title', 'event_at', 'note', 'squads')}
+            src = upgrade({k: copy_from.get(k) for k in ('title', 'event_at', 'note', 'squads', 'fleets') if k in copy_from})
             src['title'] = (str(data.get('title') or '').strip() if data else '') or \
                 f'{copy_from.get("title") or ""}（複本）'[:MAX_TITLE]
             body = clean_board(src)
@@ -301,6 +365,7 @@ class SquadBoard:
         updated = _col().find_one_and_update(
             {'_id': doc['_id'], 'rev': rev},
             {'$set': {**body, 'updated_at': datetime.utcnow(), 'updated_by': editor_scid},
+             '$unset': {'squads': ''},           # 舊格式（沒有艦隊那一層）的欄位
              '$inc': {'rev': 1}},
             return_document=ReturnDocument.AFTER,
         )
@@ -332,19 +397,14 @@ class SquadBoard:
     @staticmethod
     def public_view(doc: dict) -> dict:
         """公開頁的資料：逐欄位挑（白名單），人員只有顯示名稱、是否註冊和職位。"""
-        board = _refresh({'squads': doc.get('squads') or []})
+        board = _refresh(upgrade({k: doc.get(k) for k in ('squads', 'fleets') if k in doc}))
 
         def pub_person(p):
-            return {'id': p.get('id'), 'name': p.get('name') or '', 'role': p.get('role') or '',
+            return {'id': p.get('id'), 'name': p.get('name') or '', 'roles': list(p.get('roles') or []),
                     'registered': bool(p.get('registered'))}
 
-        return {
-            'title': doc.get('title') or '',
-            'event_at': doc.get('event_at') or '',
-            'note': doc.get('note') or '',
-            'owner_name': _owner_name([doc.get('owner_scid')]).get(doc.get('owner_scid')),
-            'updated_at': _iso(doc.get('updated_at')),
-            'squads': [{
+        def pub_squad(s):
+            return {
                 'id': s.get('id'), 'name': s.get('name') or '', 'note': s.get('note') or '',
                 'leader': s.get('leader'),
                 'ships': [{'id': v.get('id'), 'vehicle_name': v.get('vehicle_name') or '',
@@ -352,5 +412,15 @@ class SquadBoard:
                            'crew': [pub_person(p) for p in v.get('crew') or []]}
                           for v in s.get('ships') or []],
                 'members': [pub_person(p) for p in s.get('members') or []],
-            } for s in board['squads']],
+            }
+
+        return {
+            'title': doc.get('title') or '',
+            'event_at': doc.get('event_at') or '',
+            'note': doc.get('note') or '',
+            'owner_name': _owner_name([doc.get('owner_scid')]).get(doc.get('owner_scid')),
+            'updated_at': _iso(doc.get('updated_at')),
+            'fleets': [{'id': f.get('id'), 'name': f.get('name') or '', 'note': f.get('note') or '',
+                        'squads': [pub_squad(s) for s in f.get('squads') or []]}
+                       for f in board['fleets']],
         }

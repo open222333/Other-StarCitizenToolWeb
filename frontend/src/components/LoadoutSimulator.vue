@@ -280,13 +280,15 @@ import LoadoutPicker from '@/components/LoadoutPicker.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import LoadoutItemModal from '@/components/LoadoutItemModal.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
-import { LOCKED_QUALITY, applyQuality, avgQuality, decodeQualities, encodeQualities, isDefault as isDefaultQuality } from '@/utils/loadoutCraft'
+import { LOCKED_QUALITY, applyQuality, avgQuality, decodeQualities, encodeQualities, isDefault as isDefaultQuality, qualitiesOf } from '@/utils/loadoutCraft'
+import { clampQuality } from '@/utils/craftQuality'
 import { fmtAuec } from '@/utils/uexCommodity'
 import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel } from '@/utils/vehicle'
 import { fmtNum } from '@/utils/navFormat'
+import { DMG_LABEL, TRACK_LABEL, classLabel, loadLoadoutZh, typeLabel } from '@/utils/loadoutLabels'
 import {
   SECTIONS, WEAPON_GROUPS, decodeChanges, diff, encodeChanges, equip, findNode, fits, groupNodes, itemMap,
-  pathTo, sectionOf, summarize, tagsFor,
+  pathTo, sectionOf, summarize, tagsFor, walk,
 } from '@/utils/loadoutCalc'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/utils/toast'
@@ -403,6 +405,7 @@ const loadedTypes = new Set()
 const baseOf = id => (id ? itemCache.get(id) || null : null)
 const itemOf = id => (id ? crafted.value.get(id) || itemCache.get(id) || null : null)
 function addItems(list) {
+  loadLoadoutZh(list || [])
   for (const it of list || []) itemCache.set(it.id, it)
 }
 async function ensureIds(ids) {
@@ -457,6 +460,14 @@ function avgOf(it) {
   if (slotsQ) return avgQuality(slotsQ, qualities[it.id])
   const vals = Object.values(qualities[it.id] || {})
   return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : LOCKED_QUALITY
+}
+/** 槽位左側品質把手：每個部位各加減 delta（夾在 Q0～Q1000）；還沒載品質資料就先載 */
+async function nudgeQuality(it, delta) {
+  if (!it?.blueprint) return
+  const slotsQ = await qualityData(it.blueprint)
+  if (!slotsQ) { toast('讀取品質資料失敗。', 'danger'); return }
+  const cur = qualitiesOf(slotsQ, qualities[it.id])
+  setQuality(it.id, Object.fromEntries(Object.entries(cur).map(([k, v]) => [k, clampQuality(v + delta)])))
 }
 async function applyQualities(map) {
   for (const k of Object.keys(qualities)) delete qualities[k]
@@ -547,6 +558,10 @@ async function loadShip(id, lo, lq = '') {
   delete data.items
   delete data.slots
   ship.value = data
+  // 掛點可裝類型的中文（「更換武器」「砲塔／雲台」）
+  const nodeTypes = []
+  walk(tree, n => { nodeTypes.push(...(n.types || [])) })
+  loadLoadoutZh([], nodeTypes)
   defaults.value = itemMap(tree)
   slots.value = tree
   await applyChanges(decodeChanges(lo))
@@ -713,31 +728,10 @@ const sections = computed(() => {
     .map(sec => ({ ...sec, groups: groupNodes(by.get(sec.key), itemOf), chip: chips[sec.key] || '' }))
 })
 
-const TYPE_LABEL = {
-  WeaponGun: '武器', Turret: '砲塔／雲台', TurretBase: '砲塔', MissileLauncher: '飛彈架', Missile: '飛彈',
-  BombLauncher: '炸彈架', Bomb: '炸彈', Shield: '護盾', PowerPlant: '發電機', Cooler: '冷卻器', QuantumDrive: '量子引擎',
-  JumpDrive: '跳躍引擎', Radar: '雷達', WeaponDefensive: '反制發射器', WeaponMining: '採礦雷射', SalvageHead: '打撈頭',
-  TractorBeam: '牽引光束', MiningModifier: '採礦模組',
-}
-const SUB_LABEL = { Torpedo: '魚雷', Rocket: '火箭', GunTurret: '雲台', MannedTurret: '有人砲塔', PDCTurret: '點防禦砲塔',
-  BallTurret: '球形砲塔', TopTurret: '上方遙控砲塔', BottomTurret: '下方遙控砲塔', NoseMounted: '機鼻砲座',
-  CanardTurret: '鴨翼砲塔', MissileTurret: '飛彈砲塔', CountermeasureLauncher: '' }
-function typeLabel(types) {
-  const out = []
-  for (const t of types || []) {
-    const [b, s] = String(t).split('.')
-    const label = SUB_LABEL[s] || TYPE_LABEL[b] || b
-    if (label && !out.includes(label)) out.push(label)
-  }
-  return out.join('／')
-}
-const CLASS_LABEL = { Military: '軍用', Civilian: '民用', Industrial: '工業', Stealth: '隱形', Competition: '競賽' }
-const classLabel = c => (c ? CLASS_LABEL[c] || c : '')
 const itemLabel = it => it.name_zh || it.name
 const FACE_LABEL = { Quadrant: '四面護盾', Bubble: '單面護盾', FrontBack: '前後護盾' }
 const faceLabel = computed(() => FACE_LABEL[ship.value?.shield_face] || ship.value?.shield_face || '')
 
-const DMG_LABEL = { physical: '物理', energy: '能量', distortion: '扭曲', thermal: '熱能', biochemical: '生化', stun: '暈眩' }
 const dmgText = d => Object.entries(d || {}).filter(([, v]) => v).map(([k, v]) => `${DMG_LABEL[k] || k} ${fmtNum(v, 1)}`).join(' · ')
 const pct = v => `${fmtNum(v * 100)}%`
 const pctRange = r => (!r ? '—' : r[0] === r[1] ? pct(r[1]) : `${pct(r[0])}–${pct(r[1])}`)
@@ -775,6 +769,9 @@ function secondary(it) {
     case 'WeaponGun':
       add('單發', s.alpha, fmtNum(s.alpha, 1))
       add('爆發', s.dps, fmtNum(s.dps))
+      // 實彈：連續開火幾秒過熱、過熱後幾秒恢復；能量：電容滿電可連續開火幾秒、幾秒充滿
+      add('過熱', s.overheat_s, `${fmtNum(s.overheat_s, 1)} 秒開火 · ${fmtNum(s.overheat_fix_s ?? 0, 1)} 秒恢復`)
+      add('電容', s.cap_fire_s, `${fmtNum(s.cap_fire_s, 1)} 秒開火${s.cap_recharge_s != null ? ` · ${fmtNum(s.cap_recharge_s, 1)} 秒充滿` : ''}`)
       add('射速', s.rpm, `${fmtNum(s.rpm)}/分`)
       add('射程', s.range, `${fmtNum(s.range)} m`)
       add('彈速', s.speed, `${fmtNum(s.speed)} m/s`)
@@ -782,7 +779,7 @@ function secondary(it) {
       add('類型', dmgText(s.damage) || null, Object.keys(s.damage || {}).map(k => DMG_LABEL[k] || k).join('／'))
       break
     case 'Missile': case 'Bomb':
-      add('追蹤', s.tracking, { Electromagnetic: '電磁', Infrared: '紅外線', CrossSection: '截面' }[s.tracking] || s.tracking)
+      add('追蹤', s.tracking, TRACK_LABEL[s.tracking] || s.tracking)
       add('鎖定', s.lock_time, `${fmtNum(s.lock_time, 1)} 秒`)
       add('速度', s.speed, `${fmtNum(s.speed)} m/s`)
       add('鎖定距離', s.lock_range?.[1], `${fmtNum((s.lock_range?.[1] || 0) / 1000, 1)} km`)
@@ -890,7 +887,7 @@ async function choose(it) {
 }
 
 provide('loadout', { itemOf, open: openPicker, primary, secondary, itemLabel, typeLabel, classLabel,
-  openInfo, addCart, qualityData, qualityOf, setQuality, avgOf })
+  openInfo, addCart, qualityData, qualityOf, setQuality, avgOf, nudgeQuality })
 </script>
 
 <style scoped>

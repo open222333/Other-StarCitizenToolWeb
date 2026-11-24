@@ -335,6 +335,7 @@ UNGUARDED_ALLOWLIST = {
     'app_mission.list_missions',
     'app_mission.mission_facets',
     'app_mission.missions_for_blueprint',
+    'app_mission.missions_for_commodity',        # 礦物頁「用在哪些任務」，公開遊戲資料（有限流）
     'app_mission.list_factions',
     'app_mission.get_faction',
     'app_mission.get_mission',

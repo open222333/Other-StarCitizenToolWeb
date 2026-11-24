@@ -94,6 +94,13 @@ def loose_filter(query: str, f: NameFields) -> Optional[dict]:
     return {'$or': ors} if ors else None
 
 
+def text_fields_filter(query: str, fields: list, loose: bool = False) -> Optional[dict]:
+    """玩家自己登記的名稱（存原本大小寫的英文、或中文）用：同一套規則，loose=True 取放寬版。
+    給沒辦法用 find() 的聚合查詢——呼叫端先用嚴格版，查不到再用 loose=True 重查一次。"""
+    f = NameFields(zh=list(fields))
+    return loose_filter(query, f) if loose else strict_filter(query, f)
+
+
 def merge(base: dict, cond: Optional[dict]) -> dict:
     """把名稱條件 AND 進既有的查詢條件（不覆蓋既有的 $or／$and）。"""
     if not cond:

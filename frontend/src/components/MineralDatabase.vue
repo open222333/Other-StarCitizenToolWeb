@@ -166,7 +166,7 @@
                           placeholder="篩選藍圖名稱或類型" aria-label="篩選藍圖">
                         <table class="table table-sm align-middle mb-0 mdb-sub">
                           <thead>
-                            <tr><th>藍圖</th><th>類型</th><th class="text-end">用量</th><th class="ps-3">取得</th></tr>
+                            <tr><th>藍圖</th><th>類型</th><th class="text-end">用量</th><th class="ps-3">取得</th><th></th></tr>
                           </thead>
                           <tbody>
                             <tr v-for="b in bpShown(m)" :key="b._id">
@@ -179,12 +179,47 @@
                                 <span v-else-if="b.mission_count" class="sf-chip">任務 {{ b.mission_count }} 個</span>
                                 <span v-else class="small text-muted">—</span>
                               </td>
+                              <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-info text-nowrap" :aria-label="`${b.name_zh || b.name} 藍圖詳細`"
+                                  @click="openBlueprint(b, m)"><i class="bi bi-hammer me-1"></i>詳細</button>
+                              </td>
                             </tr>
                           </tbody>
                         </table>
                         <button v-if="bpFiltered(m).length > bpShown(m).length" type="button" class="btn btn-sm btn-secondary mt-2"
                           @click="bpAll = true">顯示全部 {{ bpFiltered(m).length }} 張</button>
                       </template>
+
+                      <!-- 用在哪些任務（要運送這種礦物的任務） -->
+                      <div class="mdb-sec mt-3">用在哪些任務
+                        <span v-if="msOf(m).rows" class="small text-muted fw-normal ms-1">{{ msOf(m).rows.length }} 個</span>
+                      </div>
+                      <div v-if="msOf(m).loading" class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>載入中…</div>
+                      <div v-else-if="msOf(m).error" class="small text-danger">{{ msOf(m).error }}
+                        <button type="button" class="btn btn-sm btn-secondary ms-2" @click="loadMissions(m, true)">重試</button></div>
+                      <p v-else-if="msOf(m).rows && !msOf(m).rows.length" class="small text-muted mb-0">沒有任務要運送這種礦物。</p>
+                      <template v-else-if="msOf(m).rows">
+                        <table class="table table-sm align-middle mb-0 mdb-sub">
+                          <thead><tr><th>任務</th><th class="text-end">運送量</th><th class="text-end">報酬</th><th></th></tr></thead>
+                          <tbody>
+                            <tr v-for="ms in msOf(m).rows.slice(0, MS_PAGE)" :key="ms._id">
+                              <td data-label="任務" class="fw-semibold">{{ ms.title_zh || ms.title }}</td>
+                              <td data-label="運送量" class="text-end text-nowrap">{{ fmtHaul(ms.haul) }}</td>
+                              <td data-label="報酬" class="text-end text-nowrap">{{ rewardLabel(ms) }}</td>
+                              <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-info text-nowrap" :aria-label="`${ms.title_zh || ms.title} 任務詳細`"
+                                  @click="openMissions(m, [ms])"><i class="bi bi-flag me-1"></i>詳細</button>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <button v-if="msOf(m).rows.length > MS_PAGE" type="button" class="btn btn-sm btn-secondary mt-2"
+                          @click="openMissions(m, msOf(m).rows)">全部 {{ msOf(m).rows.length }} 個任務</button>
+                      </template>
+
+                      <!-- 買賣價格（UEX） -->
+                      <div class="mdb-sec mt-3">買賣價格</div>
+                      <MineralPrices :uex="m.uex" :fetcher="fetcher" />
                     </td>
                   </tr>
                 </template>
@@ -194,12 +229,19 @@
         </div>
       </div>
     </SfState>
+    <BlueprintDetailModal ref="bpDetailRef" :fetcher="fetcher" />
+    <BlueprintMissionsModal ref="missionsRef" :fetcher="fetcher" />
   </div>
 </template>
 
 <script setup>
+import { filterByName } from '@/utils/nameSearch'
 import { computed, reactive, ref, watch } from 'vue'
 import SfState from '@/components/SfState.vue'
+import BlueprintDetailModal from '@/components/BlueprintDetailModal.vue'
+import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
+import MineralPrices from '@/components/MineralPrices.vue'
+import { rewardLabel } from '@/utils/mission'
 import SortSelect from '@/components/SortSelect.vue'
 import SortTh from '@/components/SortTh.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -300,7 +342,7 @@ const minerals = computed(() => {
           if (!key) continue
           let m = byKey.get(key)
           if (!m) {
-            m = { key, name: realName(p.resource_name) || key.replace(/_/g, ' '), name_zh: p.resource_name_zh || '', uex_code: p.uex?.code || '',
+            m = { key, name: realName(p.resource_name) || key.replace(/_/g, ' '), name_zh: p.resource_name_zh || '', uex_code: p.uex?.code || '', uex: p.uex || null,
               occ: new Map() }
             byKey.set(key, m)
           }
@@ -326,7 +368,7 @@ const minerals = computed(() => {
     for (const p of dep.parts || []) {
       const key = p.resource_key || p.resource_name
       if (!key || byKey.has(key) || !realName(p.resource_name)) continue
-      byKey.set(key, { key, name: p.resource_name, name_zh: p.resource_name_zh || '', uex_code: p.uex?.code || '', occ: new Map() })
+      byKey.set(key, { key, name: p.resource_name, name_zh: p.resource_name_zh || '', uex_code: p.uex?.code || '', uex: p.uex || null, occ: new Map() })
     }
   }
   return [...byKey.values()].map(m => ({ ...m, all: [...m.occ.values()] }))
@@ -357,10 +399,8 @@ function clearFilters() {
 }
 
 const rows = computed(() => {
-  const q = query.value.trim().toLowerCase()
   const out = []
-  for (const m of minerals.value) {
-    if (q && ![m.name, m.name_zh, m.key, m.uex_code].some(x => (x || '').toLowerCase().includes(q))) continue
+  for (const m of filterByName(minerals.value, query.value, x => [x.name, x.name_zh, x.key, x.uex_code]).rows) {
     // 「特殊取得」：只看後台補了取得方式的礦物（產地照常列）
     const bySource = method.value === SOURCE_FILTER
     if (bySource && !sources.value[m.key]) continue
@@ -377,7 +417,7 @@ const rows = computed(() => {
       if (!top.some(x => x.system === o.system && x.name === o.name)) top.push(o)
     }
     out.push({
-      key: m.key, name: m.name, name_zh: m.name_zh, uex_code: m.uex_code, occurrences: occ, top,
+      key: m.key, name: m.name, name_zh: m.name_zh, uex_code: m.uex_code, uex: m.uex, occurrences: occ, top,
       methods: METHODS.map(x => x.key).filter(k => occ.some(o => o.method === k)),
       places: placeKeys.size,
       content: occ.length ? Math.max(...occ.map(o => o.max ?? 0)) : null,
@@ -396,7 +436,7 @@ function toggle(m) {
   openKey.value = openKey.value === m.key ? '' : m.key
   bpQuery.value = ''
   bpAll.value = false
-  if (openKey.value) loadBlueprints(m)
+  if (openKey.value) { loadBlueprints(m); loadMissions(m) }
 }
 
 // ── 用在哪些藍圖（展開時才抓，抓過的記著） ──
@@ -414,23 +454,40 @@ async function loadBlueprints(m, force = false) {
 }
 function bpFiltered(m) {
   const rows = bpOf(m).rows || []
-  const q = bpQuery.value.trim().toLowerCase()
-  if (!q) return rows
-  return rows.filter(b => [b.name, b.name_zh, b.output_type, blueprintTypeZh(b.output_type)]
-    .some(x => (x || '').toLowerCase().includes(q)))
+  return filterByName(rows, bpQuery.value, b => [b.name, b.name_zh, b.output_type, blueprintTypeZh(b.output_type)]).rows
 }
 const bpShown = m => (bpAll.value ? bpFiltered(m) : bpFiltered(m).slice(0, BP_PAGE))
 function useLabel(b) {
   return (b.hits || []).map(h => (h.quantity_scu != null ? `${h.quantity_scu} SCU` : h.quantity != null ? `${h.quantity} 個` : '—'))
     .join('、') || '—'
 }
+// ── 用在哪些任務：要運送這種礦物的任務（GET /mission/by-commodity），展開時才抓 ──
+const msCache = reactive({})
+const msOf = m => msCache[m.key] || {}
+const MS_PAGE = 8
+async function loadMissions(m, force = false) {
+  if (!force && msCache[m.key] && !msCache[m.key].error) return
+  msCache[m.key] = { loading: true }
+  const res = await props.fetcher(`/mission/by-commodity?name=${encodeURIComponent(m.name)}`)
+  const body = res ? await res.json().catch(() => null) : null
+  msCache[m.key] = res?.ok && body?.success ? { rows: body.data || [] } : { error: '任務讀取失敗。' }
+}
+const missionsRef = ref(null)
+function openMissions(m, rows) {
+  missionsRef.value?.showMissions({ title: m.name_zh || m.name, subtitle: m.name_zh ? m.name : '', heading: '運送這種礦物的任務', missions: rows })
+}
+const fmtHaul = h => (!h ? '—' : `× ${h.min_amount === h.max_amount || h.max_amount == null ? fmtInt(h.min_amount) : `${fmtInt(h.min_amount)}–${fmtInt(h.max_amount)}`}`)
+const fmtInt = v => (v == null ? '?' : Number(v).toLocaleString('en-US'))
+// ── 藍圖詳細（配方、品質試算、解鎖任務） ──
+const bpDetailRef = ref(null)
+const openBlueprint = (b, m) => bpDetailRef.value?.open({ uuid: b._id, name: b.name, name_zh: b.name_zh, output_type: b.output_type }, { material: m.name })
 const { isPhone } = useBreakpoint()
 </script>
 
 <style scoped>
 .mdb-detail { background: var(--sf-chip-bg); }
-.mdb-sub { --bs-table-bg: transparent; font-size: .95rem; }
-.mdb-sub th { font-size: .8rem; color: var(--sf-text-muted); font-weight: 600; }
+.mdb-sub { --bs-table-bg: transparent; font-size: var(--sf-fs-base); }
+.mdb-sub th { font-size: var(--sf-fs-xs); color: var(--sf-text-muted); font-weight: 600; }
 .mdb-md :deep(p) { margin-bottom: .4rem; }
 .mdb-sec { font-weight: 700; font-size: var(--sf-fs-sm); color: var(--sf-accent-text, var(--sf-accent)); margin-bottom: .35rem; }
 .mdb-bpq { max-width: 20rem; }

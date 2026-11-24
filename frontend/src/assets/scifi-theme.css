@@ -839,6 +839,23 @@ html:has(.scifi-page) { color-scheme: dark; }
 }
 .scifi-page .sf-search .multi-select-filter__btn:hover { background-color: rgba(var(--sf-accent-rgb), .18); }
 
+/* ── 大圓角搜尋框（新聞、配裝更換視窗）：<div class="sf-search-pill"><i class="bi bi-search sf-search-pill__icon"></i><input class="sf-search-pill__input"></div>
+ * --round：膠囊形（新聞頁）。不寫 outline: none，鍵盤聚焦時全站 :focus-visible 外框照常出現 */
+.sf-search-pill { position: relative; }
+.sf-search-pill__icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--sf-text-muted); pointer-events: none; }
+.sf-search-pill__input {
+  width: 100%; height: 2.75rem; padding: 0 1rem 0 2.6rem; border-radius: .6rem; font-size: var(--sf-fs-base);
+  color: var(--sf-text-strong); background: var(--sf-chip-bg); border: 1px solid var(--sf-border);
+  transition: border-color .15s, background-color .15s, box-shadow .15s;
+}
+.sf-search-pill__input::placeholder { color: var(--sf-text-muted); }
+.sf-search-pill__input:focus { border-color: var(--sf-accent); box-shadow: 0 0 0 3px rgba(var(--sf-accent-rgb), .2); }
+.sf-search-pill--round .sf-search-pill__icon { left: 1.15rem; font-size: var(--sf-fs-md); }
+.sf-search-pill--round .sf-search-pill__input { height: 3rem; padding: 0 1.25rem 0 3rem; border-radius: 999px; background: rgba(var(--sf-panel-rgb, 18, 26, 43), .6); }
+.sf-search-pill--round .sf-search-pill__input:hover { background: rgba(var(--sf-panel-rgb, 18, 26, 43), .8); }
+:root[data-sf-mode='light'] .sf-search-pill--round .sf-search-pill__input { background: rgba(var(--sf-panel-rgb, 255, 255, 255), .85); }
+@media (max-width: 575.98px) { .sf-search-pill--round .sf-search-pill__input { height: 2.6rem; } }
+
 /* ── 分頁最上面的工具列：展開區塊的開關＋重新整理（倉庫／藍圖／艦隊） ── */
 .scifi-page .sf-toolbar {
   display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem;

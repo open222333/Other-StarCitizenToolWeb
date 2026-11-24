@@ -10,8 +10,12 @@
 
 玩家頁的排法：列表一律依發布時間新到舊；最上面的「置頂區」（featured()）最多 4 則，
 先放「官方」標籤的、再放置頂的、不夠再用最新的補。
-標籤可以「下架」（collection news_tag_settings，後台「新聞」頁設定）：帶下架標籤的新聞對玩家整則隱藏
-（列表、全文、標籤統計、篩選、搜尋都找不到；後台照常看得到）。
+標籤的顯示方式（collection news_tag_settings，後台「新聞」頁設定，display）：
+  - main：玩家頁分類列直接顯示（依 order 排）
+  - more：收在「更多」裡（預設：外部 API 帶進來的新標籤沒設定過，一律是這個）
+  - hidden：下架，帶這個標籤的新聞對玩家整則隱藏（列表、全文、標籤統計、篩選、搜尋都找不到；後台照常看得到）
+沒設定過的標籤：DEFAULT_MAIN_TAGS（官方、社群）是 main，其他是 more。
+舊資料只有 listed（False＝下架）的照樣認。
 
 ⚠️ 封面、來源連結只接受 http:// 或 https://（玩家頁會做成連結／圖片，`javascript:` 一點就會執行），
 寫入時就擋，不能只靠前端。
@@ -37,6 +41,10 @@ MAX_BODY = 20000
 MAX_URL = 2000
 MAX_TAG = 30
 MAX_TAGS = 10
+#: 標籤顯示方式
+TAG_DISPLAYS = ('main', 'more', 'hidden')
+#: 沒設定過時直接顯示在分類列的標籤（照這個順序）
+DEFAULT_MAIN_TAGS = ('官方', '社群')
 #: 外部一次最多送幾則
 MAX_BATCH = 50
 #: 列表每頁上限
@@ -68,30 +76,88 @@ def ensure_indexes(db=None):
                      partialFilterExpression={'source_url': {'$type': 'string'}})
 
 
-# ── 標籤上架／下架 ────────────────────────────────────────────────
+# ── 標籤顯示方式（分類列／更多／下架）───────────────────────────
+
+def _display_of(doc: Optional[dict], tag: str) -> str:
+    if doc:
+        if doc.get('display') in TAG_DISPLAYS:
+            return doc['display']
+        if doc.get('listed') is False:
+            return 'hidden'
+    return 'main' if tag in DEFAULT_MAIN_TAGS else 'more'
+
+
+def _order_of(doc: Optional[dict], tag: str) -> int:
+    if doc and isinstance(doc.get('order'), int):
+        return doc['order']
+    return DEFAULT_MAIN_TAGS.index(tag) if tag in DEFAULT_MAIN_TAGS else 999
+
+
+def tag_settings() -> dict:
+    """{標籤: {display, order}}（只有設定過的）。"""
+    return {d['_id']: {'display': _display_of(d, d['_id']), 'order': _order_of(d, d['_id'])}
+            for d in _tag_col().find({})}
+
 
 def unlisted_tags() -> list:
     """下架的標籤。"""
-    return [d['_id'] for d in _tag_col().find({'listed': False}, {'_id': 1})]
+    return [d['_id'] for d in _tag_col().find({'$or': [{'display': 'hidden'}, {'display': {'$exists': False}, 'listed': False}]},
+                                              {'_id': 1})]
+
+
+def _with_display(rows: list, settings: dict) -> list:
+    out = []
+    for r in rows:
+        st = settings.get(r['tag'])
+        display = st['display'] if st else _display_of(None, r['tag'])
+        order = st['order'] if st else _order_of(None, r['tag'])
+        out.append({**r, 'display': display, 'order': order, 'listed': display != 'hidden'})
+    return out
+
+
+def public_tags() -> list:
+    """玩家頁的標籤（下架的已排除）：[{tag, count, display: main|more, order}]，分類列的依 order 排在前面。"""
+    rows = _with_display(tags(public=True), tag_settings())
+    rows.sort(key=lambda r: (r['display'] != 'main', r['order'] if r['display'] == 'main' else 0, -r['count'], r['tag']))
+    return [{k: r[k] for k in ('tag', 'count', 'display', 'order')} for r in rows]
 
 
 def admin_tags() -> list:
-    """後台：所有用過的標籤（含排程中的新聞，不含刪除）＋則數、是否上架；下架的排最後。"""
-    off = set(unlisted_tags())
-    rows = [{**r, 'listed': r['tag'] not in off} for r in tags(public=False)]
-    rows += [{'tag': t, 'count': 0, 'listed': False} for t in off - {r['tag'] for r in rows}]
-    rows.sort(key=lambda r: (not r['listed'], -r['count'], r['tag']))
+    """後台：所有用過的標籤（含排程中的新聞，不含刪除）＋則數、顯示方式；分類列 → 更多 → 下架。"""
+    settings = tag_settings()
+    rows = tags(public=False)
+    seen = {r['tag'] for r in rows}
+    rows += [{'tag': t, 'count': 0} for t in settings if t not in seen]
+    rows = _with_display(rows, settings)
+    rank = {'main': 0, 'more': 1, 'hidden': 2}
+    rows.sort(key=lambda r: (rank[r['display']], r['order'] if r['display'] == 'main' else 0, -r['count'], r['tag']))
     return rows
 
 
-def set_tag_listed(tag, listed: bool, by: str) -> dict:
+def set_tag_display(tag, display: str, by: str, order=None) -> dict:
+    """設定標籤顯示方式（main／more／hidden）；order 是分類列的排序（小的在前，只有 main 用得到）。"""
     tag = str(tag or '').strip()
     if not tag or len(tag) > MAX_TAG:
         raise NewsError(f'標籤要 1～{MAX_TAG} 字')
-    listed = listed is not False
-    _tag_col().update_one({'_id': tag}, {'$set': {'listed': listed, 'updated_at': datetime.utcnow(), 'updated_by': by}},
-                          upsert=True)
-    return {'tag': tag, 'listed': listed}
+    if display not in TAG_DISPLAYS:
+        raise NewsError('顯示方式只能是 main、more、hidden')
+    fields = {'display': display, 'listed': display != 'hidden', 'updated_at': datetime.utcnow(), 'updated_by': by}
+    if order is not None:
+        try:
+            fields['order'] = max(0, min(999, int(order)))
+        except (TypeError, ValueError):
+            raise NewsError('排序要是數字') from None
+    _tag_col().update_one({'_id': tag}, {'$set': fields}, upsert=True)
+    doc = _tag_col().find_one({'_id': tag})
+    return {'tag': tag, 'display': display, 'order': _order_of(doc, tag), 'listed': display != 'hidden'}
+
+
+def set_tag_listed(tag, listed: bool, by: str) -> dict:
+    """舊介面：上架／下架。上架回到「更多」（官方、社群回到分類列）。"""
+    tag = str(tag or '').strip()
+    if listed is False:
+        return set_tag_display(tag, 'hidden', by)
+    return set_tag_display(tag, 'main' if tag in DEFAULT_MAIN_TAGS else 'more', by)
 
 
 # ── 驗證 ──────────────────────────────────────────────────────────
@@ -240,11 +306,23 @@ def _filter(public: bool, tag: str = '', q: str = '') -> dict:
 
 
 def list_news(public: bool = True, tag: str = '', q: str = '', limit: int = 20, offset: int = 0,
-              pinned_only: bool = False, sort: str = '') -> tuple:
+              pinned_only: bool = False, sort: str = '', since=None, until=None) -> tuple:
     """(列表, 總數)。public：只列已發布的，依發布時間新到舊（置頂的另外放在置頂區，見 featured()）。
-    後台：置頂在前，再依發布時間；sort='latest' 也只依發布時間。"""
+    後台：置頂在前，再依發布時間；sort='latest' 也只依發布時間。
+    since／until：發布時間範圍（ISO 8601，since 含、until 不含；玩家頁的「今日／昨日／上週」由前端用玩家時區算好）。"""
     tag = [t.strip() for t in tag] if isinstance(tag, (list, tuple)) else (tag or '').strip()
     f = _filter(public, tag, (q or '').strip())
+    try:
+        lo, hi = _time(since), _time(until)
+    except NewsError:
+        raise NewsError('日期範圍格式不對（ISO 8601）') from None
+    if lo or hi:
+        rng = dict(f.get('published_at') or {})
+        if lo:
+            rng['$gte'] = lo
+        if hi:
+            rng['$lt'] = hi            # 玩家頁另外還有 $lte 現在（未來排程的不出現）
+        f['published_at'] = rng
     if pinned_only:
         f['pinned'] = True
     limit = max(1, min(int(limit or 20), MAX_LIMIT))

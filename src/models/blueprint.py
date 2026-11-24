@@ -15,6 +15,7 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo.errors import BulkWriteError
 
+from src.models import name_search
 from src.models.item import BlueprintMaster, escape_regex
 from src.mongo import get_db
 
@@ -379,7 +380,7 @@ class Blueprint:
 
     @classmethod
     def find_holders(cls, query: str = '', limit: int = 50,
-                     blueprint_uuids=None, player_scid: str = '') -> list:
+                     blueprint_uuids=None, player_scid: str = '', _loose: bool = False) -> list:
         """依名稱搜尋「誰登記了這張藍圖」，同一張藍圖的持有者聚在一起。
 
         這是藍圖版的 `Inventory.find_item_locations()`（`/inventory/where`）——
@@ -417,11 +418,11 @@ class Blueprint:
 
         pipeline: list = [{'$match': match}]
         if (query or '').strip():
-            import re
-            # 英文名中綴（玩家登記時存的 name），或主檔中文名含關鍵字的那幾張（「持有藍圖」名稱欄打中文也查得到）
-            zh_uuids = [r['_id'] for r in BlueprintMaster._col().find(
-                {'name_zh': {'$regex': re.escape(query.strip())}}, {'_id': 1}).limit(1000)]
-            name_match = {'name': {'$regex': re.escape(query.strip()), '$options': 'i'}}
+            # 名稱搜尋規則（src/models/name_search.py）：玩家登記時存的 name，或主檔中文名符合的那幾張
+            # （「持有藍圖」名稱欄打中文也查得到）；字首比對找不到才退回任意位置（最下面 _loose 重查）
+            zh_cond = name_search.text_fields_filter(query, ['name_zh'], loose=_loose)
+            zh_uuids = [r['_id'] for r in BlueprintMaster._col().find(zh_cond or {'_id': None}, {'_id': 1}).limit(1000)]
+            name_match = name_search.text_fields_filter(query, ['name'], loose=_loose) or {}
             pipeline.append({'$match': {'$or': [name_match, {'blueprint_uuid': {'$in': zh_uuids}}]}
                              if zh_uuids else name_match})
 
@@ -480,6 +481,8 @@ class Blueprint:
         # allowDiskUse：$group 會把所有 holders 累在記憶體裡，理由同
         # src/models/inventory.py 的 list_stock
         groups = list(cls._col().aggregate(pipeline, allowDiskUse=True))
+        if not groups and not _loose and name_search.tokens(query):
+            return cls.find_holders(query, limit, blueprint_uuids, player_scid, _loose=True)
         for group in groups:
             group['holders'] = [_redact_contact(h) for h in group.get('holders') or []]
         return cls._enrich_name_zh(groups)

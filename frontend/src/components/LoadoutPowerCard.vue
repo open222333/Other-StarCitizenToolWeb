@@ -151,8 +151,8 @@ const emRows = computed(() => Object.entries(props.summary.emBy || {})
 </script>
 
 <style scoped>
-.lp-h { font-size: 1.05rem; font-weight: 700; color: var(--sf-text-strong); }
-.lp-cap { font-size: .9rem; color: var(--sf-text-muted); }
+.lp-h { font-size: var(--sf-fs-base); font-weight: 700; color: var(--sf-text-strong); }
+.lp-cap { font-size: var(--sf-fs-sm); color: var(--sf-text-muted); }
 .lp-bar { height: .55rem; background: var(--sf-chip-bg); }
 .lp-bar .progress-bar { background: var(--sf-accent); }
 .lp-bar .lp-bar--cool { background: var(--sf-accent-2); }
@@ -175,7 +175,7 @@ const emRows = computed(() => Object.entries(props.summary.emBy || {})
 .lp-cell__min { font-size: var(--sf-fs-sm); font-weight: 700; color: var(--sf-text); opacity: .8; pointer-events: none; }
 .lp-cell--fixed { cursor: default; background: var(--sf-chip-bg); color: var(--sf-text-muted); font-weight: 700;
   font-size: var(--sf-fs-sm); }
-.lp-icon { width: 2.4rem; height: 2.4rem; border-radius: 50%; border: 0; padding: 0; background: none; font-size: 1.35rem;
+.lp-icon { width: 2.4rem; height: 2.4rem; border-radius: 50%; border: 0; padding: 0; background: none; font-size: var(--sf-fs-lg);
   color: var(--sf-accent); transition: background-color .12s, color .12s, opacity .12s; }
 .lp-icon:hover:not(:disabled) { background: var(--sf-hover-bg); }
 .lp-icon:focus-visible { outline: 2px solid var(--sf-accent); }
@@ -184,8 +184,8 @@ const emRows = computed(() => Object.entries(props.summary.emBy || {})
 .lp-label { font-size: var(--sf-fs-xs); color: var(--sf-text-muted); text-align: center; line-height: 1.1; min-height: 1.2em; margin-top: -.2rem; }
 .lp-sig { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
 .lp-tile { padding: .5rem .6rem; border: 1px solid var(--sf-border); border-radius: .4rem; background: var(--sf-chip-bg); }
-.lp-tile__v { font-size: 1.3rem; font-weight: 700; color: var(--sf-text-strong); line-height: 1.1; }
-.lp-tile__l { font-size: .8rem; color: var(--sf-text-muted); }
-.lp-em { display: flex; flex-wrap: wrap; gap: .2rem .9rem; font-size: .85rem; color: var(--sf-text); }
+.lp-tile__v { font-size: var(--sf-fs-lg); font-weight: 700; color: var(--sf-text-strong); line-height: 1.1; }
+.lp-tile__l { font-size: var(--sf-fs-xs); color: var(--sf-text-muted); }
+.lp-em { display: flex; flex-wrap: wrap; gap: .2rem .9rem; font-size: var(--sf-fs-sm); color: var(--sf-text); }
 .lp-kv span { color: var(--sf-text-muted); margin-right: .3rem; }
 </style>

@@ -1,9 +1,7 @@
 // 配裝模擬「更換配件」視窗（components/LoadoutPicker.vue）的欄位與篩選：依配件種類決定表格欄位、篩選分組。
 import { fmtNum } from './navFormat.js'
 
-export const DMG_LABEL = { physical: '實彈', energy: '能量', distortion: '扭曲', thermal: '熱能', biochemical: '生化', stun: '暈眩' }
-const DMG_SHORT = { physical: '實彈', energy: '能量', distortion: '扭曲' }
-export const CLASS_LABEL = { Military: '軍用', Civilian: '民用', Industrial: '工業', Stealth: '隱形', Competition: '競賽' }
+import { DMG_LABEL, TRACK_LABEL, classLabel } from './loadoutLabels.js'
 
 // 武器類型：資料沒有欄位，從 class name 判斷（HRST_LaserScatterGun_S3 → 散彈）
 const WEAPON_KINDS = [['cannon', '加農'], ['repeater', '連發'], ['gatling', '格林'], ['scattergun', '散彈'],
@@ -24,7 +22,7 @@ export function dmgKind(it) {
   for (const [k, v] of Object.entries(d)) if (v && (!best || v > d[best])) best = k
   return best
 }
-export const dmgLabel = k => DMG_SHORT[k] || DMG_LABEL[k] || ''
+export const dmgLabel = k => DMG_LABEL[k] || ''
 
 const num = (v, d = 0) => (v == null || Number.isNaN(v) ? '—' : fmtNum(v, d))
 const pct = v => (v == null ? '—' : `${fmtNum(v * 100)}%`)
@@ -120,10 +118,10 @@ export function filterGroups(items, typeLabel) {
     add('wkind', '武器類型', it => (it.type === 'WeaponGun' ? weaponKind(it) : ''), weaponKindLabel)
   }
   add('size', '尺寸', it => (it.size != null ? String(it.size) : ''), v => `S${v}`, true)
-  add('class', '分類', it => it.item_class || '', v => CLASS_LABEL[v] || v)
+  add('class', '分類', it => it.item_class || '', v => classLabel(v))
   add('grade', '等級', it => it.grade || '', v => v, true)
   if (types.has('Missile') || types.has('Bomb')) {
-    add('track', '追蹤', it => it.stats?.tracking || '', v => ({ Electromagnetic: '電磁', Infrared: '紅外線', CrossSection: '截面' }[v] || v))
+    add('track', '追蹤', it => it.stats?.tracking || '', v => TRACK_LABEL[v] || v)
   }
   return groups
 }

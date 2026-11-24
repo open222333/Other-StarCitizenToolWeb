@@ -15,17 +15,28 @@
     <LoadoutSlotGroup v-for="n in nodes" :key="n.id" :nodes="[n]" :depth="depth" />
   </div>
   <div v-else class="lo-group" :class="{ 'lo-group--child': depth > 0 }">
-    <div class="lo-row" :class="{ 'lo-row--empty': !first.item }">
+    <div class="lo-row" :class="{ 'lo-row--empty': !first.item, 'lo-row--craft': item?.blueprint }">
       <button v-if="foldable" type="button" class="lo-fold" :aria-expanded="open ? 'true' : 'false'"
         :aria-label="open ? `收起 ${name}` : `展開 ${name}`" @click="open = !open">
         <i class="bi" :class="open ? 'bi-chevron-down' : 'bi-chevron-right'"></i></button>
       <span v-else class="lo-fold lo-fold--none" aria-hidden="true"></span>
+      <!-- 可製作的配件：左側品質把手，點上下每個部位各 ±50，按住連續調整 -->
+      <div v-if="item?.blueprint" class="lo-qh" role="group" :aria-label="`${name} 品質`">
+        <button type="button" class="lo-qh__btn" :aria-label="`${name} 品質加 ${STEP}`" :disabled="lo.avgOf(item) >= 1000"
+          @pointerdown="hold(STEP)" @pointerup="release" @pointerleave="release" @pointercancel="release"
+          @keydown.enter.prevent="nudge(STEP)" @keydown.space.prevent="nudge(STEP)"><i class="bi bi-chevron-double-up"></i></button>
+        <span class="lo-qh__v">{{ lo.avgOf(item) }}</span>
+        <button type="button" class="lo-qh__btn" :aria-label="`${name} 品質減 ${STEP}`" :disabled="lo.avgOf(item) <= 0"
+          @pointerdown="hold(-STEP)" @pointerup="release" @pointerleave="release" @pointercancel="release"
+          @keydown.enter.prevent="nudge(-STEP)" @keydown.space.prevent="nudge(-STEP)"><i class="bi bi-chevron-double-down"></i></button>
+      </div>
       <span class="lo-size" :title="`尺寸 ${sizeText}`">S{{ sizeText }}</span>
       <span v-if="nodes.length > 1" class="lo-count">{{ nodes.length }}×</span>
       <button v-if="nodes.length > 1 && first.editable" type="button" class="lo-splitbtn" :aria-label="`${name} 分開設定`"
         title="分開設定（每一格各自更換）" @click="split = true"><i class="bi bi-distribute-vertical"></i></button>
       <div class="flex-grow-1 min-w-0">
-        <div class="lo-name" :title="title">{{ name }}</div>
+        <div class="lo-name" :title="title">{{ name }}<button v-if="item?.buyable" type="button" class="lo-where"
+          title="購買地點" :aria-label="`${name} 購買地點`" @click="lo.openInfo(item, 'buy')"><i class="bi bi-cart3"></i></button></div>
         <div class="lo-meta text-truncate">{{ meta }}</div>
       </div>
       <div v-if="item && lo.primary(item)" class="lo-stat text-end">
@@ -58,7 +69,7 @@
 </template>
 
 <script setup>
-import { computed, inject, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, ref } from 'vue'
 import { childGroups } from '@/utils/loadoutCalc'
 import { fmtAuec } from '@/utils/uexCommodity'
 
@@ -85,6 +96,17 @@ const title = computed(() => (item.value ? `${item.value.name}（${item.value.cl
 // 列表只放前幾個數值（訊號、耗電這些在更換視窗看）
 const subStats = computed(() => (item.value ? lo.secondary(item.value).filter(s => !['EM', 'IR 訊號', '耗電'].includes(s.label)).slice(0, 6) : []))
 const foldable = computed(() => groups.value.length > 0 || subStats.value.length > 0 || !!item.value)
+// 品質把手：按一下 ±STEP；按住 400ms 後每 120ms 再調一次
+const STEP = 50
+const nudge = d => lo.nudgeQuality(item.value, d)
+let holdTimer = null
+function hold(d) {
+  release()
+  nudge(d)
+  holdTimer = setTimeout(function again() { nudge(d); holdTimer = setTimeout(again, 120) }, 400)
+}
+function release() { clearTimeout(holdTimer); holdTimer = null }
+onBeforeUnmount(release)
 const meta = computed(() => {
   const it = item.value
   if (!it) return lo.typeLabel(first.value.types)
@@ -103,11 +125,21 @@ const meta = computed(() => {
 .lo-row { display: flex; align-items: center; gap: .5rem; padding: .45rem .55rem; margin-top: .4rem;
   border: 1px solid var(--sf-border); border-radius: .4rem; background: var(--sf-chip-bg); }
 .lo-row--empty { opacity: .7; border-style: dashed; }
+.lo-row--craft { border-color: rgba(var(--sf-accent-2-rgb), .6); }
+.lo-qh { flex: none; display: flex; flex-direction: column; align-items: center; align-self: stretch; justify-content: center;
+  width: 2rem; margin: -.2rem 0; border-radius: .3rem; background: rgba(var(--sf-accent-2-rgb), .12); }
+.lo-qh__btn { border: 0; background: none; padding: 0; width: 100%; line-height: 1; color: var(--sf-accent-2); font-size: var(--sf-fs-xs); touch-action: none; }
+.lo-qh__btn:hover:not(:disabled) { color: var(--sf-text-strong); }
+.lo-qh__btn:disabled { opacity: .35; }
+.lo-qh__v { font-size: var(--sf-fs-xs); font-weight: 800; color: var(--sf-text-strong); font-variant-numeric: tabular-nums; }
 .lo-size { flex: none; min-width: 2.4rem; text-align: center; font-weight: 700; padding: .1rem .35rem; border-radius: .3rem;
   color: var(--sf-text-strong); background: rgba(var(--sf-accent-rgb), .25); border: 1px solid rgba(var(--sf-accent-rgb), .7); }
 .lo-count { flex: none; font-weight: 700; color: var(--sf-accent-2); }
 .lo-name { font-weight: 600; color: var(--sf-text-strong); line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.lo-where { border: 0; background: none; padding: 0 .2rem; margin-left: .3rem; color: rgb(var(--bs-success-rgb)); font-size: var(--sf-fs-sm);
+  vertical-align: baseline; }
+.lo-where:hover { color: var(--sf-text-strong); }
 .lo-meta { font-size: var(--sf-fs-sm); color: var(--sf-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lo-stat { flex: none; line-height: 1.1; }
 .lo-stat__value { font-weight: 700; font-size: var(--sf-fs-md); color: var(--sf-accent); }

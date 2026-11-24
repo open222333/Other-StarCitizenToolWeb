@@ -8,8 +8,22 @@
 
 export const QUALITY_MIN = 0
 export const QUALITY_MAX = 1000
+/** 中間品質＝物品主檔（遊戲資料）的數值：倍率 1、加減值 0 */
+export const QUALITY_MID = 500
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+
+/** 輸入的品質夾在 Q0～Q1000（整數）；不是數字回 fallback */
+export function clampQuality(value, fallback = QUALITY_MIN) {
+  const v = Math.round(Number(value))
+  return Number.isFinite(v) ? clamp(v, QUALITY_MIN, QUALITY_MAX) : fallback
+}
+
+/** 部位能用的最低品質（各材料選項 min_quality 取最小；沒有限制回 0） */
+export function minQualityOf(slot) {
+  const vals = (slot?.options || []).map(o => o.min_quality || 0)
+  return vals.length ? Math.min(...vals) : 0
+}
 
 export function isAdditive(m) {
   return m?.type === 'linear_integer_additive'
@@ -49,7 +63,7 @@ export function improves(m, value) {
 export function combine(slots, qualities) {
   const out = new Map()
   for (const slot of slots || []) {
-    const q = qualities?.[slot.key] ?? 500
+    const q = qualities?.[slot.key] ?? QUALITY_MID
     for (const m of slot.modifiers || []) {
       const v = modifierAt(m, q)
       if (v === null) continue

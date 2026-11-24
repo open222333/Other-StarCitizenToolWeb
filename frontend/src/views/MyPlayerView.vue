@@ -1626,9 +1626,9 @@ const legacyProfile = route.query.tab === 'profile'
 const profileOpen = ref(legacyProfile && !isGuest.value)
 // 沒指定分頁時：會員、訪客都從「新聞」開始；新聞被後台關掉時，
 // 會員從「艦長室」、訪客從第一個不用登入的分頁開始（照後台排的順序）
-const HOME_TAB = { member: 'news', guest: 'news' }
+const HOME_TAB = 'news'
 const firstTab = () => {
-  const home = isGuest.value ? HOME_TAB.guest : HOME_TAB.member
+  const home = HOME_TAB
   if (orderedTabs.value.some(t => t.key === home) && isTabShown(home)) return home
   return isGuest.value
     ? (orderedTabs.value.find(t => !t.member && isTabShown(t.key)) || orderedTabs.value.find(t => !t.member))?.key || 'items'

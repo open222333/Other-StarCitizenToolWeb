@@ -24,6 +24,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import SfState from '@/components/SfState.vue'
 import SquadBoardView from '@/components/SquadBoardView.vue'
+import { normalizeBoard } from '@/utils/squadBoard'
 import { PLAYER_HOME } from '@/router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
 
@@ -49,7 +50,7 @@ async function load() {
     error.value = res?.status === 404 ? '這個連結已失效（分享已關閉或連結已重新產生）。' : (data?.message || '讀取失敗，請稍後再試。')
     return
   }
-  board.value = data.data
+  board.value = normalizeBoard(data.data)
   document.title = `${data.data.title} · 戰術小隊分配表`
 }
 

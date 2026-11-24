@@ -3,7 +3,9 @@
 
   - 列表：全部登入玩家的表都看得到；自己的可以刪除，任何表都可以複製一份變成自己的。
   - 開啟：建立者是編輯畫面（存檔才寫進資料庫，rev 不同回 409），其他人是唯讀（components/SquadBoardView.vue）。
-  - 人員：打字出現玩家候選，選了就綁定那個玩家；選最後一項「加為未註冊人員」就只記名字。
+  - 結構：艦隊 → 小隊 → 艦船 → 人員；艦隊標題列有統計（components/FleetStatChips.vue）。
+  - 人員：打字出現玩家候選，選了就綁定那個玩家；選最後一項「加為未註冊人員」就只記名字。職位用晶片多選（兼職最多 3 個）。
+  - 移動：寬螢幕可以拖拉（人員 → 船／不在船上、船 → 小隊、小隊 → 艦隊），每一列也有「移到」選單（手機用）。
   - 分享連結：開了之後 /player/squad/<分享碼> 不用登入就能看（views/SquadSharedView.vue）。
   - 開啟中的表記在網址 ?board=<id>（貼給隊友會直接打開那張）。
   API：/player/squads*（app/player/squad_view.py）。
@@ -130,97 +132,132 @@
               </div>
             </div>
             <div class="small text-muted mt-2">
-              {{ board.squads.length }} 個小隊 · {{ countShips(board) }} 艘船 · {{ countPeople(board) }} 人
+              {{ board.fleets.length }} 個艦隊 · {{ squadCount }} 個小隊 · {{ countShips(board) }} 艘船 · {{ countPeople(board) }} 人
               <span v-if="dupes.size" class="sf-chip sf-chip--warn ms-1">{{ dupes.size }} 人重複出現</span>
             </div>
           </div>
         </div>
 
-        <datalist id="sqb-roles"><option v-for="r in DEFAULT_ROLES" :key="r" :value="r" /></datalist>
-
-        <!-- 小隊 -->
-        <div class="row g-3">
-          <div v-for="(s, si) in board.squads" :key="s.id" class="col-12 col-xl-6">
-            <section :class="[cardClass, 'h-100']" :aria-label="s.name || `小隊 ${si + 1}`">
-              <div class="card-body">
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                  <span class="sqb-no">{{ si + 1 }}</span>
-                  <input v-model="s.name" type="text" maxlength="40" class="form-control form-control-sm sqb-squad-name"
-                    :aria-label="`小隊 ${si + 1} 名稱`">
-                  <div class="btn-group btn-group-sm ms-auto">
-                    <button type="button" class="btn btn-outline-secondary" :disabled="si === 0" aria-label="小隊上移"
-                      @click="moveItem(board.squads, si, -1)"><i class="bi bi-arrow-up"></i></button>
-                    <button type="button" class="btn btn-outline-secondary" :disabled="si === board.squads.length - 1"
-                      aria-label="小隊下移" @click="moveItem(board.squads, si, 1)"><i class="bi bi-arrow-down"></i></button>
-                  </div>
-                  <button type="button" class="btn btn-sm btn-danger" :aria-label="`刪除${s.name}`" @click="removeSquad(si)">
-                    <i class="bi bi-trash"></i></button>
-                </div>
-                <div class="row g-2 mb-2">
-                  <div class="col-12 col-sm-5">
-                    <label class="form-label small mb-1" :for="`sqb-leader-${s.id}`">隊長</label>
-                    <select :id="`sqb-leader-${s.id}`" v-model="s.leader" class="form-select form-select-sm">
-                      <option :value="null">（未指定）</option>
-                      <option v-for="p in squadPeople(s)" :key="p.id" :value="p.id">{{ p.name }}</option>
-                    </select>
-                  </div>
-                  <div class="col-12 col-sm-7">
-                    <label class="form-label small mb-1" :for="`sqb-snote-${s.id}`">備註</label>
-                    <input :id="`sqb-snote-${s.id}`" v-model="s.note" type="text" maxlength="500" class="form-control form-control-sm"
-                      placeholder="任務、頻道…">
-                  </div>
-                </div>
-
-                <!-- 艦船 -->
-                <div v-for="(v, vi) in s.ships" :key="v.id" class="sqb-ship">
-                  <div class="sqb-ship__head">
-                    <i class="bi bi-rocket-takeoff" aria-hidden="true"></i>
-                    <span class="fw-semibold">{{ v.vehicle_name }}</span>
-                    <input v-model="v.label" type="text" maxlength="40" class="form-control form-control-sm sqb-label"
-                      placeholder="識別名稱（例如一號機）" :aria-label="`${v.vehicle_name} 識別名稱`">
-                    <span class="sf-chip" :class="{ 'sf-chip--warn': v.crew_max && v.crew.length > v.crew_max }"
-                      :title="v.crew_max ? `建議乘員 ${v.crew_max} 人` : ''">{{ v.crew.length }}{{ v.crew_max ? ` / ${v.crew_max}` : '' }} 人</span>
-                    <div class="btn-group btn-group-sm ms-auto">
-                      <button type="button" class="btn btn-outline-secondary" :disabled="vi === 0" aria-label="艦船上移"
-                        @click="moveItem(s.ships, vi, -1)"><i class="bi bi-arrow-up"></i></button>
-                      <button type="button" class="btn btn-outline-secondary" :disabled="vi === s.ships.length - 1"
-                        aria-label="艦船下移" @click="moveItem(s.ships, vi, 1)"><i class="bi bi-arrow-down"></i></button>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除${v.vehicle_name}`" @click="removeShip(s, vi)">
-                      <i class="bi bi-x-lg"></i></button>
-                  </div>
-                  <PeopleRows :list="v.crew" :squad="s" />
-                  <AutocompleteField :id="`sqb-add-${v.id}`" v-model="addText[v.id]" :search="searchPeople"
-                    :get-label="personLabel" :get-meta="personMeta" :min-chars="1" :debounce-ms="0"
-                    class="mt-1" placeholder="加入人員：打暱稱或遊戲ID" :aria-label="`加入人員到${shipTitle(v)}`"
-                    @select="c => addPerson(v.crew, c, v.id)" />
-                </div>
-
-                <!-- 不在船上 -->
-                <div class="sqb-ship sqb-ship--off">
-                  <div class="sqb-ship__head"><i class="bi bi-person-walking" aria-hidden="true"></i>
-                    <span class="fw-semibold">不在船上</span><span class="small text-muted">（地面隊、待命…）</span></div>
-                  <PeopleRows :list="s.members" :squad="s" />
-                  <AutocompleteField :id="`sqb-add-${s.id}`" v-model="addText[s.id]" :search="searchPeople"
-                    :get-label="personLabel" :get-meta="personMeta" :min-chars="1" :debounce-ms="0"
-                    class="mt-1" placeholder="加入人員：打暱稱或遊戲ID" :aria-label="`加入人員到${s.name}（不在船上）`"
-                    @select="c => addPerson(s.members, c, s.id)" />
-                </div>
-
-                <!-- 加入艦船 -->
-                <div class="mt-2">
-                  <label class="form-label small mb-1" :for="`sqb-ship-${s.id}`">加入艦船</label>
-                  <AutocompleteField :id="`sqb-ship-${s.id}`" v-model="shipText[s.id]" :search="searchShips"
-                    :get-label="c => c.name" :get-meta="shipMeta" :min-chars="0" :debounce-ms="250"
-                    placeholder="船名（自己機庫的船排前面）" :aria-label="`加入艦船到${s.name}`"
-                    @select="c => addShip(s, c)" />
-                </div>
-              </div>
-            </section>
+        <!-- 艦隊 → 小隊 → 艦船 → 人員。寬螢幕可以拖拉：人員拖到船／不在船上、船拖到小隊、小隊拖到艦隊；
+             手機用每一列的「移到」選單 -->
+        <section v-for="(f, fi) in board.fleets" :key="f.id" class="sqb-fleet" :class="{ 'sqb-drop': dropOn === `f:${f.id}` }"
+          :aria-label="f.name || `艦隊 ${fi + 1}`" v-bind="dropZone('squad', `f:${f.id}`, id => moveSquad(board, id, f.id))">
+          <div class="sqb-fleet__head">
+            <i class="bi bi-diagram-3 sqb-fleet__icon" aria-hidden="true"></i>
+            <input v-model="f.name" type="text" maxlength="40" class="form-control form-control-sm sqb-fleet-name"
+              :aria-label="`艦隊 ${fi + 1} 名稱`">
+            <FleetStatChips :fleet="f" />
+            <div class="btn-group btn-group-sm ms-auto">
+              <button type="button" class="btn btn-outline-secondary" :disabled="fi === 0" aria-label="艦隊上移"
+                @click="moveItem(board.fleets, fi, -1)"><i class="bi bi-arrow-up"></i></button>
+              <button type="button" class="btn btn-outline-secondary" :disabled="fi === board.fleets.length - 1"
+                aria-label="艦隊下移" @click="moveItem(board.fleets, fi, 1)"><i class="bi bi-arrow-down"></i></button>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger" :aria-label="`刪除${f.name}`" @click="removeFleet(fi)">
+              <i class="bi bi-trash"></i></button>
           </div>
-        </div>
-        <button type="button" class="btn btn-sm btn-success mt-3" :disabled="board.squads.length >= MAX_SQUADS" @click="addSquad">
-          <i class="bi bi-plus-lg me-1"></i>新增小隊</button>
+          <input v-model="f.note" type="text" maxlength="500" class="form-control form-control-sm mb-2" placeholder="艦隊備註（任務、集合點…）"
+            :aria-label="`${f.name} 備註`">
+
+          <div class="row g-3">
+            <div v-for="(s, si) in f.squads" :key="s.id" class="col-12 col-xl-6">
+              <section :class="[cardClass, 'h-100', { 'sqb-drop': dropOn === `s:${s.id}` }]" :aria-label="s.name || `小隊 ${si + 1}`"
+                v-bind="dropZone('ship', `s:${s.id}`, id => moveShip(board, id, s.id))">
+                <div class="card-body">
+                  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="sqb-no sqb-grip" draggable="true" title="拖到其他艦隊" aria-hidden="true"
+                      @dragstart="dragStart($event, 'squad', s.id)" @dragend="dragEnd">{{ squadNo(s) }}</span>
+                    <input v-model="s.name" type="text" maxlength="40" class="form-control form-control-sm sqb-squad-name"
+                      :aria-label="`小隊 ${squadNo(s)} 名稱`">
+                    <select v-if="board.fleets.length > 1" class="form-select form-select-sm sqb-move" :value="f.id"
+                      :aria-label="`${s.name} 移到艦隊`" @change="moveSquad(board, s.id, $event.target.value)">
+                      <option v-for="x in board.fleets" :key="x.id" :value="x.id">{{ x.name }}</option>
+                    </select>
+                    <div class="btn-group btn-group-sm ms-auto">
+                      <button type="button" class="btn btn-outline-secondary" :disabled="si === 0" aria-label="小隊上移"
+                        @click="moveItem(f.squads, si, -1)"><i class="bi bi-arrow-up"></i></button>
+                      <button type="button" class="btn btn-outline-secondary" :disabled="si === f.squads.length - 1"
+                        aria-label="小隊下移" @click="moveItem(f.squads, si, 1)"><i class="bi bi-arrow-down"></i></button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-danger" :aria-label="`刪除${s.name}`" @click="removeSquad(f, si)">
+                      <i class="bi bi-trash"></i></button>
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12 col-sm-5">
+                      <label class="form-label small mb-1" :for="`sqb-leader-${s.id}`">隊長</label>
+                      <select :id="`sqb-leader-${s.id}`" v-model="s.leader" class="form-select form-select-sm">
+                        <option :value="null">（未指定）</option>
+                        <option v-for="p in squadPeople(s)" :key="p.id" :value="p.id">{{ p.name }}</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-sm-7">
+                      <label class="form-label small mb-1" :for="`sqb-snote-${s.id}`">備註</label>
+                      <input :id="`sqb-snote-${s.id}`" v-model="s.note" type="text" maxlength="500" class="form-control form-control-sm"
+                        placeholder="任務、頻道…">
+                    </div>
+                  </div>
+
+                  <!-- 艦船 -->
+                  <div v-for="(v, vi) in s.ships" :key="v.id" class="sqb-ship" :class="{ 'sqb-drop': dropOn === `v:${v.id}` }"
+                    v-bind="dropZone('person', `v:${v.id}`, id => movePerson(board, id, `v:${v.id}`))">
+                    <div class="sqb-ship__head">
+                      <i class="bi bi-rocket-takeoff sqb-grip" draggable="true" title="拖到其他小隊" aria-hidden="true"
+                        @dragstart="dragStart($event, 'ship', v.id)" @dragend="dragEnd"></i>
+                      <span class="fw-semibold">{{ v.vehicle_name }}</span>
+                      <input v-model="v.label" type="text" maxlength="40" class="form-control form-control-sm sqb-label"
+                        placeholder="識別名稱（例如一號機）" :aria-label="`${v.vehicle_name} 識別名稱`">
+                      <span class="sf-chip" :class="{ 'sf-chip--warn': v.crew_max && v.crew.length > v.crew_max }"
+                        :title="v.crew_max ? `建議乘員 ${v.crew_max} 人` : ''">{{ v.crew.length }}{{ v.crew_max ? ` / ${v.crew_max}` : '' }} 人</span>
+                      <select v-if="squadCount > 1" class="form-select form-select-sm sqb-move" :value="s.id"
+                        :aria-label="`${shipTitle(v)} 移到小隊`" @change="moveShip(board, v.id, $event.target.value)">
+                        <option v-for="t in squadTargets(board)" :key="t.key" :value="t.key">{{ t.label }}</option>
+                      </select>
+                      <div class="btn-group btn-group-sm ms-auto">
+                        <button type="button" class="btn btn-outline-secondary" :disabled="vi === 0" aria-label="艦船上移"
+                          @click="moveItem(s.ships, vi, -1)"><i class="bi bi-arrow-up"></i></button>
+                        <button type="button" class="btn btn-outline-secondary" :disabled="vi === s.ships.length - 1"
+                          aria-label="艦船下移" @click="moveItem(s.ships, vi, 1)"><i class="bi bi-arrow-down"></i></button>
+                      </div>
+                      <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除${v.vehicle_name}`" @click="removeShip(s, vi)">
+                        <i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div v-if="roleSummary(v.crew)" class="small text-muted mt-1">{{ roleSummary(v.crew) }}</div>
+                    <PeopleRows :list="v.crew" :squad="s" />
+                    <AutocompleteField :id="`sqb-add-${v.id}`" v-model="addText[v.id]" :search="searchPeople"
+                      :get-label="personLabel" :get-meta="personMeta" :min-chars="1" :debounce-ms="0"
+                      class="mt-1" placeholder="加入人員：打暱稱或遊戲ID" :aria-label="`加入人員到${shipTitle(v)}`"
+                      @select="c => addPerson(v.crew, c, v.id)" />
+                  </div>
+
+                  <!-- 不在船上 -->
+                  <div class="sqb-ship sqb-ship--off" :class="{ 'sqb-drop': dropOn === `m:${s.id}` }"
+                    v-bind="dropZone('person', `m:${s.id}`, id => movePerson(board, id, `s:${s.id}`))">
+                    <div class="sqb-ship__head"><i class="bi bi-person-walking" aria-hidden="true"></i>
+                      <span class="fw-semibold">不在船上</span><span class="small text-muted">（地面隊、待命…）</span></div>
+                    <PeopleRows :list="s.members" :squad="s" />
+                    <AutocompleteField :id="`sqb-add-${s.id}`" v-model="addText[s.id]" :search="searchPeople"
+                      :get-label="personLabel" :get-meta="personMeta" :min-chars="1" :debounce-ms="0"
+                      class="mt-1" placeholder="加入人員：打暱稱或遊戲ID" :aria-label="`加入人員到${s.name}（不在船上）`"
+                      @select="c => addPerson(s.members, c, s.id)" />
+                  </div>
+
+                  <!-- 加入艦船 -->
+                  <div class="mt-2">
+                    <label class="form-label small mb-1" :for="`sqb-ship-${s.id}`">加入艦船</label>
+                    <AutocompleteField :id="`sqb-ship-${s.id}`" v-model="shipText[s.id]" :search="searchShips"
+                      :get-label="c => c.name" :get-meta="shipMeta" :min-chars="0" :debounce-ms="250"
+                      placeholder="船名（自己機庫的船排前面）" :aria-label="`加入艦船到${s.name}`"
+                      @select="c => addShip(s, c)" />
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-success mt-2" :disabled="squadCount >= MAX_SQUADS" @click="addSquad(f)">
+            <i class="bi bi-plus-lg me-1"></i>新增小隊</button>
+        </section>
+        <button type="button" class="btn btn-sm btn-success" :disabled="board.fleets.length >= MAX_FLEETS" @click="addFleet">
+          <i class="bi bi-plus-lg me-1"></i>新增艦隊</button>
       </template>
     </template>
 
@@ -235,13 +272,14 @@ import AutocompleteField from '@/components/AutocompleteField.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import SfState from '@/components/SfState.vue'
 import SquadBoardView from '@/components/SquadBoardView.vue'
+import FleetStatChips from '@/components/FleetStatChips.vue'
 import { toast } from '@/utils/toast'
 import { copyText } from '@/utils/clipboard'
 import { escapeHtml } from '@/utils/html'
 import {
-  DEFAULT_ROLES, MAX_PEOPLE, MAX_SHIPS_PER_SQUAD, MAX_SQUADS, boardPayload, countPeople, countShips,
-  duplicateScids, emptySquad, fmtEventAt, moveItem, movePerson, newId, personLocation, personTargets,
-  shipTitle, squadPeople,
+  DEFAULT_ROLES, MAX_FLEETS, MAX_PEOPLE, MAX_ROLES, MAX_SHIPS_PER_SQUAD, MAX_SQUADS, allSquads, boardPayload, countPeople, countShips,
+  duplicateScids, emptyFleet, emptySquad, fmtEventAt, moveItem, movePerson, moveShip, moveSquad, newId, normalizeBoard,
+  personLocation, personTargets, roleSummary, shipTitle, squadPeople, squadTargets, toggleRole,
 } from '@/utils/squadBoard'
 
 const props = defineProps({
@@ -329,13 +367,15 @@ const addText = reactive({})    // 各艘船／不在船上的「加入人員」
 const shipText = reactive({})   // 各小隊的「加入艦船」輸入框文字
 const dirty = computed(() => !!board.value?.can_edit && JSON.stringify(boardPayload(board.value)) !== saved.value)
 const dupes = computed(() => (board.value ? duplicateScids(board.value) : new Set()))
+const squadCount = computed(() => (board.value ? allSquads(board.value).length : 0))
+const squadNo = s => allSquads(board.value).indexOf(s) + 1
 
 function setBoard(data) {
   if (data) {
     data.title = data.title || ''
     data.event_at = data.event_at || ''
     data.note = data.note || ''
-    data.squads = data.squads || []
+    normalizeBoard(data)
   }
   board.value = data
   saved.value = data ? JSON.stringify(boardPayload(data)) : ''
@@ -420,20 +460,66 @@ async function copyShare() {
   await copyText(shareUrl.value, { okText: '已複製連結' })
 }
 
-// ── 小隊、艦船 ──
-function addSquad() {
-  if (board.value.squads.length >= MAX_SQUADS) return
-  board.value.squads.push(emptySquad(board.value))
+// ── 艦隊、小隊、艦船 ──
+function addFleet() {
+  if (board.value.fleets.length >= MAX_FLEETS) return
+  board.value.fleets.push(emptyFleet(board.value))
 }
-async function removeSquad(i) {
-  const s = board.value.squads[i]
+async function removeFleet(i) {
+  const f = board.value.fleets[i]
+  if (f.squads.length) {
+    const ok = await confirmRef.value.confirm(`確定要刪除 <strong>${escapeHtml(f.name)}</strong>（${f.squads.length} 個小隊，裡面的船和人員一起刪除）？`)
+    if (!ok) return
+  }
+  board.value.fleets.splice(i, 1)
+}
+function addSquad(f) {
+  if (squadCount.value >= MAX_SQUADS) return
+  f.squads.push(emptySquad(board.value))
+}
+async function removeSquad(f, i) {
+  const s = f.squads[i]
   const n = squadPeople(s).length
   if (s.ships.length || n) {
     const ok = await confirmRef.value.confirm(`確定要刪除 <strong>${escapeHtml(s.name)}</strong>（${s.ships.length} 艘船、${n} 人）？`)
     if (!ok) return
   }
-  board.value.squads.splice(i, 1)
+  f.squads.splice(i, 1)
 }
+
+// ── 拖拉：person（人員）→ 船／不在船上、ship（艦船）→ 小隊、squad（小隊）→ 艦隊 ──
+const drag = reactive({ kind: '', id: '' })
+const dropOn = ref('')
+function dragStart(e, kind, id) {
+  drag.kind = kind
+  drag.id = id
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', `${kind}:${id}`)
+}
+function dragEnd() {
+  drag.kind = ''
+  dropOn.value = ''
+}
+/** 放置區的事件：只接受 kind 這一種東西；放下時呼叫 onDrop(id) */
+function dropZone(kind, key, onDrop) {
+  return {
+    onDragover: (e) => {
+      if (drag.kind !== kind) return
+      e.preventDefault()
+      e.stopPropagation()
+      dropOn.value = key
+    },
+    onDragleave: (e) => { if (dropOn.value === key && !e.currentTarget.contains(e.relatedTarget)) dropOn.value = '' },
+    onDrop: (e) => {
+      if (drag.kind !== kind) return
+      e.preventDefault()
+      e.stopPropagation()
+      onDrop(drag.id)
+      dragEnd()
+    },
+  }
+}
+
 function addShip(s, c) {
   if (!c) return
   if (s.ships.length >= MAX_SHIPS_PER_SQUAD) { flash(`每個小隊最多 ${MAX_SHIPS_PER_SQUAD} 艘船`, 'alert-warning'); return }
@@ -495,7 +581,7 @@ function personMeta(c) {
   return [c.nickname ? c.star_citizen_id : '', where ? `已在 ${where}` : ''].filter(Boolean).join(' · ')
 }
 function personWhere(scid) {
-  for (const s of board.value.squads) {
+  for (const s of allSquads(board.value)) {
     for (const v of s.ships) if (v.crew.some(p => p.scid === scid)) return `${s.name} › ${shipTitle(v)}`
     if (s.members.some(p => p.scid === scid)) return `${s.name} › 不在船上`
   }
@@ -505,8 +591,8 @@ function addPerson(list, c, inputKey) {
   if (!c) return
   if (countPeople(board.value) >= MAX_PEOPLE) { flash(`人員最多 ${MAX_PEOPLE} 人`, 'alert-warning'); return }
   const person = c.kind === 'guest'
-    ? { id: newId(board.value, 'm'), scid: null, name: c.name, role: '', registered: false }
-    : { id: newId(board.value, 'm'), scid: c.star_citizen_id, name: c.nickname || c.star_citizen_id, role: '', registered: true }
+    ? { id: newId(board.value, 'm'), scid: null, name: c.name, roles: [], registered: false }
+    : { id: newId(board.value, 'm'), scid: c.star_citizen_id, name: c.nickname || c.star_citizen_id, roles: [], registered: true }
   if (!person.name) return
   list.push(person)
   // AutocompleteField 選定後會把文字寫回輸入框；下一輪清空，方便連續加人
@@ -519,17 +605,27 @@ const PeopleRows = defineComponent({
   setup(p) {
     return () => {
       const targets = personTargets(board.value)
-      return h('ul', { class: 'sqb-people' }, p.list.length ? p.list.map((m, i) => h('li', { key: m.id, class: 'sqb-person' }, [
+      return h('ul', { class: 'sqb-people' }, p.list.length ? p.list.map((m, i) => h('li', {
+        key: m.id, class: 'sqb-person', draggable: 'true',
+        onDragstart: e => { if (e.target === e.currentTarget) dragStart(e, 'person', m.id) }, onDragend: dragEnd,
+      }, [
         h('span', { class: 'sqb-person__name' }, [
+          h('i', { class: 'bi bi-grip-vertical sqb-grip me-1', 'aria-hidden': 'true', title: '拖到其他船' }),
           p.squad.leader === m.id ? h('i', { class: 'bi bi-star-fill sqb-star me-1', title: '隊長', 'aria-label': '隊長' }) : null,
           h('span', { class: 'fw-semibold' }, m.name),
           m.registered === false ? h('span', { class: 'sf-chip sf-chip--todo ms-1' }, '未註冊') : null,
           m.scid && dupes.value.has(m.scid) ? h('span', { class: 'sf-chip sf-chip--warn ms-1' }, '重複') : null,
         ]),
-        h('input', {
-          class: 'form-control form-control-sm sqb-role', list: 'sqb-roles', maxlength: 40, placeholder: '職位',
-          value: m.role, 'aria-label': `${m.name} 職位`, onInput: e => { m.role = e.target.value },
-        }),
+        // 職位：可以兼職（最多 MAX_ROLES 個），點晶片切換；自填過的舊職位也列出來
+        h('div', { class: 'sqb-roles', role: 'group', 'aria-label': `${m.name} 職位` },
+          [...new Set([...DEFAULT_ROLES, ...(m.roles || [])])].map(r => {
+            const on = (m.roles || []).includes(r)
+            return h('button', {
+              type: 'button', class: ['sqb-rolechip', { active: on }], 'aria-pressed': on ? 'true' : 'false',
+              disabled: !on && (m.roles || []).length >= MAX_ROLES,
+              onClick: () => { if (!m.roles) m.roles = []; toggleRole(m, r) },
+            }, r)
+          })),
         h('select', {
           class: 'form-select form-select-sm sqb-move', 'aria-label': `${m.name} 移到`,
           value: personLocation(board.value, m.id),
@@ -583,6 +679,16 @@ watch(() => route.query.board, id => {
 :deep(.sqb-people) { list-style: none; margin: .4rem 0 0; padding: 0; }
 :deep(.sqb-person) { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .3rem 0; border-top: 1px solid var(--sf-border); }
 :deep(.sqb-person__name) { flex: 1 1 8rem; min-width: 6rem; display: inline-flex; align-items: center; flex-wrap: wrap; }
-:deep(.sqb-role) { flex: 0 1 7rem; width: 7rem; }
+.sqb-fleet { margin-bottom: 1.5rem; padding: .75rem; border: 1px solid var(--sf-border); border-radius: .6rem; }
+.sqb-fleet__head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.sqb-fleet__icon { font-size: var(--sf-fs-lg); color: var(--sf-accent-2); }
+.sqb-fleet-name { flex: 0 1 14rem; font-weight: 700; }
+.sqb-grip { cursor: grab; }
+.sqb-drop { outline: 2px dashed var(--sf-accent); outline-offset: 2px; }
+:deep(.sqb-roles) { display: inline-flex; flex-wrap: wrap; gap: .2rem; }
+:deep(.sqb-rolechip) { border: 1px solid var(--sf-border); background: var(--sf-chip-bg); color: var(--sf-text); border-radius: 999px;
+  padding: .05rem .55rem; font-size: var(--sf-fs-xs); font-weight: 600; }
+:deep(.sqb-rolechip.active) { background: rgba(var(--sf-accent-rgb), .3); border-color: var(--sf-accent); color: var(--sf-text-strong); }
+:deep(.sqb-rolechip:disabled) { opacity: .4; }
 :deep(.sqb-move) { flex: 0 1 11rem; width: 11rem; }
 </style>

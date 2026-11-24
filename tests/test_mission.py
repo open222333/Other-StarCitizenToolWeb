@@ -565,3 +565,22 @@ def test_list_name_search_rules(missions):
     assert [r['_id'] for r in Mission.list_all(query='eta', meta=meta)[0]] == ['m2'] and meta['match'] == 'loose'
     # 沒指定排序時依相符程度：名稱開頭就符合的排前面
     assert [r['_id'] for r in Mission.list_all(query='job')[0]] == ['m1', 'm2', 'm3']
+
+
+def test_missions_for_commodity(client):
+    """礦物頁「用在哪些任務」：hauling_summary 名稱相同（不分大小寫、可帶括號說明）的任務。"""
+    col = get_db()['mission_master']
+    base = {'is_current': True, 'title': 'Haul', 'star_systems': []}
+    col.insert_many([
+        {**base, '_id': 'm1', 'title': 'Ore run', 'reward_max': 5000,
+         'hauling_summary': [{'name': 'Agricium (Ore)', 'min_amount': 10, 'max_amount': 20}]},
+        {**base, '_id': 'm2', 'title': 'Refined', 'reward_max': 9000,
+         'hauling_summary': [{'name': 'Waste', 'min_amount': 1}, {'name': 'agricium', 'min_amount': 3, 'max_amount': 3}]},
+        {**base, '_id': 'm3', 'hauling_summary': [{'name': 'Agricium Pure', 'min_amount': 1}]},
+        {**base, '_id': 'm4', 'is_current': False, 'hauling_summary': [{'name': 'Agricium'}]},
+    ])
+    rows = client.get('/mission/by-commodity?name=Agricium').get_json()['data']
+    assert [r['_id'] for r in rows] == ['m2', 'm1']
+    assert rows[0]['haul'] == {'name': 'agricium', 'min_amount': 3, 'max_amount': 3}
+    assert 'hauling_summary' not in rows[0]
+    assert client.get('/mission/by-commodity').get_json()['data'] == []

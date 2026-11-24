@@ -4,9 +4,9 @@
 // 品質資料（GET /blueprint/master/<uuid>/quality）的加成依 utils/craftQuality.js 的 combine 合起來，
 // 再套到配件數值上。配件主檔（scunpacked）的數值就是 Q500（倍率 1、加減值 0），
 // 所以不可製作的配件一律當 Q500（鎖定）。
-import { combine } from './craftQuality.js'
+import { QUALITY_MID, clampQuality, combine } from './craftQuality.js'
 
-export const LOCKED_QUALITY = 500
+export const LOCKED_QUALITY = QUALITY_MID
 
 const mul = (obj, key, v) => { if (obj && typeof obj[key] === 'number') obj[key] *= v }
 
@@ -64,10 +64,37 @@ export function decodeQualities(text) {
     const q = {}
     for (const kv of part.slice(i + 1).split(',')) {
       const [k, v] = kv.split('=')
-      const n = Math.round(Number(v))
-      if (k && Number.isFinite(n)) q[k] = Math.min(1000, Math.max(0, n))
+      const n = clampQuality(v, null)
+      if (k && n !== null && v !== '' && v !== undefined) q[k] = n
     }
     if (Object.keys(q).length) out[part.slice(0, i)] = q
   }
   return out
+}
+
+/** 「實際數值」要列的欄位：品質屬性 key → [[取值, 名稱, 單位]] */
+const STAT_VIEW = {
+  health_maxhealth: [[it => it.hp, '耐久', '']],
+  weapon_damage: [[it => it.stats?.alpha, '單發傷害', ''], [it => it.stats?.dps, 'DPS', ''],
+    [it => it.stats?.sustained, '持續 DPS', ''], [it => it.stats?.mining_power, '採礦功率', '']],
+  shield_maxhealth: [[it => it.stats?.hp, '護盾值', '']],
+  itemresource_coolantgeneration: [[it => it.stats?.coolant_gen, '冷卻產量', '']],
+  itemresource_powergeneration: [[it => it.stats?.power_gen, '電力產量', '格']],
+  quantum_speed: [[it => it.stats?.speed, '量子速度', 'm/s']],
+  quantum_fuelrequirement: [[it => it.stats?.fuel_req, '燃料需求', '']],
+}
+
+/** 配件套上品質前後的實際數值（配裝模擬有反映的屬性；配件沒有這個數值的略過）：[{ label, unit, before, after, better }] */
+export function appliedStats(item, slots, qualities) {
+  if (!item) return []
+  const { item: out, rows } = applyQuality(item, slots, qualities)
+  const res = []
+  for (const r of rows) {
+    for (const [get, label, unit] of STAT_VIEW[r.key] || []) {
+      const before = get(item)
+      if (typeof before !== 'number') continue
+      res.push({ key: `${r.key}:${label}`, label, unit, before, after: get(out), better: r.better })
+    }
+  }
+  return res
 }

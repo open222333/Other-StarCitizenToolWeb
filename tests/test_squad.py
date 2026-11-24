@@ -32,14 +32,14 @@ def bob(client):
 def _board(**extra):
     return {
         'title': '週六攻堅', 'event_at': '2026-11-21T20:00', 'note': '集合在 Orison',
-        'squads': [{
+        'fleets': [{'id': 'f1', 'name': '打擊艦隊', 'squads': [{
             'id': 's1', 'name': 'Alpha', 'leader': 'm1',
             'ships': [{'id': 'v1', 'vehicle_id': 'v-perseus', 'label': '一號機', 'crew': [
-                {'id': 'm1', 'scid': 'AlicePilot', 'name': '亂填的名字', 'role': '駕駛'},
-                {'id': 'm2', 'scid': None, 'name': '路人甲', 'role': '砲手'},
+                {'id': 'm1', 'scid': 'AlicePilot', 'name': '亂填的名字', 'roles': ['駕駛', '砲手']},
+                {'id': 'm2', 'scid': None, 'name': '路人甲', 'roles': ['砲手']},
             ]}],
-            'members': [{'id': 'm3', 'scid': 'BobHauler', 'name': '', 'role': '陸戰'}],
-        }],
+            'members': [{'id': 'm3', 'scid': 'BobHauler', 'name': '', 'roles': ['陸戰']}],
+        }]}],
         **extra,
     }
 
@@ -61,13 +61,15 @@ def test_requires_login(client):
 
 def test_create_save_read(client, ships, alice, bob):
     b = _create(client, alice)
-    assert b['can_edit'] and b['rev'] == 1 and b['squads'] == []
+    assert b['can_edit'] and b['rev'] == 1 and [f['squads'] for f in b['fleets']] == [[]]
     res = _save(client, alice, b['id'], _board(), 1)
     assert res.status_code == 200, res.get_json()
     data = res.get_json()['data']
     assert data['rev'] == 2
-    sq = data['squads'][0]
+    assert data['fleets'][0]['name'] == '打擊艦隊' and 'squads' not in data
+    sq = data['fleets'][0]['squads'][0]
     assert sq['leader'] == 'm1'
+    assert sq['ships'][0]['crew'][0]['roles'] == ['駕駛', '砲手'] and 'role' not in sq['ships'][0]['crew'][0]
     ship = sq['ships'][0]
     assert ship['vehicle_name'] == 'RSI Perseus' and ship['crew_max'] == 6 and ship['label'] == '一號機'
     # 綁定玩家的名字用暱稱，不信任前端傳的
@@ -77,12 +79,12 @@ def test_create_save_read(client, ships, alice, bob):
 
     lst = client.get('/player/squads', headers=bob).get_json()['data']
     assert lst[0]['title'] == '週六攻堅'
-    assert (lst[0]['squad_count'], lst[0]['ship_count'], lst[0]['people_count']) == (1, 1, 3)
+    assert (lst[0]['fleet_count'], lst[0]['squad_count'], lst[0]['ship_count'], lst[0]['people_count']) == (1, 1, 1, 3)
     assert lst[0]['owner_name'] == '愛麗絲'
 
     other = client.get(f'/player/squads/{b["id"]}', headers=bob).get_json()['data']
     assert other['can_edit'] is False and other['share_token'] is None
-    assert other['squads'][0]['ships'][0]['crew'][0]['name'] == '愛麗絲'
+    assert other['fleets'][0]['squads'][0]['ships'][0]['crew'][0]['name'] == '愛麗絲'
 
 
 def test_only_owner_can_modify(client, ships, alice, bob):
@@ -107,13 +109,16 @@ def test_rev_conflict(client, ships, alice, bob):
     (lambda d: d.update(title='x' * 61), '名稱'),
     (lambda d: d.update(note='x' * 501), '備註'),
     (lambda d: d.update(event_at='明天'), '行動時間'),
-    (lambda d: d['squads'][0]['ships'][0]['crew'].append({'scid': 'Nobody', 'role': ''}), '找不到玩家'),
-    (lambda d: d['squads'][0]['ships'][0].update(vehicle_id='v-none'), '找不到艦船'),
-    (lambda d: d['squads'][0]['members'].append({'scid': None, 'name': ''}), '人員名稱'),
-    (lambda d: d['squads'][0]['members'].append({'name': 'x' * 41}), '人員名稱'),
-    (lambda d: d.update(squads=[{'name': f'S{i}'} for i in range(21)]), '小隊最多'),
-    (lambda d: d['squads'][0].update(ships=[{'vehicle_id': 'v-cutlass'}] * 31), '艘船'),
-    (lambda d: d['squads'][0].update(members=[{'name': f'p{i}'} for i in range(301)]), '人員最多'),
+    (lambda d: d['fleets'][0]['squads'][0]['ships'][0]['crew'].append({'scid': 'Nobody', 'role': ''}), '找不到玩家'),
+    (lambda d: d['fleets'][0]['squads'][0]['ships'][0].update(vehicle_id='v-none'), '找不到艦船'),
+    (lambda d: d['fleets'][0]['squads'][0]['members'].append({'scid': None, 'name': ''}), '人員名稱'),
+    (lambda d: d['fleets'][0]['squads'][0]['members'].append({'name': 'x' * 41}), '人員名稱'),
+    (lambda d: d['fleets'][0].update(squads=[{'name': f'S{i}'} for i in range(21)]), '小隊最多'),
+    (lambda d: d.update(fleets=[{'squads': [{'name': f'S{i}'}] * 3} for i in range(7)]), '小隊最多'),
+    (lambda d: d.update(fleets=[{'name': f'F{i}'} for i in range(11)]), '艦隊最多'),
+    (lambda d: d['fleets'][0]['squads'][0]['members'].append({'name': 'x', 'roles': ['a', 'b', 'c', 'd']}), '職位'),
+    (lambda d: d['fleets'][0]['squads'][0].update(ships=[{'vehicle_id': 'v-cutlass'}] * 31), '艘船'),
+    (lambda d: d['fleets'][0]['squads'][0].update(members=[{'name': f'p{i}'} for i in range(301)]), '人員最多'),
 ])
 def test_validation(client, ships, alice, bob, mutate, message):
     b = _create(client, alice)
@@ -127,10 +132,10 @@ def test_validation(client, ships, alice, bob, mutate, message):
 def test_duplicate_ids_are_regenerated(client, ships, alice, bob):
     b = _create(client, alice)
     body = _board()
-    body['squads'][0]['members'] = [{'id': 'm1', 'name': '重複 id'}, {'id': '<bad>', 'name': '壞 id'}]
+    body['fleets'][0]['squads'][0]['members'] = [{'id': 'm1', 'name': '重複 id'}, {'id': '<bad>', 'name': '壞 id'}]
     data = _save(client, alice, b['id'], body, 1).get_json()['data']
-    ids = [p['id'] for p in data['squads'][0]['ships'][0]['crew']] + \
-          [p['id'] for p in data['squads'][0]['members']]
+    sq = data['fleets'][0]['squads'][0]
+    ids = [p['id'] for p in sq['ships'][0]['crew']] + [p['id'] for p in sq['members']]
     assert len(set(ids)) == len(ids) == 4
 
 
@@ -142,7 +147,7 @@ def test_copy(client, ships, alice, bob):
     assert copy['title'] == '週六攻堅（複本）'
     assert copy['owner_scid'] == 'BobHauler' and copy['can_edit']
     assert copy['share_token'] is None
-    assert copy['squads'][0]['ships'][0]['vehicle_name'] == 'RSI Perseus'
+    assert copy['fleets'][0]['squads'][0]['ships'][0]['vehicle_name'] == 'RSI Perseus'
     assert client.post('/player/squads', headers=bob,
                        json={'copy_from': 'ffffffffffffffffffffffff'}).status_code == 404
 
@@ -158,13 +163,14 @@ def test_share_and_public_view(client, ships, alice, bob):
     assert res.status_code == 200
     pub = res.get_json()['data']
     # 白名單：逐欄位比對，多了欄位就會失敗
-    assert set(pub) == {'title', 'event_at', 'note', 'owner_name', 'updated_at', 'squads'}
-    sq = pub['squads'][0]
+    assert set(pub) == {'title', 'event_at', 'note', 'owner_name', 'updated_at', 'fleets'}
+    assert set(pub['fleets'][0]) == {'id', 'name', 'note', 'squads'}
+    sq = pub['fleets'][0]['squads'][0]
     assert set(sq) == {'id', 'name', 'note', 'leader', 'ships', 'members'}
     ship = sq['ships'][0]
     assert set(ship) == {'id', 'vehicle_name', 'label', 'crew_max', 'crew'}
     for p in ship['crew'] + sq['members']:
-        assert set(p) == {'id', 'name', 'role', 'registered'}
+        assert set(p) == {'id', 'name', 'roles', 'registered'}
     assert pub['owner_name'] == '愛麗絲'
     assert ship['crew'][0]['name'] == '愛麗絲'
 
@@ -184,13 +190,13 @@ def test_names_follow_player_changes(client, ships, alice, bob):
     _save(client, alice, b['id'], _board(), 1)
     get_db()['players'].update_one({'star_citizen_id': 'BobHauler'}, {'$set': {'nickname': '鮑伯改名'}})
     data = client.get(f'/player/squads/{b["id"]}', headers=alice).get_json()['data']
-    assert data['squads'][0]['members'][0]['name'] == '鮑伯改名'
+    assert data['fleets'][0]['squads'][0]['members'][0]['name'] == '鮑伯改名'
     # 玩家被移除：用存下來的名字，標成未註冊
     from datetime import datetime
     get_db()['players'].update_one({'star_citizen_id': 'BobHauler'},
                                    {'$set': {'deleted_at': datetime.utcnow()}})
     data = client.get(f'/player/squads/{b["id"]}', headers=alice).get_json()['data']
-    m = data['squads'][0]['members'][0]
+    m = data['fleets'][0]['squads'][0]['members'][0]
     assert m['name'] == '鮑伯' and m['registered'] is False
 
 
@@ -201,3 +207,28 @@ def test_board_limit_per_owner(client, alice, monkeypatch):
     _create(client, alice)
     res = client.post('/player/squads', headers=alice, json={'title': '第三張'})
     assert res.status_code == 400
+
+
+def test_legacy_board_upgraded(client, ships, alice, bob):
+    """舊格式（沒有艦隊、人員只有 role）：讀取時放進預設艦隊、role → roles；舊版前端只送 squads 也能存，存完是新格式。"""
+    b = _create(client, alice)
+    from bson import ObjectId
+    legacy = {'squads': [{'id': 's1', 'name': 'Alpha', 'leader': None, 'note': '',
+                          'ships': [{'id': 'v1', 'vehicle_id': 'v-cutlass', 'vehicle_name': 'Cutlass Black', 'label': '',
+                                     'crew': [{'id': 'm1', 'scid': None, 'name': '路人', 'role': '駕駛'}]}],
+                          'members': [{'id': 'm2', 'scid': None, 'name': '乙', 'role': ''}]}]}
+    get_db()['squad_boards'].update_one({'_id': ObjectId(b['id'])}, {'$set': legacy, '$unset': {'fleets': ''}})
+    data = client.get(f'/player/squads/{b["id"]}', headers=alice).get_json()['data']
+    assert [f['name'] for f in data['fleets']] == ['艦隊 1'] and 'squads' not in data
+    sq = data['fleets'][0]['squads'][0]
+    assert sq['ships'][0]['crew'][0]['roles'] == ['駕駛'] and sq['members'][0]['roles'] == []
+    lst = client.get('/player/squads', headers=bob).get_json()['data']
+    assert (lst[0]['squad_count'], lst[0]['people_count']) == (1, 2)
+    token = client.post(f'/player/squads/{b["id"]}/share', headers=alice, json={'enabled': True}).get_json()['data']['share_token']
+    pub = client.get(f'/player/squads/shared/{token}').get_json()['data']
+    assert pub['fleets'][0]['squads'][0]['ships'][0]['crew'][0]['roles'] == ['駕駛']
+    # 舊版前端送 squads＋role
+    res = _save(client, alice, b['id'], {'title': 't', **legacy}, data['rev'])
+    assert res.status_code == 200, res.get_json()
+    doc = get_db()['squad_boards'].find_one({'_id': ObjectId(b['id'])})
+    assert 'squads' not in doc and doc['fleets'][0]['squads'][0]['ships'][0]['crew'][0]['roles'] == ['駕駛']

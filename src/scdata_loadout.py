@@ -91,9 +91,22 @@ def _weapon_stats(std: dict) -> dict:
         'pen_near': _num(pen.get('NearRadius')),
         'pen_far': _num(pen.get('FarRadius')),
     }
+    heat = w.get('Heat') if isinstance(w.get('Heat'), dict) else {}
+    if heat:
+        # 過熱：連續開火幾秒會過熱、過熱後幾秒恢復（沒有 TimeToOverheat 的是不會過熱）
+        out['overheat_s'] = _num(heat.get('TimeToOverheat'))
+        out['overheat_fix_s'] = _num(heat.get('OverheatFixTime'))
     if isinstance(w.get('Consumption'), dict):       # 能量武器：用電容，不用彈藥
         out['ammo'] = None
         out['energy'] = True
+        cap = w.get('Capacitor') if isinstance(w.get('Capacitor'), dict) else {}
+        load, regen = _num(cap.get('MaxAmmoLoad')), _num(cap.get('MaxRegenPerSec'))
+        rpm = out['rpm']
+        # 電容：滿電可以連續開火幾秒（容量 ÷ 每秒射速），空了要幾秒充滿（容量 ÷ 每秒回充）
+        if load and rpm:
+            out['cap_fire_s'] = round(load / (rpm / 60), 1)
+        if load and regen:
+            out['cap_recharge_s'] = round(load / regen, 1)
     return out
 
 

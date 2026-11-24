@@ -22,7 +22,7 @@
         </button>
       </div>
       <div class="bpm-body">
-        <div class="small text-muted mb-2">解鎖任務</div>
+        <div class="small text-muted mb-2">{{ heading }}</div>
         <SfState :loading="loading" :error="failed ? '讀取失敗。' : ''" :empty="!missions.length" empty-text="沒有任務資料。"
           @retry="fetchMissions">
         <div v-for="m in missions" :key="m._id" class="bpm-mission">
@@ -96,9 +96,11 @@ const failed = ref(false)
 const dialogEl = ref(null)
 let requestSeq = 0
 
+const heading = ref('解鎖任務')
 const title = computed(() => blueprint.value?.name_zh || blueprint.value?.name || '')
 const subtitle = computed(() => {
   const bp = blueprint.value || {}
+  if (bp.subtitle !== undefined) return bp.subtitle
   const parts = []
   if (bp.name_zh && bp.name) parts.push(bp.name)
   if (bp.output_type) parts.push(blueprintTypeLabel(bp.output_type))
@@ -107,6 +109,7 @@ const subtitle = computed(() => {
 
 async function open(bp) {
   if (!bp?.uuid) return
+  heading.value = '解鎖任務'
   blueprint.value = bp
   visible.value = true
   await fetchMissions()
@@ -133,11 +136,27 @@ async function fetchMissions() {
   loading.value = false
 }
 
+/** 直接顯示已經查好的任務（例如礦物「用在哪些任務」）：{ title, subtitle, heading, missions } */
+async function showMissions({ title: t = '', subtitle: sub = '', heading: h = '相關任務', missions: rows = [] } = {}) {
+  requestSeq++
+  heading.value = h
+  blueprint.value = { name: t, subtitle: sub }
+  missions.value = rows
+  failed.value = false
+  loading.value = false
+  visible.value = true
+  loadTranslations('location', rows.flatMap(m => m.star_systems || []))
+  loadTranslations('mission_type', rows.map(m => m.reward_scope).filter(Boolean))
+  await nextTick()
+  dialogEl.value?.focus()
+}
+
 function typeLabel(s) { return translate('mission_type', s) || s }
 function systemLabel(s) { return translate('location', s) || s }
 
 function infoLine(m) {
   const parts = []
+  if (m.haul) parts.push(`運送 ${haulLabel(m.haul)}`)
   const reward = rewardLabel(m)
   parts.push(`報酬 ${reward}`)
   if (reputationLabel(m)) parts.push(`聲望 ${reputationLabel(m)}`)
@@ -145,12 +164,18 @@ function infoLine(m) {
   return parts.join(' · ')
 }
 
+function haulLabel(h) {
+  const lo = h.min_amount, hi = h.max_amount
+  const f = v => (v == null ? '?' : Number(v).toLocaleString('en-US'))
+  return `× ${lo === hi || hi == null ? f(lo) : `${f(lo)}–${f(hi)}`}`
+}
+
 function close() {
   requestSeq++
   visible.value = false
 }
 
-defineExpose({ open, close })
+defineExpose({ open, showMissions, close })
 </script>
 
 <style scoped>

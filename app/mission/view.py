@@ -9,6 +9,7 @@ token 都可以）：玩家頁點藍圖名稱看「解鎖任務」要打 /missio
 
 from flask import Blueprint, jsonify, request
 
+from src.limiter import limiter
 from src.permissions import viewer_sees_hidden, visibility_arg, public_api
 
 from src.models.sorting import sort_args
@@ -114,6 +115,23 @@ def missions_for_blueprint(blueprint_uuid):
     """
     return jsonify({'success': True,
                     'data': Mission.for_blueprint(blueprint_uuid, visible_only=not viewer_sees_hidden())})
+
+
+@app_mission.route('/by-commodity', methods=['GET'])
+@public_api
+@limiter.limit('120 per minute')
+def missions_for_commodity():
+    """要運送這種商品／礦物的任務（礦物頁「用在哪些任務」）。
+    ---
+    tags: [Mission]
+    parameters:
+      - {in: query, name: name, type: string, required: true, description: "商品英文名稱，例如 Agricium"}
+    responses:
+      200:
+        description: "data：任務簡要（同 /for-blueprint，沒有獎勵池），每筆多 haul：{name, min_amount, max_amount}"
+    """
+    return jsonify({'success': True, 'data': Mission.for_commodity(request.args.get('name', ''),
+                                                                   visible_only=not viewer_sees_hidden())})
 
 
 @app_mission.route('/factions', methods=['GET'])

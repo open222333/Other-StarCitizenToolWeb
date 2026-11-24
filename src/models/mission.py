@@ -10,6 +10,7 @@
 查詢一律加 is_current=True（上游移除的任務／勢力留著紀錄，但不顯示）。
 """
 
+import re
 from typing import Optional
 
 from pymongo import ASCENDING
@@ -201,6 +202,27 @@ class Mission:
                 'is_available_by_default': bool((names.get(u) or {}).get('is_available_by_default')),
             } for u in row.pop('_pool_uuids')]
         out.sort(key=lambda r: (-(r['chance'] or 0), (r.get('title') or '').lower()))
+        return out
+
+    @classmethod
+    def for_commodity(cls, name: str, visible_only: bool = False, limit: int = 200) -> list:
+        """要運送這種商品／礦物的任務（hauling_summary 的名稱相同，不分大小寫；「Agricium (Ore)」這種
+        帶括號說明的也算），每筆附 `haul`：{min_amount, max_amount}（同一任務多筆取第一筆）。礦物頁「用在哪些任務」。"""
+        n = (name or '').strip()
+        if not n:
+            return []
+        rx = re.compile(rf'^{re.escape(n)}(\s*\(.*\))?$', re.IGNORECASE)
+        filt = add_visibility_filter({'is_current': True, 'hauling_summary.name': rx},
+                                     visible_only=visible_only)
+        proj = {**cls.BRIEF_PROJECTION, 'hauling_summary': 1}
+        proj.pop('blueprint_pools', None)
+        out = []
+        for row in cls._col().find(filt, proj).limit(max(1, min(int(limit), 500))):
+            hauls = [h for h in row.pop('hauling_summary', None) or [] if isinstance(h, dict) and rx.match(h.get('name') or '')]
+            row['haul'] = {'name': hauls[0].get('name'), 'min_amount': hauls[0].get('min_amount'),
+                           'max_amount': hauls[0].get('max_amount')} if hauls else None
+            out.append(row)
+        out.sort(key=lambda r: (-(r.get('reward_max') or 0), (r.get('title') or '').lower()))
         return out
 
     @classmethod

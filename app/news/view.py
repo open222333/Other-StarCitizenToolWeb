@@ -9,8 +9,8 @@
     PUT    /news/admin/<id>       後台：修改
     DELETE /news/admin/<id>       後台：刪除（軟刪除）
     POST   /news/ingest           外部：API 金鑰（X-API-Key，權限 news:write）寫入一則或多則，來源連結相同就更新
-    GET    /news/admin/tag-settings  後台：標籤與是否上架（下架＝帶這標籤的新聞玩家看不到也搜不到）
-    PUT    /news/admin/tag-settings  後台：上架／下架一個標籤
+    GET    /news/admin/tag-settings  後台：標籤與顯示方式（下架＝帶這標籤的新聞玩家看不到也搜不到）
+    PUT    /news/admin/tag-settings  後台：設定標籤顯示方式（分類列／更多／下架）
     （API 金鑰管理在 /data/api-keys，見 app/api_key/view.py）
 """
 
@@ -53,15 +53,23 @@ def list_public():
       - {name: q, in: query, type: string, description: 搜尋標題、內文、標籤（最多 100 字）}
       - {name: pinned, in: query, type: string, description: "1＝只看置頂"}
       - {name: sort, in: query, type: string, description: "latest＝只依發布時間新到舊（不管置頂）"}
+      - {name: since, in: query, type: string, description: "發布時間 >= 這個時間（ISO 8601，例如 2026-11-23T16:00:00Z）"}
+      - {name: until, in: query, type: string, description: "發布時間 < 這個時間（ISO 8601）"}
       - {name: limit, in: query, type: integer, default: 20, description: 每頁幾則（最多 100）}
       - {name: offset, in: query, type: integer, default: 0}
     responses:
       200:
         description: "data: [{_id, title, excerpt, cover_url, source_url, tags, pinned, published_at}]、total"
+      400:
+        description: 日期範圍格式不對
     """
-    rows, total = news.list_news(public=True, tag=request.args.get('tag', ''), q=request.args.get('q', ''),
-                                 limit=_int('limit', 20), offset=_int('offset', 0),
-                                 pinned_only=request.args.get('pinned') == '1', sort=request.args.get('sort', ''))
+    try:
+        rows, total = news.list_news(public=True, tag=request.args.get('tag', ''), q=request.args.get('q', ''),
+                                     limit=_int('limit', 20), offset=_int('offset', 0),
+                                     pinned_only=request.args.get('pinned') == '1', sort=request.args.get('sort', ''),
+                                     since=request.args.get('since'), until=request.args.get('until'))
+    except news.NewsError as err:
+        return jsonify({'success': False, 'message': str(err)}), 400
     return _cached(jsonify({'success': True, 'data': rows, 'total': total}))
 
 
@@ -90,9 +98,9 @@ def list_tags():
     tags: [News]
     responses:
       200:
-        description: "data: [{tag, count}]"
+        description: "data: [{tag, count, display（main＝分類列直接顯示、more＝收在「更多」）, order}]，分類列的排前面"
     """
-    return _cached(jsonify({'success': True, 'data': news.tags(public=True)}))
+    return _cached(jsonify({'success': True, 'data': news.public_tags()}))
 
 
 @app_news.route('/<news_id>', methods=['GET'])
@@ -241,14 +249,14 @@ def delete_admin(news_id):
 @app_news.route('/admin/tag-settings', methods=['GET'])
 @admin_api(*READ_ROLES)
 def tag_settings_admin():
-    """後台：所有標籤、則數、是否上架。
+    """後台：所有標籤、則數、顯示方式（main 分類列／more 更多／hidden 下架）。
     ---
     tags: [News]
     security:
       - Bearer: []
     responses:
       200:
-        description: "data: [{tag, count, listed}]"
+        description: "data: [{tag, count, display, order, listed}]"
     """
     return jsonify({'success': True, 'data': news.admin_tags()})
 
@@ -256,7 +264,9 @@ def tag_settings_admin():
 @app_news.route('/admin/tag-settings', methods=['PUT'])
 @admin_api(*WRITE_ROLES)
 def set_tag_setting():
-    """後台：上架／下架一個標籤。下架＝帶這個標籤的新聞對玩家隱藏（列表、全文、篩選、搜尋都找不到）。
+    """後台：設定一個標籤怎麼顯示。display：main＝玩家頁分類列直接顯示（order 小的在前）、more＝收在「更多」
+    （沒設定過的新標籤預設）、hidden＝下架（帶這個標籤的新聞對玩家隱藏，列表、全文、篩選、搜尋都找不到）。
+    舊的 {tag, listed} 也接受（listed=false＝下架）。
     ---
     tags: [News]
     security:
@@ -267,22 +277,28 @@ def set_tag_setting():
         required: true
         schema:
           type: object
-          required: [tag, listed]
+          required: [tag]
           properties:
             tag: {type: string}
-            listed: {type: boolean}
+            display: {type: string, enum: [main, more, hidden]}
+            order: {type: integer}
+            listed: {type: boolean, description: 舊欄位，沒帶 display 時用}
     responses:
       200:
-        description: "data: {tag, listed}"
+        description: "data: {tag, display, order, listed}"
       400:
         description: 輸入不合法
     """
     data = request.get_json(silent=True) or {}
     try:
-        row = news.set_tag_listed(data.get('tag'), data.get('listed', True), by=get_jwt_identity())
+        if 'display' in data:
+            row = news.set_tag_display(data.get('tag'), data.get('display'), by=get_jwt_identity(), order=data.get('order'))
+        else:
+            row = news.set_tag_listed(data.get('tag'), data.get('listed', True), by=get_jwt_identity())
     except news.NewsError as err:
         return jsonify({'success': False, 'message': str(err)}), 400
-    Log.create(get_jwt_identity(), 'set_news_tag', f'新聞標籤「{row["tag"]}」{"上架" if row["listed"] else "下架"}', success=True)
+    label = {'main': '分類列', 'more': '顯示更多', 'hidden': '下架'}[row['display']]
+    Log.create(get_jwt_identity(), 'set_news_tag', f'新聞標籤「{row["tag"]}」設為{label}', success=True)
     return jsonify({'success': True, 'data': row})
 
 

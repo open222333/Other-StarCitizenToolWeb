@@ -262,6 +262,30 @@
     },
     "Char_Head_Stubble": {
       "zh-TW": "鬍渣"
+    },
+    "Turret": {
+      "zh-TW": "砲塔／雲台"
+    },
+    "TurretBase": {
+      "zh-TW": "砲塔"
+    },
+    "MissileLauncher": {
+      "zh-TW": "飛彈架"
+    },
+    "Missile": {
+      "zh-TW": "飛彈"
+    },
+    "BombLauncher": {
+      "zh-TW": "炸彈架"
+    },
+    "Bomb": {
+      "zh-TW": "炸彈"
+    },
+    "JumpDrive": {
+      "zh-TW": "跳躍引擎"
+    },
+    "WeaponDefensive": {
+      "zh-TW": "反制發射器"
     }
   },
   "item_sub_type": {
@@ -432,6 +456,30 @@
     },
     "Kopion": {
       "zh-TW": "科皮恩"
+    },
+    "Rocket": {
+      "zh-TW": "火箭"
+    },
+    "GunTurret": {
+      "zh-TW": "雲台"
+    },
+    "MannedTurret": {
+      "zh-TW": "有人砲塔"
+    },
+    "PDCTurret": {
+      "zh-TW": "點防禦砲塔"
+    },
+    "BallTurret": {
+      "zh-TW": "球形砲塔"
+    },
+    "NoseMounted": {
+      "zh-TW": "機鼻砲座"
+    },
+    "CanardTurret": {
+      "zh-TW": "鴨翼砲塔"
+    },
+    "MissileTurret": {
+      "zh-TW": "飛彈砲塔"
     }
   },
   "mining_deposit": {
