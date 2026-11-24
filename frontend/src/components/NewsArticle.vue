@@ -1,6 +1,6 @@
 <!--
   一則新聞的全文（NewsBoard.vue、NewsBanner.vue 的跳出視窗共用）：封面、標題、時間、標籤、
-  Markdown 內文（utils/markdown.js：先跳脫 HTML 再轉，連結只接受 http/https）、來源連結。
+  Markdown 內文（utils/markdown.js：先跳脫 HTML 再轉，連結只接受 http/https）、來源連結、分享（複製 ?tab=news&news=<id> 連結）。
 -->
 <template>
   <article class="na">
@@ -14,13 +14,21 @@
     <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 先跳脫整段 HTML，只產生白名單標籤 -->
     <div v-if="item.body" class="na-body" v-html="html"></div>
     <p v-else class="text-muted">（沒有內文）</p>
-    <a v-if="item.source_url" :href="item.source_url" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary mt-2">
-      <i class="bi bi-box-arrow-up-right me-1"></i>看原文</a>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      <a v-if="item.source_url" :href="item.source_url" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary">
+        <i class="bi bi-box-arrow-up-right me-1"></i>看原文</a>
+      <!-- 分享：手機用系統分享選單，其他複製連結（玩家頁新聞分頁 ?news=<id>，不用登入也能開） -->
+      <button v-if="item._id" type="button" class="btn btn-sm btn-info" @click="share">
+        <i class="bi bi-share me-1"></i>分享</button>
+    </div>
   </article>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { PLAYER_HOME } from '@/router'
+import { copyText } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
 import { fmtNewsDate } from '@/utils/news'
 
@@ -28,6 +36,23 @@ const props = defineProps({ item: { type: Object, required: true } })
 const html = computed(() => renderMarkdown(props.item.body))
 const coverBroken = ref(false)
 watch(() => props.item.cover_url, () => { coverBroken.value = false })
+
+const router = useRouter()
+const shareUrl = computed(() => new URL(router.resolve({ path: PLAYER_HOME, query: { tab: 'news', news: props.item._id } }).href,
+  window.location.origin).toString())
+async function share() {
+  const url = shareUrl.value
+  // 觸控裝置（手機、平板）有系統分享選單就用；使用者取消不算失敗
+  if (navigator.share && window.matchMedia?.('(pointer: coarse)').matches) {
+    try {
+      await navigator.share({ title: props.item.title || '新聞', url })
+      return
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+    }
+  }
+  copyText(url, { okText: '已複製分享連結' })
+}
 </script>
 
 <style scoped>

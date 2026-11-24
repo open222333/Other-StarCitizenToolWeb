@@ -103,6 +103,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SfModal from '@/components/SfModal.vue'
 import SfState from '@/components/SfState.vue'
 import NewsArticle from '@/components/NewsArticle.vue'
@@ -217,6 +218,15 @@ watch(() => props.active, start)
 onMounted(start)
 
 const open = ref(false)
+// 從分享連結（?news=<id>）打開的：關掉視窗時把 news 從網址拿掉，重新整理不會再跳出來
+const route = useRoute()
+const router = useRouter()
+watch(open, (v) => {
+  if (v || !route.query.news) return
+  const query = { ...route.query }
+  delete query.news
+  router.replace({ query })
+})
 const current = ref(null)
 const articleLoading = ref(false)
 async function openItem(n) {
