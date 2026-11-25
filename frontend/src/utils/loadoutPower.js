@@ -133,7 +133,7 @@ export function consumerLoad(c, p) {
   }
   if (c.parts) {          // 合成的一欄（護盾、雷達）
     const out = { power: Math.min(p, c.max), em: 0, coolant: 0, eff: 0 }
-    for (const part of shieldShares(c, p)) {
+    for (const part of partShares(c, p)) {
       const s = part.item.stats || {}
       out.em += (s.em || 0) * part.eff
       out.coolant += (s.coolant_use?.[1] || 0) * part.eff
@@ -152,7 +152,7 @@ export function consumerLoad(c, p) {
 }
 
 /** 合成的一欄（護盾、雷達）分到 p 格時，每個產生器分到的格數（依各自上限的比例）與效率：[{ key, item, max, pips, eff }] */
-export function shieldShares(c, p) {
+export function partShares(c, p) {
   return (c.parts || []).map(part => {
     const share = c.max ? Math.min(p, c.max) * part.max / c.max : 0
     return { key: part.key, item: part.item, max: part.max, pips: share,

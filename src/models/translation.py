@@ -155,6 +155,12 @@ def _check_version():
         _cache_version = version
 
 
+def cache_version() -> str:
+    """目前的翻譯版本（同步完成會換）；其他模組自己的快取要跟著翻譯更新時，拿這個當 key 的一部分。"""
+    _check_version()
+    return str(_cache_version)
+
+
 def _cached(cache_key, loader):
     _check_version()
     if cache_key in _cache:

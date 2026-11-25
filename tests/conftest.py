@@ -78,6 +78,11 @@ def clean_db():
     # 快取也要跟著清，否則上一個測試查到的翻譯會漏到下一個測試
     from src.models import translation
     translation.clear_cache()
+    # 概念船清單的模組層快取（src/models/ccu.py）同理
+    from src.models import ccu
+    ccu._concept_cache.update(key=None, rows=None)
+    from src.models import loadout
+    loadout._ships_cache.update(key=None, rows=None)
 
 
 @pytest.fixture(autouse=True)

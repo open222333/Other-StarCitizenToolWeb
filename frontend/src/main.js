@@ -5,7 +5,8 @@ import router from './router'
 import { useScifiThemeStore } from './stores/scifiTheme'
 
 import 'bootstrap/dist/css/bootstrap.min.css'
-import 'bootstrap-icons/font/bootstrap-icons.css'
+// 圖示只載入用到的子集（待辦 2-5）；新增圖示後跑 npm run icons 重新產生
+import '@/assets/icons/bootstrap-icons-subset.css'
 // Bootstrap 的 JS 只在用到的元件裡 import { Modal } from 'bootstrap'（全站沒有 data-bs-* 自動綁定），不再整包載入 bundle
 // 玩家端公開頁面（登入／註冊／個人頁）用的深色科幻主題，見檔案內註解
 import './assets/scifi-theme.css'

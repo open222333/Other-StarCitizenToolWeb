@@ -39,9 +39,10 @@ class _MasterBase:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def get(cls, doc_id: str) -> Optional[dict]:
-        """按 uuid 取單筆。不過濾 is_current —— 庫存可能指向已下架的物品。"""
-        return cls._col().find_one({'_id': doc_id})
+    def get(cls, doc_id: str, with_raw: bool = False) -> Optional[dict]:
+        """按 uuid 取單筆。不過濾 is_current —— 庫存可能指向已下架的物品。
+        預設不含 raw（整包上游原始資料，常比其他欄位加起來還大；待辦 2-2），要的話 with_raw=True。"""
+        return cls._col().find_one({'_id': doc_id}, None if with_raw else {'raw': 0})
 
     @classmethod
     def names_by_ids(cls, doc_ids) -> dict:
@@ -120,11 +121,11 @@ class _MasterBase:
 
     @classmethod
     def find_by_name(cls, name: str) -> Optional[dict]:
-        """完整名稱比對（大小寫不敏感）。"""
+        """完整名稱比對（大小寫不敏感）。不含 raw（同 get()）。"""
         return cls._col().find_one({
             'is_current': True,
             'name_lower': (name or '').strip().lower(),
-        })
+        }, {'raw': 0})
 
     @classmethod
     def resolve(cls, value: str) -> Optional[dict]:
@@ -413,7 +414,10 @@ class ItemMaster(_MasterBase):
                     'source': 'uex',
                 } for row in rows]
 
-        embedded = ((item.get('raw') or {}).get('uex_prices') or {}).get('purchase') or []
+        # get() 預設不帶 raw：只撈內嵌價格這一段
+        raw = item.get('raw') if 'raw' in item else (
+            db[cls.COLLECTION].find_one({'_id': item['_id']}, {'raw.uex_prices': 1}) or {}).get('raw')
+        embedded = ((raw or {}).get('uex_prices') or {}).get('purchase') or []
         return [{
             'price_buy': row.get('price_buy'),
             'price_sell': row.get('price_sell'),

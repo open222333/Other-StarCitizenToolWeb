@@ -18,8 +18,8 @@
             <template v-else>
               <div v-for="r in shown(s.id, side.key)" :key="r.key" class="mp-row">
                 <span class="mp-row__p">{{ fmtAuec(r.price) }}</span>
-                <span class="min-w-0 text-truncate">{{ r.name }}<span v-if="r.place && !r.name.includes(r.place)" class="text-muted ms-1">{{ r.place }}</span></span>
-                <span v-if="r.system" class="sf-chip ms-auto">{{ r.system }}</span>
+                <span class="min-w-0 text-truncate">{{ r.name }}<span v-if="r.place && !r.name.includes(r.place)" class="text-muted ms-1">{{ locationZh(r.place) }}</span></span>
+                <span v-if="r.system" class="sf-chip ms-auto">{{ locationZh(r.system) }}</span>
               </div>
               <button v-if="rowsOf(s.id, side.key).length > PREVIEW" type="button" class="btn btn-sm btn-secondary mt-1"
                 @click="toggle(s.id, side.key)">{{ expanded[`${s.id}:${side.key}`] ? '收起' : `顯示全部 ${rowsOf(s.id, side.key).length} 處` }}</button>
@@ -33,7 +33,8 @@
 
 <script setup>
 import { computed, reactive, watch } from 'vue'
-import { fmtAuec } from '@/utils/uexCommodity'
+import { getJson as fetchJson } from '@/utils/getJson'
+import { fmtAuec, loadLocationZh, locationZh } from '@/utils/uexCommodity'
 
 const props = defineProps({
   /** 礦床成分的 uex：{ id, code, raw_id, raw_code, is_raw } */
@@ -59,11 +60,7 @@ const rowsOf = (id, side) => data[`${id}:${side}`]
 const shown = (id, side) => (expanded[`${id}:${side}`] ? rowsOf(id, side) : rowsOf(id, side).slice(0, PREVIEW))
 const toggle = (id, side) => { expanded[`${id}:${side}`] = !expanded[`${id}:${side}`] }
 
-async function getJson(url) {
-  const res = await props.fetcher(url)
-  const body = res?.ok ? await res.json().catch(() => null) : null
-  return body?.success ? body.data : null
-}
+const getJson = async url => (await fetchJson(props.fetcher, url)).data ?? null
 const leaf = (t, price, date) => ({ key: t?.id || t?.name, name: t?.name || '—', place: t?.place, system: t?.star_system, price, date })
 
 async function load() {
@@ -76,6 +73,8 @@ async function load() {
     data[`${id}:buy`] = (buy?.locations || []).map(l => leaf(l.terminal, l.items?.[0]?.price_buy, l.items?.[0]?.date_modified))
       .sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity))
   }))
+  // 地點、星系的中文從翻譯資料庫查
+  loadLocationZh(Object.values(data).flatMap(rows => (rows || []).flatMap(r => [r.place, r.system])))
 }
 watch(() => props.uex, load, { immediate: true })
 </script>

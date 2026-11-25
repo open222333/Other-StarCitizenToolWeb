@@ -143,6 +143,7 @@
 </template>
 
 <script setup>
+import { getJson } from '@/utils/getJson'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SfFilterSheet from '@/components/SfFilterSheet.vue'
@@ -263,24 +264,19 @@ function clearAll() {
   selected.value = []
 }
 
-async function getJson(path) {
-  const res = await props.fetcher(path)
-  const data = res ? await res.json().catch(() => null) : null
-  return { ok: !!res?.ok, data }
-}
 
 async function loadCommodities() {
   loading.value = true
   loadFailed.value = false
-  const { ok, data } = await getJson('/player/commodities/buyable')
+  const r = await getJson(props.fetcher, '/player/commodities/buyable')
   loading.value = false
-  if (!ok || !data?.success) {
+  if (!r.ok) {
     loadFailed.value = true
     return
   }
-  commodities.value = data.data || []
-  starSystems.value = data.star_systems || []
-  areas.value = data.areas || []
+  commodities.value = r.data || []
+  starSystems.value = r.body.star_systems || []
+  areas.value = r.body.areas || []
   loadCommodityZh(commodities.value.map(c => c.name))
   loadLocationZh([...starSystems.value, ...areas.value.flatMap(a => [a.planet, a.place])].filter(Boolean))
 }
@@ -312,15 +308,15 @@ async function loadLocations() {
   const params = new URLSearchParams()
   selected.value.forEach(id => params.append('id', id))
   systems.value.forEach(s => params.append('star_system', s))
-  const { ok, data } = await getJson(`/player/commodities/buy-locations?${params.toString()}`)
+  const r = await getJson(props.fetcher, `/player/commodities/buy-locations?${params.toString()}`, undefined, '查詢失敗，請稍後再試')
   if (mine !== seq) return
   resultsLoading.value = false
-  if (!ok || !data?.success) {
-    resultsFailed.value = data?.message || '查詢失敗，請稍後再試'
+  if (!r.ok) {
+    resultsFailed.value = r.message
     return
   }
-  allLocations.value = data.data?.locations || []
-  coverage.value = data.data?.commodities || []
+  allLocations.value = r.data?.locations || []
+  coverage.value = r.data?.commodities || []
   // 結果少的時候直接展開，不用一個一個點
   openIds.value = new Set(locations.value.length <= 3 ? locations.value.map(l => l.terminal.id) : [])
   loadLocationZh(locations.value.flatMap(l => l.terminal.location))

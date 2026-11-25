@@ -73,3 +73,17 @@ def test_api_export_and_dry_run(client, auth_headers, seed):
 
 def test_api_requires_admin(client):
     assert client.get('/data/backup/sets').status_code in (401, 422)
+
+
+def test_export_stream_chunks_match(client, auth_headers):
+    """串流匯出（分很多段）跟一次匯出讀回來一樣；API 下載也讀得回來。"""
+    from src.mongo import get_db
+    get_db()['players'].insert_many([{'nickname': f'p{i}', 'note': 'x' * 2000} for i in range(300)])
+    chunks = list(backup.export_stream(['players']))
+    assert len(chunks) > 1, '資料夠多時要分段輸出'
+    data = backup.load_file(b''.join(chunks))
+    assert len(data['collections']['players']) == 300 and data['sets'] == ['players']
+    r = client.get('/data/backup/export?set=players', headers=auth_headers)
+    assert r.status_code == 200 and len(backup.load_file(r.data)['collections']['players']) == 300
+    with pytest.raises(backup.BackupError):
+        backup.export_stream(['nope'])

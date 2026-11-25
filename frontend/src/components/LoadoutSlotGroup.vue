@@ -239,4 +239,11 @@ const meta = computed(() => {
   .lo-acq { padding-left: .5rem; }
   .lo-gun { padding-left: .5rem; }
 }
+/* 觸控：電源開關、購買地點小圖示、品質把手的上下鈕至少 44px（CLAUDE.md「觸控 44px」） */
+@media (pointer: coarse) {
+  .lo-pwr { width: 44px; height: 44px; }
+  .lo-where { min-width: 44px; min-height: 44px; }
+  .lo-qh { width: 44px; }
+  .lo-qh__btn { min-height: 44px; }
+}
 </style>

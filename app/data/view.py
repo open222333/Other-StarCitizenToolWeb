@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 
-from flask import Blueprint, Response, jsonify, request
+from flask import stream_with_context, Blueprint, Response, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
 from src import backup
@@ -161,12 +161,12 @@ def backup_export():
     """
     keys = request.args.getlist('set')
     try:
-        body = backup.export_gzip(keys)
+        body = backup.export_stream(keys)       # 串流：邊讀邊壓邊送（待辦 2-7）
     except backup.BackupError as exc:
         return jsonify({'success': False, 'message': str(exc)}), 400
     Log.create(get_jwt_identity(), 'backup_export', detail=','.join(keys))
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-    return Response(body, mimetype='application/gzip', headers={
+    return Response(stream_with_context(body), mimetype='application/gzip', headers={
         'Content-Disposition': f'attachment; filename="sc-tool-backup-{stamp}.json.gz"',
     })
 

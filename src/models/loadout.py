@@ -23,7 +23,28 @@ MAX_IDS = 500
 _TYPE_RE = re.compile(r'^[A-Za-z]+$')
 
 
+#: 船清單快取：「配裝」「載具」同步的 run_id 都沒變就用上次排好的（待辦 2-3）；沒有同步紀錄（測試）不快取
+_ships_cache: dict = {'key': None, 'rows': None}
+
+
+def _sync_version() -> str:
+    runs = {d['_id']: d.get('last_run_id') or '' for d in get_db()['sync_jobs'].find(
+        {'_id': {'$in': ['loadout', 'vehicles']}}, {'last_run_id': 1})}
+    return f"{runs.get('loadout', '')}|{runs.get('vehicles', '')}"
+
+
 def ships() -> list:
+    """可以配裝的船（快取，見 _ships_cache）。"""
+    key = _sync_version()
+    if key.strip('|') and _ships_cache['key'] == key and _ships_cache['rows'] is not None:
+        return _ships_cache['rows']
+    rows = _ships()
+    if key.strip('|'):
+        _ships_cache.update(key=key, rows=rows)
+    return rows
+
+
+def _ships() -> list:
     """可以配裝的船。同名的只留一筆（玩家載具主檔有的優先，再來是沒有 NPC／任務變體尾巴、class_name 最短的）。"""
     db = get_db()
     rows = list(db[SHIP_COLLECTION].find({'is_current': {'$ne': False}}, LIST_FIELDS))

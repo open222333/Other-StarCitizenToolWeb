@@ -271,6 +271,7 @@
 </template>
 
 <script setup>
+import { getJson as fetchJson } from '@/utils/getJson'
 import { computed, provide, reactive, ref, shallowReactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AutocompleteField from '@/components/AutocompleteField.vue'
@@ -294,7 +295,7 @@ import {
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/utils/toast'
 import {
-  autoAllocate, consumerLoad, consumers, generation, maxAllocate, powerPlantEm, setWithinGen, powerSummary, shieldShares,
+  autoAllocate, consumerLoad, consumers, generation, maxAllocate, powerPlantEm, setWithinGen, powerSummary, partShares,
 } from '@/utils/loadoutPower'
 
 const props = defineProps({
@@ -313,11 +314,8 @@ const STORAGE_KEY = 'sc_loadout_v1'
 const route = useRoute()
 const router = useRouter()
 
-async function getJson(url) {
-  const res = await props.fetcher(url)
-  const body = res ? await res.json().catch(() => null) : null
-  return res?.ok && body?.success ? body.data : null
-}
+// 共用 utils/getJson；這裡只要 data（失敗回 null）
+const getJson = async url => (await fetchJson(props.fetcher, url)).data ?? null
 
 // ── 船清單 ──
 const ships = ref([])
@@ -698,7 +696,7 @@ const shieldEff = computed(() => {
   const out = {}
   for (const c of listOf('scm')) {
     // 護盾是合成的一欄：每個產生器依分到的格數各自打折
-    if (c.kind === 'shield') for (const part of shieldShares(c, pipsByMode.scm[c.key] ?? c.max)) out[part.key] = part.eff
+    if (c.kind === 'shield') for (const part of partShares(c, pipsByMode.scm[c.key] ?? c.max)) out[part.key] = part.eff
   }
   return out
 })

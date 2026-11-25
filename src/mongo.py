@@ -284,6 +284,7 @@ def ensure_indexes():
     db['ccu_offers'].create_index([('is_current', ASCENDING), ('kind', ASCENDING)])
     db['ccu_offers'].create_index('ship_rsi_id')
     db['ccu_offers'].create_index('_sync.run_id')
+    db['ccu_offers'].create_index('first_seen_at')      # rsi_since()：最早一筆（船價明細每次都查）
     db['rsi_ships'].create_index('_sync.run_id')
     db['rsi_ships'].create_index('vehicle_uuid')
     db['ship_sale_history'].create_index('rsi_id')

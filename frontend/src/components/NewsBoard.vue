@@ -377,4 +377,7 @@ defineExpose({ openItem })
   .nb-hero, .nb-hero--2, .nb-hero--3 { grid-template-rows: 13rem 9.5rem; gap: .6rem; }
   .nb-tile__title { font-size: var(--sf-fs-sm); }
 }
+@media (pointer: coarse) {
+  .nb-date { min-height: 44px; min-width: 44px; }
+}
 </style>

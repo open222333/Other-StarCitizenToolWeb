@@ -42,6 +42,7 @@ import time
 import uuid as uuidlib
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from typing import Optional
 
 from pymongo import UpdateOne
 from redis.exceptions import WatchError
@@ -195,6 +196,25 @@ def _flush(collection_name: str, ops: list) -> int:
     return (result.upserted_count or 0) + (result.modified_count or 0)
 
 
+#: 「抓取不完整」的門檻：這輪抓到的筆數低於原有上架筆數的這個比例，整輪失敗、不下架（待辦 3-1）
+GUARD_RATIO = 0.8
+
+
+def _guard_count(label: str, seen: int, before: int, unit: str = '筆', action: str = '判定抓取不完整，不更新') -> None:
+    """抓到 0 筆、或少於原有筆數的 80%：丟 ScDataError（這輪記失敗、走 backoff 重試，主檔維持原狀）。
+    首次同步（before == 0）沒有基準，只要有資料就放行。"""
+    floor = int(before * GUARD_RATIO)
+    if seen == 0 or (before and seen < floor):
+        raise ScDataError(f'{label}: 只抓到 {seen} {unit}，低於原有 {before} {unit}的 80%（門檻 {floor}），'
+                          f'判定抓取不完整，{action.removeprefix("判定抓取不完整，")}')
+
+
+def _retire_missing(col, run_id: str, stamp: datetime, scope: Optional[dict] = None) -> int:
+    """這輪沒碰到的（_sync.run_id 不是這輪）標下架（is_current=False、retired_at），不刪；回傳下架筆數。"""
+    return col.update_many({**(scope or {}), '_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
+                           {'$set': {'is_current': False, 'retired_at': stamp}}).modified_count
+
+
 def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> dict:
     collection_name, mapper = WIKI_RESOURCES[resource]
     history_name = f'{collection_name}_versions'
@@ -278,17 +298,10 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
     #    往上拋，讓這輪記成失敗並走 backoff 重試，主檔維持原狀。
     #    首次同步（before == 0）沒有基準，只要有資料就放行。
     before_current = db[collection_name].count_documents({**scope, 'is_current': {'$ne': False}})
-    floor = int(before_current * 0.8)
-    if seen == 0 or (before_current and seen < floor):
-        raise ScDataError(
-            f'{resource}: 上游只回傳 {seen} 筆，低於原有上架筆數 {before_current} 的 80%'
-            f'（門檻 {floor}），判定抓取不完整，跳過下架步驟以免清空主檔')
+    _guard_count(resource, seen, before_current, action='跳過下架步驟以免清空主檔')
 
     # 這輪沒碰到的 → 目前 patch 已不存在，但保留紀錄
-    retired = db[collection_name].update_many(
-        {**scope, '_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
-        {'$set': {'is_current': False, 'retired_at': stamp}},
-    ).modified_count
+    retired = _retire_missing(db[collection_name], run_id, stamp, scope)
 
     logger.info('scdata_sync: %s 完成 讀取=%d 寫入=%d 跳過=%d 下架=%d',
                 resource, seen, written, skipped, retired)
@@ -414,16 +427,9 @@ def _sync_scunpacked_resource(client, resource: str, run_id: str, stamp: datetim
     written += _flush(collection_name, ops)
 
     before_current = db[collection_name].count_documents({'is_current': {'$ne': False}})
-    floor = int(before_current * 0.8)
-    if seen == 0 or (before_current and seen < floor):
-        raise ScDataError(
-            f'scunpacked:{resource}: 上游只回傳 {seen} 筆，低於原有上架筆數 {before_current} 的 80%'
-            f'（門檻 {floor}），判定抓取不完整，跳過下架步驟以免清空主檔')
+    _guard_count(f'scunpacked:{resource}', seen, before_current, action='跳過下架步驟以免清空主檔')
 
-    retired = db[collection_name].update_many(
-        {'_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
-        {'$set': {'is_current': False, 'retired_at': stamp}},
-    ).modified_count
+    retired = _retire_missing(db[collection_name], run_id, stamp)
 
     logger.info('scdata_sync: scunpacked %s 完成 讀取=%d 寫入=%d 跳過=%d 下架=%d',
                 resource, seen, written, skipped, retired)
@@ -461,14 +467,8 @@ def _sync_cargo_grids(client, run_id: str, stamp: datetime) -> dict:
     written += _flush(collection_name, ops)
     good = seen - skipped
     before_current = db[collection_name].count_documents({'is_current': {'$ne': False}})
-    floor = int(before_current * 0.8)
-    if good == 0 or (before_current and good < floor):
-        raise ScDataError(f'cargo_grids: 只抓到 {good} 艘，低於原有 {before_current} 艘的 80%（門檻 {floor}），'
-                          '判定抓取不完整，跳過下架步驟')
-    retired = db[collection_name].update_many(
-        {'_sync.run_id': {'$ne': run_id}, 'is_current': {'$ne': False}},
-        {'$set': {'is_current': False, 'retired_at': stamp}},
-    ).modified_count
+    _guard_count('cargo_grids', good, before_current, unit='艘', action='跳過下架步驟')
+    retired = _retire_missing(db[collection_name], run_id, stamp)
     linked = cargo_grid.link_vehicles()
     logger.info('scdata_sync: 貨物網格完成 讀取=%d 寫入=%d 跳過=%d 下架=%d 對應載具更新=%d',
                 seen, written, skipped, retired, linked)
@@ -496,11 +496,7 @@ def _sync_ccu(client, run_id: str, stamp: datetime) -> dict:
     offers = rsi_store.map_ship_offers(raw['ships'], exponent) + \
         rsi_store.map_upgrade_offers(raw['upgrades'], ship_index, raw.get('from_id'), exponent)
 
-    before_ships = db[ccu.SHIPS].count_documents({'is_current': True})
-    floor = int(before_ships * 0.8)
-    if not ships or (before_ships and len(ships) < floor):
-        raise ScDataError(f'ccu: 只抓到 {len(ships)} 艘船，低於原有 {before_ships} 艘的 80%（門檻 {floor}），'
-                          '判定抓取不完整，不更新')
+    _guard_count('ccu', len(ships), db[ccu.SHIPS].count_documents({'is_current': True}), unit='艘船')
     before_ccu = db[ccu.OFFERS].count_documents({'is_current': True, 'kind': 'ccu'})
     if before_ccu >= 20 and not any(o['kind'] == 'ccu' for o in offers):
         raise ScDataError(f'ccu: 原本有 {before_ccu} 個升級 SKU，這次一個都沒抓到，判定抓取不完整，不更新')
@@ -529,11 +525,8 @@ def _sync_loaners(client, run_id: str, stamp: datetime) -> dict:
         data = rsi_loaners.fetch_matrix(client)
     except rsi_loaners.LoanerError as err:
         raise ScDataError(f'loaners: {err}') from err
-    before = get_db()[ship_loaner.COLLECTION].count_documents({'is_current': True})
-    floor = int(before * 0.8)
-    if before and len(data['rows']) < floor:
-        raise ScDataError(f'loaners: 只解析出 {len(data["rows"])} 列，低於原有 {before} 列的 80%（門檻 {floor}），'
-                          '判定抓取不完整，不更新')
+    _guard_count('loaners', len(data['rows']), get_db()[ship_loaner.COLLECTION].count_documents({'is_current': True}),
+                 unit='列')
     _report(force=True, phase='寫入借用船清單')
     stats = ship_loaner.save(data['rows'], run_id, stamp, data.get('updated_at'), data.get('url'))
     logger.info('scdata_sync: 借用船 完成 %d 列（下架 %d）', stats['seen'], stats['retired'])
@@ -553,11 +546,7 @@ def _sync_openhangar(client, run_id: str, stamp: datetime) -> dict:
     except openhangar.OpenHangarError as err:
         raise ScDataError(f'openhangar: {err}') from err
     ships = openhangar.map_history(data)
-    before = get_db()[ccu.SALE_HISTORY].count_documents({})
-    floor = int(before * 0.8)
-    if not ships or (before and len(ships) < floor):
-        raise ScDataError(f'openhangar: 只抓到 {len(ships)} 艘船的歷史，低於原有 {before} 艘的 80%（門檻 {floor}），'
-                          '判定抓取不完整，不更新')
+    _guard_count('openhangar', len(ships), get_db()[ccu.SALE_HISTORY].count_documents({}), unit='艘船的歷史')
     _report(force=True, phase='寫入上架歷史')
     stats = ccu.save_sale_history(ships, run_id, stamp)
     logger.info('scdata_sync: Open Hangar 完成 船=%d（對到 RSI %d、對到載具 %d）',

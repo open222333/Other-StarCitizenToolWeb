@@ -265,6 +265,7 @@
 </template>
 
 <script setup>
+import { getJson as fetchJson } from '@/utils/getJson'
 import { toast } from '@/utils/toast'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { scrollToListTop } from '@/utils/scrollAnchor'
@@ -415,10 +416,8 @@ const detailMissions = ref([])
 const detailLoading = ref(false)
 const missionsRef = ref(null)
 
-async function getJson(path) {
-  const res = await props.fetcher(path)
-  return res?.ok ? await res.json().catch(() => null) : null
-}
+// 共用 utils/getJson；這裡要整個回應（success、data、total…），失敗回 null
+const getJson = async path => { const r = await fetchJson(props.fetcher, path); return r.ok ? r.body : null }
 
 function query(params) {
   const sp = new URLSearchParams()

@@ -14,6 +14,7 @@
 
 import gzip
 import json
+import zlib
 from datetime import datetime, timezone
 
 from bson import json_util
@@ -67,19 +68,54 @@ def _pick(keys) -> list:
     return [s for s in BACKUP_SETS if s['key'] in keys]
 
 
-def export_gzip(keys) -> bytes:
-    """選的那幾組資料匯出成 gzip 壓縮的 JSON。"""
+def export_stream(keys):
+    """選的那幾組資料匯出成 gzip 壓縮的 JSON，一邊讀一邊壓一邊吐（待辦 2-7）：
+    不先把整份資料、整個 JSON 字串、整個壓縮檔都放進記憶體（API 容器只有 256 MB）。
+    格式跟以前一樣（load_file 讀得回來）。keys 不對在這裡就丟 BackupError（還沒開始輸出）。"""
     sets = _pick(keys)
+    return _stream(sets)
+
+
+def _stream(sets):
     db = get_db()
-    payload = {
-        'format': BACKUP_FORMAT,
-        'version': BACKUP_VERSION,
-        'exported_at': datetime.now(timezone.utc).isoformat(),
-        'sets': [s['key'] for s in sets],
-        'collections': {c: list(db[c].find({})) for s in sets for c in s['collections']},
-    }
-    text = json_util.dumps(payload, json_options=json_util.RELAXED_JSON_OPTIONS, ensure_ascii=False)
-    return gzip.compress(text.encode('utf-8'))
+    z = zlib.compressobj(6, zlib.DEFLATED, 16 + zlib.MAX_WBITS)      # 16+：gzip 格式
+    opts = json_util.RELAXED_JSON_OPTIONS
+    dumps = lambda v: json_util.dumps(v, json_options=opts, ensure_ascii=False)   # noqa: E731
+    buf: list = []
+    size = 0
+
+    def put(text: str):
+        nonlocal size
+        buf.append(text)
+        size += len(text)
+
+    def flush():
+        nonlocal size
+        out = z.compress(''.join(buf).encode('utf-8'))
+        buf.clear()
+        size = 0
+        return out
+
+    head = {'format': BACKUP_FORMAT, 'version': BACKUP_VERSION,
+            'exported_at': datetime.now(timezone.utc).isoformat(), 'sets': [s['key'] for s in sets]}
+    put(dumps(head)[:-1] + ', "collections": {')
+    names = [c for s in sets for c in s['collections']]
+    for i, name in enumerate(names):
+        put(('' if i == 0 else ', ') + json.dumps(name) + ': [')
+        for j, doc in enumerate(db[name].find({}).batch_size(500)):
+            put(('' if j == 0 else ', ') + dumps(doc))
+            if size > 256 * 1024:
+                chunk = flush()
+                if chunk:
+                    yield chunk
+        put(']')
+    put('}}')
+    yield flush() + z.flush()
+
+
+def export_gzip(keys) -> bytes:
+    """整份匯出成 bytes（測試、小量用；API 用 export_stream）。"""
+    return b''.join(export_stream(keys))
 
 
 def load_file(raw: bytes) -> dict:

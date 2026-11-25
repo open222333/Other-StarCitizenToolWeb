@@ -136,6 +136,11 @@ def status():
     return 'ok'
 
 
+# 主檔類 GET API 加 ETag（內容沒變回 304），見 src/http_cache.py
+from src import http_cache  # noqa: E402
+http_cache.register(app)
+
+
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'

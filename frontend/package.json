@@ -9,6 +9,7 @@
     "dev:web":     "vite --config vite.config.web.js",
     "build:web":   "vite build --config vite.config.web.js",
     "preview:web": "vite preview --config vite.config.web.js",
+    "icons":       "python3 scripts/subset-icons.py",
     "test:calc":   "node src/utils/craftCalc.test.mjs",
     "test:quality": "node src/utils/craftQuality.test.mjs",
     "test:mining": "node src/utils/miningSignature.test.mjs",

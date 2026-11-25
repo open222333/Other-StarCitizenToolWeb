@@ -475,7 +475,7 @@
     </div>
 
     <!-- ══════════ 資料庫 › 礦物：每種礦物可以在哪裡挖到（scunpacked 的礦床與地點資料，見 components/MineralDatabase.vue）══════════ -->
-    <div v-show="activeTab === 'items' && activeSub === 'minerals'" id="panel-items-minerals">
+    <div v-if="paneOnce('minerals')" v-show="activeTab === 'items' && activeSub === 'minerals'" id="panel-items-minerals">
       <MineralDatabase :fetcher="playerAuth.playerFetch" :active="activeTab === 'items' && activeSub === 'minerals'"
         card-class="card scifi-card" />
     </div>
@@ -1210,12 +1210,12 @@
     <!-- ══════════ 礦物參考查詢 ══════════ -->
 
     <!-- ══════════ 航線規劃／合約分配（見 components/RoutePlanner.vue、ContractPlanner.vue、src/models/nav.py、haul.py）══════════ -->
-    <div v-show="activeTab === 'route' && activeSub === 'plan'" role="tabpanel" id="panel-route-plan"
+    <div v-if="tabOnce('route')" v-show="activeTab === 'route' && activeSub === 'plan'" role="tabpanel" id="panel-route-plan"
       aria-labelledby="subtab-route-plan">
       <RoutePlanner :fetcher="playerAuth.playerFetch" :active="activeTab === 'route' && activeSub === 'plan'"
         :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
     </div>
-    <div v-show="activeTab === 'route' && activeSub === 'contracts'" role="tabpanel" id="panel-route-contracts"
+    <div v-if="tabOnce('route')" v-show="activeTab === 'route' && activeSub === 'contracts'" role="tabpanel" id="panel-route-contracts"
       aria-labelledby="subtab-route-contracts">
       <ContractPlanner :fetcher="playerAuth.playerFetch" :active="activeTab === 'route' && activeSub === 'contracts'"
         :fleet-uuids="fleetVehicleUuids" card-class="card scifi-card" />
@@ -1229,7 +1229,7 @@
     </div>
 
     <!-- 工具箱 › 配裝模擬（見 components/LoadoutSimulator.vue、utils/loadoutCalc.js、src/models/loadout.py） -->
-    <div v-show="activePane === 'loadout'" role="tabpanel" id="panel-toolbox-loadout" aria-labelledby="subtab-toolbox-loadout">
+    <div v-if="paneOnce('loadout')" v-show="activePane === 'loadout'" role="tabpanel" id="panel-toolbox-loadout" aria-labelledby="subtab-toolbox-loadout">
       <LoadoutSimulator :fetcher="playerAuth.playerFetch" :active="activePane === 'loadout'"
         :fleet-uuids="fleetVehicleUuids" :fleet="fleet" :member="!isGuest" card-class="card scifi-card" @fleet-changed="loadFleet" />
     </div>
@@ -1274,74 +1274,8 @@
     </div>
 
     <!-- ══════════ 工具網站（後台維護的外部連結） ══════════ -->
-    <div v-show="activeTab === 'tools'" role="tabpanel" id="panel-tools" :aria-labelledby="'tab-tools'">
-      <SfState :loading="loadingToolLinks && !toolLinks.length" :error="toolLinksError" :empty="!toolLinks.length"
-        empty-text="目前沒有工具網站。" @retry="loadToolLinks">
-      <div class="sf-split">
-        <!-- 搜尋卡：關鍵字（名稱、網址、說明、標籤）＋標籤快速篩選（按鈕，可多選，上面有數量） -->
-        <div class="card scifi-card sf-search mb-3">
-          <div class="card-body py-3">
-            <div class="row g-2 align-items-end">
-              <div class="col-12 col-md-6 col-xl-4">
-                <label class="form-label small mb-1" for="tool-q">搜尋</label>
-                <input id="tool-q" v-model="toolQuery" type="search" class="form-control form-control-sm"
-                  placeholder="名稱、網址、說明、標籤…" aria-label="搜尋工具網站">
-              </div>
-              <div class="col-12">
-                <span class="form-label small mb-1 d-block">標籤</span>
-                <div class="d-flex flex-wrap gap-2">
-                  <button type="button" class="btn btn-sm btn-subtab" :class="{ active: !toolSelectedTags.length }"
-                    :aria-pressed="!toolSelectedTags.length ? 'true' : 'false'" @click="toolSelectedTags = []">
-                    全部<span class="tool-count">{{ toolLinks.length }}</span></button>
-                  <button v-for="t in toolTagCounts" :key="t.tag" type="button" class="btn btn-sm btn-subtab"
-                    :class="{ active: toolSelectedTags.includes(t.tag) }"
-                    :aria-pressed="toolSelectedTags.includes(t.tag) ? 'true' : 'false'" @click="toggleToolTag(t.tag)">
-                    {{ t.tag }}<span class="tool-count">{{ t.count }}</span></button>
-                </div>
-              </div>
-            </div>
-            <div v-if="toolQuery || toolSelectedTags.length" class="d-flex justify-content-end mt-2">
-              <button type="button" class="btn btn-sm btn-warning" @click="toolQuery = ''; toolSelectedTags = []">清除全部</button>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div v-if="!toolLinkGroups.length" class="text-muted">沒有符合的工具網站。</div>
-          <!-- 依標籤分組（後台設定的順序，沒有標籤的排最後）；一個網址有好幾個標籤就出現在每一組，分組標題按了可以收起來 -->
-          <section v-for="group in toolLinkGroups" :key="group.name" class="tool-group">
-            <button type="button" class="tool-group__head" :aria-expanded="collapsedToolGroups.has(group.name) ? 'false' : 'true'"
-              @click="toggleToolGroup(group.name)">
-              <i class="bi" :class="collapsedToolGroups.has(group.name) ? 'bi-chevron-right' : 'bi-chevron-down'"></i>
-              <span>{{ group.name || '未分類' }}</span>
-              <span class="sf-chip">{{ group.links.length }}</span>
-            </button>
-            <div v-if="!collapsedToolGroups.has(group.name)" class="row g-3">
-              <div v-for="link in group.links" :key="link._id" class="col-12 col-md-6 col-xl-4 col-xxl-3">
-                <div class="card scifi-card h-100 tool-card">
-                  <div class="card-body d-flex flex-column gap-2">
-                    <div class="d-flex align-items-start gap-2">
-                      <span class="tool-card__icon" aria-hidden="true">{{ toolInitial(link) }}</span>
-                      <div class="flex-grow-1 min-w-0">
-                        <div class="tool-card__title">{{ link.title }}</div>
-                        <div class="tool-card__host">{{ toolHost(link.url) }}</div>
-                      </div>
-                      <a :href="link.url" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary text-nowrap"
-                        :aria-label="`開啟 ${link.title}`"><i class="bi bi-box-arrow-up-right me-1"></i>開啟</a>
-                    </div>
-                    <p v-if="link.description" class="tool-card__desc mb-0">{{ link.description }}</p>
-                    <div v-if="link.tags?.length" class="d-flex flex-wrap gap-1 mt-auto">
-                      <button v-for="t in link.tags" :key="t" type="button" class="sf-chip tool-card__tag"
-                        :class="{ 'sf-chip--accent': toolSelectedTags.includes(t) }" @click="toggleToolTag(t)">{{ t }}</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-      </SfState>
+    <div v-if="tabOnce('tools')" v-show="activeTab === 'tools'" role="tabpanel" id="panel-tools" :aria-labelledby="'tab-tools'">
+      <ToolLinksBoard :fetcher="playerAuth.playerFetch" :active="activeTab === 'tools'" />
     </div>
   </div>
 
@@ -1384,11 +1318,11 @@
 <script setup>
 import { toast } from '@/utils/toast'
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import NewsBoard from '@/components/NewsBoard.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
 import { PLAYER_HELP_PATH, PLAYER_HOME, safeRedirect } from '@/router'
 import PlayerAuthModal from '@/components/PlayerAuthModal.vue'
-import MineralDatabase from '@/components/MineralDatabase.vue'
 import { useScifiThemeStore } from '@/stores/scifiTheme'
 import ScifiThemePicker from '@/components/ScifiThemePicker.vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
@@ -1413,17 +1347,19 @@ import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { auecPerUsd, fmtAuec, fmtAuecPerUsd, fmtUsd, vehicleInRanges, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
-import RoutePlanner from '@/components/RoutePlanner.vue'
-import ContractPlanner from '@/components/ContractPlanner.vue'
-import LoadoutSimulator from '@/components/LoadoutSimulator.vue'
 import CargoLoader from '@/components/CargoLoader.vue'
-import { LEGACY_TABS, PLAYER_TABS, normalizeHiddenTabs, normalizeTabAccess, normalizeTabKeys, orderSubTabs, orderTabs, subKey } from '@/utils/playerTabs'
+import { LEGACY_TABS, PLAYER_TABS, isTabClosed, normalizeHiddenTabs, normalizeTabAccess, normalizeTabKeys, openSubTabs, orderTabs } from '@/utils/playerTabs'
 import ChatCodeTranslator from '@/components/ChatCodeTranslator.vue'
 // 戰術小隊：多數人不會打開，拆成另一個檔案，用到才下載
+// 大元件按需載入（第一次打開那個分頁才下載，見待辦 A6／2-1）；新聞是所有人的首頁，同步載入（待辦 D6）
 const SquadBoards = defineAsyncComponent(() => import('@/components/SquadBoards.vue'))
+const MineralDatabase = defineAsyncComponent(() => import('@/components/MineralDatabase.vue'))
+const RoutePlanner = defineAsyncComponent(() => import('@/components/RoutePlanner.vue'))
+const ContractPlanner = defineAsyncComponent(() => import('@/components/ContractPlanner.vue'))
+const LoadoutSimulator = defineAsyncComponent(() => import('@/components/LoadoutSimulator.vue'))
 const FactionDatabase = defineAsyncComponent(() => import('@/components/FactionDatabase.vue'))
 const CrateCalculator = defineAsyncComponent(() => import('@/components/CrateCalculator.vue'))
-const NewsBoard = defineAsyncComponent(() => import('@/components/NewsBoard.vue'))
+const ToolLinksBoard = defineAsyncComponent(() => import('@/components/ToolLinksBoard.vue'))
 const NewsBanner = defineAsyncComponent(() => import('@/components/NewsBanner.vue'))
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MissionBrowser from '@/components/MissionBrowser.vue'
@@ -1512,7 +1448,8 @@ const tabAccess = ref((() => {
 // 不開放的分頁整個拿掉（分頁列、更多、個人資料的勾選都不出現）
 // 下層分頁全部不開放的主分頁也拿掉
 // 沒登入：會員功能（我的、查詢持有資訊…）整個藏起來，要用的人按右上角登入
-const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value).filter(t => tabAccess.value[t.key] !== 'closed'
+// 「不開放」的判斷跟說明頁共用 utils/playerTabs.js 的 isTabClosed／openSubTabs，這裡只再疊上訪客的 member 過濾
+const orderedTabs = computed(() => orderTabs(tabs, tabOrder.value).filter(t => !isTabClosed(tabAccess.value, t.key)
   && !(isGuest.value && t.member)
   && !(t.subTabs?.length && !subTabsOf(t.key).length)))
 
@@ -1613,8 +1550,7 @@ const MY_FLEET_SORT_OPTIONS = [{ field: 'name', label: '船艦' }, { field: 'typ
 /** 某個主分頁的下層分頁清單（沒有就回空陣列）。 */
 /** 主分頁的下層分頁：照後台排的順序，拿掉後台設成「不開放」的（代號「主分頁.下層分頁」，見 utils/playerTabs.js） */
 function subTabsOf(key) {
-  return orderSubTabs(tabs.find(t => t.key === key), tabOrder.value)
-    .filter(s => tabAccess.value[subKey(key, s.key)] !== 'closed' && !(isGuest.value && s.member))
+  return openSubTabs(tabAccess.value, key, tabOrder.value).filter(s => !(isGuest.value && s.member))
 }
 // 分頁狀態同步到 URL 的 ?tab= —— 這樣重新整理、手機切回瀏覽器、
 // 分享連結給隊友都會停在同一個分頁，瀏覽器的返回鍵也會退回上一個分頁
@@ -1776,7 +1712,6 @@ function loadForTab(tab, sub) {
   if (pane === 'data' && !dismantleMaterials.value.length) loadDismantleMaterials()
   if (pane === 'bpdata' && !blueprintOutputTypes.value.length) loadBlueprintOutputTypes()
   if (pane === 'vehicles' && !vehicleFacetsLoaded) loadVehicleFacets()
-  if (tab === 'tools') loadToolLinks()
   // 沒登入：「艦長室」、查詢持有資訊、戰術小隊是登入提示，沒有東西要載
   if (isGuest.value) return
   // 「查詢」：點開哪一區才載入那一區的資料（見 loadSearchSections）
@@ -2639,71 +2574,6 @@ function trackStickyHeights() {
   if (tabsEl) stickyObserver.observe(tabsEl)
 }
 
-// ── 工具網站 ────────────────────────────────────────────────
-// 每次進分頁都重抓（清單很小），後台剛改完玩家這邊切回來就看得到
-const toolLinks        = ref([])
-const toolTags         = ref([])   // 標籤順序（後端一起回傳）
-const toolQuery        = ref('')
-const toolSelectedTags = ref([])
-const toolTagOptions = computed(() => toolTags.value.map(t => ({ value: t, label: t })))
-// 先篩選再依標籤分組，預設全部展開
-const toolLinkGroups = computed(() => {
-  const q = toolQuery.value.trim().toLowerCase()
-  const picked = toolSelectedTags.value
-  const matches = link => !q || [link.title, link.url, link.description, ...(link.tags || [])]
-    .some(v => (v || '').toLowerCase().includes(q))
-  const groups = new Map(toolTags.value.map(t => [t, { name: t, links: [] }]))
-  const untagged = { name: '', links: [] }
-  for (const link of toolLinks.value) {
-    if (!matches(link)) continue
-    const tags = link.tags || []
-    if (!tags.length) {
-      if (!picked.length) untagged.links.push(link)
-      continue
-    }
-    for (const tag of tags) {
-      if (picked.length && !picked.includes(tag)) continue
-      if (!groups.has(tag)) groups.set(tag, { name: tag, links: [] })
-      groups.get(tag).links.push(link)
-    }
-  }
-  return [...groups.values(), untagged].filter(g => g.links.length)
-})
-// 標籤快速篩選按鈕上的數量（後台設定的順序）
-const toolTagCounts = computed(() => toolTags.value
-  .map(tag => ({ tag, count: toolLinks.value.filter(l => (l.tags || []).includes(tag)).length }))
-  .filter(t => t.count))
-function toggleToolTag(tag) {
-  const i = toolSelectedTags.value.indexOf(tag)
-  toolSelectedTags.value = i >= 0 ? toolSelectedTags.value.filter(t => t !== tag) : [...toolSelectedTags.value, tag]
-}
-function toolHost(url) {
-  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
-}
-// 卡片左上角的字母圖示（不去抓外站的 favicon）
-const toolInitial = link => ((link.title || toolHost(link.url) || '?').trim()[0] || '?').toUpperCase()
-const collapsedToolGroups = reactive(new Set())
-function toggleToolGroup(name) {
-  if (collapsedToolGroups.has(name)) collapsedToolGroups.delete(name)
-  else collapsedToolGroups.add(name)
-}
-const loadingToolLinks = ref(false)
-const toolLinksError   = ref('')
-
-async function loadToolLinks() {
-  loadingToolLinks.value = true
-  const res = await playerAuth.playerFetch('/player/tool-links')
-  const data = res ? await res.json().catch(() => null) : null
-  loadingToolLinks.value = false
-  if (res?.ok && data?.success) {
-    toolLinks.value = data.data || []
-    toolTags.value = data.tags || []
-    toolLinksError.value = ''
-  } else if (!toolLinks.value.length) {
-    toolLinksError.value = data?.message || '讀取工具網站失敗'
-  }
-}
-
 // ── 艦隊 › 我的艦隊 ──────────────────────────────────────────
 const fleet            = ref([])
 const loadingFleet     = ref(false)
@@ -3337,26 +3207,6 @@ onBeforeUnmount(() => {
 /* 後台手寫的艦船說明（換行照原樣顯示） */
 .vehicle-note { white-space: pre-line; }
 
-.tool-link { min-width: 0; }
-/* 工具網站：分組標題、卡片 */
-.tool-count { margin-left: .4rem; opacity: .7; }
-.tool-group { margin-bottom: 1.5rem; }
-.tool-group__head {
-  display: flex; align-items: center; gap: .5rem; width: 100%; margin-bottom: .6rem; padding: .35rem 0;
-  background: none; border: 0; border-bottom: 1px solid var(--sf-border);
-  color: var(--sf-text-strong); font-size: 1.1rem; font-weight: 700; text-align: left;
-}
-.tool-card { transition: border-color .15s, transform .15s; }
-.tool-card:hover { border-color: var(--sf-accent); transform: translateY(-1px); }
-.tool-card__icon {
-  flex: 0 0 2.4rem; height: 2.4rem; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: .5rem; font-weight: 700; font-size: 1.1rem;
-  color: var(--sf-accent); background: rgba(var(--sf-accent-rgb), .14); border: 1px solid rgba(var(--sf-accent-rgb), .35);
-}
-.tool-card__title { font-weight: 700; font-size: 1.05rem; color: var(--sf-text-strong); overflow-wrap: anywhere; }
-.tool-card__host { font-size: .9rem; color: var(--sf-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tool-card__desc { font-size: .95rem; color: var(--sf-text); }
-.tool-card__tag { cursor: pointer; font: inherit; font-size: .9rem; }
 .min-w-0 { min-width: 0; }
 /* 配件網址編輯列：窄螢幕折行，網址欄可以縮（不撐破 390px） */
 .loadout-label-input { flex: 1 1 8rem; max-width: 10rem; min-width: 0; width: auto; }

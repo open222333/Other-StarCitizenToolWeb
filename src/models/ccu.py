@@ -389,15 +389,22 @@ def concept_status(flyable_status) -> str:
     return CONCEPT_STATUSES.get(re.sub(r'[^a-z]', '', str(flyable_status or '').lower()), '')
 
 
+#: 概念船清單快取：只留最新一份（key＝船價同步版本＋借用船同步＋翻譯版本），同 _list_cache 的做法
+_concept_cache: dict = {'key': None, 'rows': None}
+
+
 def concept_ships() -> list:
-    """同 _concept_ships()，結果以「船價同步版本」快取（翻譯版本變了也會重算，見 translation._cached）。
+    """同 _concept_ships()，結果快取一份；船價、借用船同步或翻譯版本變了才重算。
     沒有任何同步紀錄（例如測試）時不快取。艦船列表每次請求都會用到（待辦 E2）。"""
     from src.models import translation as T
     version = price_list_version()
     if not version.strip('|'):
         return _concept_ships()
     loaner_run = (get_db()['sync_jobs'].find_one({'_id': 'loaners'}, {'last_run_id': 1}) or {}).get('last_run_id') or ''
-    return list(T._cached(('concept_ships', version, loaner_run), _concept_ships))
+    key = (version, loaner_run, T.cache_version())
+    if _concept_cache['key'] != key or _concept_cache['rows'] is None:
+        _concept_cache.update(key=key, rows=_concept_ships())
+    return list(_concept_cache['rows'])
 
 
 def _concept_ships() -> list:

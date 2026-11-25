@@ -301,12 +301,10 @@ def get_item(item_id):
       404:
         description: 找不到物品
     """
-    item = ItemMaster.get(item_id)
+    item = ItemMaster.get(item_id, with_raw=request.args.get('with_raw') == '1')
     if not item:
         return jsonify({'success': False, 'message': '找不到物品'}), 404
 
-    if request.args.get('with_raw') != '1':
-        item.pop('raw', None)
     item['volume_scu'] = uscu_to_scu(item.get('volume_uscu'))
     if request.args.get('with_stats') == '1':
         item.update(describe_item(item_id) or {})

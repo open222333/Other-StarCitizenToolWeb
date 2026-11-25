@@ -101,6 +101,7 @@
 </template>
 
 <script setup>
+import { getJson as fetchJson } from '@/utils/getJson'
 import { computed, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MissionDetail from '@/components/MissionDetail.vue'
@@ -142,10 +143,8 @@ const loading = ref(false)
 const failed = ref(false)
 const openKeys = reactive({})
 
-async function getJson(path) {
-  const res = await props.fetcher(path)
-  return res?.ok ? await res.json().catch(() => null) : null
-}
+// 共用 utils/getJson；這裡要整個回應（success、data、total…），失敗回 null
+const getJson = async path => { const r = await fetchJson(props.fetcher, path); return r.ok ? r.body : null }
 
 function factionName(f) {
   return f.name_zh ? `${f.name_zh}（${f.name}）` : (translate('faction', f.name) || f.name)

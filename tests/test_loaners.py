@@ -74,6 +74,9 @@ def test_concept_ship_loaners(app, client):
     assert rows['Galaxy']['loaner'] is None
     body = client.get('/item/vehicles?concept=only').get_json()
     assert next(r for r in body['data'] if r['name'] == 'Odin')['loaner']['loaners'][0]['name'] == 'Idris-P'
-    # 下一輪清單只剩一列：其他標下架
-    st = ship_loaner.save([{'ship': 'Odin', 'loaners': ['Idris-P']}], 'r2', now)
-    assert st['retired'] == len(ROWS) - 1 and len(ship_loaner.current_rows()) == 1
+    # 同一份再寫一次：沒有變動
+    st = ship_loaner.save(L.parse_matrix(HTML), 'r2', now)
+    assert st == {'seen': len(ROWS), 'written': 0, 'retired': 0}
+    # 下一輪清單只剩一列（借用船換了）：其他標下架
+    st = ship_loaner.save([{'ship': 'Odin', 'loaners': ['Idris-P', 'Polaris']}], 'r3', now)
+    assert st == {'seen': 1, 'written': 1, 'retired': len(ROWS) - 1} and len(ship_loaner.current_rows()) == 1

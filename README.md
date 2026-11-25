@@ -478,7 +478,8 @@ npm run build   # 輸出至 ../app/static/admin/
 
 ```bash
 pip install -r requirements-test.txt
-pytest                              # 161 個測試，全部使用 mongomock，不需外部服務
+pytest -n auto                      # 全套（約 1170 個，mongomock、不需外部服務）；-n auto＝依 CPU 核心數平行跑（pytest-xdist）
+pytest                              # 不平行（除錯、看完整輸出時用）
 pytest tests/test_inventory.py -v   # 只跑庫存邏輯
 pytest -k capacity                  # 只跑容量計算相關
 ```

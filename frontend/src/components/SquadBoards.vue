@@ -691,4 +691,7 @@ watch(() => route.query.board, id => {
 :deep(.sqb-rolechip.active) { background: rgba(var(--sf-accent-rgb), .3); border-color: var(--sf-accent); color: var(--sf-text-strong); }
 :deep(.sqb-rolechip:disabled) { opacity: .4; }
 :deep(.sqb-move) { flex: 0 1 11rem; width: 11rem; }
+@media (pointer: coarse) {
+  :deep(.sqb-rolechip) { min-height: 44px; padding-inline: .75rem; }
+}
 </style>

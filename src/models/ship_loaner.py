@@ -3,7 +3,8 @@
 
 每列一筆：
     {_id: 左欄正規化, ship: 左欄原文（例如「Hull D, E」）, names: [[展開的船名, 是否字首比對]…],
-     loaners: [借用船英文名…], source_url, source_updated_at（文章最後更新）, is_current, _sync, first_seen_at}
+     loaners: [借用船英文名…], source_url, source_updated_at（文章最後更新）, is_current, _sync, first_seen_at,
+     changed_at（左欄或借用船最後一次變動）}
 清單裡拿掉的列標 is_current=False（不刪，留紀錄）。
 
 概念船列表（src/models/ccu.py 的 concept_ships）用 for_ship() 對到借用船，
@@ -23,18 +24,23 @@ def _col():
 
 
 def save(rows: list, run_id: str, stamp: datetime, source_updated_at=None, url: str = '') -> dict:
+    """寫入這一輪的清單：內容（左欄、借用船）沒變的只更新 _sync（不算 written），清單裡拿掉的標下架。"""
     col = _col()
     seen = written = 0
-    for r in rows:
-        key = rsi_loaners._norm(r['ship'])
-        if not key:
-            continue
+    keys = {rsi_loaners._norm(r['ship']): r for r in rows if rsi_loaners._norm(r['ship'])}
+    old = {d['_id']: d for d in col.find({'_id': {'$in': list(keys)}}, {'ship': 1, 'loaners': 1, 'is_current': 1})}
+    for key, r in keys.items():
         seen += 1
+        sync = {'_sync': {'run_id': run_id, 'at': stamp}, 'source_updated_at': source_updated_at,
+                'source_url': url or rsi_loaners.ARTICLE_URL}
+        prev = old.get(key)
+        if prev and prev.get('ship') == r['ship'] and prev.get('loaners') == r['loaners'] and prev.get('is_current'):
+            col.update_one({'_id': key}, {'$set': sync})
+            continue
         doc = {'ship': r['ship'], 'names': [list(x) for x in rsi_loaners.parse_ship_names(r['ship'])],
-               'loaners': r['loaners'], 'source_url': url or rsi_loaners.ARTICLE_URL,
-               'source_updated_at': source_updated_at, 'is_current': True, '_sync': {'run_id': run_id, 'at': stamp}}
-        res = col.update_one({'_id': key}, {'$set': doc, '$setOnInsert': {'first_seen_at': stamp}}, upsert=True)
-        written += 1 if (res.upserted_id or res.modified_count) else 0
+               'loaners': r['loaners'], 'is_current': True, 'changed_at': stamp, **sync}
+        col.update_one({'_id': key}, {'$set': doc, '$setOnInsert': {'first_seen_at': stamp}}, upsert=True)
+        written += 1
     retired = col.update_many({'_sync.run_id': {'$ne': run_id}, 'is_current': True},
                               {'$set': {'is_current': False, 'retired_at': stamp}}).modified_count
     return {'seen': seen, 'written': written, 'retired': retired}
