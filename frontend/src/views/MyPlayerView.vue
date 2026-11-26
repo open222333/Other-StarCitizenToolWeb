@@ -416,7 +416,7 @@
     <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
     <!-- 「艦長室」上方：置頂公告（沒有置頂就是最新 3 則），點「全部新聞」切到新聞分頁 -->
     <NewsBanner v-if="!isGuest && tabOnce('my')" v-show="activeTab === 'my'" :fetcher="playerAuth.playerFetch"
-      card-class="card scifi-card" @all="setTab('news')" />
+      card-class="card scifi-card" @all="setTab('news')" @open="id => router.push({ query: { ...route.query, tab: 'news', news: id } })" />
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="!isGuest && activePane === 'warehouse'" class="sf-toolbar">
       <button aria-label="新增／異動" class="btn btn-sm btn-success" @click="stockWizardRef?.openNew()">
@@ -1665,6 +1665,8 @@ function syncUrl() {
   if (activePane.value !== 'loadout') ['ship', 'lo'].forEach(k => delete query[k])
   // 戰術小隊開啟中的表（components/SquadBoards.vue）同理
   if (activePane.value !== 'squads') delete query.board
+  // 新聞全文（components/NewsBoard.vue 的 ?news=）同理
+  if (activeTab.value !== 'news') delete query.news
   // replace 而不是 push：切分頁不該在歷史紀錄裡堆一堆項目，
   // 但仍然讓「重新整理後留在同一分頁」成立。
   router.replace({ query })

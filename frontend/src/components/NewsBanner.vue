@@ -1,6 +1,6 @@
 <!--
-  「艦長室」上方的公告區：置頂在前、最新的補滿，最多 3 則，一行一則；點了跳出全文視窗，
-  「全部新聞」切到「新聞」分頁。沒有新聞時整塊不顯示。資料同 NewsBoard.vue（GET /news/）。
+  「艦長室」上方的公告區：置頂在前、最新的補滿，最多 3 則，一行一則；點了 emit('open', id)，
+  由 MyPlayerView 切到「新聞」分頁顯示全文（?tab=news&news=<id>，不用跳出視窗）；「全部新聞」切到「新聞」分頁。沒有新聞時整塊不顯示。資料同 NewsBoard.vue（GET /news/）。
 -->
 <template>
   <div v-if="items.length" :class="[cardClass, 'nbn', 'mb-3']">
@@ -9,33 +9,24 @@
         <span class="nbn-head"><i class="bi bi-megaphone-fill me-1"></i>公告</span>
         <button type="button" class="btn btn-sm btn-primary ms-auto" @click="emit('all')">全部新聞<i class="bi bi-chevron-right ms-1"></i></button>
       </div>
-      <button v-for="n in items" :key="n._id" type="button" class="nbn-row" @click="openItem(n)">
+      <button v-for="n in items" :key="n._id" type="button" class="nbn-row" @click="emit('open', n._id)">
         <i v-if="n.pinned" class="bi bi-pin-angle-fill nbn-pin" aria-label="置頂"></i>
         <span class="nbn-title">{{ n.title }}</span>
         <span class="nbn-date">{{ fmtNewsDate(n.published_at) }}</span>
       </button>
     </div>
-    <Teleport to="body">
-      <div class="scifi-page nbn-host">
-        <SfModal id="news-banner-article" v-model:open="open" :title="current?.title || '新聞'" icon="bi bi-newspaper" width="860px">
-          <NewsArticle v-if="current" :item="current" />
-        </SfModal>
-      </div>
-    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import SfModal from '@/components/SfModal.vue'
-import NewsArticle from '@/components/NewsArticle.vue'
-import { fetchNewsFeatured, fetchNewsItem, fmtNewsDate } from '@/utils/news'
+import { fetchNewsFeatured, fmtNewsDate } from '@/utils/news'
 
 const props = defineProps({
   fetcher: { type: Function, required: true },
   cardClass: { type: String, default: 'card' },
 })
-const emit = defineEmits(['all'])
+const emit = defineEmits(['all', 'open'])
 
 const items = ref([])
 // 跟新聞分頁的置頂區同一套：官方優先、再置頂、再最新（後端 GET /news/featured）
@@ -43,19 +34,9 @@ onMounted(async () => {
   const r = await fetchNewsFeatured(props.fetcher, 3)
   if (r.ok) items.value = r.data
 })
-
-const open = ref(false)
-const current = ref(null)
-async function openItem(n) {
-  current.value = n
-  open.value = true
-  const full = await fetchNewsItem(props.fetcher, n._id)
-  if (full && current.value?._id === n._id) current.value = full
-}
 </script>
 
 <style scoped>
-.nbn-host { display: contents; }
 .nbn { border-left: 3px solid var(--sf-accent) !important; }
 .nbn-head { font-weight: 700; color: var(--sf-accent-text, var(--sf-accent)); font-size: var(--sf-fs-sm); }
 .nbn-row { display: flex; align-items: baseline; gap: .5rem; width: 100%; padding: .25rem 0; background: none; border: 0;

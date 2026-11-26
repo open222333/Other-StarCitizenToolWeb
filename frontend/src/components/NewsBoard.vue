@@ -3,10 +3,28 @@
   雜誌式版面（配色用網站主題的 --sf-* 變數，跟著「配色」切換）：最上面「最新消息」跑馬燈；沒有搜尋／篩選時，
   置頂區 4 則大圖（官方優先、再置頂、再最新；標題、標籤疊在圖上，沒有封面用主題色漸層代替），下面是依時間新到舊的卡片。
   搜尋關鍵字、標籤篩選、發布日期（今日／昨日／上週）；一次 20 則，往下捲自動載入更舊的。後台下架的標籤，帶它的新聞不會出現。
-  點一則跳出視窗看全文（components/NewsArticle.vue）。網址 ?news=<id> 直接打開那一則（分享用）。
+  點一則在同一頁換成全文（components/NewsArticle.vue，不用跳出視窗）：網址加 ?news=<id>（push，瀏覽器返回鍵回列表，
+  分享連結也是這個網址）；「返回新聞列表」回到原本捲動的位置，列表與篩選都保留。
 -->
 <template>
   <div class="nb">
+    <!-- 全文（?news=<id>）：取代列表顯示，列表用 v-show 留著（篩選、已載入的、捲動位置都不會丟） -->
+    <article v-if="articleId" class="nb-article" aria-live="polite">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <button type="button" class="btn btn-sm btn-secondary" @click="closeArticle"><i class="bi bi-arrow-left me-1"></i>返回新聞列表</button>
+      </div>
+      <div :class="cardClass">
+        <div class="card-body nb-article__body">
+          <SfState v-if="!current?.body && (articleLoading || articleError)" :loading="articleLoading" :error="articleError"
+            @retry="loadArticle(articleId)" />
+          <template v-if="current">
+            <h1 class="nb-article__title">{{ current.title }}</h1>
+            <NewsArticle :item="current" />
+          </template>
+        </div>
+      </div>
+    </article>
+    <div v-show="!articleId">
     <!-- 最新消息跑馬燈（最新 8 則，滑鼠移上去暫停；減少動態效果時不跑，改成可以橫向捲） -->
     <div v-if="latest.length" class="nb-ticker" :class="cardClass">
       <span class="nb-ticker__label"><i class="bi bi-lightning-charge-fill me-1"></i>最新消息</span>
@@ -90,21 +108,13 @@
       </div>
     </SfState>
 
-    <Teleport to="body">
-      <div class="scifi-page nb-host">
-        <SfModal id="news-article" v-model:open="open" :title="current?.title || '新聞'" icon="bi bi-newspaper" width="860px">
-          <SfState v-if="!current?.body && articleLoading" :loading="true" />
-          <NewsArticle v-else-if="current" :item="current" />
-        </SfModal>
-      </div>
-    </Teleport>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import SfModal from '@/components/SfModal.vue'
 import SfState from '@/components/SfState.vue'
 import NewsArticle from '@/components/NewsArticle.vue'
 import { fetchNews, fetchNewsFeatured, fetchNewsItem, fetchNewsTags, fmtNewsDate, tagHue } from '@/utils/news'
@@ -210,38 +220,65 @@ async function start() {
   if (started || !props.active) return
   started = true
   await Promise.all([fetchNewsTags(props.fetcher).then(t => { tags.value = t }), reload(), loadFeatured()])
-  // 分享連結 ?news=<id>：直接打開那一則
-  const id = new URLSearchParams(window.location.search).get('news')
-  if (id) openItem({ _id: id })
 }
 watch(() => props.active, start)
 onMounted(start)
 
-const open = ref(false)
-// 從分享連結（?news=<id>）打開的：關掉視窗時把 news 從網址拿掉，重新整理不會再跳出來
+// ── 全文：網址 ?news=<id> 就顯示那一則（點列表、分享連結、艦長室公告都走這個） ──
 const route = useRoute()
 const router = useRouter()
-watch(open, (v) => {
-  if (v || !route.query.news) return
+const articleId = computed(() => (props.active ? String(route.query.news || '') : ''))
+const current = ref(null)
+const articleLoading = ref(false)
+const articleError = ref('')
+let listScroll = 0
+let pushedFromList = false
+async function loadArticle(id) {
+  articleError.value = ''
+  articleLoading.value = true
+  const full = await fetchNewsItem(props.fetcher, id)
+  if (articleId.value !== id) return
+  articleLoading.value = false
+  if (full) current.value = full
+  else if (!current.value?.title) articleError.value = '找不到這則新聞（可能已下架）。'
+}
+watch(articleId, async (id, prev) => {
+  if (id) {
+    if (!prev) listScroll = window.scrollY
+    // 列表上已經有標題、封面，先顯示，全文載完再補
+    current.value = [...items.value, ...featured.value, ...latest.value].find(n => n._id === id) || null
+    window.scrollTo({ top: 0 })
+    loadArticle(id)
+  } else {
+    current.value = null
+    await nextTick()
+    window.scrollTo({ top: listScroll })
+  }
+}, { immediate: true })
+function openItem(n) {
+  if (!n?._id) return
+  pushedFromList = true
+  router.push({ query: { ...route.query, tab: 'news', news: n._id } })
+}
+function closeArticle() {
+  // 從列表點進來的：跟瀏覽器返回鍵一樣回上一頁；從分享連結直接進來的：把 news 拿掉
+  if (pushedFromList && window.history.state?.back) {
+    pushedFromList = false
+    router.back()
+    return
+  }
   const query = { ...route.query }
   delete query.news
   router.replace({ query })
-})
-const current = ref(null)
-const articleLoading = ref(false)
-async function openItem(n) {
-  current.value = n
-  open.value = true
-  articleLoading.value = true
-  const full = await fetchNewsItem(props.fetcher, n._id)
-  articleLoading.value = false
-  if (full && current.value?._id === n._id) current.value = full
 }
 defineExpose({ openItem })
 </script>
 
 <style scoped>
-.nb-host { display: contents; }
+.nb-article { max-width: 54rem; margin: 0 auto; }
+.nb-article__body { padding: 1.25rem 1.5rem; }
+.nb-article__title { font-size: var(--sf-fs-xl); font-weight: 800; color: var(--sf-text-strong); line-height: 1.35; margin-bottom: .75rem; }
+@media (max-width: 575.98px) { .nb-article__body { padding: 1rem; } .nb-article__title { font-size: var(--sf-fs-lg); } }
 .nb-more { display: flex; justify-content: center; min-height: 2.5rem; padding-top: 1rem; color: var(--sf-text-muted); }
 
 /* ── 搜尋＋分類：圓角搜尋框＋底線分頁（像新聞網站頂端列）；「更多」展開其餘標籤（每個標籤的色點見 utils/news.js tagHue） ── */
