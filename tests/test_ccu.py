@@ -33,7 +33,18 @@ UPGRADES = [
 ]
 
 
-def _transport(ships=SHIPS, upgrades=UPGRADES, calls=None):
+def _store_item(id_, name, cents, wb=False, ship=None, available=True):
+    return {'id': str(id_), 'name': name, 'isWarbond': wb, 'url': f'/pledge/Standalone-Ships/{id_}',
+            'price': {'amount': cents}, 'stock': {'available': available},
+            'gameItems': [{'name': ship or name.split(' - ')[0], 'kind': 'SHIP'}]}
+
+
+#: 商店 Standalone Ships（2026-11 實際的 store.search 回應形狀）：Titan 標準版、Galaxy 的 WB 真的有在賣
+STORE = [_store_item(9021, 'Avenger Titan - 10 Year', 5500), _store_item(9031, 'Galaxy - 10 Year', 34000, wb=True)]
+
+
+def _transport(ships=SHIPS, upgrades=UPGRADES, calls=None, store=None):
+    store = STORE if store is None else store
     def handler(request: httpx.Request):
         calls is not None and calls.append(request.url.path)
         if request.url.path.endswith('setAuthToken'):
@@ -42,6 +53,9 @@ def _transport(ships=SHIPS, upgrades=UPGRADES, calls=None):
             assert request.headers.get('x-rsi-token') == 'abc'
             return httpx.Response(200, json={'success': 1})
         body = json.loads(request.content)[0]
+        if body['operationName'] == 'StoreSkus':
+            assert request.url.path == '/graphql' and body['variables']['query']['skus']['products'] == ['72']
+            return httpx.Response(200, json=[{'data': {'store': {'search': {'count': len(store), 'resources': store}}}}])
         if body['operationName'] == 'initShipUpgrade':
             return httpx.Response(200, json=[{'data': {'ships': ships, 'app': {'pricing': {'exponent': 2}}}}])
         assert body['variables']['fromId'] == 1, '從最便宜的船開始看升級'
@@ -73,7 +87,7 @@ def test_fetch_store_flow():
     calls = []
     with httpx.Client(transport=_transport(calls=calls)) as client:
         raw = rsi_store.fetch_store(client)
-    assert raw['from_id'] == 1 and len(raw['ships']) == 3 and len(raw['upgrades']) == 2
+    assert raw['from_id'] == 1 and len(raw['ships']) == 3 and len(raw['upgrades']) == 2 and len(raw['listing']) == 2
     assert calls[:2] == ['/api/account/v2/setAuthToken', '/api/ship-upgrades/setContextToken']
 
 
@@ -93,10 +107,11 @@ def test_graphql_errors_raise():
             rsi_store.fetch_store(client)
 
 
-def _save(ships_raw, upgrades_raw, run, at):
+def _save(ships_raw, upgrades_raw, run, at, store=None):
     ships = rsi_store.map_ships(ships_raw)
-    offers = rsi_store.map_ship_offers(ships_raw) + \
-        rsi_store.map_upgrade_offers(upgrades_raw, {s['rsi_id']: s for s in ships}, 1)
+    listing = rsi_store.map_store_listing(STORE if store is None else store)
+    confirmed, _ = rsi_store.confirm_ship_offers(rsi_store.map_ship_offers(ships_raw), ships, listing)
+    offers = confirmed + rsi_store.map_upgrade_offers(upgrades_raw, {s['rsi_id']: s for s in ships}, 1)
     ccu.save_ships(ships, run, at)
     return ccu.save_offers(offers, ships, run, at)
 
@@ -118,7 +133,8 @@ def test_history_periods_and_prices(app):
     ships2 = [dict(s) for s in SHIPS]
     ships2[1] = _ship(2, 'Avenger Titan', 5500, [{'id': 21, 'title': 'Standalone Ship', 'price': 5000,
                                                   'available': True, 'unlimitedStock': True}])
-    stats = _save(ships2, UPGRADES[:1], 'r2', t1)
+    store2 = [_store_item(9021, 'Avenger Titan - 10 Year', 5000), STORE[1]]
+    stats = _save(ships2, UPGRADES[:1], 'r2', t1, store=store2)
     assert stats['ended'] == 1 and stats['opened'] == 0
     wb = db.ccu_offers.find_one({'_id': 'ccu:301:3'})
     assert wb['is_current'] is False and wb['ended_at'] == t0 and wb['periods'] == [{'start': t0, 'end': t0}]
@@ -127,7 +143,7 @@ def test_history_periods_and_prices(app):
 
     # 第三輪：WB 又上架 → 新的一段
     t2 = t1 + timedelta(days=30)
-    stats = _save(ships2, UPGRADES, 'r3', t2)
+    stats = _save(ships2, UPGRADES, 'r3', t2, store=store2)
     wb = db.ccu_offers.find_one({'_id': 'ccu:301:3'})
     assert wb['is_current'] is True and len(wb['periods']) == 2 and wb['periods'][-1] == {'start': t2, 'end': None}
     assert wb['first_seen_at'] == t0
@@ -143,7 +159,8 @@ def test_sync_job(app, monkeypatch):
     assert db.rsi_ships.count_documents({'is_current': True}) == 3
     assert db.ccu_offers.count_documents({'is_current': True}) == 4
     job = db.sync_jobs.find_one({'_id': 'ccu'})
-    assert job['last_ok'] is True and job['last_requests']['rsi']['requests'] == 4
+    assert job['last_ok'] is True and job['last_requests']['rsi']['requests'] == 5, '升級工具 4 次＋商店清單 1 頁'
+    assert db.ccu_offers.count_documents({'store_confirmed': True}) == 2
 
 
 def test_sync_job_guard_keeps_data(app, monkeypatch):
@@ -157,6 +174,59 @@ def test_sync_job_guard_keeps_data(app, monkeypatch):
     assert result['ok'] is False
     assert db.rsi_ships.count_documents({'is_current': True}) == 20
     assert db.ccu_offers.count_documents({}) == 0
+
+
+def test_store_confirms_ship_offers():
+    """升級工具列著的單買 SKU 要在商店找到同一艘船、同價、同樣是不是 WB 才算有在賣（2026-11 實際情形）：
+    M2 的 WB $480 商店沒賣 → 不收；Galaxy 的 WB $360 商店有 → 收；Skylark 商店有 WB、升級工具沒列 → 補一筆；
+    「Galaxy Complete」套組不當成 Galaxy 本體；BIS 版名稱尾巴去掉後也對得到。"""
+    ships_raw = [
+        _ship(10, 'M2 Hercules', 52000, [{'id': 14446, 'title': 'Standard Edition', 'price': 52000, 'available': True},
+                                         {'id': 14435, 'title': 'Warbond Edition', 'price': 48000, 'available': True}]),
+        _ship(11, 'Galaxy', 40000, [{'id': 19828, 'title': 'Standard Edition', 'price': 40000, 'available': True},
+                                    {'id': 19829, 'title': 'Warbond Edition', 'price': 36000, 'available': True}]),
+        _ship(12, 'Skylark', 4500, [{'id': 19730, 'title': 'Standard Edition', 'price': 4500, 'available': True}]),
+        _ship(13, 'Perseus', 80000, [{'id': 19100, 'title': 'BIS Edition', 'price': 80000, 'available': True}]),
+        _ship(14, 'Carrack', 60000, [{'id': 13968, 'title': 'Warbond Edition', 'price': 57000, 'available': True}]),
+    ]
+    store = [
+        _store_item(17323, 'M2 Hercules - 10 Year', 52000, ship='Hercules Starlifter M2'),
+        _store_item(19900, 'Galaxy - 10 Year', 36000, wb=True),
+        _store_item(19901, 'Galaxy Complete - 10 Year', 55000, wb=True, ship='Galaxy'),
+        _store_item(19902, 'Skylark', 4000, wb=True),
+        _store_item(19878, 'Perseus - Best in Show 2956 Edition', 80000),
+        _store_item(19999, 'Carrack - 10 Year', 57000, wb=True, available=False),
+    ]
+    ships = rsi_store.map_ships(ships_raw)
+    out, stats = rsi_store.confirm_ship_offers(rsi_store.map_ship_offers(ships_raw), ships,
+                                               rsi_store.map_store_listing(store))
+    got = {(o['ship_rsi_id'], o['title'], o['price']) for o in out}
+    assert got == {(10, 'Standard Edition', 520.0), (11, 'Warbond Edition', 360.0), (12, 'Skylark', 40.0),
+                   (13, 'BIS Edition', 800.0)}, got
+    assert stats == {'confirmed': 3, 'dropped': 4, 'store_only': 1}, 'M2 WB、Galaxy 標準、Skylark 標準、Carrack WB（缺貨）'
+    sky = next(o for o in out if o['ship_rsi_id'] == 12)
+    assert sky['store_only'] and sky['is_warbond'] and sky['savings'] == 5.0 and ccu.offer_id(sky) == 'ship:s19902:12'
+    assert all(o['store_confirmed'] for o in out)
+    assert rsi_store.store_base_name('F7C-R Hornet Mk II - Tracker - 10 Year') == 'F7C-R Hornet Mk II - Tracker'
+
+
+def test_unconfirmed_offers_not_on_timeline(app):
+    """舊資料（商店確認之前存的）沒有 store_confirmed：不上時間軸，M2 那段 11-14 起的假 WB 不再出現。"""
+    t0 = datetime(2026, 11, 14, 11, 5)
+    offers = [{'kind': 'ship', 'is_warbond': True, 'price': 480.0, 'periods': [{'start': t0, 'end': None}]},
+              {'kind': 'ship', 'is_warbond': False, 'price': 520.0, 'store_confirmed': True,
+               'periods': [{'start': t0, 'end': None}]}]
+    assert [p['sale_type'] for p in ccu._rsi_periods(offers)] == ['standard']
+
+
+def test_sync_fails_when_store_matches_nothing(app, monkeypatch):
+    """商店清單一個單買 SKU 都對不上（格式改了）：整輪失敗，不下架。"""
+    import tasks.scdata_sync as sync_mod
+    real = sync_mod.build_client
+    monkeypatch.setattr(sync_mod, 'build_client',
+                        lambda **kw: real(transport=_transport(store=[_store_item(1, 'Nothing - 10 Year', 1)])))
+    assert sync_mod._do_sync(jobs=['ccu'])['ok'] is False
+    assert get_db().ccu_offers.count_documents({}) == 0
 
 
 # ── Open Hangar 上架歷史 ─────────────────────────────────────────────

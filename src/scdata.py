@@ -1474,7 +1474,7 @@ UPSTREAM_PROVIDERS: dict = {
         'base': 'https://robertsspaceindustries.com',
         'auth': '不需要（匿名 token）',
         'limit_level': 'soft',
-        'limit': '非公開 API、沒有公開配額；每輪只打 4 次，排程每 6 小時一次',
+        'limit': '非公開 API、沒有公開配額；每輪約打 7 次（升級工具 4 次＋商店清單約 3 頁），排程每 6 小時一次',
         'url': 'https://robertsspaceindustries.com/pledge/ship-upgrades',
     },
     'rsi_support': {
@@ -1549,7 +1549,9 @@ def job_upstreams() -> dict:
     out['ccu'] = [{'provider': 'rsi', 'url': rsi_store.AUTH_TOKEN_URL, 'note': '匿名 token'},
                   {'provider': 'rsi', 'url': rsi_store.CONTEXT_TOKEN_URL, 'note': '升級工具 context'},
                   {'provider': 'rsi', 'url': rsi_store.GRAPHQL_URL, 'note': 'initShipUpgrade（全部船、單買 SKU）'},
-                  {'provider': 'rsi', 'url': rsi_store.GRAPHQL_URL, 'note': 'filterShips（各船的升級 SKU）'}]
+                  {'provider': 'rsi', 'url': rsi_store.GRAPHQL_URL, 'note': 'filterShips（各船的升級 SKU）'},
+                  {'provider': 'rsi', 'url': rsi_store.STORE_GRAPHQL_URL,
+                   'note': '商店 Standalone Ships（確認單買真的有在賣，每頁 100 筆，約 3 次）'}]
     from src import openhangar
     out['openhangar'] = [{'provider': 'openhangar', 'url': openhangar.CATALOG_URL,
                           'note': '整份商店目錄與上架歷史'}]

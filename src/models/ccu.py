@@ -11,6 +11,8 @@ ccu_offers（_id = 「種類:SKU id:船 id」，種類 ship＝單買的船、ccu
     kind, sku_id, ship_rsi_id, ship_name, vehicle_uuid, from_rsi_id（ccu 才有：抓取時的起點船）,
     title, price（單買價／升級後價值）, msrp, savings（比標準價省多少）, upgrade_price（ccu：從起點船升上去的價差）,
     is_warbond, is_discount, insurance, stock（限量剩幾個，不限量 None）,
+    store_confirmed（單買：RSI 商店確認真的有在賣才是 True；沒有這個的不上時間軸）, store_only（商店有、升級工具沒列，
+    sku_id 是商店的品項 id）, store_sku_id, store_url,
     first_seen_at, last_seen_at, is_current, ended_at,
     periods: [{start, end}]           每次「上架」一段；下架時補上 end，之後又出現就加新的一段
     price_history: [{price, at}]      價格變動時加一筆
@@ -44,7 +46,9 @@ HISTORY_MAX = 100
 
 
 def offer_id(offer: dict) -> str:
-    return f'{offer["kind"]}:{offer["sku_id"]}:{offer["ship_rsi_id"]}'
+    # 商店補的（store_only）用商店的品項 id，跟升級工具的 SKU id 是不同的編號，加 s 前綴分開
+    sku = f's{offer["sku_id"]}' if offer.get('store_only') else offer['sku_id']
+    return f'{offer["kind"]}:{sku}:{offer["ship_rsi_id"]}'
 
 
 def _norm(text) -> str:
@@ -221,10 +225,12 @@ def _overlaps(a_start, a_end, b_start, b_end, now) -> bool:
 
 
 def _rsi_periods(offers: list) -> list:
-    """RSI 的單買 SKU → 時間軸上的段（每段帶當時最後看到的價格）。"""
+    """RSI 的單買 SKU → 時間軸上的段（每段帶當時最後看到的價格）。
+    只收商店確認過有在賣的（store_confirmed，見 src/rsi_store.py 的 confirm_ship_offers）：升級工具一直列著、
+    商店早就沒賣的 Warbond（例如 M2 WB $480，從我們第一次抓的 2026-11-14 掛到現在）不算上架，不上時間軸。"""
     out = []
     for o in offers:
-        if o.get('kind') != 'ship':
+        if o.get('kind') != 'ship' or not o.get('store_confirmed'):
             continue
         for p in o.get('periods') or []:
             if not p.get('start'):

@@ -10,6 +10,12 @@
   2. POST /api/ship-upgrades/setContextToken       → 升級工具的 context cookie
   3. GraphQL initShipUpgrade                       → 全部船：標準價（msrp）＋單買的船 SKU（含 Warbond 版）
   4. GraphQL filterShips(fromId=最便宜的船)          → 每艘船目前能買的升級 SKU 與升級價
+  5. 商店 GraphQL（/graphql 的 store.search，Standalone Ships 分類）→ 商店「現在真的有在賣」的單買船
+
+⚠️ 第 3 步的 SKU 不等於商店有在賣：升級工具會一直列著 Warbond Edition（標 available），
+例如 M2 Hercules 的 WB $480 在商店早就沒賣了。所以單買船的 SKU 一律要在第 5 步的商店清單裡找到
+同一艘船、同樣價格、同樣是不是 Warbond 的品項才算上架（confirm_ship_offers）；商店有、升級工具沒列的
+（例如新船的 WB）另外補一筆（store_only）。升級（CCU）只在升級工具買，不用再確認。
 
 價格單位：回應是「分」（app.pricing.exponent，預設 2），這裡一律換成美金（未稅）。
 只抓「現在商店有賣的」：歷史（開始、結束日期）靠排程每次的快照累積（src/models/ccu.py）。
@@ -28,6 +34,22 @@ AUTH_TOKEN_URL = f'{RSI_BASE}/api/account/v2/setAuthToken'
 CONTEXT_TOKEN_URL = f'{RSI_BASE}/api/ship-upgrades/setContextToken'
 GRAPHQL_URL = f'{RSI_BASE}/pledge-store/api/upgrade/graphql'
 UPGRADE_PAGE = f'{RSI_BASE}/pledge/ship-upgrades'
+#: 商店（pledge store）的 GraphQL；Standalone Ships 的 product id 是 72
+STORE_GRAPHQL_URL = f'{RSI_BASE}/graphql'
+STANDALONE_PRODUCT = '72'
+STORE_PAGE_SIZE = 100
+STORE_MAX_PAGES = 10
+STORE_QUERY = """query StoreSkus($storeFront: String, $query: SearchQuery) {
+  store(name: $storeFront, browse: true) {
+    search(query: $query) {
+      count
+      resources {
+        ... on TySku { id name isWarbond url price { amount } stock { available } gameItems { name kind } }
+      }
+    }
+  }
+}
+"""
 
 INIT_QUERY = """query initShipUpgrade {
   ships {
@@ -87,8 +109,9 @@ def open_session(client: httpx.Client) -> None:
     _post_json(client, CONTEXT_TOKEN_URL, {}, 'setContextToken')
 
 
-def graphql(client: httpx.Client, operation: str, query: str, variables: Optional[dict] = None) -> dict:
-    body = _post_json(client, GRAPHQL_URL,
+def graphql(client: httpx.Client, operation: str, query: str, variables: Optional[dict] = None,
+            url: str = GRAPHQL_URL) -> dict:
+    body = _post_json(client, url,
                       [{'operationName': operation, 'variables': variables or {}, 'query': query}],
                       f'GraphQL {operation}')
     first = body[0] if isinstance(body, list) and body else body
@@ -117,7 +140,26 @@ def fetch_store(client: httpx.Client) -> dict:
         data = graphql(client, 'filterShips', FILTER_QUERY,
                        {'fromId': base['id'], 'toId': None, 'fromFilters': [], 'toFilters': []})
         upgrades = [s for s in ((data.get('to') or {}).get('ships') or []) if isinstance(s, dict)]
-    return {'ships': ships, 'upgrades': upgrades, 'from_id': base['id'] if base else None, 'exponent': exponent}
+    listing = fetch_store_listing(client)
+    return {'ships': ships, 'upgrades': upgrades, 'from_id': base['id'] if base else None, 'exponent': exponent,
+            'listing': listing}
+
+
+def fetch_store_listing(client: httpx.Client) -> list:
+    """商店 Standalone Ships 分類現在列著的全部品項（原始欄位），一頁 100 筆翻到底；一筆都沒有丟 RsiStoreError。"""
+    out = []
+    for page in range(1, STORE_MAX_PAGES + 1):
+        data = graphql(client, 'StoreSkus', STORE_QUERY,
+                       {'storeFront': 'pledge',
+                        'query': {'skus': {'products': [STANDALONE_PRODUCT]}, 'limit': STORE_PAGE_SIZE, 'page': page}},
+                       url=STORE_GRAPHQL_URL)
+        rows = [r for r in ((((data.get('store') or {}).get('search') or {}).get('resources')) or []) if isinstance(r, dict)]
+        out += rows
+        if len(rows) < STORE_PAGE_SIZE:
+            break
+    if not out:
+        raise RsiStoreError('商店的單買船清單是空的（可能格式改了），不更新')
+    return out
 
 
 # ─────────────────────────────────────────────────────────── 映射（純函式，可單獨測試）
@@ -249,3 +291,81 @@ def map_upgrade_offers(raw_targets: list, ships_by_id: dict, from_id, exponent: 
                 'stock': _stock(sku),
             })
     return out
+
+
+# ─────────────────────────────────────────────────────────── 商店確認
+
+_STORE_SUFFIX_RE = re.compile(r'\s+-\s+(\d+\s*(year|month)s?|lti|best in show.*|[^-]*edition)\s*$', re.I)
+
+
+def _norm(text) -> str:
+    return ' '.join(re.sub(r'[^0-9a-z]+', ' ', str(text or '').lower()).split())
+
+
+def store_base_name(name: str) -> str:
+    """商店品項名稱去掉版本尾巴：「M2 Hercules - 10 Year」→「M2 Hercules」、「Perseus - Best in Show 2956 Edition」→「Perseus」。"""
+    return _STORE_SUFFIX_RE.sub('', str(name or '').strip()).strip()
+
+
+def map_store_listing(resources: list, exponent: int = 2) -> list:
+    """商店品項：{store_id, name, base, ship_names（品項裡的船）, price（美金）, is_warbond, url}；下架（stock 不可買）的不收。"""
+    out = []
+    for r in resources:
+        if r.get('id') is None or (r.get('stock') or {}).get('available') is False:
+            continue
+        price = to_usd((r.get('price') or {}).get('amount'), exponent)
+        if price is None:
+            continue
+        ships = [g.get('name') for g in r.get('gameItems') or [] if isinstance(g, dict) and g.get('kind') == 'SHIP']
+        out.append({'store_id': int(r['id']), 'name': str(r.get('name') or '').strip(), 'base': store_base_name(r.get('name')),
+                    'ship_names': [n for n in ships if n], 'price': price, 'is_warbond': bool(r.get('isWarbond')),
+                    'url': (RSI_BASE + r['url']) if str(r.get('url') or '').startswith('/') else (r.get('url') or '')})
+    return out
+
+
+def confirm_ship_offers(offers: list, ships: list, listing: list) -> tuple:
+    """單買船的 SKU 只留商店真的有在賣的（同一艘船、同樣價格、同樣是不是 Warbond），標 store_confirmed；
+    商店有、升級工具沒列的補一筆 store_only。升級（kind ccu）原樣保留。回傳 (offers, 統計)。
+
+    船的比對：商店品項名稱去掉版本尾巴（或品項裡的船名）跟升級工具的船名一樣（忽略大小寫、標點）。
+    補 store_only 只看品項名稱（不看品項裡的船），避免「Galaxy Complete」這種套組被當成 Galaxy 本體。
+    """
+    by_name = {}
+    for s in ships:
+        by_name.setdefault(_norm(s['name']), s)
+    store_by_ship, base_ship = {}, {}
+    for item in listing:
+        base = by_name.get(_norm(item['base']))
+        ship = base or next((by_name[_norm(n)] for n in item['ship_names'] if _norm(n) in by_name), None)
+        if ship:
+            store_by_ship.setdefault(ship['rsi_id'], []).append(item)
+            if base:
+                base_ship[item['store_id']] = base
+    out, used = [], set()
+    stats = {'confirmed': 0, 'dropped': 0, 'store_only': 0}
+    for o in offers:
+        if o.get('kind') != 'ship':
+            out.append(o)
+            continue
+        match = next((it for it in store_by_ship.get(o['ship_rsi_id'], [])
+                      if it['store_id'] not in used and abs(it['price'] - o['price']) < 0.005
+                      and it['is_warbond'] == bool(o.get('is_warbond'))), None)
+        if not match:
+            stats['dropped'] += 1
+            continue
+        used.add(match['store_id'])
+        out.append({**o, 'store_confirmed': True, 'store_sku_id': match['store_id'], 'store_url': match['url']})
+        stats['confirmed'] += 1
+    for item in listing:
+        ship = base_ship.get(item['store_id'])
+        if not ship or item['store_id'] in used:
+            continue
+        msrp = ship.get('msrp')
+        savings = round(msrp - item['price'], 2) if msrp is not None and item['price'] < msrp else 0.0
+        out.append({'kind': 'ship', 'sku_id': item['store_id'], 'ship_rsi_id': ship['rsi_id'], 'title': item['name'],
+                    'price': item['price'], 'msrp': msrp, 'savings': savings, 'is_warbond': item['is_warbond'],
+                    'is_discount': savings > 0, 'insurance': parse_insurance(item['name']), 'stock': None,
+                    'store_confirmed': True, 'store_only': True, 'store_sku_id': item['store_id'], 'store_url': item['url']})
+        used.add(item['store_id'])
+        stats['store_only'] += 1
+    return out, stats

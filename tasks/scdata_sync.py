@@ -493,7 +493,15 @@ def _sync_ccu(client, run_id: str, stamp: datetime) -> dict:
     exponent = raw.get('exponent', 2)
     ships = rsi_store.map_ships(raw['ships'], exponent)
     ship_index = {s['rsi_id']: s for s in ships}
-    offers = rsi_store.map_ship_offers(raw['ships'], exponent) + \
+    ship_offers = rsi_store.map_ship_offers(raw['ships'], exponent)
+    # 單買船：升級工具列的 SKU 不等於商店有在賣，要到商店清單確認（見 src/rsi_store.py 的 confirm_ship_offers）
+    listing = rsi_store.map_store_listing(raw.get('listing') or [], exponent)
+    confirmed, cstats = rsi_store.confirm_ship_offers(ship_offers, ships, listing)
+    if ship_offers and not cstats['confirmed']:
+        raise ScDataError(f'ccu: 商店清單 {len(listing)} 筆，一個單買 SKU 都對不上，可能商店格式改了，不更新')
+    logger.info('scdata_sync: CCU 商店確認 單買 %d 筆（確認 %d、商店沒賣 %d、商店另有 %d）',
+                len(ship_offers), cstats['confirmed'], cstats['dropped'], cstats['store_only'])
+    offers = confirmed + \
         rsi_store.map_upgrade_offers(raw['upgrades'], ship_index, raw.get('from_id'), exponent)
 
     _guard_count('ccu', len(ships), db[ccu.SHIPS].count_documents({'is_current': True}), unit='艘船')
