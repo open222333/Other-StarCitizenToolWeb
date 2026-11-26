@@ -9,21 +9,38 @@
 <template>
   <div class="nb">
     <!-- 全文（?news=<id>）：取代列表顯示，列表用 v-show 留著（篩選、已載入的、捲動位置都不會丟） -->
-    <article v-if="articleId" class="nb-article" aria-live="polite">
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <!-- 寬螢幕：左邊全文、右邊「更多新聞」（同標籤的優先），右欄跟著捲動；平板以下一欄，更多新聞排在文章下面 -->
+    <div v-if="articleId" class="nb-read">
+      <div class="nb-read__bar">
         <button type="button" class="btn btn-sm btn-secondary" @click="closeArticle"><i class="bi bi-arrow-left me-1"></i>返回新聞列表</button>
       </div>
-      <div :class="cardClass">
-        <div class="card-body nb-article__body">
-          <SfState v-if="!current?.body && (articleLoading || articleError)" :loading="articleLoading" :error="articleError"
-            @retry="loadArticle(articleId)" />
-          <template v-if="current">
-            <h1 class="nb-article__title">{{ current.title }}</h1>
-            <NewsArticle :item="current" />
-          </template>
+      <article class="nb-article" aria-live="polite">
+        <div :class="[cardClass, 'nb-article__card']">
+          <div class="card-body nb-article__body">
+            <SfState v-if="!current?.body && (articleLoading || articleError)" :loading="articleLoading" :error="articleError"
+              @retry="loadArticle(articleId)" />
+            <template v-if="current">
+              <h1 class="nb-article__title">{{ current.title }}</h1>
+              <NewsArticle :item="current" />
+            </template>
+          </div>
         </div>
-      </div>
-    </article>
+      </article>
+      <aside v-if="related.length" class="nb-related" aria-label="更多新聞">
+        <h2 class="nb-related__h">更多新聞</h2>
+        <button v-for="n in related" :key="n._id" type="button" class="nb-related__item" @click="openItem(n)">
+          <span class="nb-related__media">
+            <img v-if="n.cover_url && !broken.has(n._id)" :src="n.cover_url" alt="" loading="lazy" referrerpolicy="no-referrer"
+              @error="broken.add(n._id)">
+            <span v-else class="nb-tile__ph" aria-hidden="true"></span>
+          </span>
+          <span class="nb-related__text">
+            <span class="nb-related__title">{{ n.title }}</span>
+            <span class="nb-meta nb-meta--muted"><i class="bi bi-clock me-1"></i>{{ fmtNewsDate(n.published_at) }}</span>
+          </span>
+        </button>
+      </aside>
+    </div>
     <div v-show="!articleId">
     <!-- 最新消息跑馬燈（最新 8 則，滑鼠移上去暫停；減少動態效果時不跑，改成可以橫向捲） -->
     <div v-if="latest.length" class="nb-ticker" :class="cardClass">
@@ -255,6 +272,16 @@ watch(articleId, async (id, prev) => {
     window.scrollTo({ top: listScroll })
   }
 }, { immediate: true })
+// 文章頁的「更多新聞」：跟這則有相同標籤的優先，再補最新的，最多 6 則（用已經載入的，不另外查）
+const related = computed(() => {
+  const cur = current.value
+  if (!cur) return []
+  const seen = new Set([cur._id])
+  const pool = [...featured.value, ...items.value].filter(n => !seen.has(n._id) && seen.add(n._id))
+  const tags = new Set(cur.tags || [])
+  const same = pool.filter(n => (n.tags || []).some(t => tags.has(t)))
+  return [...same, ...pool.filter(n => !same.includes(n))].slice(0, 6)
+})
 function openItem(n) {
   if (!n?._id) return
   pushedFromList = true
@@ -275,10 +302,42 @@ defineExpose({ openItem })
 </script>
 
 <style scoped>
-.nb-article { max-width: 54rem; margin: 0 auto; }
+/* ── 文章頁：依螢幕寬度
+     手機（< 576）：卡片貼齊左右、內距縮小、標題小一級
+     平板（576～1199）：一欄，文章最寬 54rem 置中，更多新聞排在下面（兩欄卡片）
+     桌機（≥ 1200）：文章＋右欄更多新聞（右欄跟著捲動）；超寬螢幕整體最寬 80rem 置中 ── */
+.nb-read { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem 1.5rem; max-width: 54rem; margin: 0 auto; }
+.nb-read__bar { grid-column: 1 / -1; }
 .nb-article__body { padding: 1.25rem 1.5rem; }
-.nb-article__title { font-size: var(--sf-fs-xl); font-weight: 800; color: var(--sf-text-strong); line-height: 1.35; margin-bottom: .75rem; }
-@media (max-width: 575.98px) { .nb-article__body { padding: 1rem; } .nb-article__title { font-size: var(--sf-fs-lg); } }
+.nb-article__title { font-size: var(--sf-fs-xl); font-weight: 800; color: var(--sf-text-strong); line-height: 1.35; margin-bottom: .75rem;
+  overflow-wrap: anywhere; }
+/* 內文一行不要太長（大約 40 個中文字），閱讀比較舒服；圖片、表格、程式碼照卡片寬度 */
+.nb-article :deep(.na-body) { max-width: 46rem; font-size: var(--sf-fs-md); }
+.nb-article :deep(.na-body pre) { max-width: 100%; }
+.nb-related { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; align-content: start; }
+.nb-related__h { grid-column: 1 / -1; font-size: var(--sf-fs-md); font-weight: 800; color: var(--sf-text-strong); margin: .25rem 0; }
+.nb-related__item { display: flex; gap: .65rem; align-items: center; text-align: left; padding: .5rem; border-radius: .5rem;
+  border: 1px solid var(--sf-border); background: var(--sf-chip-bg); color: var(--sf-text); min-width: 0; }
+.nb-related__item:hover { border-color: var(--sf-accent); }
+.nb-related__media { position: relative; flex: none; width: 5.5rem; aspect-ratio: 16 / 10; border-radius: .35rem; overflow: hidden; }
+.nb-related__media img, .nb-related__media .nb-tile__ph { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.nb-related__text { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.nb-related__title { font-weight: 700; color: var(--sf-text-strong); font-size: var(--sf-fs-sm); line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (min-width: 1200px) {
+  .nb-read { grid-template-columns: minmax(0, 1fr) 20rem; max-width: 80rem; }
+  .nb-related { grid-template-columns: minmax(0, 1fr); position: sticky; top: 5rem; align-self: start; }
+  .nb-article__body { padding: 1.75rem 2.25rem; }
+}
+@media (max-width: 767.98px) { .nb-related { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 575.98px) {
+  .nb-read { gap: .75rem; }
+  .nb-article__card { margin-inline: calc(var(--bs-gutter-x, 1.5rem) * -.5); border-radius: 0; border-inline: 0; }
+  .nb-article__body { padding: 1rem; }
+  .nb-article__title { font-size: var(--sf-fs-lg); }
+  .nb-article :deep(.na-body) { font-size: var(--sf-fs-base); }
+  .nb-article :deep(.na-cover) { max-height: 14rem; }
+}
 .nb-more { display: flex; justify-content: center; min-height: 2.5rem; padding-top: 1rem; color: var(--sf-text-muted); }
 
 /* ── 搜尋＋分類：圓角搜尋框＋底線分頁（像新聞網站頂端列）；「更多」展開其餘標籤（每個標籤的色點見 utils/news.js tagHue） ── */

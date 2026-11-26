@@ -1,6 +1,6 @@
 <!--
   一則新聞的全文（NewsBoard.vue、NewsBanner.vue 的跳出視窗共用）：封面、標題、時間、標籤、
-  Markdown 內文（utils/markdown.js：先跳脫 HTML 再轉，連結只接受 http/https）、來源連結、分享（複製 ?tab=news&news=<id> 連結）。
+  Markdown 內文（utils/markdown.js：先跳脫 HTML 再轉，連結只接受 http/https；含表格）、來源連結、分享（複製 ?tab=news&news=<id> 連結）。
 -->
 <template>
   <article class="na">
@@ -66,5 +66,9 @@ async function share() {
 .na-body :deep(pre code) { background: none; padding: 0; }
 .na-body :deep(blockquote) { border-left: 3px solid var(--sf-accent); padding-left: .75rem; color: var(--sf-text-muted); margin: .5rem 0; }
 .na-body :deep(h3), .na-body :deep(h4), .na-body :deep(h5), .na-body :deep(h6) { margin: 1rem 0 .4rem; font-weight: 700; }
+.na-body :deep(table) { border-collapse: collapse; margin: .6rem 0; font-size: var(--sf-fs-sm); display: block; max-width: 100%; overflow-x: auto; }
+.na-body :deep(th), .na-body :deep(td) { border: 1px solid var(--sf-border); padding: .35rem .65rem; vertical-align: top; min-width: 4rem; }
+.na-body :deep(th) { background: var(--sf-chip-bg); color: var(--sf-text-strong); font-weight: 700; white-space: nowrap; }
+.na-body :deep(tbody tr:nth-child(even)) { background: rgba(var(--sf-accent-rgb), .05); }
 .na-body :deep(a) { color: var(--sf-accent-text, var(--sf-accent)); }
 </style>

@@ -39,7 +39,7 @@
               </div>
             </div>
             <textarea v-show="!preview" id="nw-body" v-model="form.body" rows="10" class="form-control form-control-sm font-monospace"
-              maxlength="20000" placeholder="**粗體**、- 清單、[連結](https://…)、![圖片](https://…)"></textarea>
+              maxlength="20000" placeholder="**粗體**、- 清單、[連結](https://…)、![圖片](https://…)、| 表格 | 欄 |"></textarea>
             <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 先跳脫 HTML -->
             <div v-show="preview" class="nw-preview" v-html="previewHtml || '<span class=&quot;text-muted&quot;>（沒有內文）</span>'"></div>
           </div>
@@ -250,4 +250,7 @@ async function remove(n) {
 <style scoped>
 .nw-preview { border: 1px solid var(--bs-border-color); border-radius: .375rem; padding: .5rem .75rem; min-height: 10rem; line-height: 1.7; }
 .nw-preview :deep(img) { max-width: 100%; }
+.nw-preview :deep(table) { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; margin: .5rem 0; }
+.nw-preview :deep(th), .nw-preview :deep(td) { border: 1px solid var(--bs-border-color); padding: .25rem .5rem; }
+.nw-preview :deep(th) { background: var(--bs-tertiary-bg); }
 </style>

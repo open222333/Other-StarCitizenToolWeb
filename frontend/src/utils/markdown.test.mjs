@@ -23,4 +23,14 @@ assert.equal((evil.match(/<img /g) || []).length, 1)
 assert.match(evil, /^<p><img src="https:\/\/example.com\/none.png" alt="a https:\/\/x\/onerror=alert\(1\)" loading="lazy"><\/p>$/)
 assert.ok(!md('[看 https://x.com/"onclick=1](https://example.com)').includes('onclick=1"'))
 assert.match(md('[**粗**](https://example.com)'), /<a [^>]+><strong>粗<\/strong><\/a>/)
+// 表格（GFM）：表頭、對齊、少格補空、\| 跳脫、格子裡的行內語法；格子裡的 HTML 一樣被跳脫
+assert.equal(md('| 名稱 | 數量 |\n|---|---:|\n| **A** | 1 |\n| B |'),
+  '<table><thead><tr><th>名稱</th><th style="text-align:right">數量</th></tr></thead><tbody>'
+  + '<tr><td><strong>A</strong></td><td style="text-align:right">1</td></tr><tr><td>B</td><td style="text-align:right"></td></tr></tbody></table>')
+assert.match(md('a | b\n:-:|--\nx \\| y | z'), /<th style="text-align:center">a<\/th><th>b<\/th>.*<td style="text-align:center">x \| y<\/td><td>z<\/td>/)
+assert.ok(!md('| <img src=x onerror=1> | b |\n|---|---|').includes('<img'))
+// 只有 | 沒有分隔列：照一般段落
+assert.equal(md('a | b'), '<p>a | b</p>')
+// 表格前後的段落照常
+assert.match(md('前言\n\n| a |\n|---|\n| 1 |\n\n後記'), /^<p>前言<\/p>\n<table>.*<\/table>\n<p>後記<\/p>$/)
 console.log('markdown ok')
