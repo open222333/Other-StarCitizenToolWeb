@@ -61,7 +61,7 @@
                     <td class="d-none d-md-table-cell" data-label="勢力">
                       <button v-if="m.faction_uuid" type="button" class="btn btn-sm btn-info ms-faction"
                         :aria-label="`${factionLabel(m)} 勢力聲望`" @click.stop="$emit('faction', { id: m.faction_uuid, name: factionLabel(m) })"
-                        @keydown.stop><i class="bi bi-award me-1" aria-hidden="true"></i>{{ factionLabel(m) }}</button>
+                        @keydown.stop>{{ factionLabel(m) }}</button>
                       <template v-else>{{ factionLabel(m) }}</template>
                     </td>
                     <td class="d-none d-lg-table-cell" data-label="星系">{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</td>

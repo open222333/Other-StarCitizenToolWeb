@@ -419,13 +419,82 @@ def test_faction_sync_merges_detail(monkeypatch):
 
 
 def test_mission_sync_does_not_fetch_details(monkeypatch):
+    """沒有前置條件的任務不抓明細（列表 include=blueprints 就有藍圖）。"""
     from tasks import scdata_sync
 
     monkeypatch.setattr(scdata_sync, 'wiki_rows', lambda client, resource: iter([MISSION_ROW]))
     monkeypatch.setattr(scdata_sync, 'wiki_detail',
-                        lambda *a: pytest.fail('任務不該逐筆抓明細（列表 include=blueprints 就有藍圖）'))
+                        lambda *a: pytest.fail('沒有前置條件的任務不該抓明細'))
     scdata_sync._sync_wiki_resource(None, 'missions', 'run-1', datetime.utcnow())
-    assert get_db()['mission_master'].find_one({'_id': MISSION_ROW['uuid']})['blueprint_uuids'] == [BP_HELMET, BP_RIFLE]
+    doc = get_db()['mission_master'].find_one({'_id': MISSION_ROW['uuid']})
+    assert doc['blueprint_uuids'] == [BP_HELMET, BP_RIFLE]
+    assert doc['prerequisite_groups'] == [] and doc['prerequisite_uuids'] == []
+
+
+PRE_A, PRE_B = '42d67dfb-6c76-498e-a9ca-1ff69b38be68', '8aa22824-56ad-4522-8e76-525e58cf9865'
+PREREQ_DETAIL = {
+    'uuid': MISSION_ROW['uuid'],
+    # 明細的 blueprints 形狀跟列表不同，不能蓋掉列表那份
+    'blueprints': [{'name': 'Detail Shape'}],
+    'prerequisite_groups': [{'required_count': 2, 'required_tags': [], 'excluded_tags': [], 'missions': [
+        {'uuid': PRE_A, 'title': 'Advanced Tracker License Certification', 'mission_type': 'Bounty Hunter',
+         'link': f'https://api.star-citizen.wiki/api/missions/{PRE_A}'},
+        {'uuid': PRE_B, 'title': 'Active Bounty Evaluation', 'mission_type': 'Bounty Hunter'},
+    ]}],
+    'unlock_groups': [],
+}
+
+
+def test_mission_sync_fetches_prerequisites_only(monkeypatch):
+    """有前置條件的任務逐筆抓明細，但只合併 prerequisite_groups；明細抓失敗保留上次的。"""
+    from tasks import scdata_sync
+
+    monkeypatch.setattr(scdata_sync, 'SCDATA_REQUEST_DELAY', 0)
+    row = {**MISSION_ROW, 'has_prerequisites': True}
+    monkeypatch.setattr(scdata_sync, 'wiki_rows', lambda client, resource: iter([row]))
+    monkeypatch.setattr(scdata_sync, 'wiki_detail', lambda client, resource, uuid: PREREQ_DETAIL)
+    scdata_sync._sync_wiki_resource(None, 'missions', 'run-1', datetime.utcnow())
+    col = get_db()['mission_master']
+    doc = col.find_one({'_id': MISSION_ROW['uuid']})
+    assert doc['blueprint_uuids'] == [BP_HELMET, BP_RIFLE]
+    assert doc['prerequisite_uuids'] == [PRE_A, PRE_B]
+    g = doc['prerequisite_groups'][0]
+    assert g['required_count'] == 2 and [m['title'] for m in g['missions']] == [
+        'Advanced Tracker License Certification', 'Active Bounty Evaluation']
+
+    monkeypatch.setattr(scdata_sync, 'wiki_detail', lambda *a: None)
+    scdata_sync._sync_wiki_resource(None, 'missions', 'run-2', datetime.utcnow())
+    assert col.find_one({'_id': MISSION_ROW['uuid']})['prerequisite_uuids'] == [PRE_A, PRE_B]
+
+
+def test_parse_prerequisite_groups():
+    from src.scdata import parse_prerequisite_groups
+    out = parse_prerequisite_groups([
+        {'missions': [{'uuid': 'a', 'title': ' A '}, {'title': 'no uuid'}, 'junk']},
+        {'required_count': 0, 'missions': []},
+        'junk',
+    ])
+    assert out == [{'required_count': 1, 'missions': [{'uuid': 'a', 'title': 'A'}],
+                    'required_tags': [], 'excluded_tags': []}]
+
+
+def test_mission_chain_prerequisites_and_unlocks(missions):
+    """詳情帶前置任務（中文標題、能不能點開）與反查的「完成後可接」；看不到的任務不能點、也不列。"""
+    groups = [{'required_count': 2, 'missions': [{'uuid': 'm1', 'title': 'Alpha Job'},
+                                                  {'uuid': 'gone', 'title': 'Gone Job'}]}]
+    get_db()['mission_master'].update_one({'_id': 'm2'}, {'$set': {
+        'prerequisite_groups': groups, 'prerequisite_uuids': ['m1', 'gone']}})
+    _insert_mission('m4', 'Hidden Follow', player_visible=False,
+                    prerequisite_groups=[{'required_count': 1, 'missions': [{'uuid': 'm1', 'title': 'Alpha Job'}]}],
+                    prerequisite_uuids=['m1'])
+    m2 = Mission.get('m2')
+    pre = m2['prerequisite_groups'][0]['missions']
+    assert [(p['uuid'], p['title_zh'], p['linkable']) for p in pre] == [('m1', '甲任務', True), ('gone', None, False)]
+    assert 'prerequisite_uuids' not in m2
+    assert [u['uuid'] for u in Mission.get('m1')['unlocks']] == ['m2', 'm4']
+    assert [u['uuid'] for u in Mission.get('m1', visible_only=True)['unlocks']] == ['m2']
+    row = {r['_id']: r for r in Mission.list_all()[0]}
+    assert [u['uuid'] for u in row['m1']['unlocks']] == ['m2', 'm4'] and row['m3']['unlocks'] == []
 
 
 # ═══════════════════════════════════════════════════════════

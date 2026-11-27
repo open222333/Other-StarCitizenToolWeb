@@ -63,7 +63,7 @@ from src import SCDATA_REQUEST_DELAY
 from src.scdata import (BULK_SIZE, CARGO_GRID_LIST_URL, CARGO_GRID_RAW_BASE, SCUNPACKED_EXTRA, SCUNPACKED_JOBS, SCUNPACKED_LABELS_PATH, SCUNPACKED_POSITIONS_PATH,
                         SCUNPACKED_RESOURCES,
                         UEX_JOB_RESOURCES, UEX_PRUNE_MIN_RATIO, UEX_PRUNE_RESOURCES, UEX_RESOURCES,
-                        WIKI_DETAIL_RESOURCES, WIKI_EXTRA, WIKI_RESOURCES, WIKI_SCOPES, ScDataError, build_client,
+                        WIKI_DETAIL_PARTIAL, WIKI_DETAIL_RESOURCES, WIKI_EXTRA, WIKI_RESOURCES, WIKI_SCOPES, ScDataError, build_client,
                         fetch_json_url, fetch_scunpacked_rows, fetch_translation_ini, iter_translation_entries,
                         map_cargo_grid,
                         normalize_labels, request_counts, requests_used, uex_doc_id, uex_rows,
@@ -227,6 +227,7 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
     logger.info('scdata_sync: 同步 %s -> %s', resource, collection_name)
 
     with_detail = resource in WIKI_DETAIL_RESOURCES
+    partial_when, partial_keys = WIKI_DETAIL_PARTIAL.get(resource, (None, ()))
     # 同一個 collection 放好幾個上游資源（item_master：/items、/vehicle-items）時只看自己那一份
     scope = WIKI_SCOPES.get(resource, {})
     expected = db[collection_name].count_documents({**scope, 'is_current': {'$ne': False}})
@@ -241,6 +242,12 @@ def _sync_wiki_resource(client, resource: str, run_id: str, stamp: datetime) -> 
             detail = wiki_detail(client, resource, row['uuid'])
             if detail:
                 row = {**row, **detail}
+            time.sleep(SCDATA_REQUEST_DELAY)
+        elif partial_when and row.get('uuid') and partial_when(row):
+            # 只有部分筆數要、也只取幾個欄位的明細（WIKI_DETAIL_PARTIAL，例如任務的前置任務）
+            detail = wiki_detail(client, resource, row['uuid'])
+            if detail:
+                row = {**row, **{k: detail.get(k) for k in partial_keys}}
             time.sleep(SCDATA_REQUEST_DELAY)
         doc = mapper(row)
         if doc is None:

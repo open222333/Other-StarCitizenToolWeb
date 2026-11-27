@@ -191,6 +191,7 @@ def ensure_indexes():
     # 任務／勢力（Star Citizen Wiki API，見 src/models/mission.py）
     db['mission_master'].create_index([('is_current', ASCENDING), ('title_lower', ASCENDING)])
     db['mission_master'].create_index('blueprint_uuids')
+    db['mission_master'].create_index('prerequisite_uuids')
     db['mission_master'].create_index('faction_uuid')
     db['faction_master'].create_index([('is_current', ASCENDING), ('name_lower', ASCENDING)])
     # 星圖地點（scunpacked-data starmap.json，見 src/models/starmap.py）

@@ -47,6 +47,28 @@
         </dd>
         <dt>接取地點</dt>
         <dd>{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</dd>
+        <!-- 前置任務：每組「完成其中幾個」，看得到的任務可以點開 -->
+        <template v-if="preGroups.length || m.has_prerequisites">
+          <dt>前置任務</dt>
+          <dd>
+            <div v-for="(g, i) in preGroups" :key="i" :class="{ 'mt-1': i }">
+              <div v-if="groupNote(g)" class="md-sub text-muted">{{ groupNote(g) }}</div>
+              <div class="md-links">
+                <template v-for="p in g.missions" :key="p.uuid">
+                  <button v-if="p.linkable" type="button" class="btn btn-sm btn-info md-link" @click="openLinked(p.uuid)">{{ p.title_zh || p.title }}</button>
+                  <span v-else class="sf-chip">{{ p.title_zh || p.title }}</span>
+                </template>
+              </div>
+            </div>
+            <span v-if="!preGroups.length" class="text-muted">有（尚未取得名單）</span>
+          </dd>
+        </template>
+        <template v-if="m.unlocks?.length">
+          <dt>完成後可接</dt>
+          <dd class="md-links">
+            <button v-for="u in m.unlocks" :key="u.uuid" type="button" class="btn btn-sm btn-info md-link" @click="openLinked(u.uuid)">{{ u.title_zh || u.title }}</button>
+          </dd>
+        </template>
       </dl>
     </div>
     <div class="col-lg-6">
@@ -74,11 +96,26 @@
         </span>
       </div>
     </div>
+    <!-- 點前置／後續任務：跳出視窗看那個任務（視窗裡再點就換成那個任務，不疊視窗） -->
+    <!-- Teleport 到 body（任務細節可能已經在勢力聲望視窗裡），外面包 .scifi-page 才吃得到主題（同 RouteLegsTable） -->
+    <Teleport v-if="!nested && linkedId" to="body">
+    <div class="scifi-page md-linked-host">
+    <SfModal id="md-linked" v-model:open="linkedOpen" :title="linked ? (linked.title_zh || linked.title) : '任務'" width="1000px">
+      <SfState v-if="linkedLoading" loading />
+      <SfState v-else-if="linkedError" :error="linkedError" @retry="openLinked(linkedId)" />
+      <MissionDetail v-else-if="linked" :key="linked._id" :mission="linked" :registered-uuids="registeredUuids"
+        :ladders="ladders" full nested @open="openLinked" />
+    </SfModal>
+    </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import SfModal from '@/components/SfModal.vue'
+import SfState from '@/components/SfState.vue'
+import { getJson } from '@/utils/getJson'
 import { factionLabel, fmtChance, fmtCooldown, fmtInt, fmtRep, missionConditions, rewardLabel } from '@/utils/mission'
 import { loadTranslations, translate } from '@/utils/translations'
 import { bpStateLabel, bpUuid, isBpRegistered, missionPool, registeredInPool } from '@/utils/missionBlueprints'
@@ -93,8 +130,10 @@ const props = defineProps({
   full: { type: Boolean, default: false },
   /** 有給（玩家頁 playerFetch）才顯示「登記」按鈕：POST /player/blueprints/bulk，登記完 emit('registered') */
   fetcher: { type: Function, default: null },
+  /** 在「前置／後續任務」視窗裡：點任務改 emit('open', uuid)，由外層換內容 */
+  nested: { type: Boolean, default: false },
 })
-const emit = defineEmits(['registered'])
+const emit = defineEmits(['registered', 'open'])
 
 const m = computed(() => props.mission)
 const tracking = computed(() => props.registeredUuids !== null)
@@ -146,6 +185,41 @@ const standing = computed(() => {
   return { name, min: step?.min_reputation ?? null, max: realStanding(m.value.max_standing_name) }
 })
 watch(standing, s => { if (s) loadTranslations('rep_rank', [s.name, s.max]) }, { immediate: true })
+
+// 前置任務組：required_count 少於列出的任務數＝「其中幾個」，否則全部都要
+const preGroups = computed(() => (m.value.prerequisite_groups || []).filter(g => g.missions?.length))
+function groupNote(g) {
+  const n = g.missions.length
+  if (g.required_count && g.required_count < n) return `完成其中 ${g.required_count} 個`
+  return n > 1 ? '全部完成' : ''
+}
+
+// 點前置／後續任務：GET /mission/<id>（公開端點，看得到的才回）
+const linkedOpen = ref(false)
+const linked = ref(null)
+const linkedLoading = ref(false)
+const linkedError = ref('')
+const linkedId = ref('')
+let linkSeq = 0
+async function openLinked(id) {
+  if (props.nested) { emit('open', id); return }
+  const my = ++linkSeq
+  const first = !linkedId.value
+  linkedId.value = id
+  // 視窗第一次用到才掛上，等掛好再打開（開啟時焦點移進視窗）
+  if (first) await nextTick()
+  linkedOpen.value = true
+  linkedLoading.value = true
+  linkedError.value = ''
+  const { ok, data, message: msg } = await getJson(fetch, `/mission/${encodeURIComponent(id)}`, undefined, '讀取任務失敗')
+  if (my !== linkSeq) return
+  linkedLoading.value = false
+  if (!ok) { linked.value = null; linkedError.value = msg; return }
+  linked.value = data
+  loadTranslations('mission_type', [data.reward_scope])
+  loadTranslations('location', data.star_systems || [])
+  loadTranslations('faction', (data.reputation_gained || []).map(r => r.faction))
+}
 </script>
 
 <style scoped>
@@ -154,5 +228,8 @@ watch(standing, s => { if (s) loadTranslations('rep_rank', [s.name, s.max]) }, {
 .md-chance { color: var(--sf-accent-2-text, var(--sf-accent-2)); font-weight: 600; }
 .md-count { color: var(--sf-text-strong); }
 .md-facts { font-size: .95rem; }
+.md-linked-host { display: contents; }
+.md-links { display: flex; flex-wrap: wrap; gap: .35rem; }
+.md-link { text-align: left; white-space: normal; }
 details > summary { cursor: pointer; }
 </style>

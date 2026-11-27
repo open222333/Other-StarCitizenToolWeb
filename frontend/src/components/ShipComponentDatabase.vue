@@ -19,14 +19,13 @@
           </select>
         </template>
         <span v-if="!isPhone" id="scd-type-l" class="form-label small fw-semibold mb-1 d-block text-center">種類</span>
-        <!-- 種類：依物品類型分組（管理後台的分組，跟物品／藍圖同一套）分段，每段一排卡片（圖示＋名稱，置中），選中的實心強調色 -->
+        <!-- 種類：依物品類型分組（管理後台的分組，跟物品／藍圖同一套）分段，每段一排名稱卡片（置中），選中的實心強調色 -->
         <div v-if="!isPhone" class="scd-groups mb-3" role="group" aria-labelledby="scd-type-l">
           <section v-for="g in typeGroups" :key="g.label" class="scd-group" :aria-label="g.label">
             <h3 v-if="g.label" class="scd-group__title">{{ g.label }}</h3>
             <div class="scd-types">
               <button v-for="t in g.types" :key="t.type" type="button" class="scd-type"
                 :class="{ active: type === t.type }" :aria-pressed="type === t.type ? 'true' : 'false'" @click="type = t.type">
-                <i :class="typeIcon(t.type)" class="scd-type__icon" aria-hidden="true"></i>
                 <span class="scd-type__name">{{ typeName(t.type) }}</span>
               </button>
             </div>
@@ -46,8 +45,8 @@
             <div class="col-12 col-md-4">
               <span class="form-label small mb-1 d-block">取得</span>
               <div class="sf-pills sf-pills--field">
-                <SfToggle v-model="buyOnly" icon="bi bi-cart3">可購買</SfToggle>
-                <SfToggle v-model="craftOnly" icon="bi bi-hammer">可製作</SfToggle>
+                <SfToggle v-model="buyOnly">可購買</SfToggle>
+                <SfToggle v-model="craftOnly">可製作</SfToggle>
               </div>
             </div>
             <!-- 尺寸／等級／分類：選項直接列出來（依目前種類有的值），可以複選；都沒選＝全部 -->
@@ -92,9 +91,9 @@
                     <template v-if="c.key === 'acquire'">
                       <button v-if="it.buyable" type="button" class="btn btn-sm btn-success text-nowrap scd-buy"
                         :aria-label="`${it.name_zh || it.name} 購買地點`" @click="openBuy(it)">
-                        <i class="bi bi-cart3 me-1"></i>購買地點</button>
+                        購買地點</button>
                       <span v-if="it.blueprint" class="sf-chip scd-craft" :class="{ 'ms-1': it.buyable }">
-                        <i class="bi bi-hammer me-1"></i>可製作</span>
+                        可製作</span>
                       <template v-if="!it.buyable && !it.blueprint">—</template>
                     </template>
                     <template v-else>{{ c.fmt(c.get(it), it) }}</template>
@@ -163,15 +162,6 @@ function openBuy(it) {
 // 種類按鈕的順序：常查的核心組件在前，其他照數量
 const TYPE_ORDER = ['Shield', 'PowerPlant', 'Cooler', 'QuantumDrive', 'WeaponGun', 'Missile', 'Radar',
   'MissileLauncher', 'WeaponDefensive', 'Turret', 'WeaponMining', 'JumpDrive']
-// 種類圖示（沒列到的用通用的方塊）
-const TYPE_ICON = {
-  Shield: 'bi-shield-fill', PowerPlant: 'bi-lightning-charge-fill', Cooler: 'bi-snow', QuantumDrive: 'bi-rocket-takeoff',
-  WeaponGun: 'bi-crosshair', Missile: 'bi-send-fill', Radar: 'bi-broadcast', MissileLauncher: 'bi-grid-3x3-gap-fill',
-  WeaponDefensive: 'bi-shield-shaded', Turret: 'bi-bullseye', WeaponMining: 'bi-gem', JumpDrive: 'bi-stars',
-  TractorBeam: 'bi-magnet-fill', BombLauncher: 'bi-box-arrow-down', SalvageHead: 'bi-recycle', Bomb: 'bi-box-fill',
-  MiningModifier: 'bi-sliders', TurretBase: 'bi-bullseye',
-}
-const typeIcon = t => `bi ${TYPE_ICON[t] || 'bi-box-seam'}`
 const typeName = t => typeLabel([t]) || t
 // 種類分段：照物品類型分組的順序，組內維持原本排序；分組還沒載入時整批一段（沒有標題）
 const typeGroups = computed(() => {
@@ -295,13 +285,13 @@ const sortOptions = computed(() => cols.value.map(c => ({ field: c.key, label: c
 }
 .scd-group__title::before { background: linear-gradient(90deg, transparent, rgba(var(--sf-accent-rgb), .55)); }
 .scd-group__title::after { background: linear-gradient(90deg, rgba(var(--sf-accent-rgb), .55), transparent); }
-/* 種類卡：寬度照內容、整排置中，圖示＋名稱；hover 微亮、選中實心強調色加光暈 */
-.scd-types { display: flex; flex-wrap: wrap; justify-content: center; gap: .8rem; }
+/* 種類卡：寬度照內容、整排置中，只有名稱；hover 微亮、選中實心強調色加光暈 */
+.scd-types { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; }
 .scd-type {
-  display: inline-flex; align-items: center; gap: .8rem; padding: .6rem 1.4rem .6rem .7rem; text-align: left;
-  border: 1px solid rgba(var(--sf-accent-rgb), .35); border-radius: .9rem;
+  display: inline-flex; align-items: center; justify-content: center; padding: .4rem .9rem;
+  border: 1px solid rgba(var(--sf-accent-rgb), .35); border-radius: .55rem;
   background: linear-gradient(135deg, rgba(var(--sf-accent-rgb), .1), rgba(var(--sf-accent-rgb), .02));
-  color: var(--sf-text-strong); font-weight: 600; font-size: var(--sf-fs-lg);
+  color: var(--sf-text-strong); font-weight: 600; font-size: var(--sf-fs-base);
   transition: border-color .15s, background .15s, box-shadow .15s, transform .15s;
 }
 .scd-type:hover:not(.active) {
@@ -312,12 +302,7 @@ const sortOptions = computed(() => cols.value.map(c => ({ field: c.key, label: c
   background: linear-gradient(135deg, rgba(var(--sf-accent-rgb), .55), rgba(var(--sf-accent-rgb), .3));
   box-shadow: 0 0 0 1px rgb(var(--sf-accent-rgb)), 0 .25rem .9rem rgba(var(--sf-accent-rgb), .4);
 }
-.scd-type__icon {
-  flex: none; display: grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: .7rem;
-  background: rgba(var(--sf-accent-rgb), .2); color: rgb(var(--sf-accent-rgb)); font-size: var(--sf-fs-xl);
-}
-.scd-type.active .scd-type__icon { background: rgba(255, 255, 255, .18); color: var(--sf-text-strong); }
-.scd-type__name { white-space: nowrap; }
+.scd-type.active .scd-type__name { white-space: nowrap; }
 /* 平板觸控：小卡至少 44px 高 */
 @media (pointer: coarse) { .scd-type { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .scd-type { transition: none; } .scd-type:hover:not(.active) { transform: none; } }

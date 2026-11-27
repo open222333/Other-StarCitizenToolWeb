@@ -252,6 +252,13 @@ WIKI_EXTRA: dict = {
 # 目前 64 筆，多 64 個請求。明細抓失敗就用列表那筆，不拖垮整個資源。
 WIKI_DETAIL_RESOURCES = {'factions'}
 
+# 只有部分筆數要補明細、而且只取明細的幾個欄位的資源：resource → (要不要抓的判斷, 要合併的欄位)。
+# 任務列表只有 has_prerequisites 是／否，前置任務（prerequisite_groups）只在明細裡；
+# 只抓有前置條件的（數百筆，不是全部幾千筆），也只合併前置欄位，不讓明細的其他形狀蓋掉列表（例如 blueprints）。
+WIKI_DETAIL_PARTIAL = {
+    'missions': (lambda row: bool(row.get('has_prerequisites')), ('prerequisite_groups',)),
+}
+
 # wiki_rows() 的絕對安全網：萬一 meta.current_page 卡住不前進，最多跑這麼多
 # 頁就強制停止。目前最大的資源（items）約 124 頁，留了充分餘裕。獨立成模組
 # 常數是為了讓測試能 monkeypatch 成一個小數字，不用真的跑 500 輪。
@@ -995,6 +1002,28 @@ def parse_blueprint_pools(raw) -> tuple:
     return pools, blueprint_uuids
 
 
+def parse_prerequisite_groups(groups) -> list:
+    """任務明細的 prerequisite_groups → [{required_count, missions: [{uuid, title}], required_tags, excluded_tags}]。
+    一組＝「下面這些任務要完成 required_count 個」（沒給就是全部）；組與組之間都要滿足。"""
+    out = []
+    for g in groups or []:
+        if not isinstance(g, dict):
+            continue
+        missions = [{'uuid': m.get('uuid'), 'title': (m.get('title') or '').strip()}
+                    for m in (g.get('missions') or []) if isinstance(m, dict) and m.get('uuid')]
+        tags = lambda k: [t for t in (g.get(k) or []) if isinstance(t, str) and t]  # noqa: E731
+        if not missions and not tags('required_tags'):
+            continue
+        count = g.get('required_count')
+        out.append({
+            'required_count': count if isinstance(count, int) and count > 0 else len(missions),
+            'missions': missions,
+            'required_tags': tags('required_tags'),
+            'excluded_tags': tags('excluded_tags'),
+        })
+    return out
+
+
 def map_mission(doc: dict) -> Optional[dict]:
     """任務（Star Citizen Wiki API /missions?include=blueprints）。
 
@@ -1024,7 +1053,7 @@ def map_mission(doc: dict) -> Optional[dict]:
                 'amount': rep.get('amount'),
             })
 
-    return {
+    out = {
         '_id': doc['uuid'],
         'title': title,
         'title_lower': title.lower(),
@@ -1080,6 +1109,17 @@ def map_mission(doc: dict) -> Optional[dict]:
         'web_url': doc.get('web_url'),
         'raw': doc,
     }
+    # 前置任務只在明細裡（見 WIKI_DETAIL_PARTIAL）；這輪沒抓到明細就不寫，保留上次的
+    if 'prerequisite_groups' in doc:
+        groups = parse_prerequisite_groups(doc.get('prerequisite_groups'))
+        out['prerequisite_groups'] = groups
+        # 攤平的前置任務 uuid（有索引），「完成這個任務後可以接哪些」靠它反查
+        out['prerequisite_uuids'] = list(dict.fromkeys(m['uuid'] for g in groups for m in g['missions']))
+    elif not doc.get('has_prerequisites'):
+        # 上游拿掉前置條件了：清掉上次存的
+        out['prerequisite_groups'] = []
+        out['prerequisite_uuids'] = []
+    return out
 
 
 def map_faction(doc: dict) -> Optional[dict]:
@@ -1518,6 +1558,8 @@ def job_upstreams() -> dict:
         rows = [w(key)] + [w(r, '飛船組件') for r in WIKI_EXTRA.get(key, [])]
         if key in WIKI_DETAIL_RESOURCES:
             rows.append({'provider': 'wiki', 'url': f'{wiki}/{key}/<uuid>', 'note': '每筆明細一次'})
+        if key in WIKI_DETAIL_PARTIAL:
+            rows.append({'provider': 'wiki', 'url': f'{wiki}/{key}/<uuid>', 'note': '有前置條件的任務各抓一次明細（前置任務）'})
         rows += [g(SCUNPACKED_RESOURCES[r][1]) for r in SCUNPACKED_EXTRA.get(key, [])]
         out[key] = rows
     for key, resources in SCUNPACKED_JOBS.items():

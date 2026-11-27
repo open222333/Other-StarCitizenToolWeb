@@ -110,6 +110,41 @@ class Mission:
                     it['is_available_by_default'] = bool(master.get('is_available_by_default'))
         return rows
 
+    @classmethod
+    def _attach_chain(cls, rows: list, visible_only: bool = False) -> list:
+        """前置任務／完成後可接的任務（任務詳情的「前置任務」「完成後可接」）。
+
+        - 每個前置任務補上中文標題（title_zh）與 linkable（主檔裡找得到、這個身分看得到，才能點開）
+        - unlocks＝把這個任務列為前置任務的其他任務 [{uuid, title, title_zh}]（prerequisite_uuids 反查）
+        """
+        rows = [r for r in rows if r]
+        if not rows:
+            return rows
+        pre_ids = {m.get('uuid') for r in rows for g in (r.get('prerequisite_groups') or [])
+                   for m in (g.get('missions') or []) if m.get('uuid')}
+        ids = [r['_id'] for r in rows if r.get('_id')]
+        fields = {'title': 1, 'title_zh': 1, 'prerequisite_uuids': 1}
+        known = {}
+        if pre_ids:
+            filt = add_visibility_filter({'_id': {'$in': list(pre_ids)}, 'is_current': True}, visible_only=visible_only)
+            known = {d['_id']: d for d in cls._col().find(filt, fields)}
+        unlocks: dict = {}
+        if ids:
+            filt = add_visibility_filter({'prerequisite_uuids': {'$in': ids}, 'is_current': True}, visible_only=visible_only)
+            for d in cls._col().find(filt, fields).sort('title_lower', ASCENDING):
+                for pid in d.get('prerequisite_uuids') or []:
+                    unlocks.setdefault(pid, []).append(
+                        {'uuid': d['_id'], 'title': d.get('title'), 'title_zh': d.get('title_zh')})
+        for r in rows:
+            for g in r.get('prerequisite_groups') or []:
+                for m in g.get('missions') or []:
+                    hit = known.get(m.get('uuid'))
+                    m['title_zh'] = hit.get('title_zh') if hit else None
+                    m['linkable'] = bool(hit)
+            r['unlocks'] = unlocks.get(r.get('_id'), [])
+            r.pop('prerequisite_uuids', None)
+        return rows
+
     #: 列表可以排序的欄位（sort_by → 文件欄位）
     SORT_FIELDS = {
         'title': 'title_lower', 'title_zh': 'title_zh', 'reward_scope': 'reward_scope',
@@ -138,13 +173,13 @@ class Mission:
                                               sort=spec, offset=offset, limit=limit, relevance=not sort_by)
         if meta is not None:
             meta['match'] = match
-        return cls._attach_blueprint_names(rows), total
+        return cls._attach_chain(cls._attach_blueprint_names(rows), visible_only=filters.get('visible_only', False)), total
 
     @classmethod
     def get(cls, mission_id: str, visible_only: bool = False) -> Optional[dict]:
         """單一任務；visible_only＝玩家端，玩家頁面不顯示的當作找不到。"""
         doc = cls._col().find_one(add_visibility_filter({'_id': mission_id}, visible_only=visible_only), cls.PROJECTION)
-        return cls._attach_blueprint_names([doc])[0] if doc else None
+        return cls._attach_chain(cls._attach_blueprint_names([doc]), visible_only=visible_only)[0] if doc else None
 
     @classmethod
     def facets(cls, visible_only: bool = False) -> dict:
@@ -502,7 +537,8 @@ class Faction:
         'min_standing_name', 'max_standing_name', 'blueprint_pools', 'reward_min', 'reward_max', 'reward_currency',
         'time_to_complete_minutes',
         'reputation_gained', 'cooldown_seconds', 'shareable', 'once_only', 'has_combat',
-        'enemy_count_min', 'enemy_count_max', 'has_chain', 'has_prerequisites', 'max_players_per_instance')}
+        'enemy_count_min', 'enemy_count_max', 'has_chain', 'has_prerequisites', 'max_players_per_instance',
+        'prerequisite_groups')}
 
     @classmethod
     def ladders(cls) -> dict:
@@ -523,8 +559,9 @@ class Faction:
             return None
         filt = add_visibility_filter({'is_current': True, 'faction_uuid': faction_id}, visible_only=visible_only)
         # 每個任務可以展開看細節（說明、條件、報酬、聲望異動、獎勵藍圖）：只取 MissionDetail 用得到的欄位
-        missions = Mission._attach_blueprint_names(
-            list(get_db()[MISSION_COLLECTION].find(filt, cls.REPUTATION_MISSION_FIELDS).sort('title_lower', ASCENDING)))
+        missions = Mission._attach_chain(Mission._attach_blueprint_names(
+            list(get_db()[MISSION_COLLECTION].find(filt, cls.REPUTATION_MISSION_FIELDS).sort('title_lower', ASCENDING))),
+            visible_only=visible_only)
         name_l = (doc.get('name') or '').strip().lower()
         scopes = [{'scope': sc['scope'], 'ranks': [{**st, 'missions': []} for st in sc['steps']]}
                   for sc in ladder_scopes(doc.get('reputation_ladder'))]
