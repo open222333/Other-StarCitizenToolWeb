@@ -60,6 +60,7 @@ CATALOG = [
     ('任務／勢力', [
         ('mission_master', '任務主檔（含 raw）'),
         ('faction_master', '勢力主檔（含 raw）'),
+        ('wikelo_trades', '維克洛交易（含 raw）'),
     ]),
     ('翻譯', [
         ('sc_translations', '翻譯資料'),

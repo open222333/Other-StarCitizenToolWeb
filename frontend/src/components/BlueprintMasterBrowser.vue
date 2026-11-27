@@ -135,6 +135,7 @@
                           @click.stop="openMissions(bp)">{{ bp.name_zh || bp.name }}</button>
                         <span v-else class="fw-semibold">{{ bp.name_zh || bp.name }}</span>
                         <span v-if="bp.name_zh" class="sf-name__en">{{ bp.name }}</span>
+                        <WikeloButton v-if="bp.output_item_uuid" :uuids="[bp.output_item_uuid]" :name="bp.name_zh || bp.name" button-class="mt-1" />
                       </span>
                       <template v-else>
                         <span class="fw-semibold">{{ bp.name }}</span>
@@ -265,6 +266,7 @@
 </template>
 
 <script setup>
+import WikeloButton from '@/components/WikeloButton.vue'
 import { getJson as fetchJson } from '@/utils/getJson'
 import { toast } from '@/utils/toast'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'

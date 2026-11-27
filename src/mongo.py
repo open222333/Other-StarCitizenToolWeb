@@ -291,6 +291,11 @@ def ensure_indexes():
     db['ship_sale_history'].create_index('rsi_id')
     db['ship_sale_history'].create_index('vehicle_uuid')
     db['ship_loaners'].create_index('_sync.run_id')
+    db['wikelo_trades'].create_index('_sync.run_id')
+    db['wikelo_trades'].create_index([('is_current', 1), ('title_lower', 1)])
+    db['wikelo_trades'].create_index('requirement_uuids')
+    db['wikelo_trades'].create_index('reward_uuids')
+    db['wikelo_trades'].create_index('reward_names')
 
     # ── 戰術小隊分配表（見 src/models/squad.py）──────────────────────
     db['squad_boards'].create_index('share_token', unique=True,

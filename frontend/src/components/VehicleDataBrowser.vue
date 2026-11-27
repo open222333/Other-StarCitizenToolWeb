@@ -86,6 +86,7 @@
               <ShipPriceButton :fetcher="fetcher" :price-key="v.price_key" :name="v.name_zh || v.name" />
             </td>
             <td v-else class="text-end text-nowrap pe-3 sf-stack__actions">
+              <WikeloButton :uuids="[v._id]" :names="wikeloNames(v)" :name="v.name_zh || v.name" button-class="me-2" />
               <DefaultLoadoutButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <CargoGridButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <ShipPriceButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
@@ -173,6 +174,7 @@ import SfState from '@/components/SfState.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
 import CargoGridButton from '@/components/CargoGridButton.vue'
 import DefaultLoadoutButton from '@/components/DefaultLoadoutButton.vue'
+import WikeloButton from '@/components/WikeloButton.vue'
 import ShipPriceButton from '@/components/ShipPriceButton.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUsd, auecPerUsd, fmtAuecPerUsd, vehicleRangeParams } from '@/utils/uexCommodity'
@@ -193,6 +195,8 @@ const props = defineProps({
 const emit = defineEmits(['registered'])
 
 // 跟後端的 MAX_BULK_VEHICLES／MAX_QUANTITY 一致
+// 維克洛按鈕：獎勵的艦船 uuid 不一定是載具主檔的，也用名稱對（「Anvil Asgard Wikelo War Special」＝廠商第一個字＋船名）
+const wikeloNames = v => [v.name, v.manufacturer_name ? `${v.manufacturer_name.split(' ')[0]} ${v.name}` : ''].filter(Boolean)
 const maxBulk = 200
 const maxQuantity = 99
 const uid = `vdb-${Math.random().toString(36).slice(2, 8)}`

@@ -963,7 +963,7 @@ cd frontend && npm run test:calc
 玩家端 `/player/me` 的藍圖 autocomplete 需要打這裡。
 
 **排程存在 DB 裡，每個資料庫各自一筆（`sync_jobs` collection，`src/models/sync_schedule.py`
-的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、貨物網格、配裝、CCU、Open Hangar 歷史、UEX 價格、UEX 精煉十五個同步項目，
+的 `SyncJobs`）**：翻譯、物品、載具、商品、藍圖、勢力、任務、礦物、地點、貨物網格、配裝、CCU、Open Hangar 歷史、借用船、維克洛、UEX 價格、UEX 精煉十七個同步項目，
 各自有 cron、啟用狀態與上次執行結果。後台「資料同步排程」頁（`/admin/sync-schedule`）
 可以個別改時間、個別「立即同步」，也可以「全部立即同步」。不用改 `tasks/celeryconfig.py`、
 也不用重啟 worker/beat。
@@ -1062,6 +1062,7 @@ curl -s -X POST http://localhost:8090/item/sync \
 | Open Hangar 歷史 | Open Hangar | `https://openhangar.space/api/store/catalog`（`history`：每艘船 2021-11 起的每段上架 `[開始, 結束, 價格, 種類 S/W/U, 當時標準價]`；`avail`、`makers`；升級品項的 `toShipId` 用來對到 RSI 船 id） | 每次都是整份歷史、直接覆寫（`src/openhangar.py`）。抓到的船少於原有 80% 整輪失敗不寫入。跟 RSI 商店重疊的期間以 RSI 為準 |
 | | GitHub raw | `sccargospace/sc-cargo.space/main/src/grids/<船>.json` | 每艘船一個檔案 → `cargo_grid_master`；之後對應艦船主檔（`src/models/cargo_grid.py` 的 `link_vehicles`：名稱、廠商＋名稱、別名完全一樣優先，對不到再用「載具名稱以船名開頭」、去掉 [Concept]、型號位置、廠商縮寫補對） |
 | 配裝 | GitHub raw | `scunpacked-data/master/ship-items.json`、`ships.json` | 艦船配件數值 → `ship_item_master`、每艘船的掛點樹 → `ship_loadout_master`（不存 raw） |
+| 維克洛 | Star Citizen Wiki API | `missions?filter[mission_giver]=Wikelo`（清單）、`missions/<uuid>`（每筆明細） | 維克洛的交易 → `wikelo_trades`（`src/models/wikelo.py`）：需求 `hauling_orders`、獎勵 `reward_items`、前置任務。某筆明細抓不到、或筆數少於原有 80%，整輪失敗不下架；API `GET /mission/wikelo`、`/mission/wikelo/<uuid>`（公開） |
 | UEX 價格 | UEX | `/categories/` → `/items/?id_category=<id>` | 每個物品分類一次 |
 | | UEX | `/terminals/`、`/items_prices_all/`、`/commodities/`、`/commodities_prices_all/`、`/commodities_raw_prices_all/`、`/vehicles/`、`/vehicles_purchases_prices_all/`、`/vehicles_rentals_prices_all/` | 價格表會刪掉這次沒出現的舊列（新筆數 ≥ 舊的 50% 才刪）；商品賣價也給玩家頁礦物卡片的「售價」（原礦／精煉品各自能賣的終端，`/mining/sell-prices`） |
 | UEX 精煉 | UEX | `/refineries_yields/`、`/refineries_methods/`、`/refineries_audits/`、`/refineries_capacities/` | 紀錄（audits）以外會刪掉這次沒出現的舊列（同上規則）；精煉產量加成（含近 7／30 天）、方式等級與紀錄彙整、精煉站估算容量 % 給礦物頁用（`/mining/refinery-yields`、`/mining/refinery-methods`、`/mining/refinery-capacities`） |
@@ -1108,6 +1109,7 @@ docker compose exec api python -c "from src.models import visibility; print(visi
 | `sync_jobs` | 同步項目 key（`items`、`missions`…） | 13 | 各資料庫的同步排程與上次結果（cron / enabled / last_*） |
 | `ship_item_master` | 遊戲 uuid | ~1300 | 配裝模擬用的艦船配件（武器、飛彈、護盾、電源、冷卻、量子、雷達、砲塔、飛彈架…）：精簡數值 `stats`（DPS、穿透距離、護盾 HP…）、子槽 `ports`（含預設配件）、`tags`／`required_tags` |
 | `ship_loadout_master` | 遊戲 uuid | ~320 | 配裝模擬用的每艘船：掛點樹 `slots`（只留配裝相關的槽）、船體／裝甲（減傷、偏轉、穿透抗性）、穿透倍率、飛行、油箱、同時運作護盾數 `shield_slots`、船本身提供的標籤 `tags`、電源 `power`（發電格數、武器電源池、各類耗電者預設的耗電／EM／冷卻、裝甲訊號倍率、資料集算好的預設訊號） |
+| `wikelo_trades` | 任務 uuid | ~90 | 維克洛的交易（同步項目「維克洛」）：`requirements: [{item_uuid, name, amount, max_amount, min_scu, max_scu, kind}]`（要交的物品與數量）、`rewards: [{item_uuid, name, amount}]`、維克洛聲望 `reputation_amount`、前置任務 `prerequisite_groups`；物品中文名稱讀取時對主檔 |
 | `cargo_grid_master` | sc-cargo.space 檔名（例如 `c2_herc`） | ~106 | 飛船貨物網格（每格位置、長寬高、貨櫃大小限制）、對到的載具 `vehicle_uuids` |
 | `rsi_ships` | RSI 商店的船 id | ~250 | RSI 商店的船：標準價 `msrp`（美金未稅）、廠商、類型、可飛狀態、對到的載具 `vehicle_uuid`、標準價變動紀錄 `msrp_history`（同步項目「CCU」） |
 | `ccu_offers` | `種類:SKU id:船 id` | — | 商店有賣過的單買 SKU（`ship`）與升級 SKU（`ccu`）：價格、比標準價省多少 `savings`、`is_warbond`／`is_discount`、保險、限量庫存，上架期間 `periods: [{start, end}]` 與價格變動 `price_history`。歷史抓不回來，備份在「CCU 價格紀錄」 |

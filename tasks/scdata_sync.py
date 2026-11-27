@@ -552,6 +552,35 @@ def _sync_loaners(client, run_id: str, stamp: datetime) -> dict:
     return {'resource': 'loaners', 'collection': ship_loaner.COLLECTION, **stats}
 
 
+def _sync_wikelo(client, run_id: str, stamp: datetime) -> dict:
+    """「維克洛」：Wiki API 的維克洛任務（filter[mission_giver]=Wikelo）逐筆抓明細 → wikelo_trades
+    （需求物品與數量、獎勵、前置任務；見 src/models/wikelo.py）。
+
+    列表只有名稱，需求（hauling_orders）和獎勵（reward_items）只在明細裡。某筆明細抓不到就整輪失敗
+    （不然那筆會變成沒有需求），筆數低於原有的 80% 也當成抓取不完整，都不下架任何資料。
+    """
+    from src.models import wikelo
+    from src.scdata import WIKELO_GIVER, is_wikelo_mission, map_wikelo_trade
+    _report(force=True, phase='讀取維克洛任務清單')
+    rows = [r for r in wiki_rows(client, 'missions', {'filter[mission_giver]': WIKELO_GIVER})
+            if r.get('uuid') and is_wikelo_mission(r)]
+    _guard_count('wikelo', len(rows), wikelo.count_current())
+    docs = []
+    for i, row in enumerate(rows, 1):
+        _report(phase='讀取每筆交易的需求與獎勵', seen=i, total=len(rows))
+        detail = wiki_detail(client, 'missions', row['uuid'])
+        if not detail:
+            raise ScDataError(f'wikelo: {row.get("title") or row["uuid"]} 明細抓不到，這輪不更新')
+        doc = map_wikelo_trade({**row, **detail})
+        if doc:
+            docs.append(doc)
+        time.sleep(SCDATA_REQUEST_DELAY)
+    _report(force=True, phase='寫入維克洛交易')
+    stats = wikelo.save(docs, run_id, stamp)
+    logger.info('scdata_sync: 維克洛 完成 %d 筆（寫入 %d、下架 %d）', stats['seen'], stats['written'], stats['retired'])
+    return {'resource': 'wikelo', 'collection': wikelo.COLLECTION, **stats}
+
+
 def _sync_openhangar(client, run_id: str, stamp: datetime) -> dict:
     """「Open Hangar 歷史」：openhangar.space 整理的 RSI 商店上架歷史（2021-11 起）→ ship_sale_history。
 
@@ -740,6 +769,13 @@ def _run_job(key: str, run_id: str, stamp: datetime, clients: dict) -> tuple:
         except Exception as err:
             logger.exception('scdata_sync: Open Hangar 失敗')
             errors.append(f'openhangar: {err}')
+
+    elif key == 'wikelo':
+        try:
+            stats.append(_sync_wikelo(client('wiki'), run_id, stamp))
+        except Exception as err:
+            logger.exception('scdata_sync: 維克洛失敗')
+            errors.append(f'wikelo: {err}')
 
     elif key == 'loaners':
         try:

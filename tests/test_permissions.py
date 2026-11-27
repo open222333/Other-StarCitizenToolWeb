@@ -340,6 +340,10 @@ UNGUARDED_ALLOWLIST = {
     'app_mission.list_factions',
     'app_mission.get_faction',
     'app_mission.get_mission',
+    'app_mission.list_wikelo_trades',            # 維克洛交易，公開遊戲資料
+    'app_mission.get_wikelo_trade',
+    'app_mission.wikelo_index',
+    'app_mission.wikelo_by_item',
     # 「誰有這張藍圖」—— 比照 app_inventory.where_item，公會成員互查是功能需求
     'app_blueprint.blueprint_holders',
 

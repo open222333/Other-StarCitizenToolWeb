@@ -208,6 +208,77 @@ def get_faction(faction_id):
     return jsonify({'success': True, 'data': doc})
 
 
+@app_mission.route('/wikelo', methods=['GET'])
+@public_api
+def list_wikelo_trades():
+    """維克洛（Wikelo Emporium）的交易：需求物品與數量、獎勵、前置任務（同步項目「維克洛」）。
+    ---
+    tags: [Mission]
+    parameters:
+      - {in: query, name: q, type: string, description: 標題、需求或獎勵物品名稱（中英文）}
+    responses:
+      200:
+        description: 成功
+    """
+    from src.models import wikelo
+    rows = wikelo.list_all(request.args.get('q', ''), visible_only=not viewer_sees_hidden())
+    return jsonify({'success': True, 'data': rows, 'total': len(rows)})
+
+
+@app_mission.route('/wikelo/index', methods=['GET'])
+@public_api
+def wikelo_index():
+    """維克洛交易用到的物品 uuid 與獎勵名稱（物品／藍圖／艦船列決定要不要顯示「維克洛」按鈕）。
+    ---
+    tags: [Mission]
+    responses:
+      200:
+        description: "{uuids: {uuid: {reward, requirement}}, names: {小寫獎勵名稱: 筆數}}"
+    """
+    from src.models import wikelo
+    return jsonify({'success': True, 'data': wikelo.index(visible_only=not viewer_sees_hidden())})
+
+
+@app_mission.route('/wikelo/by-item', methods=['GET'])
+@public_api
+def wikelo_by_item():
+    """某個物品（或藍圖產物、艦船）相關的維克洛交易：換得到它的、要交它的。
+    ---
+    tags: [Mission]
+    parameters:
+      - {in: query, name: uuid, type: string, description: 物品 uuid（可重複）}
+      - {in: query, name: name, type: string, description: 獎勵名稱（艦船用，可重複）}
+    responses:
+      200:
+        description: "{reward: [...], requirement: [...]}"
+    """
+    from src.models import wikelo
+    uuids = [u.strip() for u in request.args.getlist('uuid') if u.strip()][:10]
+    names = [n.strip() for n in request.args.getlist('name') if n.strip()][:10]
+    return jsonify({'success': True, 'data': wikelo.for_item(uuids, names, visible_only=not viewer_sees_hidden())})
+
+
+@app_mission.route('/wikelo/<trade_id>', methods=['GET'])
+@public_api
+def get_wikelo_trade(trade_id):
+    """單一維克洛交易。
+    ---
+    tags: [Mission]
+    parameters:
+      - {in: path, name: trade_id, type: string, required: true}
+    responses:
+      200:
+        description: 成功
+      404:
+        description: 找不到
+    """
+    from src.models import wikelo
+    doc = wikelo.get(trade_id, visible_only=not viewer_sees_hidden())
+    if not doc:
+        return jsonify({'success': False, 'message': '找不到維克洛交易'}), 404
+    return jsonify({'success': True, 'data': doc})
+
+
 @app_mission.route('/<mission_id>', methods=['GET'])
 @public_api
 def get_mission(mission_id):

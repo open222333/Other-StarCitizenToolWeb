@@ -16,9 +16,10 @@ export const PLAYER_TABS = [
     key: 'items', label: '資料庫', icon: 'bi bi-database',
     subTabs: [
       { key: 'data', label: '物品' }, { key: 'bpdata', label: '藍圖' }, { key: 'vehicles', label: '艦船' },
+      // 維克洛：維克洛（Wikelo Emporium）的交易（components/WikeloDatabase.vue）
       // 飛船組件：護盾、發電機、冷卻器、量子引擎、武器、飛彈、雷達…（components/ShipComponentDatabase.vue）
       { key: 'components', label: '飛船組件' },
-      { key: 'missions', label: '任務' }, { key: 'factions', label: '勢力' }, { key: 'minerals', label: '礦物' }, { key: 'commodities', label: '商品購買地點' },
+      { key: 'missions', label: '任務' }, { key: 'factions', label: '勢力' }, { key: 'wikelo', label: '維克洛' }, { key: 'minerals', label: '礦物' }, { key: 'commodities', label: '商品購買地點' },
     ],
   },
   // 量子航線規劃（多站點；見 components/RoutePlanner.vue）、合約分配（多合約 × 多小隊；見 components/ContractPlanner.vue）

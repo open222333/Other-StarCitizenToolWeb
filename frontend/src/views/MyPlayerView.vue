@@ -467,6 +467,11 @@
         :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest" @registered="onBulkRegistered" />
     </div>
 
+    <!-- ══════════ 資料庫 › 維克洛：維克洛的交易（獎勵、要交的物品與數量，見 components/WikeloDatabase.vue）══════════ -->
+    <div v-if="paneOnce('wikelo')" v-show="activePane === 'wikelo'" id="panel-items-wikelo">
+      <WikeloDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'wikelo'" />
+    </div>
+
     <!-- ══════════ 資料庫 › 飛船組件：選種類列出全部組件與參數（components/ShipComponentDatabase.vue）══════════ -->
     <div v-if="paneOnce('components')" v-show="activePane === 'components'" id="panel-items-components">
       <ShipComponentDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'components'" />
@@ -1124,6 +1129,7 @@ const ContractPlanner = defineAsyncComponent(() => import('@/components/Contract
 const LoadoutSimulator = defineAsyncComponent(() => import('@/components/LoadoutSimulator.vue'))
 const FactionDatabase = defineAsyncComponent(() => import('@/components/FactionDatabase.vue'))
 const ShipComponentDatabase = defineAsyncComponent(() => import('@/components/ShipComponentDatabase.vue'))
+const WikeloDatabase = defineAsyncComponent(() => import('@/components/WikeloDatabase.vue'))
 const CrateCalculator = defineAsyncComponent(() => import('@/components/CrateCalculator.vue'))
 const ToolLinksBoard = defineAsyncComponent(() => import('@/components/ToolLinksBoard.vue'))
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'

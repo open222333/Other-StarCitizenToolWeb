@@ -211,6 +211,8 @@ SYNC_JOBS = [
     ('openhangar', 'Open Hangar 歷史', '43 4 * * *'),
     # RSI 官方借用船清單（Loaner Ship Matrix，客服知識庫文章），見 src/rsi_loaners.py；每天一次
     ('loaners', '借用船', '51 4 * * *'),
+    # 維克洛（Wikelo Emporium）的交易：Wiki API 的維克洛任務逐筆明細（需求、獎勵），見 src/models/wikelo.py；每天一次
+    ('wikelo', '維克洛', '23 5 * * *'),
 ]
 JOB_KEYS = [k for k, _, _ in SYNC_JOBS]
 JOB_LABELS = {k: label for k, label, _ in SYNC_JOBS}
@@ -411,6 +413,7 @@ class SyncJobs:
         'ccu': ('rsi_ships', {'is_current': True}),
         'openhangar': ('ship_sale_history', {}),
         'loaners': ('ship_loaners', {'is_current': True}),
+        'wikelo': ('wikelo_trades', {'is_current': True}),
     }
 
     @classmethod

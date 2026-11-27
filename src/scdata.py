@@ -265,7 +265,7 @@ WIKI_DETAIL_PARTIAL = {
 WIKI_PAGINATION_MAX_PAGES = 500
 
 
-def wiki_rows(client: httpx.Client, resource: str) -> Iterator[dict]:
+def wiki_rows(client: httpx.Client, resource: str, params: Optional[dict] = None) -> Iterator[dict]:
     """走訪 Wiki API 分頁（Laravel JSON:API 風格 page[size] / page[number]）。
 
     自己算下一頁的 page[number]，**不**跟著 `links.next` 走。
@@ -291,10 +291,13 @@ def wiki_rows(client: httpx.Client, resource: str) -> Iterator[dict]:
     仍保留一個絕對安全網（WIKI_PAGINATION_MAX_PAGES）：萬一 meta 本身也不
     可信、current_page 卡住不動，最多跑這麼多頁就強制停止，不會真的無窮
     迴圈。
+
+    params：額外的查詢條件（例如 `{'filter[mission_giver]': 'Wikelo'}`），每一頁都會帶。
     """
     base_params = {
         'page[size]': SCDATA_PAGE_SIZES.get(resource, 100),
         **WIKI_QUERY_EXTRA.get(resource, {}),
+        **(params or {}),   # 呼叫端額外的條件（例如維克洛：filter[mission_giver]=Wikelo）
     }
     url = f'{SCDATA_WIKI_API_BASE}/{resource}'
 
@@ -1011,7 +1014,9 @@ def parse_prerequisite_groups(groups) -> list:
             continue
         missions = [{'uuid': m.get('uuid'), 'title': (m.get('title') or '').strip()}
                     for m in (g.get('missions') or []) if isinstance(m, dict) and m.get('uuid')]
-        tags = lambda k: [t for t in (g.get(k) or []) if isinstance(t, str) and t]  # noqa: E731
+        # 標籤可能是字串或 {name, uuid}（例如維克洛的 IntroDone）
+        tags = lambda k: [n for n in ((t.get('name') if isinstance(t, dict) else t) for t in (g.get(k) or []))  # noqa: E731
+                          if isinstance(n, str) and n]
         if not missions and not tags('required_tags'):
             continue
         count = g.get('required_count')
@@ -1120,6 +1125,87 @@ def map_mission(doc: dict) -> Optional[dict]:
         out['prerequisite_groups'] = []
         out['prerequisite_uuids'] = []
     return out
+
+
+#: 維克洛（Wikelo Emporium）的交易任務：Wiki API 任務的 mission_giver
+WIKELO_GIVER = 'Wikelo'
+WIKELO_FACTION = 'Wikelo Emporium'
+
+
+def is_wikelo_mission(doc: dict) -> bool:
+    faction = doc.get('faction') or {}
+    name = faction.get('name') if isinstance(faction, dict) else faction
+    return (doc.get('mission_giver') or '').strip() == WIKELO_GIVER or (name or '').strip() == WIKELO_FACTION
+
+
+def _wikelo_entries(rows, amount_keys=('amount',)) -> list:
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict) or not (r.get('uuid') or r.get('name')):
+            continue
+        amount = next((r.get(k) for k in amount_keys if isinstance(r.get(k), (int, float))), None)
+        out.append({'item_uuid': r.get('uuid'), 'name': (r.get('name') or '').strip(), 'amount': amount})
+    return out
+
+
+def map_wikelo_trade(doc: dict) -> Optional[dict]:
+    """維克洛交易（Wiki API 任務明細 `/missions/<uuid>`）→ wikelo_trades 一筆。
+
+    需求（hauling_orders）：[{item_uuid, name, amount, max_amount, min_scu, max_scu, kind}]，amount＝至少要交的數量；
+    獎勵（reward_items，沒有就攤平 reward_groups）：[{item_uuid, name, amount}]；
+    前置任務（prerequisite_groups，同任務）、維克洛聲望（reputation_gained 裡 Wikelo 的總和）。
+    中文標題／說明是同步當下從 sc_translations 查的快照；物品中文名稱在讀取時才對主檔（見 src/models/wikelo.py）。
+    """
+    if not doc.get('uuid'):
+        return None
+    title = (doc.get('title') or '').strip()
+    texts = mission_text_zh(title, doc.get('description') or '')
+    requirements = []
+    for r in doc.get('hauling_orders') or []:
+        if not isinstance(r, dict) or not (r.get('uuid') or r.get('name')):
+            continue
+        lo, hi = r.get('min_amount'), r.get('max_amount')
+        requirements.append({
+            'item_uuid': r.get('uuid'), 'name': (r.get('name') or '').strip(), 'kind': r.get('kind'),
+            'amount': lo if lo is not None else hi, 'max_amount': hi if hi not in (None, lo) else None,
+            'min_scu': r.get('min_scu'), 'max_scu': r.get('max_scu'),
+        })
+    rewards = _wikelo_entries(doc.get('reward_items'))
+    if not rewards:
+        rewards = _wikelo_entries([it for g in (doc.get('reward_groups') or []) if isinstance(g, dict)
+                                   for it in (g.get('items') or [])])
+    rep = [r for r in (doc.get('reputation_gained') or []) if isinstance(r, dict)]
+    wikelo_rep = sum(r.get('amount') or 0 for r in rep
+                     if WIKELO_GIVER.lower() in f"{r.get('faction') or ''} {r.get('scope') or ''}".lower())
+    groups = parse_prerequisite_groups(doc.get('prerequisite_groups'))
+    return {
+        '_id': doc['uuid'],
+        'title': title,
+        'title_lower': title.lower(),
+        'title_zh': texts['title_zh'],
+        'description': clean_mission_text(doc.get('description') or '') or '',
+        'description_zh': texts['description_zh'],
+        'debug_name': doc.get('debug_name'),
+        'mission_type': doc.get('mission_type'),
+        'requirements': requirements,
+        'rewards': rewards,
+        'reputation_amount': wikelo_rep or None,
+        'reputation_gained': [{'faction': r.get('faction'), 'faction_uuid': r.get('faction_uuid'),
+                               'scope': r.get('scope'), 'amount': r.get('amount')} for r in rep],
+        'prerequisite_groups': groups,
+        'prerequisite_uuids': list(dict.fromkeys(m['uuid'] for g in groups for m in g['missions'])),
+        # 攤平（有索引）：物品／藍圖／艦船的「維克洛」按鈕靠它反查；艦船獎勵的 uuid 不一定是載具主檔的，另外用名稱對
+        'requirement_uuids': list(dict.fromkeys(r['item_uuid'] for r in requirements if r['item_uuid'])),
+        'reward_uuids': list(dict.fromkeys(r['item_uuid'] for r in rewards if r['item_uuid'])),
+        'reward_names': list(dict.fromkeys(r['name'].lower() for r in rewards if r['name'])),
+        'once_only': doc.get('once_only'),
+        'shareable': doc.get('shareable'),
+        'cooldown_seconds': doc.get('cooldown_seconds'),
+        'star_systems': _names(doc.get('star_systems')),
+        'game_version': doc.get('game_version') or doc.get('version'),
+        'web_url': doc.get('web_url'),
+        'raw': doc,
+    }
 
 
 def map_faction(doc: dict) -> Optional[dict]:
@@ -1580,6 +1666,9 @@ def job_upstreams() -> dict:
     from src import openhangar
     out['openhangar'] = [{'provider': 'openhangar', 'url': openhangar.CATALOG_URL,
                           'note': '整份商店目錄與上架歷史'}]
+    out['wikelo'] = [{'provider': 'wiki', 'url': f'{wiki}/missions?filter[mission_giver]={WIKELO_GIVER}&page[size]=100',
+                      'note': '維克洛的任務清單'},
+                     {'provider': 'wiki', 'url': f'{wiki}/missions/<uuid>', 'note': '每筆交易一次明細（需求、獎勵）'}]
     from src import rsi_loaners
     out['loaners'] = [{'provider': 'rsi_support', 'url': rsi_loaners.ARTICLE_API, 'note': '借用船清單文章（Loaner Ship Matrix）'}]
     return out

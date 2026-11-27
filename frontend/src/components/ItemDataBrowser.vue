@@ -55,6 +55,7 @@
                       <span class="sf-name">
                         <span class="fw-semibold">{{ it.name_zh || it.name }}</span>
                         <span v-if="it.name_zh" class="sf-name__en">{{ it.name }}</span>
+                        <WikeloButton :uuids="[it._id]" :name="it.name_zh || it.name" button-class="mt-1" />
                         <!-- 拆解會回收的材料（有選材料時只列那幾種；後端 dismantle_hits） -->
                         <span v-if="it.dismantle_hits?.length" class="d-block small text-muted">
                           拆解回收：{{ dismantleHits(it.dismantle_hits, filters?.dismantle).join('、') }}
@@ -93,6 +94,7 @@
 </template>
 
 <script setup>
+import WikeloButton from '@/components/WikeloButton.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import SortSelect from '@/components/SortSelect.vue'
 import SortTh from '@/components/SortTh.vue'
