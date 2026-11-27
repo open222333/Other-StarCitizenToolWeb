@@ -72,7 +72,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { Modal } from 'bootstrap'
 import { userApi } from '@/api'
 
-const props = defineProps({
+defineProps({
   templates: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['saved'])

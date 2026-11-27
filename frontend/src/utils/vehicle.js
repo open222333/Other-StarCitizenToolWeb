@@ -58,3 +58,8 @@ export function manufacturerLabel(name, code) {
 export function manufacturerShort(name, code) {
   return manufacturerZh(name, code) || (name || '').trim() || (code || '').trim() || '—'
 }
+
+/** 貨艙容量（SCU），沒有貨艙顯示 — */
+export function scuLabel(scu) {
+  return scu ? `${Math.round(scu).toLocaleString('en-US')} SCU` : '—'
+}

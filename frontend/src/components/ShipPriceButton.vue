@@ -81,7 +81,7 @@
                 <span v-for="t in ticks" :key="t.label" class="spb-tl__tick" :style="{ left: t.left + '%' }">{{ t.label }}</span>
               </div>
             </div>
-            <div class="spb-tl__readout" aria-live="polite">{{ hover ? describe(hover) : note || ' ' }}</div>
+            <div class="spb-tl__readout" aria-live="polite">{{ hover ? describe(hover) : note || '\u00a0' }}</div>
           </div>
 
           <div style="overflow-x: auto">

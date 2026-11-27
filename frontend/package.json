@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev":         "vite",
-    "build":       "vite build",
-    "preview":     "vite preview",
-    "dev:web":     "vite --config vite.config.web.js",
-    "build:web":   "vite build --config vite.config.web.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev:web": "vite --config vite.config.web.js",
+    "build:web": "vite build --config vite.config.web.js",
     "preview:web": "vite preview --config vite.config.web.js",
-    "icons":       "python3 scripts/subset-icons.py",
-    "test:calc":   "node src/utils/craftCalc.test.mjs",
+    "icons": "python3 scripts/subset-icons.py",
+    "test:calc": "node src/utils/craftCalc.test.mjs",
     "test:quality": "node src/utils/craftQuality.test.mjs",
     "test:mining": "node src/utils/miningSignature.test.mjs",
     "test:crates": "node src/utils/crateCombos.test.mjs",
@@ -18,17 +18,22 @@
     "test:markdown": "node src/utils/markdown.test.mjs",
     "test:power": "node src/utils/loadoutPower.test.mjs",
     "test:flow": "node src/utils/routeFlow.test.mjs",
-    "test": "node --test \"src/utils/*.test.mjs\""
+    "test": "node --test \"src/utils/*.test.mjs\"",
+    "lint": "eslint ."
   },
   "dependencies": {
-    "bootstrap":       "^5.3.3",
+    "bootstrap": "^5.3.3",
     "bootstrap-icons": "^1.11.3",
-    "pinia":           "^2.1.7",
-    "vue":             "^3.4.21",
-    "vue-router":      "^4.3.0"
+    "pinia": "^2.1.7",
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^4.6.2",
-    "vite":               "^4.5.5"
+    "@eslint/js": "^9.39.5",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "eslint": "^9.39.5",
+    "eslint-plugin-vue": "^9.33.0",
+    "globals": "^15.15.0",
+    "vite": "^6.4.6"
   }
 }

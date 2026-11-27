@@ -482,6 +482,10 @@ pytest -n auto                      # 全套（約 1170 個，mongomock、不需
 pytest                              # 不平行（除錯、看完整輸出時用）
 pytest tests/test_inventory.py -v   # 只跑庫存邏輯
 pytest -k capacity                  # 只跑容量計算相關
+
+cd frontend
+npm run lint                        # ESLint（只開抓錯誤的規則：eslint:recommended＋vue essential）
+npm test                            # 前端純函式測試（src/utils/*.test.mjs）
 ```
 
 ---
@@ -548,8 +552,8 @@ docker compose up -d --build
 ```bash
 # ① 所有服務健康
 docker compose ps
-#    api / mongo / redis / nginx / web 應為 Up (healthy)
-#    worker / beat / bot 為 Up（這三個沒有 healthcheck）
+#    api / mongo / redis / nginx / web / worker / beat / bot 應為 Up (healthy)
+#    worker：celery inspect ping 自己；beat：排程檔 10 分鐘內有更新；bot：心跳檔 3 分鐘內有更新（bot/health.py）
 #    mysql 不會出現 —— 它在 profiles: ["mysql"] 裡，預設不啟動
 
 # ② 健康端點

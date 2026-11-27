@@ -192,7 +192,7 @@ watch(() => props.active, (v) => {
   reload(0)
 }, { immediate: true })
 // 共用搜尋卡每打一個字就會換一次 filters，等停手 300ms 再查；還沒展開過就先不查
-watch(() => props.filters, (f, old) => {
+watch(() => props.filters, (f) => {
   // 剛開始用拆解材料篩選、還沒自己選排序時，預設依回收量由多到少；拆解欄消失時取消這個排序
   const nowDismantle = !!(f?.dismantle?.length || f?.dismantlable)
   if (nowDismantle && !sort.sortKey.value) { sort.sortKey.value = 'dismantle_scu'; sort.sortDir.value = 'desc' }

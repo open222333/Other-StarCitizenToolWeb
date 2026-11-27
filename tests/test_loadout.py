@@ -126,6 +126,23 @@ def test_map_ship_loadout_power():
     assert map_ship_loadout({**SHIP, 'Power': {}})['power'] is None
 
 
+def test_map_ship_item_energy_capacitor():
+    import copy
+    gun = copy.deepcopy(GUN)
+    gun['stdItem']['Weapon'].update({'Consumption': {}, 'Capacitor': {'MaxAmmoLoad': 80, 'MaxRegenPerSec': 10}})
+    s = map_ship_item(gun)['stats']
+    assert s['energy'] and s['ammo'] is None and (s['cap_load'], s['cap_regen']) == (80, 10)
+    assert s['cap_fire_s'] == 3.0 and s['cap_recharge_s'] == 8.0      # 80 ÷ (1600/60)、80 ÷ 10
+
+
+def test_map_ship_loadout_ammo_boost():
+    """EngineeringBoost：能量武器電容容量／回充倍率（Constellation Mk V Centaurus 容量 ×9）；都是 1 或沒有就不存"""
+    assert map_ship_loadout({**SHIP, 'EngineeringBoost': {'PowerRatio': 1, 'MaxAmmoLoad': 9, 'MaxRegenPerSec': 1}}
+                            )['ammo_boost'] == {'ammo': 9, 'regen': 1}
+    assert map_ship_loadout({**SHIP, 'EngineeringBoost': {'MaxAmmoLoad': 1, 'MaxRegenPerSec': 1}})['ammo_boost'] is None
+    assert map_ship_loadout({k: v for k, v in SHIP.items() if k != 'EngineeringBoost'})['ammo_boost'] is None
+
+
 def test_map_ship_item_skips_placeholder_and_unrelated():
     assert map_ship_item(PLACEHOLDER) is None
     assert map_ship_item(DOOR) is None

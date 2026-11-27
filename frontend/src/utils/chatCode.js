@@ -11,7 +11,7 @@
 export function parseDictionary(text) {
   const keyToChar = new Map()
   const charToKeys = new Map()
-  for (const raw of (text || '').replace(/^﻿/, '').split(/\r?\n/)) {
+  for (const raw of (text || '').replace(/^\uFEFF/, '').split(/\r?\n/)) {
     const line = raw.trim()
     if (!line || line.startsWith('#') || line.startsWith(';')) continue
     const idx = line.indexOf('=')

@@ -103,6 +103,8 @@ def _weapon_stats(std: dict) -> dict:
         load, regen = _num(cap.get('MaxAmmoLoad')), _num(cap.get('MaxRegenPerSec'))
         rpm = out['rpm']
         # 電容：滿電可以連續開火幾秒（容量 ÷ 每秒射速），空了要幾秒充滿（容量 ÷ 每秒回充）
+        # 原始容量／回充另外存，前端要乘上船的彈藥容量加成（ammo_boost）重算秒數
+        out['cap_load'], out['cap_regen'] = load, regen
         if load and rpm:
             out['cap_fire_s'] = round(load / (rpm / 60), 1)
         if load and regen:
@@ -346,6 +348,17 @@ def _power(doc: dict) -> Optional[dict]:
     }
 
 
+def _ammo_boost(doc: dict) -> Optional[dict]:
+    """船的能量武器（非彈道）加成：EngineeringBoost 的 MaxAmmoLoad＝電容容量倍率、MaxRegenPerSec＝回充倍率
+    （例如 Constellation Mk V Centaurus 容量 ×9、Idris 容量 ×6 回充 ×1.9）。沒有加成（或都是 1）回 None。"""
+    eb = doc.get('EngineeringBoost') if isinstance(doc.get('EngineeringBoost'), dict) else {}
+    ammo, regen = _num(eb.get('MaxAmmoLoad')), _num(eb.get('MaxRegenPerSec'))
+    if not ammo and not regen:
+        return None
+    out = {'ammo': ammo or 1, 'regen': regen or 1}
+    return out if out != {'ammo': 1, 'regen': 1} else None
+
+
 def map_ship_loadout(doc: dict) -> Optional[dict]:
     uuid = doc.get('UUID')
     name = _real_name(doc.get('Name'))
@@ -422,6 +435,7 @@ def map_ship_loadout(doc: dict) -> Optional[dict]:
                      'turret_dps': _num(weaponry.get('TurretDps')), 'missiles': _num(weaponry.get('TotalMissiles')),
                      'shield_hp': _num(doc.get('ShieldHp')), 'qt_range': _num(qt.get('Range'))},
         'power': _power(doc),
+        'ammo_boost': _ammo_boost(doc),
         'tags': ship_tags(doc),
         'slots': slots,
     }

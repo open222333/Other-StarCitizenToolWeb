@@ -30,9 +30,12 @@ function inline(text) {
     // 連結文字只做粗斜體，不再轉網址
     return u ? hold(`<a href="${u}" target="_blank" rel="noopener noreferrer">${emph(label)}</a>`) : m
   })
+  // \u0000 是佔位符的分隔字元（hold() 放進去的），刻意用控制字元
+  // eslint-disable-next-line no-control-regex
   t = t.replace(/(^|[\s(（])(https?:\/\/[^\s<>"')）\u0000]+)/g, (_, pre, url) =>
     `${pre}${hold(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)}`)
   t = emph(t)
+  // eslint-disable-next-line no-control-regex
   return t.replace(/\u0000(\d+)\u0000/g, (_, i) => slots[Number(i)])
 }
 

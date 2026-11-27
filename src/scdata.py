@@ -15,6 +15,7 @@ Unofficial Star Citizen fan tool. Not affiliated with the Cloud Imperium group o
 import logging
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Callable, Iterator, Optional
@@ -132,58 +133,96 @@ def _retry_after_seconds(raw: str, fallback: float) -> float:
     return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
-def get_json(client: httpx.Client, url: str, params: Optional[dict] = None) -> dict:
-    """帶指數退避的 GET。429 / 5xx / 連線錯誤 / 非 JSON 回應都會重試。
+class _RetryLater(Exception):
+    """handle() 丟這個：這次的回應不算數，下一輪再試。sleep=False 表示不用等（例如 304 但快取不完整，改不帶 ETag 重抓）。"""
 
-    回傳一定是 dict —— 上游若回 JSON 陣列或純字串，呼叫端的
-    `payload.get('data')` 會炸在很遠的地方（AttributeError），
-    所以在這裡就當成「回應格式不對」處理並重試。
+    def __init__(self, reason: str, sleep: bool = True):
+        super().__init__(reason)
+        self.sleep = sleep
+
+
+@contextmanager
+def _open(client: httpx.Client, url: str, params, headers, stream: bool):
+    if stream:
+        with client.stream('GET', url, params=params, headers=headers) as resp:
+            yield resp
+    else:
+        yield client.get(url, params=params, headers=headers) if headers else client.get(url, params=params)
+
+
+def _request_with_retry(client: httpx.Client, url: str, handle: Callable, *, label: str, params: Optional[dict] = None,
+                        headers: Optional[Callable[[], dict]] = None, fail: Optional[Callable[[object], str]] = None,
+                        stream: bool = False):
+    """共用的下載重試（get_json、fetch_translation_ini、fetch_json_url 都走這裡）。
+
+    - 429：照 Retry-After 等（秒數或 HTTP-date，沒給用目前的退避秒數）。
+    - 5xx、連線錯誤、HTTPStatusError、ValueError（JSON 壞掉、內容格式不對）：指數退避（1、2、4…最多 60 秒）重試。
+    - 其他狀態碼交給 handle(resp)：回傳值就是結果；丟 ScDataError（例如 4xx）不重試直接往上拋；
+      丟 _RetryLater 照節奏再試一次。
+    - stream=True 用串流請求（大檔案 handle 可以 resp.iter_bytes() 邊收邊寫），否則一般 client.get。
+    重試 SCDATA_MAX_RETRIES 次都失敗丟 ScDataError（訊息用 fail(last_err)，沒給就是「label 重試 N 次後仍失敗」）。
+    headers 是函式：每次重試前重新產生（ETag 失效後要拿掉 If-None-Match）。
     """
     delay = 1.0
     last_err = None
 
     for attempt in range(1, SCDATA_MAX_RETRIES + 1):
         try:
-            resp = client.get(url, params=params)
+            with _open(client, url, params, headers() if headers else None, stream) as resp:
+                if resp.status_code == 429:
+                    wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
+                    last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
+                    logger.warning('scdata: %s 429 rate limited, 等 %.1fs 重試 (%d/%d)',
+                                   label, wait, attempt, SCDATA_MAX_RETRIES)
+                    time.sleep(wait)
+                    delay = min(delay * 2, 60)
+                    continue
 
-            if resp.status_code == 429:
-                wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
-                last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
-                logger.warning('scdata: 429 rate limited, 等 %.1fs 重試 (%d/%d)',
-                               wait, attempt, SCDATA_MAX_RETRIES)
-                time.sleep(wait)
-                delay = min(delay * 2, 60)
-                continue
+                if resp.status_code >= 500:
+                    last_err = f'HTTP {resp.status_code}'
+                    logger.warning('scdata: %s HTTP %d, 等 %.1fs 重試 (%d/%d)',
+                                   label, resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
+                    time.sleep(delay)
+                    delay = min(delay * 2, 60)
+                    continue
 
-            if resp.status_code >= 500:
-                last_err = f'HTTP {resp.status_code}'
-                logger.warning('scdata: HTTP %d, 等 %.1fs 重試 (%d/%d)',
-                               resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
+                return handle(resp)
+
+        except _RetryLater as err:
+            last_err = str(err)
+            if err.sleep:
+                logger.warning('scdata: %s %s (%d/%d)', label, err, attempt, SCDATA_MAX_RETRIES)
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
-                continue
-
-            if 400 <= resp.status_code < 500:
-                # 4xx（429 除外）是請求本身有問題（缺參數、token 錯…），重試幾次結果都一樣，
-                # 直接回報，順便帶上回應內容——UEX 會在 body 說明缺什麼參數
-                raise ScDataError(f'{url} HTTP {resp.status_code}: {resp.text[:300].strip()}')
-
-            resp.raise_for_status()
-            payload = resp.json()
-            if not isinstance(payload, dict):
-                raise ValueError(f'預期 JSON object，收到 {type(payload).__name__}')
-            return payload
-
-        # ValueError 涵蓋 json.JSONDecodeError（維護頁面回 200 + HTML 就是這種）
-        # 與上面自己拋的格式檢查 —— 舊版沒攔它，所以那兩種情況一次都不重試。
+        # ValueError 涵蓋 json.JSONDecodeError（維護頁面回 200 + HTML 就是這種）與 handle 自己的格式檢查
         except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as err:
             last_err = err
-            logger.warning('scdata: 請求失敗 %s: %s (%d/%d)',
-                           url, err, attempt, SCDATA_MAX_RETRIES)
+            logger.warning('scdata: %s 請求失敗: %s (%d/%d)', label, err, attempt, SCDATA_MAX_RETRIES)
             time.sleep(delay)
             delay = min(delay * 2, 60)
 
-    raise ScDataError(f'{url} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {last_err}')
+    raise ScDataError(fail(last_err) if fail else f'{label} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {last_err}')
+
+
+def get_json(client: httpx.Client, url: str, params: Optional[dict] = None) -> dict:
+    """帶指數退避的 GET（_request_with_retry）。429 / 5xx / 連線錯誤 / 非 JSON 回應都會重試。
+
+    回傳一定是 dict —— 上游若回 JSON 陣列或純字串，呼叫端的
+    `payload.get('data')` 會炸在很遠的地方（AttributeError），
+    所以在這裡就當成「回應格式不對」處理並重試。
+    """
+    def handle(resp):
+        if 400 <= resp.status_code < 500:
+            # 4xx（429 除外）是請求本身有問題（缺參數、token 錯…），重試幾次結果都一樣，
+            # 直接回報，順便帶上回應內容——UEX 會在 body 說明缺什麼參數
+            raise ScDataError(f'{url} HTTP {resp.status_code}: {resp.text[:300].strip()}')
+        resp.raise_for_status()
+        payload = resp.json()
+        if not isinstance(payload, dict):
+            raise ValueError(f'預期 JSON object，收到 {type(payload).__name__}')
+        return payload
+
+    return _request_with_retry(client, url, handle, label=url, params=params)
 
 
 # 部分資源需要額外的查詢參數才會回傳完整資料。
@@ -305,48 +344,21 @@ def uex_rows(client: httpx.Client, resource: str, params: Optional[dict] = None)
 def fetch_translation_ini(client: httpx.Client, url: str = '') -> str:
     """下載社群繁中化包的 global.ini（約 10MB 純文字），回傳解碼後的字串。
 
-    重試邏輯（429 / 5xx / 連線錯誤）同 fetch_scunpacked_rows()。檔頭有 UTF-8
+    重試邏輯（429 / 5xx / 連線錯誤）走 _request_with_retry。檔頭有 UTF-8
     BOM，用 utf-8-sig 解碼去掉。內容明顯不像 global.ini（太短）也當成失敗重試，
     避免 GitHub 回一頁錯誤 HTML 就被當成「翻譯全部消失」寫進資料庫。
     """
     url = url or SCDATA_TRANSLATION_INI_URL
-    delay = 1.0
-    last_err = None
 
-    for attempt in range(1, SCDATA_MAX_RETRIES + 1):
-        try:
-            resp = client.get(url)
+    def handle(resp):
+        resp.raise_for_status()
+        text = resp.content.decode('utf-8-sig')
+        if text.count('=') < 1000:
+            raise ValueError(f'內容不像 global.ini（只有 {len(text)} 字元）')
+        return text
 
-            if resp.status_code == 429:
-                wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
-                last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
-                logger.warning('scdata: 翻譯包 429 rate limited, 等 %.1fs 重試 (%d/%d)',
-                               wait, attempt, SCDATA_MAX_RETRIES)
-                time.sleep(wait)
-                delay = min(delay * 2, 60)
-                continue
-
-            if resp.status_code >= 500:
-                last_err = f'HTTP {resp.status_code}'
-                logger.warning('scdata: 翻譯包 HTTP %d, 等 %.1fs 重試 (%d/%d)',
-                               resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
-                time.sleep(delay)
-                delay = min(delay * 2, 60)
-                continue
-
-            resp.raise_for_status()
-            text = resp.content.decode('utf-8-sig')
-            if text.count('=') < 1000:
-                raise ValueError(f'內容不像 global.ini（只有 {len(text)} 字元）')
-            return text
-
-        except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as err:
-            last_err = err
-            logger.warning('scdata: 翻譯包下載失敗: %s (%d/%d)', err, attempt, SCDATA_MAX_RETRIES)
-            time.sleep(delay)
-            delay = min(delay * 2, 60)
-
-    raise ScDataError(f'翻譯包下載失敗（{url}）：{last_err}')
+    return _request_with_retry(client, url, handle, label='翻譯包',
+                               fail=lambda err: f'翻譯包下載失敗（{url}）：{err}')
 
 
 #: 遊戲英文在地化表（scunpacked-data），翻譯同步的英文主語言來源
@@ -432,7 +444,7 @@ def fetch_json_url(client: httpx.Client, url: str, expect: type = list, label: s
 
     這批檔案的回應是「裸陣列」（`[...]`），不是 Wiki API 那種 `{"data": [...]}`
     包裝，跟 get_json() 預期回傳 dict 的假設不同，所以另外寫一支；重試邏輯
-    （429 / 5xx / 連線錯誤都重試）照抄 get_json()。
+    （429 / 5xx / 連線錯誤都重試）跟 get_json() 共用 _request_with_retry。
 
     內容存在資料庫（src/scdata_cache.py）：帶上次的 ETag 問上游，回 304 就直接讀資料庫、不下載；
     有新版才串流下載到暫存檔、一筆一筆解析寫進資料庫。陣列回傳 JsonRows（len()、迭代跟 list 一樣，
@@ -442,56 +454,27 @@ def fetch_json_url(client: httpx.Client, url: str, expect: type = list, label: s
     :param expect: 預期的最外層型別；大部分檔案是陣列，labels.json（遊戲英文在地化表）是物件
     """
     path = label or url
-    delay = 1.0
-    last_err = None
     cached = scdata_cache.meta(url)
-    use_etag = bool(cached and cached.get('etag'))
+    state = {'etag': bool(cached and cached.get('etag'))}
 
-    for attempt in range(1, SCDATA_MAX_RETRIES + 1):
-        try:
-            headers = {'If-None-Match': cached['etag']} if use_etag else {}
-            with client.stream('GET', url, headers=headers) as resp:
-                if resp.status_code == 304:
-                    rows = scdata_cache.load(url, expect)
-                    if rows is not None:
-                        scdata_cache.touch(url)
-                        logger.info('scdata: %s 沒有變動（304），用資料庫裡的版本', path)
-                        return rows
-                    # 資料庫那份不完整：下一輪不帶 ETag 重抓
-                    use_etag = False
-                    last_err = '304 但資料庫裡的版本不完整'
-                    continue
+    def headers():
+        return {'If-None-Match': cached['etag']} if state['etag'] else {}
 
-                if resp.status_code == 429:
-                    wait = _retry_after_seconds(resp.headers.get('Retry-After', ''), delay)
-                    last_err = f'HTTP 429（Retry-After={resp.headers.get("Retry-After", "-")}）'
-                    logger.warning('scdata: scunpacked %s 429 rate limited, 等 %.1fs 重試 (%d/%d)',
-                                   path, wait, attempt, SCDATA_MAX_RETRIES)
-                    time.sleep(wait)
-                    delay = min(delay * 2, 60)
-                    continue
+    def handle(resp):
+        if resp.status_code == 304:
+            rows = scdata_cache.load(url, expect)
+            if rows is not None:
+                scdata_cache.touch(url)
+                logger.info('scdata: %s 沒有變動（304），用資料庫裡的版本', path)
+                return rows
+            # 資料庫那份不完整：馬上不帶 ETag 重抓
+            state['etag'] = False
+            raise _RetryLater('304 但資料庫裡的版本不完整', sleep=False)
+        resp.raise_for_status()
+        return _store_response(url, resp.iter_bytes(), resp.headers.get('ETag', ''), expect, path)
 
-                if resp.status_code >= 500:
-                    last_err = f'HTTP {resp.status_code}'
-                    logger.warning('scdata: scunpacked %s HTTP %d, 等 %.1fs 重試 (%d/%d)',
-                                   path, resp.status_code, delay, attempt, SCDATA_MAX_RETRIES)
-                    time.sleep(delay)
-                    delay = min(delay * 2, 60)
-                    continue
-
-                resp.raise_for_status()
-                return _store_response(url, resp.iter_bytes(), resp.headers.get('ETag', ''), expect, path)
-
-        # ValueError 涵蓋 JSON 解析失敗與最外層型別不對——
-        # 跟 get_json() 同樣道理，這兩種情況也要重試而不是直接讓整輪同步掛掉。
-        except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as err:
-            last_err = err
-            logger.warning('scdata: scunpacked %s 請求失敗: %s (%d/%d)',
-                           path, err, attempt, SCDATA_MAX_RETRIES)
-            time.sleep(delay)
-            delay = min(delay * 2, 60)
-
-    raise ScDataError(f'{path} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {last_err}')
+    return _request_with_retry(client, url, handle, label=f'scunpacked {path}', headers=headers, stream=True,
+                               fail=lambda err: f'{path} 重試 {SCDATA_MAX_RETRIES} 次後仍失敗: {err}')
 
 
 def _store_response(url: str, chunks, etag: str, expect: type, label: str):

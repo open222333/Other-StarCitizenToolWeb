@@ -174,7 +174,7 @@ import CargoGridButton from '@/components/CargoGridButton.vue'
 import ShipPriceButton from '@/components/ShipPriceButton.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUsd, auecPerUsd, fmtAuecPerUsd, vehicleRangeParams } from '@/utils/uexCommodity'
-import { manufacturerLabel, manufacturerShort, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
+import { manufacturerShort, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */

@@ -227,7 +227,8 @@ def _overlaps(a_start, a_end, b_start, b_end, now) -> bool:
 def _rsi_periods(offers: list) -> list:
     """RSI 的單買 SKU → 時間軸上的段（每段帶當時最後看到的價格）。
     只收商店確認過有在賣的（store_confirmed，見 src/rsi_store.py 的 confirm_ship_offers）：升級工具一直列著、
-    商店早就沒賣的 Warbond（例如 M2 WB $480，從我們第一次抓的 2026-11-14 掛到現在）不算上架，不上時間軸。"""
+    商店早就沒賣的 Warbond（例如 M2 WB $480，從我們第一次抓的 2026-11-14 掛到現在）不算上架，不上時間軸。
+    商店確認上線（2026-11-27）之前就結束的 SKU 沒有這個欄位，真假無法回頭判斷，一律不上時間軸（刻意的，不補舊資料）。"""
     out = []
     for o in offers:
         if o.get('kind') != 'ship' or not o.get('store_confirmed'):

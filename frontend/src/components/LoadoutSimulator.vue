@@ -142,6 +142,11 @@
                 <div :class="[cardClass, 'lo-card']">
                   <div class="card-body">
                     <h4 class="lo-h"><i class="bi bi-crosshair me-2"></i>傷害</h4>
+                    <div v-if="ship?.ammo_boost" class="lo-boost">
+                      <span class="lo-boost__k">彈藥容量加成</span>
+                      <span>非彈道 ×{{ fmtNum(ship.ammo_boost.ammo, 2) }}</span>
+                      <span v-if="ship.ammo_boost.regen !== 1">回充 ×{{ fmtNum(ship.ammo_boost.regen, 2) }}</span>
+                    </div>
                     <div class="lo-big">
                       <div class="lo-bt"><div class="lo-bt__v">{{ fmtNum(summary.total.alpha) }}</div><div class="lo-bt__l">單發總傷害</div></div>
                       <div class="lo-bt lo-bt--hi"><div class="lo-bt__v">{{ fmtNum(summary.total.sustained) }}</div><div class="lo-bt__l">持續 DPS</div></div>
@@ -289,7 +294,7 @@ import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel } from '@/utils/v
 import { fmtNum } from '@/utils/navFormat'
 import { DMG_LABEL, TRACK_LABEL, classLabel, loadLoadoutZh, typeLabel } from '@/utils/loadoutLabels'
 import {
-  SECTIONS, WEAPON_GROUPS, decodeChanges, diff, encodeChanges, equip, findNode, fits, groupNodes, itemMap,
+  SECTIONS, WEAPON_GROUPS, capSeconds, decodeChanges, diff, encodeChanges, equip, findNode, fits, groupNodes, itemMap,
   pathTo, sectionOf, summarize, tagsFor, walk,
 } from '@/utils/loadoutCalc'
 import { copyText } from '@/utils/clipboard'
@@ -799,7 +804,8 @@ function secondary(it) {
       add('爆發', s.dps, fmtNum(s.dps))
       // 實彈：連續開火幾秒過熱、過熱後幾秒恢復；能量：電容滿電可連續開火幾秒、幾秒充滿
       add('過熱', s.overheat_s, `${fmtNum(s.overheat_s, 1)} 秒開火 · ${fmtNum(s.overheat_fix_s ?? 0, 1)} 秒恢復`)
-      add('電容', s.cap_fire_s, `${fmtNum(s.cap_fire_s, 1)} 秒開火${s.cap_recharge_s != null ? ` · ${fmtNum(s.cap_recharge_s, 1)} 秒充滿` : ''}`)
+      { const c = capSeconds(s, ship.value?.ammo_boost)
+        add('電容', c.fire, `${fmtNum(c.fire, 1)} 秒開火${c.recharge != null ? ` · ${fmtNum(c.recharge, 1)} 秒充滿` : ''}`) }
       add('射速', s.rpm, `${fmtNum(s.rpm)}/分`)
       add('射程', s.range, `${fmtNum(s.range)} m`)
       add('彈速', s.speed, `${fmtNum(s.speed)} m/s`)
@@ -1002,6 +1008,8 @@ provide('loadout', { itemOf, open: openPicker, primary, secondary, itemLabel, ty
 .lo-mfr { color: var(--sf-text-muted); }
 .lo-muted { color: var(--sf-text-muted); }
 .lo-h { font-size: var(--sf-fs-lg); font-weight: 800; margin-bottom: .85rem; color: var(--sf-text-strong); }
+.lo-boost { display: flex; flex-wrap: wrap; gap: .25rem .75rem; margin: -.4rem 0 .75rem; font-size: var(--sf-fs-sm); color: var(--sf-accent-2); }
+.lo-boost__k { color: var(--sf-text-muted); }
 .lo-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-bottom: .6rem; }
 .lo-tile { padding: .5rem .6rem; border: 1px solid var(--sf-border); border-radius: .4rem; background: var(--sf-chip-bg); }
 .lo-tile--hi { border-color: rgba(var(--sf-accent-rgb), .8); background: rgba(var(--sf-accent-rgb), .15); }

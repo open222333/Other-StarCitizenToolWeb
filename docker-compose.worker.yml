@@ -26,6 +26,14 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
+    # 健康檢查（docs/現版本優化方案.md 3-9）：問這個 worker 自己（celery@hostname）有沒有回 pong；
+    # 會另外起一個 python 載入 app，所以間隔放寬
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_worker inspect ping -d celery@$$HOSTNAME --timeout 10 >/dev/null"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
     deploy:
       resources:
@@ -54,6 +62,14 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # 健康檢查：beat 每分鐘都有排程要發（健康檢查任務），排程檔（--schedule）至少幾分鐘會寫一次；
+    # 10 分鐘沒動就是卡住了
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp -maxdepth 1 -name 'celerybeat-schedule*' -mmin -10 | grep -q ."]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     restart: unless-stopped
     deploy:
       resources:

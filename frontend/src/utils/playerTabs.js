@@ -46,6 +46,10 @@ export const PLAYER_TABS = [
 
 /** 舊的主分頁 → 現在所在的主分頁與下層分頁（倉庫、藍圖、艦隊併進「艦長室」；任務放進「資料庫」；
  *  礦物、配裝模擬、貨艙網格、酬勞分配、LOG 解析、中文轉碼併進「工具箱」） */
+/** 「查詢持有資訊」記在網址上的條件鍵名（components/PlayerHoldersSearch.vue 寫入；MyPlayerView 離開那個分頁時拿掉） */
+export const SEARCH_URL_KEYS = ['k', 'q', 'pk', 'pid', 'pn', 'p', 'i_t', 'i_sys', 'i_pl', 'i_loc',
+  'b_t', 'f_t', 'f_s', 'f_m', 'f_r']
+
 export const LEGACY_TABS = {
   warehouse: { tab: 'my', sub: 'warehouse' },
   blueprints: { tab: 'my', sub: 'blueprints' },

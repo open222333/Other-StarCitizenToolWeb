@@ -89,7 +89,8 @@ Star Citizen 公會工具網站：玩家頁（艦長室、資料庫、規劃工�
   再重跑「配裝」同步，不要在模型裡補。電源分配與訊號在 `utils/loadoutPower.js`（模型寫在檔頭）；改公式後用
   scunpacked 的 `ships.json` 驗證：全部開滿時耗電、EM、IR、冷卻產量要跟資料集的 `Power`／`Emission`／`Cooling` 一致。
 - **玩家頁不登入可用**：遊戲資料與工具分頁不用登入；「我的」（倉庫、藍圖、艦隊）、查詢持有資訊、個人資料整頁要登入，
-  工具箱裡的戰術小隊是下層分頁標 `member: true`（`MyPlayerView.vue` 的 `guestLock` 同時看主分頁與下層分頁）。
+  工具箱裡的戰術小隊是下層分頁標 `member: true`。沒登入時 `member` 的主分頁與下層分頁整個不出現在分頁列；
+  從網址或站內連結被導到會員分頁時不切過去，改跳登入視窗，登入後回到原本那頁（`MyPlayerView.vue` 的 `guestWanted`／`guestWantedSub`）。
   遊戲資料一律放「資料庫」（key 沿用 `items`）的下層分頁，公開分頁裡的「登記」類按鈕只在登入時顯示。
   工具類功能一律放「工具箱」（`toolbox`）的下層分頁，不要再開新的主分頁。
   「我的」「資料庫」「工具箱」底下的內容在 `MyPlayerView.vue` 用 `activePane`（下層分頁 key）判斷，不要再寫 `activeTab === 'warehouse'`；
@@ -548,11 +549,11 @@ def send_push(tokens, title, body, data=None):
 **方式 B — Expo Push（React Native 通用）**
 
 ```python
-import requests
+import httpx   # 專案已不裝 requests，HTTP 一律用 httpx
 
 def send_push(tokens, title, body, data=None):
     messages = [{'to': t, 'title': title, 'body': body, 'data': data or {}} for t in tokens]
-    r = requests.post('https://exp.host/--/api/v2/push/send', json=messages, timeout=10)
+    r = httpx.post('https://exp.host/--/api/v2/push/send', json=messages, timeout=10)
     return r.json()
 ```
 
@@ -617,7 +618,6 @@ App 登出
 
 | 項目 | 位置 | 建議 |
 |------|------|------|
-| Flask 2.2.3（舊版） | `requirements.txt` | 可升至 Flask 3.x，需確認 Flasgger 相容性 |
 | Swagger 端點無需驗證 | `/apidocs` | 生產環境建議用 nginx 限制 `/apidocs` 存取 IP |
 | `run.py` 使用 TestingConfig | `run.py` L34 | 新增 `FLASK_ENV` 判斷，自動切換 ProductionConfig |
 | 日誌無 IP / User-Agent | `src/models/log.py` | 可在 `Log.create()` 加入 `request` context 擷取 |

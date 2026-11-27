@@ -103,7 +103,8 @@ def test_warn_if_real_ip_lost(caplog):
     """remote_addr 是 Docker 閘道這種私有 IP、X-Forwarded-For 卻帶公網 IP → 前面的代理沒還原真實 IP，要記警告。"""
     import app as app_module
     from app import warn_if_real_ip_lost
-    app_module._real_ip_warned_at[0] = 0.0
+    # 不能設 0：機器剛開機時 time.monotonic() 可能還小於警告間隔，第一次就不會記（CI 的新機器就是這樣）
+    app_module._real_ip_warned_at[0] = float('-inf')
     with caplog.at_level('WARNING'):
         assert warn_if_real_ip_lost('172.19.0.1', '8.8.8.8, 172.19.0.1') is True
     assert '沒有還原真實 IP' in caplog.text

@@ -268,3 +268,19 @@ export function pathTo(slots, id) {
   }
   return visit(slots) ? [...stack] : []
 }
+
+/**
+ * 能量武器電容：滿電可連續開火幾秒、空了幾秒充滿，乘上船的彈藥容量加成（ship.ammo_boost＝{ammo, regen}，
+ * 遊戲資料 EngineeringBoost）。舊資料沒有 cap_load／cap_regen 時退回後端算好的秒數（不含加成）。
+ */
+export function capSeconds(stats, boost) {
+  const s = stats || {}
+  if (!s.cap_load) return { fire: s.cap_fire_s ?? null, recharge: s.cap_recharge_s ?? null }
+  const load = s.cap_load * (boost?.ammo || 1)
+  const regen = s.cap_regen ? s.cap_regen * (boost?.regen || 1) : 0
+  const round1 = v => Math.round(v * 10) / 10
+  return {
+    fire: s.rpm ? round1(load / (s.rpm / 60)) : null,
+    recharge: regen ? round1(load / regen) : null,
+  }
+}

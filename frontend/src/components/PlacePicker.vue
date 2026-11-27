@@ -78,7 +78,7 @@ const groups = computed(() => {
     if (seen.has(key)) continue
     const body = key === SPACE ? null : byId.value.get(key)
     seen.set(key, { key, label: groupLabel(p),
-      sort: key === SPACE ? '￿' : [...(body?.path_zh || []), p.group_name].join('/').toLowerCase() })
+      sort: key === SPACE ? '\uFFFF' : [...(body?.path_zh || []), p.group_name].join('/').toLowerCase() })
   }
   return [...seen.values()].sort((a, b) => a.sort.localeCompare(b.sort))
 })

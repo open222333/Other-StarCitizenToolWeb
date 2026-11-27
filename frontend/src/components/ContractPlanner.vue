@@ -616,7 +616,7 @@ const filledContracts = computed(() => contracts
         pickups: filledPoints(onPickups(it)).map(pt => ({ place: pt.place.id, scu: numOrNull(pt.scu) })),
         dropoffs: filledPoints(dropsOf(it)).map(pt => ({ place: pt.place.id, scu: numOrNull(pt.scu) })) })) }))
   .filter(c => c.on && c.items.length)
-  .map(({ on, ...c }) => c))
+  .map(({ on: _on, ...c }) => c))
 const totalScu = computed(() => contracts.filter(c => c.on)
   .reduce((n, c) => n + c.items.reduce((m, it) => m + (demandOf(it) || 0), 0), 0))
 

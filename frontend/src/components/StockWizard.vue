@@ -30,7 +30,6 @@
 
       <div class="sw-body">
         <Transition name="alert-slide">
-          <div v-if="success" class="alert alert-success py-2">{{ success }}</div>
         </Transition>
 
         <!-- ── 1. 地點 ── -->
@@ -185,6 +184,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { computed, reactive, ref, watch } from 'vue'
 import InventoryFilterBar from '@/components/InventoryFilterBar.vue'
 import ItemBulkPicker from '@/components/ItemBulkPicker.vue'
@@ -211,7 +211,6 @@ const open = ref(false)
 const step = ref(1)
 const dialogEl = ref(null)
 const { close } = useSheet(open, dialogEl)
-const success = ref('')
 
 // ── 1. 地點（上次送出的地點記在這台瀏覽器）──
 const LOC_KEY = 'sc_stock_last_location_v1'
@@ -400,7 +399,6 @@ async function submit() {
     localStorage.setItem(LOC_KEY, loc)
   } catch { /* 存不了就算了 */ }
   submitting.value = true
-  success.value = ''
   const batch = [...picked]
   const done = []
   for (const r of batch) {
@@ -418,15 +416,14 @@ async function submit() {
     const i = picked.indexOf(r)
     if (i >= 0) picked.splice(i, 1)
   }
-  success.value = `已處理 ${done.length} 項到 ${props.locLabel(loc)}`
-    + (picked.length ? `；${picked.length} 項失敗，請看各項的原因` : '')
+  toast(`已處理 ${done.length} 項到 ${props.locLabel(loc)}`
+    + (picked.length ? `；${picked.length} 項失敗，請看各項的原因` : ''), picked.length ? 'warning' : 'success')
   if (!picked.length) step.value = 2
   emit('done')
 }
 
 // ── 開啟 ──
 function reset() {
-  success.value = ''
   if (!allTypes.value) loadAllTypes()
   pasteOpen.value = false
   pasteRows.value = []
@@ -451,7 +448,6 @@ function openAdjust(row) {
   step.value = 3
   open.value = true
 }
-watch(open, (v) => { if (!v) success.value = '' })
 
 defineExpose({ openNew, openAdjust })
 </script>

@@ -25,7 +25,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot import db
+from bot import db, health
 from bot.ui import error_embed
 from src import DISCORD_GUILD_ID, DISCORD_TOKEN, LOG_LEVEL, WMS_SCOPE_ID
 from src.models.inventory import StockError
@@ -49,6 +49,9 @@ class WmsBot(commands.Bot):
             await self.load_extension(cog)
             log.info('載入 %s', cog)
 
+        # 健康檢查的心跳（bot/health.py；docker-compose.bot.yml 的 healthcheck 看它多久沒更新）
+        self._heartbeat_task = asyncio.create_task(self._heartbeat())
+
         if DISCORD_GUILD_ID:
             # 指定 guild 的指令立即生效，開發時用這個
             guild = discord.Object(id=int(DISCORD_GUILD_ID))
@@ -59,6 +62,16 @@ class WmsBot(commands.Bot):
             # 全域指令要等 Discord 傳播，最多約一小時
             synced = await self.tree.sync()
             log.info('已同步 %d 個全域指令（傳播可能需要一段時間）', len(synced))
+
+    async def _heartbeat(self) -> None:
+        """連線正常（已就緒、沒關閉）時每 30 秒寫一次心跳檔；斷線期間不寫，太久沒寫就判定不健康。"""
+        while not self.is_closed():
+            if self.is_ready():
+                try:
+                    health.beat()
+                except OSError:
+                    log.warning('寫不進健康檢查心跳檔 %s', health.HEARTBEAT_FILE)
+            await asyncio.sleep(health.HEARTBEAT_EVERY)
 
     async def on_ready(self) -> None:
         log.info('已登入為 %s (id=%s)', self.user, getattr(self.user, 'id', '?'))

@@ -638,6 +638,8 @@ const PeopleRows = defineComponent({
             'aria-label': `${m.name} 下移`, onClick: () => moveItem(p.list, i, 1) }, [h('i', { class: 'bi bi-arrow-down' })]),
         ]),
         h('button', { type: 'button', class: 'btn btn-sm btn-outline-danger', 'aria-label': `移除${m.name}`,
+          // list／squad 是父層 reactive 看板資料的參照，直接改就是要改看板（跟其他按鈕一樣）
+          // eslint-disable-next-line vue/no-mutating-props
           onClick: () => { p.list.splice(i, 1); if (p.squad.leader === m.id) p.squad.leader = null } },
         [h('i', { class: 'bi bi-x-lg' })]),
       ])) : [h('li', { class: 'text-muted small py-1' }, '（尚未分配人員）')])

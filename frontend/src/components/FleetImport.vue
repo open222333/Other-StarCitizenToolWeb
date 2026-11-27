@@ -23,7 +23,6 @@
       </div>
 
       <div v-if="error" class="alert alert-danger py-2 mt-2 mb-0">{{ error }}</div>
-      <div v-if="doneText" class="alert alert-success py-2 mt-2 mb-0">{{ doneText }}</div>
       <div v-if="busy" class="fleet-import-meta mt-2">處理中…</div>
 
       <template v-if="preview">
@@ -82,6 +81,7 @@
 </template>
 
 <script setup>
+import { toast } from '@/utils/toast'
 import { computed, ref, shallowRef } from 'vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -104,7 +104,6 @@ const previewSort = useTableSort(computed(() => preview.value?.rows || []), { ac
 } })
 const busy = ref(false)
 const error = ref('')
-const doneText = ref('')
 const dragging = ref(false)
 
 const unmatchedCount = computed(() => (preview.value?.unmatched || []).reduce((n, u) => n + u.count, 0))
@@ -160,7 +159,7 @@ async function confirm() {
     if (r.unmatched) parts.push(`${r.unmatched} 款對不到`)
     const text = `匯入完成：${parts.join('、')}。`
     reset()
-    doneText.value = text
+    toast(text)
     emit('imported')
   } catch (e) {
     error.value = e.message
@@ -174,7 +173,6 @@ function reset() {
   ships.value = null
   preview.value = null
   error.value = ''
-  doneText.value = ''
 }
 </script>
 

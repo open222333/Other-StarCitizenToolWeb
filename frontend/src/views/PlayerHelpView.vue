@@ -56,7 +56,7 @@
           <a :href="`#${s.id}`" class="help-outline__sec" :class="{ active: activeSec === s.id }"
             :aria-current="activeSec === s.id ? 'true' : null" @click.prevent="jump(s.id)">
             {{ s.title }}</a>
-          <a v-for="(b, i) in s.blocks.filter(x => x.title)" :key="blockId(s, s.blocks.indexOf(b))"
+          <a v-for="b in s.blocks.filter(x => x.title)" :key="blockId(s, s.blocks.indexOf(b))"
             :href="`#${blockId(s, s.blocks.indexOf(b))}`" class="help-outline__sub"
             :class="{ active: activeId === blockId(s, s.blocks.indexOf(b)) }"
             @click.prevent="jump(blockId(s, s.blocks.indexOf(b)))">{{ b.title }}</a>
