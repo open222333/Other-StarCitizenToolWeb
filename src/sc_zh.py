@@ -195,13 +195,15 @@ def blueprint_type_zh(output_type: str, lang: str = DEFAULT_LANG) -> Optional[st
 def item_type_zh(item_type: str, lang: str = DEFAULT_LANG) -> Optional[str]:
     """物品類型代碼（item_master.type，例如 'WeaponPersonal'、'Char_Armor_Torso'）→ 翻譯。
 
-    依序找：遊戲 key item_Type<代碼>、item_Type<代碼>,P（遊戲有幾個 key 尾巴多了「,P」，例如
+    依序找：人工改名 item_type_override（翻譯包的叫法不好懂時，例如 Shield「護盾生成器」→「護盾」）、
+    遊戲 key item_Type<代碼>、item_Type<代碼>,P（遊戲有幾個 key 尾巴多了「,P」，例如
     item_TypeFlightController,P）、人工條目 item_type（遊戲本身不顯示的內部零件類型，翻譯包沒有）、
     藍圖類型的人工條目（代碼是同一套）。"""
     code = (item_type or '').strip()
     if not code:
         return None
-    return T.by_keys([f'item_Type{code}', f'item_Type{code},P', manual_key('item_type', code),
+    return T.by_keys([manual_key('item_type_override', code), f'item_Type{code}', f'item_Type{code},P',
+                      manual_key('item_type', code),
                       manual_key('blueprint_type', code)], lang)
 
 

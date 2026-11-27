@@ -13,17 +13,24 @@
         <template v-if="isPhone">
           <label class="form-label small fw-semibold mb-1" for="scd-type">種類</label>
           <select id="scd-type" v-model="type" class="form-select mb-2">
-            <option v-for="t in types" :key="t.type" :value="t.type">{{ typeName(t.type) }}</option>
+            <optgroup v-for="g in typeGroups" :key="g.label" :label="g.label">
+              <option v-for="t in g.types" :key="t.type" :value="t.type">{{ typeName(t.type) }}</option>
+            </optgroup>
           </select>
         </template>
         <span v-if="!isPhone" id="scd-type-l" class="form-label small fw-semibold mb-1 d-block text-center">種類</span>
-        <!-- 種類：一格一張小卡（圖示＋名稱，置中、寬度照內容），選中的實心強調色 -->
-        <div v-if="!isPhone" class="scd-types mb-3" role="group" aria-labelledby="scd-type-l">
-          <button v-for="t in types" :key="t.type" type="button" class="scd-type"
-            :class="{ active: type === t.type }" :aria-pressed="type === t.type ? 'true' : 'false'" @click="type = t.type">
-            <i :class="typeIcon(t.type)" class="scd-type__icon" aria-hidden="true"></i>
-            <span class="scd-type__name">{{ typeName(t.type) }}</span>
-          </button>
+        <!-- 種類：依物品類型分組（管理後台的分組，跟物品／藍圖同一套）分段，每段一排卡片（圖示＋名稱，置中），選中的實心強調色 -->
+        <div v-if="!isPhone" class="scd-groups mb-3" role="group" aria-labelledby="scd-type-l">
+          <section v-for="g in typeGroups" :key="g.label" class="scd-group" :aria-label="g.label">
+            <h3 v-if="g.label" class="scd-group__title">{{ g.label }}</h3>
+            <div class="scd-types">
+              <button v-for="t in g.types" :key="t.type" type="button" class="scd-type"
+                :class="{ active: type === t.type }" :aria-pressed="type === t.type ? 'true' : 'false'" @click="type = t.type">
+                <i :class="typeIcon(t.type)" class="scd-type__icon" aria-hidden="true"></i>
+                <span class="scd-type__name">{{ typeName(t.type) }}</span>
+              </button>
+            </div>
+          </section>
         </div>
         <div class="row g-2 align-items-end">
           <div class="col col-md-4">
@@ -122,6 +129,7 @@ import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTableSort } from '@/composables/useTableSort'
 import { baseColumns, componentColumns, visibleColumns } from '@/utils/componentColumns'
 import { getJson } from '@/utils/getJson'
+import { itemTypeGroup } from '@/utils/itemType'
 import { classLabel, loadLoadoutZh, typeLabel } from '@/utils/loadoutLabels'
 import { manufacturerLabel } from '@/utils/vehicle'
 import { toast } from '@/utils/toast'
@@ -165,6 +173,17 @@ const TYPE_ICON = {
 }
 const typeIcon = t => `bi ${TYPE_ICON[t] || 'bi-box-seam'}`
 const typeName = t => typeLabel([t]) || t
+// 種類分段：照物品類型分組的順序，組內維持原本排序；分組還沒載入時整批一段（沒有標題）
+const typeGroups = computed(() => {
+  const out = []
+  for (const t of types.value) {
+    const g = itemTypeGroup(t.type)
+    let sec = out.find(x => x.label === g.label)
+    if (!sec) out.push(sec = { label: g.label, index: g.index, types: [] })
+    sec.types.push(t)
+  }
+  return out.sort((a, b) => a.index - b.index)
+})
 const items = computed(() => byType.value[type.value] || [])
 
 async function loadTypes() {
@@ -265,13 +284,24 @@ const sortOptions = computed(() => cols.value.map(c => ({ field: c.key, label: c
 </script>
 
 <style scoped>
-/* 種類小卡：寬度照內容、整排置中，圖示＋名稱；hover 微亮、選中實心強調色加光暈 */
-.scd-types { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; }
+/* 種類分段：標題左右拉線置中，段與段之間留空 */
+.scd-groups { display: flex; flex-direction: column; gap: 1rem; }
+.scd-group__title {
+  display: flex; align-items: center; gap: .75rem; margin: 0 0 .6rem;
+  color: rgb(var(--sf-accent-rgb)); font-size: var(--sf-fs-base); font-weight: 700; letter-spacing: .08em;
+}
+.scd-group__title::before, .scd-group__title::after {
+  content: ''; flex: 1; height: 1px; background: rgba(var(--sf-accent-rgb), .55);
+}
+.scd-group__title::before { background: linear-gradient(90deg, transparent, rgba(var(--sf-accent-rgb), .55)); }
+.scd-group__title::after { background: linear-gradient(90deg, rgba(var(--sf-accent-rgb), .55), transparent); }
+/* 種類卡：寬度照內容、整排置中，圖示＋名稱；hover 微亮、選中實心強調色加光暈 */
+.scd-types { display: flex; flex-wrap: wrap; justify-content: center; gap: .8rem; }
 .scd-type {
-  display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .7rem .3rem .35rem; text-align: left;
-  border: 1px solid rgba(var(--sf-accent-rgb), .35); border-radius: .55rem;
+  display: inline-flex; align-items: center; gap: .8rem; padding: .6rem 1.4rem .6rem .7rem; text-align: left;
+  border: 1px solid rgba(var(--sf-accent-rgb), .35); border-radius: .9rem;
   background: linear-gradient(135deg, rgba(var(--sf-accent-rgb), .1), rgba(var(--sf-accent-rgb), .02));
-  color: var(--sf-text-strong); font-weight: 600; font-size: var(--sf-fs-sm);
+  color: var(--sf-text-strong); font-weight: 600; font-size: var(--sf-fs-lg);
   transition: border-color .15s, background .15s, box-shadow .15s, transform .15s;
 }
 .scd-type:hover:not(.active) {
@@ -283,8 +313,8 @@ const sortOptions = computed(() => cols.value.map(c => ({ field: c.key, label: c
   box-shadow: 0 0 0 1px rgb(var(--sf-accent-rgb)), 0 .25rem .9rem rgba(var(--sf-accent-rgb), .4);
 }
 .scd-type__icon {
-  flex: none; display: grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: .4rem;
-  background: rgba(var(--sf-accent-rgb), .2); color: rgb(var(--sf-accent-rgb)); font-size: .8rem;
+  flex: none; display: grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: .7rem;
+  background: rgba(var(--sf-accent-rgb), .2); color: rgb(var(--sf-accent-rgb)); font-size: var(--sf-fs-xl);
 }
 .scd-type.active .scd-type__icon { background: rgba(255, 255, 255, .18); color: var(--sf-text-strong); }
 .scd-type__name { white-space: nowrap; }

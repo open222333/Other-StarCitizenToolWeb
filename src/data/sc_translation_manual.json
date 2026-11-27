@@ -3,7 +3,8 @@
     "翻譯包（cosmo-chang-1701/sc-translation-pack）沒收錄、人工補的翻譯。",
     "同步翻譯時會一併寫進 sc_translations（source=manual），不會被翻譯包覆蓋；",
     "格式：domain → id → {en, zh-TW}，en 省略時就是 id 本身。",
-    "只放翻譯包真的沒有的條目——翻譯包有的一律以翻譯包為準，不要在這裡覆蓋。"
+    "只放翻譯包真的沒有的條目——翻譯包有的一律以翻譯包為準，不要在這裡覆蓋。",
+    "item_type_override：遊戲翻譯包有、但想改成別的名稱的物品類型（例如 Shield 翻譯包是「護盾生成器」→「護盾」），查物品類型時比翻譯包優先。"
   ],
   "blueprint_type": {
     "Cargo": {
@@ -590,6 +591,14 @@
     },
     "Competition": {
       "zh-TW": "競速"
+    }
+  },
+  "item_type_override": {
+    "Shield": {
+      "zh-TW": "護盾"
+    },
+    "WeaponDefensive": {
+      "zh-TW": "反制"
     }
   }
 }
