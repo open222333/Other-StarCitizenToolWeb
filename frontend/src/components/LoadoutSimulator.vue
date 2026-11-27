@@ -20,8 +20,8 @@
               <label class="form-label small fw-semibold mb-1" for="lo-ship">船艦</label>
               <AutocompleteField id="lo-ship" v-model="shipText" :search="searchShips" :get-label="shipLabel"
                 :get-meta="shipMeta" :min-chars="0" :debounce-ms="0" aria-label="選擇船艦" @select="pickShip" />
-              <div v-if="member" class="form-check form-switch mt-2 mb-0">
-                <input id="lo-mine" v-model="mineOnly" class="form-check-input" type="checkbox" role="switch" :disabled="!fleetSet.size">
+              <div v-if="member" class="form-check sf-check-btn mt-2 mb-0">
+                <input id="lo-mine" v-model="mineOnly" class="form-check-input" type="checkbox" :disabled="!fleetSet.size">
                 <label class="form-check-label" for="lo-mine">只看我的機庫<span class="lo-muted ms-1">{{ fleetSet.size }}</span></label>
               </div>
               <!-- 跟資料庫 › 艦船一樣的條件（類型、尺寸、廠商、角色），選了之後上面的候選只列符合的船 -->

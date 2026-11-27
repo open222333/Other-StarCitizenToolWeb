@@ -4,7 +4,7 @@
 -->
 <template>
   <div class="d-flex flex-wrap align-items-center gap-3 ship-filter">
-    <div class="form-check mb-0">
+    <div class="form-check sf-check-btn mb-0">
       <input :id="`${id}-cargo`" v-model="filter.hideNoCargo" class="form-check-input" type="checkbox">
       <label class="form-check-label" :for="`${id}-cargo`">不顯示沒有貨艙的船</label>
     </div>
@@ -15,7 +15,7 @@
         <span class="input-group-text">SCU</span>
       </div>
     </div>
-    <div class="form-check mb-0">
+    <div class="form-check sf-check-btn mb-0">
       <input :id="`${id}-fleet`" v-model="filter.fleetOnly" class="form-check-input" type="checkbox">
       <label class="form-check-label" :for="`${id}-fleet`">{{ fleetLabel }}</label>
     </div>

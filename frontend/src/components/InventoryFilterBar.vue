@@ -40,12 +40,12 @@
             @update:planets="$emit('update:planets', $event)"
             @update:locations="$emit('update:locations', $event)" />
           <template #more>
-            <div v-if="showBuyable" class="form-check mt-3">
+            <div v-if="showBuyable" class="form-check sf-check-btn mt-3">
               <input id="wh-buyable-m" class="form-check-input" type="checkbox" :checked="buyable"
                 @change="$emit('update:buyable', $event.target.checked)">
               <label class="form-check-label" for="wh-buyable-m">只看買得到</label>
             </div>
-            <div v-if="showBuyable" class="form-check mt-2">
+            <div v-if="showBuyable" class="form-check sf-check-btn mt-2">
               <input id="wh-dismantlable-m" class="form-check-input" type="checkbox" :checked="dismantlable"
                 @change="$emit('update:dismantlable', $event.target.checked)">
               <label class="form-check-label" for="wh-dismantlable-m">只看可拆解</label>
@@ -55,13 +55,13 @@
       </div>
 
       <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-        <div v-if="showBuyable && !isPhone" class="form-check mb-0 me-2">
+        <div v-if="showBuyable && !isPhone" class="form-check sf-check-btn mb-0 me-2">
           <input id="wh-buyable" class="form-check-input" type="checkbox" :checked="buyable"
             @change="$emit('update:buyable', $event.target.checked)">
           <label class="form-check-label" for="wh-buyable">只看買得到</label>
         </div>
         <!-- 只看可拆解：有藍圖、而且藍圖有拆解回收的物品（只給物品資料用，跟「只看買得到」一起出現） -->
-        <div v-if="showBuyable && !isPhone" class="form-check mb-0 me-2">
+        <div v-if="showBuyable && !isPhone" class="form-check sf-check-btn mb-0 me-2">
           <input id="wh-dismantlable" class="form-check-input" type="checkbox" :checked="dismantlable"
             @change="$emit('update:dismantlable', $event.target.checked)">
           <label class="form-check-label" for="wh-dismantlable">只看可拆解</label>

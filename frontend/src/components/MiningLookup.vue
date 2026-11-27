@@ -172,12 +172,12 @@
         </div>
 
         <!-- 勾選後每張礦物卡片多列「包含這種礦物的礦床」（只列機率 100% 的；含量、單顆訊號值） -->
-        <div class="form-check mb-3">
+        <div class="form-check sf-check-btn mb-3">
           <input :id="`${mineralListId}-containing`" v-model="showContaining" class="form-check-input" type="checkbox">
           <label class="form-check-label" :for="`${mineralListId}-containing`">顯示包含此礦物的礦床</label>
         </div>
         <!-- 名稱有「小行星」「礦床」的（Asteroid／Deposit）預設不列，勾了才列 -->
-        <div v-if="showContaining" class="form-check mb-3 ms-4">
+        <div v-if="showContaining" class="form-check sf-check-btn mb-3 ms-4">
           <input :id="`${mineralListId}-generic`" v-model="showGenericDeposits" class="form-check-input" type="checkbox">
           <label class="form-check-label" :for="`${mineralListId}-generic`">包含小行星、礦床</label>
         </div>

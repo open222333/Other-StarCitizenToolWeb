@@ -196,8 +196,8 @@
               <input id="rp-external" v-model="externalCargo" class="form-check-input" type="checkbox">
               <label class="form-check-label" for="rp-external">外掛貨櫃（只停外部貨運站）</label>
             </div>
-            <div class="form-check form-switch mb-0">
-              <input id="rp-popup" v-model="popupResult" class="form-check-input" type="checkbox" role="switch">
+            <div class="form-check sf-check-btn mb-0">
+              <input id="rp-popup" v-model="popupResult" class="form-check-input" type="checkbox">
               <label class="form-check-label" for="rp-popup">結果用跳出視窗</label>
             </div>
             <div class="ms-auto d-flex gap-2">

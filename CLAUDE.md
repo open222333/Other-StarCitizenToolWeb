@@ -71,6 +71,9 @@ Star Citizen 公會工具網站：玩家頁（艦長室、資料庫、規劃工�
   - 分頁：`SfPager`（`total`／`offset`／`limit`／`loading`，`@page(newOffset)`；後台頁加 `admin` 變 outline 樣式）。
   - 標籤膠囊 `.sf-chip`（`--warn` 紅、`--ok` 綠、`--todo` 虛線、`--accent` 強調色；裡面的小字 `.sf-chip__state`、
     小按鈕 `btn btn-sm btn-* sf-chip__btn`）；正負數值文字 `.sf-good`／`.sf-bad`；「標籤：值」清單 `<dl class="sf-facts">`。
+  - 有文字的勾選框與開關（「只看買得到」「只看我建立的」「結果用跳出視窗」這類）一律在 `.form-check` 外層加 `.sf-check-btn`
+    （不用 `.form-switch`、不加 `role="switch"`），顯示成切換按鈕（未選暗底空方框、已選主強調色實心＋打勾）；
+    只有列表每一列前面沒有文字的「加入規劃」開關（航線站點、合約）維持 `.form-switch`。
   - 自訂下拉／浮出面板用 `.sf-popover`（項目 `.sf-popover__item`，作用中加 `.is-active`）。會同時用在後台的共用元件
     （AutocompleteField、MultiSelectFilter）底色／邊框／文字改用 `--bs-body-bg`／`--bs-border-color`／
     `--bs-body-color`（`.scifi-page` 已對到 `--sf-*`），hover／陰影用 `var(--sf-popover-hover, …)`／`var(--sf-popover-shadow, …)`

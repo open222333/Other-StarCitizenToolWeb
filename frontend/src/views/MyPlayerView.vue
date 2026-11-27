@@ -299,8 +299,8 @@
           <input v-model="link.url" type="text" class="form-control form-control-sm loadout-url-input"
             placeholder="abcd1234 或 https://erkul.games/s/abcd1234" :aria-label="`第 ${i + 1} 條配件網址`">
           <!-- 預設公開（查詢持有資訊看得到）；關掉就只有自己看得到 -->
-          <div class="form-check form-switch mb-0 align-self-center text-nowrap">
-            <input :id="`loadout-public-${i}`" v-model="link.public" class="form-check-input" type="checkbox" role="switch">
+          <div class="form-check sf-check-btn mb-0 align-self-center text-nowrap">
+            <input :id="`loadout-public-${i}`" v-model="link.public" class="form-check-input" type="checkbox">
             <label class="form-check-label" :for="`loadout-public-${i}`">公開</label>
           </div>
           <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除第 ${i + 1} 條`"
@@ -605,15 +605,15 @@
             </div>
 
             <template #more>
-              <div class="form-check mt-3">
+              <div class="form-check sf-check-btn mt-3">
                 <input id="bp-filter-missions-m" v-model="bpHasMissionsOnly" class="form-check-input" type="checkbox">
                 <label class="form-check-label" for="bp-filter-missions-m">只看需任務解鎖</label>
               </div>
-              <div v-if="bpDataOpen" class="form-check mt-2">
+              <div v-if="bpDataOpen" class="form-check sf-check-btn mt-2">
                 <input id="bp-filter-unregistered-m" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
                 <label class="form-check-label" for="bp-filter-unregistered-m">只顯示未登記</label>
               </div>
-              <div v-else-if="itemsBpUnregShown" class="form-check mt-2">
+              <div v-else-if="itemsBpUnregShown" class="form-check sf-check-btn mt-2">
                 <input id="items-bp-filter-unregistered-m" v-model="itemsBpUnregisteredOnly" class="form-check-input" type="checkbox">
                 <label class="form-check-label" for="items-bp-filter-unregistered-m">只顯示未登記</label>
               </div>
@@ -621,15 +621,15 @@
           </SfFilterSheet>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-          <div v-if="!isPhone" class="form-check form-check-inline mb-0">
+          <div v-if="!isPhone" class="form-check sf-check-btn form-check-inline mb-0">
             <input id="bp-filter-missions" v-model="bpHasMissionsOnly" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="bp-filter-missions">只看需任務解鎖</label>
           </div>
-          <div v-if="bpDataOpen && !isPhone" class="form-check form-check-inline mb-0">
+          <div v-if="bpDataOpen && !isPhone" class="form-check sf-check-btn form-check-inline mb-0">
             <input id="bp-filter-unregistered" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="bp-filter-unregistered">只顯示未登記</label>
           </div>
-          <div v-else-if="itemsBpUnregShown && !isPhone" class="form-check form-check-inline mb-0">
+          <div v-else-if="itemsBpUnregShown && !isPhone" class="form-check sf-check-btn form-check-inline mb-0">
             <input id="items-bp-filter-unregistered" v-model="itemsBpUnregisteredOnly" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="items-bp-filter-unregistered">只顯示未登記</label>
           </div>
@@ -767,11 +767,11 @@
             </div>
 
             <template #more>
-              <div class="form-check mt-3">
+              <div class="form-check sf-check-btn mt-3">
                 <input id="ms-filter-bp-m" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
                 <label class="form-check-label" for="ms-filter-bp-m">只看有藍圖</label>
               </div>
-              <div class="form-check mt-2">
+              <div class="form-check sf-check-btn mt-2">
                 <input id="ms-filter-reward-m" v-model="msFilter.hasReward" class="form-check-input" type="checkbox">
                 <label class="form-check-label" for="ms-filter-reward-m">只看固定報酬</label>
               </div>
@@ -779,11 +779,11 @@
           </SfFilterSheet>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-          <div v-if="!isPhone" class="form-check form-check-inline mb-0">
+          <div v-if="!isPhone" class="form-check sf-check-btn form-check-inline mb-0">
             <input id="ms-filter-bp" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="ms-filter-bp">只看有藍圖</label>
           </div>
-          <div v-if="!isPhone" class="form-check form-check-inline mb-0">
+          <div v-if="!isPhone" class="form-check sf-check-btn form-check-inline mb-0">
             <input id="ms-filter-reward" v-model="msFilter.hasReward" class="form-check-input" type="checkbox">
             <label class="form-check-label" for="ms-filter-reward">只看固定報酬</label>
           </div>
@@ -879,8 +879,8 @@
               </div>
               <!-- 只在「資料庫 › 艦船」：只列 RSI 商店的概念／製作中船（遊戲內數值的條件對它們不套） -->
               <div v-if="itemsVehActive" class="col-12">
-                <div class="form-check form-switch mb-0">
-                  <input id="myfleet-concept" v-model="myFleetConceptOnly" class="form-check-input" type="checkbox" role="switch">
+                <div class="form-check sf-check-btn mb-0">
+                  <input id="myfleet-concept" v-model="myFleetConceptOnly" class="form-check-input" type="checkbox">
                   <label class="form-check-label" for="myfleet-concept">只顯示概念船</label>
                 </div>
               </div>

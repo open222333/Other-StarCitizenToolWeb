@@ -18,8 +18,8 @@
         :title="d.title" @click="$emit('update:flowDir', d.key)"><i :class="d.icon" class="me-1"></i>{{ d.label }}</button>
     </div>
     <!-- 貨物規劃（可選）：每站設定裝卸，顯示貨艙用量與貨櫃拆法 -->
-    <div class="form-check form-switch mb-0 ms-md-2">
-      <input :id="`${idPrefix}-cargo-plan`" :checked="cargoOn" class="form-check-input" type="checkbox" role="switch"
+    <div class="form-check sf-check-btn mb-0 ms-md-2">
+      <input :id="`${idPrefix}-cargo-plan`" :checked="cargoOn" class="form-check-input" type="checkbox"
         @change="$emit('update:cargoOn', $event.target.checked)">
       <label class="form-check-label" :for="`${idPrefix}-cargo-plan`">貨物規劃</label>
     </div>

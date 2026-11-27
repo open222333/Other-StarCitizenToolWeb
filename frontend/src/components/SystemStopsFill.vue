@@ -28,17 +28,17 @@
     </div>
     <!-- 站點類別：按鈕上是目前星系／行星底下有幾個 -->
     <div class="d-flex flex-wrap align-items-center gap-3 mt-2" role="group" aria-label="站點類別">
-      <div v-for="k in KINDS" :key="k.key" class="form-check mb-0">
+      <div v-for="k in KINDS" :key="k.key" class="form-check sf-check-btn mb-0">
         <input :id="`${id}-kind-${k.key}`" v-model="kinds" class="form-check-input" type="checkbox" :value="k.key">
         <label class="form-check-label" :for="`${id}-kind-${k.key}`">{{ k.label }}<span v-if="system" class="ssf-count ms-1">{{ kindCounts[k.key] || 0 }}</span></label>
       </div>
     </div>
     <div class="d-flex flex-wrap align-items-center gap-3 mt-1" role="group" aria-label="其他條件">
-      <div class="form-check mb-0">
+      <div class="form-check sf-check-btn mb-0">
         <input :id="`${id}-dock`" v-model="needDock" class="form-check-input" type="checkbox">
         <label class="form-check-label" :for="`${id}-dock`">只要有貨物裝卸區</label>
       </div>
-      <div class="form-check mb-0">
+      <div class="form-check sf-check-btn mb-0">
         <input :id="`${id}-xl`" v-model="needXl" class="form-check-input" type="checkbox">
         <label class="form-check-label" :for="`${id}-xl`">只要有 XL 機庫</label>
       </div>

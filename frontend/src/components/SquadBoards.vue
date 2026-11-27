@@ -17,7 +17,7 @@
       <div class="sf-toolbar">
         <button type="button" class="btn btn-sm btn-success" :disabled="creating" @click="createBoard()">
           <i class="bi bi-plus-lg me-1"></i>新增分配表</button>
-        <div class="form-check form-switch mb-0 ms-2">
+        <div class="form-check sf-check-btn mb-0 ms-2">
           <input id="sqb-mine" v-model="mineOnly" class="form-check-input" type="checkbox">
           <label class="form-check-label small" for="sqb-mine">只看我建立的</label>
         </div>
@@ -115,7 +115,7 @@
             </div>
             <!-- 分享連結（立即生效，不用按儲存） -->
             <div class="sqb-share mt-3">
-              <div class="form-check form-switch mb-1">
+              <div class="form-check sf-check-btn mb-1">
                 <input id="sqb-share" class="form-check-input" type="checkbox" :checked="!!board.share_token"
                   :disabled="sharing" @change="setShare($event.target.checked)">
                 <label class="form-check-label fw-semibold" for="sqb-share">分享連結</label>
