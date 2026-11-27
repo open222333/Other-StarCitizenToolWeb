@@ -80,9 +80,10 @@ def clean_db():
     translation.clear_cache()
     # 概念船清單的模組層快取（src/models/ccu.py）同理
     from src.models import ccu
-    ccu._concept_cache.update(key=None, rows=None)
+    ccu._concept_cache.clear()
+    ccu._list_cache.clear()
     from src.models import loadout
-    loadout._ships_cache.update(key=None, rows=None)
+    loadout._ships_cache.clear()
 
 
 @pytest.fixture(autouse=True)

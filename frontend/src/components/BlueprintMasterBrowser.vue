@@ -281,7 +281,7 @@ import { loadTranslations, translate } from '@/utils/translations'
 import { useTableSort } from '@/composables/useTableSort'
 import { adminPath } from '@/router'
 import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
-import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
+import { blueprintTypeLabel, blueprintTypeOptions } from '@/utils/blueprintOutputType'
 import { factionLabel, fmtChance, zhPair } from '@/utils/mission'
 import { loadMaterialZh, materialLabel } from '@/utils/blueprintMaterial'
 
@@ -402,7 +402,7 @@ async function register(uuids, method = '') {
     submitting.value = false
   }
 }
-const typeOptions = computed(() => types.value.map(t => ({ value: t, label: blueprintTypeLabel(t) })))
+const typeOptions = computed(() => blueprintTypeOptions(types.value))
 
 // 共用搜尋卡（玩家頁）時條件卡不顯示；空結果訊息用共用條件判斷
 const hasActiveFilters = computed(() => (shared.value

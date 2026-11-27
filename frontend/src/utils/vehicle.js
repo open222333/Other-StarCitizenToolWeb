@@ -63,3 +63,7 @@ export function manufacturerShort(name, code) {
 export function scuLabel(scu) {
   return scu ? `${Math.round(scu).toLocaleString('en-US')} SCU` : '—'
 }
+
+
+// 船艦角色分組在 utils/vehicleRole.js（純函式，node 測試能直接載入）
+export { ROLE_GROUPS, ROLE_OTHER_GROUP, groupRoleOptions, vehicleRoleGroup } from './vehicleRole.js'

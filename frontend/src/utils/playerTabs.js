@@ -8,7 +8,7 @@ export const PLAYER_TABS = [
     key: 'my', label: '艦長室', icon: 'bi bi-person-badge', member: true,
     subTabs: [{ key: 'warehouse', label: '倉庫' }, { key: 'blueprints', label: '藍圖' }, { key: 'fleet', label: '艦隊' }],
   },
-  // 新聞：後台或外部程式（API 金鑰）寫入的新聞，不登入也能看（components/NewsBoard.vue）；「艦長室」上方另有置頂公告（NewsBanner.vue）
+  // 新聞：後台或外部程式（API 金鑰）寫入的新聞，不登入也能看（components/NewsBoard.vue）
   { key: 'news', label: '新聞', icon: 'bi bi-newspaper' },
   {
     // 資料庫：遊戲資料（唯讀，不登入也能看）。key 沿用原本「物品」分頁的 items，後台設定與舊網址不用改；
@@ -16,6 +16,8 @@ export const PLAYER_TABS = [
     key: 'items', label: '資料庫', icon: 'bi bi-database',
     subTabs: [
       { key: 'data', label: '物品' }, { key: 'bpdata', label: '藍圖' }, { key: 'vehicles', label: '艦船' },
+      // 飛船組件：護盾、發電機、冷卻器、量子引擎、武器、飛彈、雷達…（components/ShipComponentDatabase.vue）
+      { key: 'components', label: '飛船組件' },
       { key: 'missions', label: '任務' }, { key: 'factions', label: '勢力' }, { key: 'minerals', label: '礦物' }, { key: 'commodities', label: '商品購買地點' },
     ],
   },

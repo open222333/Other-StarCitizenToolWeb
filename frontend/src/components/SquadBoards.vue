@@ -17,10 +17,7 @@
       <div class="sf-toolbar">
         <button type="button" class="btn btn-sm btn-success" :disabled="creating" @click="createBoard()">
           <i class="bi bi-plus-lg me-1"></i>新增分配表</button>
-        <div class="form-check sf-check-btn mb-0 ms-2">
-          <input id="sqb-mine" v-model="mineOnly" class="form-check-input" type="checkbox">
-          <label class="form-check-label small" for="sqb-mine">只看我建立的</label>
-        </div>
+        <SfToggle v-model="mineOnly" class="ms-2">只看我建立的</SfToggle>
         <input v-model="listQuery" type="search" class="form-control form-control-sm sqb-search ms-auto"
           placeholder="搜尋名稱、建立者" aria-label="搜尋分配表">
         <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="listLoading" aria-label="重新整理"
@@ -115,7 +112,7 @@
             </div>
             <!-- 分享連結（立即生效，不用按儲存） -->
             <div class="sqb-share mt-3">
-              <div class="form-check sf-check-btn mb-1">
+              <div class="form-check form-switch mb-1">
                 <input id="sqb-share" class="form-check-input" type="checkbox" :checked="!!board.share_token"
                   :disabled="sharing" @change="setShare($event.target.checked)">
                 <label class="form-check-label fw-semibold" for="sqb-share">分享連結</label>
@@ -266,6 +263,7 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
 import { computed, defineComponent, h, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AutocompleteField from '@/components/AutocompleteField.vue'

@@ -299,8 +299,8 @@
           <input v-model="link.url" type="text" class="form-control form-control-sm loadout-url-input"
             placeholder="abcd1234 或 https://erkul.games/s/abcd1234" :aria-label="`第 ${i + 1} 條配件網址`">
           <!-- 預設公開（查詢持有資訊看得到）；關掉就只有自己看得到 -->
-          <div class="form-check sf-check-btn mb-0 align-self-center text-nowrap">
-            <input :id="`loadout-public-${i}`" v-model="link.public" class="form-check-input" type="checkbox">
+          <div class="form-check form-switch mb-0 align-self-center text-nowrap">
+            <input :id="`loadout-public-${i}`" v-model="link.public" class="form-check-input" type="checkbox" role="switch">
             <label class="form-check-label" :for="`loadout-public-${i}`">公開</label>
           </div>
           <button type="button" class="btn btn-sm btn-danger" :aria-label="`移除第 ${i + 1} 條`"
@@ -411,9 +411,6 @@
     <!-- ══════════ 內容區（滿版） ══════════ -->
     <div class="scifi-body sf-split">
     <SfState v-if="loadingPlayer || playerError" class="mb-3" :loading="loadingPlayer" :error="playerError" @retry="loadPlayer" />
-    <!-- 「艦長室」上方：置頂公告（沒有置頂就是最新 3 則），點「全部新聞」切到新聞分頁 -->
-    <NewsBanner v-if="!isGuest && tabOnce('my')" v-show="activeTab === 'my'" :fetcher="playerAuth.playerFetch"
-      card-class="card scifi-card" @all="setTab('news')" @open="id => router.push({ query: { ...route.query, tab: 'news', news: id } })" />
     <!-- ══════════ 倉庫 › 工具列：展開區塊的開關＋重新整理放最上面，開關不用捲到列表那邊 ══════════ -->
     <div v-show="!isGuest && activePane === 'warehouse'" class="sf-toolbar">
       <button aria-label="新增／異動" class="btn btn-sm btn-success" @click="stockWizardRef?.openNew()">
@@ -469,6 +466,11 @@
     <div v-if="paneOnce('factions')" v-show="activePane === 'factions'" id="panel-items-factions">
       <FactionDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'factions'" card-class="card scifi-card"
         :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest" @registered="onBulkRegistered" />
+    </div>
+
+    <!-- ══════════ 資料庫 › 飛船組件：選種類列出全部組件與參數（components/ShipComponentDatabase.vue）══════════ -->
+    <div v-if="paneOnce('components')" v-show="activePane === 'components'" id="panel-items-components">
+      <ShipComponentDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'components'" />
     </div>
 
     <!-- ══════════ 資料庫 › 礦物：每種礦物可以在哪裡挖到（scunpacked 的礦床與地點資料，見 components/MineralDatabase.vue）══════════ -->
@@ -589,8 +591,8 @@
     <Teleport defer :to="bpCardTarget || '#bp-modal-filters'" :disabled="!bpCardTarget">
     <div v-show="(!isGuest && activePane === 'blueprints') || itemsBpActive" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
-        <div class="row g-2 align-items-end">
-          <div class="col col-md-7">
+        <div class="row g-2 g-md-3 align-items-start">
+          <div class="col col-md-5">
             <label class="form-label small fw-semibold mb-1" for="bp-filter-q">藍圖名稱</label>
             <AutocompleteField id="bp-filter-q" v-model="bpFilterQuery" :search="q => searchBlueprintNames(playerAuth.playerFetch, q)"
               :get-label="nameLabel" :get-meta="blueprintNameMeta"
@@ -598,41 +600,22 @@
           </div>
           <!-- 手機：類型與勾選收進「篩選」底部面板 -->
           <SfFilterSheet :count="bpSheetCount" @clear="clearBpFilter">
-            <div class="col-12 col-md-5">
+            <div class="col-12 col-md-4">
               <label class="form-label small fw-semibold mb-1" for="bp-filter-type">類型</label>
               <MultiSelectFilter id="bp-filter-type" v-model="myBpTypes" :options="blueprintTypeOptions"
                 label="類型" placeholder="全部" block searchable />
             </div>
-
-            <template #more>
-              <div class="form-check sf-check-btn mt-3">
-                <input id="bp-filter-missions-m" v-model="bpHasMissionsOnly" class="form-check-input" type="checkbox">
-                <label class="form-check-label" for="bp-filter-missions-m">只看需任務解鎖</label>
+            <div class="col-12 col-md-3">
+              <span id="bp-filter-more-l" class="form-label small fw-semibold mb-1 d-block">條件</span>
+              <div class="sf-pills sf-pills--field" role="group" aria-labelledby="bp-filter-more-l">
+                <SfToggle v-model="bpHasMissionsOnly">只看需任務解鎖</SfToggle>
+                <SfToggle v-if="bpDataOpen" v-model="bpUnregisteredOnly">只顯示未登記</SfToggle>
+                <SfToggle v-else-if="itemsBpUnregShown" v-model="itemsBpUnregisteredOnly">只顯示未登記</SfToggle>
               </div>
-              <div v-if="bpDataOpen" class="form-check sf-check-btn mt-2">
-                <input id="bp-filter-unregistered-m" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
-                <label class="form-check-label" for="bp-filter-unregistered-m">只顯示未登記</label>
-              </div>
-              <div v-else-if="itemsBpUnregShown" class="form-check sf-check-btn mt-2">
-                <input id="items-bp-filter-unregistered-m" v-model="itemsBpUnregisteredOnly" class="form-check-input" type="checkbox">
-                <label class="form-check-label" for="items-bp-filter-unregistered-m">只顯示未登記</label>
-              </div>
-            </template>
+            </div>
           </SfFilterSheet>
         </div>
-        <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-          <div v-if="!isPhone" class="form-check sf-check-btn form-check-inline mb-0">
-            <input id="bp-filter-missions" v-model="bpHasMissionsOnly" class="form-check-input" type="checkbox">
-            <label class="form-check-label" for="bp-filter-missions">只看需任務解鎖</label>
-          </div>
-          <div v-if="bpDataOpen && !isPhone" class="form-check sf-check-btn form-check-inline mb-0">
-            <input id="bp-filter-unregistered" v-model="bpUnregisteredOnly" class="form-check-input" type="checkbox">
-            <label class="form-check-label" for="bp-filter-unregistered">只顯示未登記</label>
-          </div>
-          <div v-else-if="itemsBpUnregShown && !isPhone" class="form-check sf-check-btn form-check-inline mb-0">
-            <input id="items-bp-filter-unregistered" v-model="itemsBpUnregisteredOnly" class="form-check-input" type="checkbox">
-            <label class="form-check-label" for="items-bp-filter-unregistered">只顯示未登記</label>
-          </div>
+        <div v-if="(bpFilterActive && activePane === 'blueprints') || (bpFilterActive && !isPhone)" class="d-flex flex-wrap align-items-center gap-2 mt-2">
           <span v-if="bpFilterActive && activePane === 'blueprints'" class="small text-muted">我的藍圖 符合 {{ filteredBlueprints.length }} / {{ visibleBlueprints.length }} 張</span>
           <button v-if="bpFilterActive && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearBpFilter">清除篩選</button>
         </div>
@@ -736,58 +719,48 @@
       </button>
       <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="missionBrowserRef?.reload()"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
     </div>
-    <!-- 任務 › 共用搜尋：名稱即時篩；類型／星系／勢力／合法性手機收進「篩選」面板 -->
+    <!-- 任務 › 共用搜尋：名稱即時篩；類型／勢力／星系／合法性／條件手機收進「篩選」面板。
+         排版：第一列名稱＋類型＋勢力（下拉，選項多），第二列星系／合法性／條件（選項少，直接列出來） -->
     <div v-show="activePane === 'missions'" class="card scifi-card sf-search mb-3">
       <div class="card-body py-3">
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-4">
+        <div class="row g-2 g-md-3 align-items-start">
+          <div class="col col-md-6">
             <label class="form-label small fw-semibold mb-1" for="ms-filter-q">任務名稱</label>
-            <input id="ms-filter-q" v-model="msFilter.q" type="search" class="form-control" placeholder="輸入任務名稱（中英文皆可）">
+            <input id="ms-filter-q" v-model="msFilter.q" type="search" class="form-control form-control-sm"
+              placeholder="輸入任務名稱（中英文皆可）" autocomplete="off">
           </div>
           <SfFilterSheet :count="msSheetCount" @clear="clearMsFilter">
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-md-3">
               <label class="form-label small fw-semibold mb-1" for="ms-filter-scope">類型</label>
               <MultiSelectFilter id="ms-filter-scope" v-model="msFilter.scopes" :options="msScopeOptions"
                 label="類型" placeholder="全部" block searchable />
             </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small fw-semibold mb-1" for="ms-filter-system">星系</label>
-              <MultiSelectFilter id="ms-filter-system" v-model="msFilter.systems" :options="msSystemOptions"
-                label="星系" placeholder="全部" block />
-            </div>
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-md-3">
               <label class="form-label small fw-semibold mb-1" for="ms-filter-faction">勢力</label>
               <MultiSelectFilter id="ms-filter-faction" v-model="msFilter.factions" :options="msFactionOptions"
                 label="勢力" placeholder="全部" block searchable />
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-semibold mb-1" for="ms-filter-system">星系</label>
+              <MultiSelectFilter id="ms-filter-system" v-model="msFilter.systems" :options="msSystemOptions"
+                label="星系" placeholder="全部" block />
+            </div>
+            <div class="col-12 col-md-3">
               <label class="form-label small fw-semibold mb-1" for="ms-filter-legal">合法性</label>
               <MultiSelectFilter id="ms-filter-legal" v-model="msFilter.legality" :options="MS_LEGALITY_OPTIONS"
                 label="合法性" placeholder="全部" block />
             </div>
-
-            <template #more>
-              <div class="form-check sf-check-btn mt-3">
-                <input id="ms-filter-bp-m" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
-                <label class="form-check-label" for="ms-filter-bp-m">只看有藍圖</label>
+            <div class="col-12 col-md-3">
+              <span id="ms-filter-more-l" class="form-label small fw-semibold mb-1 d-block">條件</span>
+              <div class="sf-pills sf-pills--field" role="group" aria-labelledby="ms-filter-more-l">
+                <SfToggle v-model="msFilter.hasBlueprints">只看有藍圖</SfToggle>
+                <SfToggle v-model="msFilter.hasReward">只看固定報酬</SfToggle>
               </div>
-              <div class="form-check sf-check-btn mt-2">
-                <input id="ms-filter-reward-m" v-model="msFilter.hasReward" class="form-check-input" type="checkbox">
-                <label class="form-check-label" for="ms-filter-reward-m">只看固定報酬</label>
-              </div>
-            </template>
+            </div>
           </SfFilterSheet>
         </div>
-        <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-          <div v-if="!isPhone" class="form-check sf-check-btn form-check-inline mb-0">
-            <input id="ms-filter-bp" v-model="msFilter.hasBlueprints" class="form-check-input" type="checkbox">
-            <label class="form-check-label" for="ms-filter-bp">只看有藍圖</label>
-          </div>
-          <div v-if="!isPhone" class="form-check sf-check-btn form-check-inline mb-0">
-            <input id="ms-filter-reward" v-model="msFilter.hasReward" class="form-check-input" type="checkbox">
-            <label class="form-check-label" for="ms-filter-reward">只看固定報酬</label>
-          </div>
-          <button v-if="msFilterActive && !isPhone" type="button" class="btn btn-sm btn-warning ms-auto" @click="clearMsFilter">清除篩選</button>
+        <div v-if="msFilterActive && !isPhone" class="d-flex mt-2">
+          <button type="button" class="btn btn-sm btn-warning ms-auto" @click="clearMsFilter">清除篩選</button>
         </div>
       </div>
     </div>
@@ -817,71 +790,70 @@
       <Teleport defer :to="fleetCardTarget || '#fleet-modal-filters'" :disabled="!fleetCardTarget">
       <div class="card scifi-card sf-search mb-3">
         <div class="card-body py-3">
-          <div class="row g-2 align-items-end">
-            <div class="col col-md-6">
+          <!-- 排版：第一列名稱＋類型＋取得方式（或概念船），第二列尺寸／廠商／角色，第三列價格、貨物量兩個框並排 -->
+          <div class="row g-2 g-md-3 align-items-start fleet-search">
+            <div class="col col-lg-5">
               <label class="form-label small mb-1" for="myfleet-q">名稱關鍵字</label>
               <input id="myfleet-q" v-model="myFleetQuery" type="search" class="form-control form-control-sm"
                 placeholder="搜尋船艦名稱（中英文皆可）" autocomplete="off">
             </div>
             <!-- 手機：名稱以外的條件收進「篩選」底部面板 -->
             <SfFilterSheet :count="fleetSheetCount" @clear="clearMyFleetFilters">
-              <!-- 取得方式只篩我的艦隊；在「資料庫 › 艦船」不顯示 -->
-              <div v-if="!itemsVehActive" class="col-12 col-md-6">
-                <label class="form-label small mb-1" for="myfleet-acquire">取得方式</label>
-                <MultiSelectFilter id="myfleet-acquire" v-model="myFleetAcquire" :options="VEHICLE_ACQUIRE_OPTIONS"
-                  label="取得方式" placeholder="全部" block />
-              </div>
-              <div class="col-6 col-md-3">
+              <div class="col-12 col-md-6 col-lg-3">
                 <label class="form-label small mb-1" for="myfleet-type">類型</label>
                 <MultiSelectFilter id="myfleet-type" v-model="myFleetTypes" :options="myFleetTypeOptions"
                   label="類型" placeholder="全部" block />
               </div>
-              <div class="col-6 col-md-3">
+              <!-- 取得方式只篩我的艦隊；「資料庫 › 艦船」這一格換成「只顯示概念船」 -->
+              <div v-if="!itemsVehActive" class="col-12 col-md-6 col-lg-4">
+                <label class="form-label small mb-1" for="myfleet-acquire">取得方式</label>
+                <MultiSelectFilter id="myfleet-acquire" v-model="myFleetAcquire" :options="VEHICLE_ACQUIRE_OPTIONS"
+                  label="取得方式" placeholder="全部" block />
+              </div>
+              <!-- 只列 RSI 商店的概念／製作中船（遊戲內數值的條件對它們不套） -->
+              <div v-else class="col-12 col-md-6 col-lg-4">
+                <span class="form-label small mb-1 d-none d-md-block" aria-hidden="true">&nbsp;</span>
+                <div class="sf-pills sf-pills--field">
+                  <SfToggle v-model="myFleetConceptOnly">只顯示概念船</SfToggle>
+                </div>
+              </div>
+              <div class="col-12 col-md-4">
                 <label class="form-label small mb-1" for="myfleet-size">尺寸</label>
                 <MultiSelectFilter id="myfleet-size" v-model="myFleetSizes" :options="myFleetSizeOptions"
                   label="尺寸" placeholder="全部" block />
               </div>
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md-4">
                 <label class="form-label small mb-1" for="myfleet-mfr">廠商</label>
                 <MultiSelectFilter id="myfleet-mfr" v-model="myFleetMfrs" :options="myFleetMfrOptions"
                   label="廠商" placeholder="全部" block searchable />
               </div>
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md-4">
                 <label class="form-label small mb-1" for="myfleet-role">角色</label>
                 <MultiSelectFilter id="myfleet-role" v-model="myFleetRoles" :options="myFleetRoleOptions"
                   label="角色" placeholder="全部" block searchable />
               </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label small mb-1" for="myfleet-price-min">價格</label>
-                <div class="input-group input-group-sm">
-                  <select v-model="myFleetRange.priceCurrency" class="form-select form-select-sm fleet-range-currency" aria-label="價格幣別">
-                    <option value="usd">美金</option>
-                    <option value="auec">遊戲幣</option>
-                    <option value="rent">租用</option>
-                  </select>
-                  <input id="myfleet-price-min" v-model.lazy="myFleetRange.priceMin" type="number" min="0" class="form-control"
-                    placeholder="最低" aria-label="最低價格">
-                  <span class="input-group-text">–</span>
-                  <input v-model.lazy="myFleetRange.priceMax" type="number" min="0" class="form-control"
-                    placeholder="最高" aria-label="最高價格">
+              <!-- 價格：選哪幾種貨幣就出現哪幾條範圍（拉條＋輸入框＋級距，components/SfRangeFilter.vue），條件之間 AND -->
+              <div class="col-12 col-md-6 align-self-start">
+                <div class="fleet-box">
+                  <div class="fleet-box__head">
+                    <span id="myfleet-price-l" class="fleet-box__title">價格</span>
+                    <MultiSelectFilter id="myfleet-price" v-model="myFleetRange.priceOn" :options="PRICE_CURRENCY_OPTIONS"
+                      label="價格貨幣" block />
+                  </div>
+                  <div v-for="c in PRICE_CURRENCIES.filter(x => myFleetRange.priceOn.includes(x.key))" :key="c.key" class="fleet-range">
+                    <span class="fleet-range__label">{{ c.label }}</span>
+                    <SfRangeFilter v-model="myFleetRange.price[c.key]" :max="c.max" :presets="c.presets" :unit="c.unit"
+                      :label="`${c.label}價格`" />
+                  </div>
                 </div>
               </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label small mb-1" for="myfleet-scu-min">貨物量</label>
-                <div class="input-group input-group-sm">
-                  <input id="myfleet-scu-min" v-model.lazy="myFleetRange.scuMin" type="number" min="0" class="form-control"
-                    placeholder="最少" aria-label="最少貨物量">
-                  <span class="input-group-text">–</span>
-                  <input v-model.lazy="myFleetRange.scuMax" type="number" min="0" class="form-control"
-                    placeholder="最多" aria-label="最多貨物量">
-                  <span class="input-group-text">SCU</span>
-                </div>
-              </div>
-              <!-- 只在「資料庫 › 艦船」：只列 RSI 商店的概念／製作中船（遊戲內數值的條件對它們不套） -->
-              <div v-if="itemsVehActive" class="col-12">
-                <div class="form-check sf-check-btn mb-0">
-                  <input id="myfleet-concept" v-model="myFleetConceptOnly" class="form-check-input" type="checkbox">
-                  <label class="form-check-label" for="myfleet-concept">只顯示概念船</label>
+              <div class="col-12 col-md-6 align-self-start">
+                <div class="fleet-box">
+                  <div class="fleet-box__head">
+                    <label class="fleet-box__title mb-0" for="myfleet-scu">貨物量</label>
+                  </div>
+                  <SfRangeFilter id="myfleet-scu" v-model="myFleetRange.scu" :max="SCU_RANGE.max" :presets="SCU_RANGE.presets"
+                    unit="SCU" label="貨物量" />
                 </div>
               </div>
             </SfFilterSheet>
@@ -1138,7 +1110,9 @@ import StockWizard from '@/components/StockWizard.vue'
 import SfModal from '@/components/SfModal.vue'
 import { itemTypeOption, itemTypeTreeOptions, loadItemTypeZh } from '@/utils/itemType'
 import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
-import { auecPerUsd, fmtAuec, fmtAuecPerUsd, fmtUsd, vehicleInRanges, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
+import { auecPerUsd, emptyVehicleRange, fmtAuec, fmtAuecPerUsd, fmtUsd, PRICE_CURRENCIES, SCU_RANGE, vehicleInRanges, vehicleRangeCount, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
+import SfRangeFilter from '@/components/SfRangeFilter.vue'
+import SfToggle from '@/components/SfToggle.vue'
 import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
 import CargoLoader from '@/components/CargoLoader.vue'
@@ -1152,9 +1126,9 @@ const RoutePlanner = defineAsyncComponent(() => import('@/components/RoutePlanne
 const ContractPlanner = defineAsyncComponent(() => import('@/components/ContractPlanner.vue'))
 const LoadoutSimulator = defineAsyncComponent(() => import('@/components/LoadoutSimulator.vue'))
 const FactionDatabase = defineAsyncComponent(() => import('@/components/FactionDatabase.vue'))
+const ShipComponentDatabase = defineAsyncComponent(() => import('@/components/ShipComponentDatabase.vue'))
 const CrateCalculator = defineAsyncComponent(() => import('@/components/CrateCalculator.vue'))
 const ToolLinksBoard = defineAsyncComponent(() => import('@/components/ToolLinksBoard.vue'))
-const NewsBanner = defineAsyncComponent(() => import('@/components/NewsBanner.vue'))
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MissionBrowser from '@/components/MissionBrowser.vue'
 import FactionReputation from '@/components/FactionReputation.vue'
@@ -1164,9 +1138,9 @@ import VehicleLoadoutLinks from '@/components/VehicleLoadoutLinks.vue'
 import CargoGridButton from '@/components/CargoGridButton.vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
-import { blueprintTypeLabel } from '@/utils/blueprintOutputType'
+import { blueprintTypeLabel, blueprintTypeOptions as blueprintTypeOptionsOf } from '@/utils/blueprintOutputType'
 import { dismantleHits, materialLabel } from '@/utils/blueprintMaterial'
-import { manufacturerLabel, manufacturerShort, scuLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
+import { groupRoleOptions, manufacturerLabel, manufacturerShort, scuLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 // 地點中文：跟全站一樣查資料庫的翻譯（utils/translations.js），不在前端放對照表
 import { loadKnownLocations, loadStorageLocations, loadTranslations, translate } from '@/utils/translations'
 import { nameLabel, searchBlueprintNames } from '@/utils/nameLookup'
@@ -2091,8 +2065,7 @@ function trackStickyHeights() {
 }
 
 // ── 查詢持有資訊、艦隊、資料庫共用的選項（藍圖類型、船艦類型／尺寸／廠商／角色）──
-const blueprintTypeOptions = computed(() =>
-  blueprintOutputTypes.value.map(t => ({ value: t, label: blueprintTypeLabel(t) })))
+const blueprintTypeOptions = computed(() => blueprintTypeOptionsOf(blueprintOutputTypes.value))
 
 const vehicleFacets       = ref({ size_classes: [], types: [], manufacturers: [], roles: [] })
 let vehicleFacetsLoaded = false
@@ -2144,9 +2117,9 @@ const myFleetSizes = ref([])
 const myFleetMfrs  = ref([])
 const myFleetRoles = ref([])
 // 價格（美金或遊戲幣）、貨物量（SCU）範圍；空字串＝不限
-const myFleetRange = reactive({ priceCurrency: 'usd', priceMin: '', priceMax: '', scuMin: '', scuMax: '' })
-const fleetRangeCount = computed(() => ((myFleetRange.priceMin !== '' || myFleetRange.priceMax !== '') ? 1 : 0)
-  + ((myFleetRange.scuMin !== '' || myFleetRange.scuMax !== '') ? 1 : 0))
+const myFleetRange = reactive(emptyVehicleRange())
+const PRICE_CURRENCY_OPTIONS = PRICE_CURRENCIES.map(c => ({ value: c.key, label: c.label }))
+const fleetRangeCount = computed(() => vehicleRangeCount(myFleetRange))
 const fleetSheetCount = computed(() => myFleetAcquire.value.length + myFleetTypes.value.length
   + myFleetSizes.value.length + myFleetMfrs.value.length + myFleetRoles.value.length + fleetRangeCount.value
   + (itemsVehActive.value && myFleetConceptOnly.value ? 1 : 0))
@@ -2158,7 +2131,10 @@ const fleetFilters = computed(() => ({
   q: myFleetQuery.value.trim(), types: myFleetTypes.value, sizes: myFleetSizes.value,
   manufacturers: myFleetMfrs.value, roles: myFleetRoles.value, acquire: myFleetAcquire.value,
   conceptOnly: itemsVehActive.value && myFleetConceptOnly.value,
-  ...myFleetRange,
+  // 範圍條件整份複製（讀到每一層，拉條改了才會重新查）
+  priceOn: [...myFleetRange.priceOn],
+  price: Object.fromEntries(Object.entries(myFleetRange.price).map(([k, r]) => [k, { ...r }])),
+  scu: { ...myFleetRange.scu },
 }))
 
 function fleetOptions(pick, label, sortKey = o => o.label, base = []) {
@@ -2185,8 +2161,8 @@ const myFleetSizeOptions = computed(() => fleetOptions(
 const myFleetMfrOptions = computed(() => fleetOptions(
   v => v.manufacturer_code, v => manufacturerLabel(v.manufacturer_name, v.manufacturer_code),
   undefined, manufacturerOptions.value))
-const myFleetRoleOptions = computed(() => fleetOptions(
-  v => v.role, v => vehicleRoleLabel(v.role, v.role_zh), undefined, vehicleFacets.value.roles))
+const myFleetRoleOptions = computed(() => groupRoleOptions(fleetOptions(
+  v => v.role, v => vehicleRoleLabel(v.role, v.role_zh), undefined, vehicleFacets.value.roles)))
 
 const filteredFleet = computed(() => {
   if (!myFleetHasFilter.value) return fleet.value
@@ -2230,7 +2206,7 @@ function clearMyFleetFilters() {
   myFleetSizes.value = []
   myFleetMfrs.value = []
   myFleetRoles.value = []
-  Object.assign(myFleetRange, { priceMin: '', priceMax: '', scuMin: '', scuMax: '' })
+  Object.assign(myFleetRange, emptyVehicleRange())
 }
 
 // 艦隊操作失敗：一律走 toast（CLAUDE.md「結果訊息走 toast」）
@@ -2488,6 +2464,15 @@ onBeforeUnmount(() => {
 .alert-slide-enter-active { transition: all .2s ease; }
 .alert-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
 .nav-tabs .nav-link { cursor: pointer; }
-.fleet-range-currency { flex: 0 0 6.5rem; }
+/* 艦隊搜尋卡：價格、貨物量各一個框（淡底、圓角），標題列左邊名稱、右邊貨幣選項 */
+.fleet-box { display: flex; flex-direction: column; gap: .6rem; padding: .7rem .85rem;
+  border: 1px solid var(--sf-border); border-radius: .6rem; background: rgba(var(--sf-accent-rgb), .04); }
+.fleet-box__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.fleet-box__head > .msf-chips, .fleet-box__head > .multi-select-filter { flex: 0 1 auto; }
+.fleet-box__title { font-size: var(--sf-fs-sm); font-weight: 800; color: var(--sf-text-strong); }
+.fleet-range { display: flex; gap: .6rem; align-items: flex-start; }
+.fleet-range + .fleet-range { padding-top: .6rem; border-top: 1px dashed var(--sf-border); }
+.fleet-range__label { flex: 0 0 3.2rem; padding-top: .1rem; font-size: var(--sf-fs-sm); font-weight: 700; color: var(--sf-text-strong); }
+.fleet-range > .srf { flex: 1 1 auto; min-width: 0; }
 .tab-prefs { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .5rem 1rem; }
 </style>

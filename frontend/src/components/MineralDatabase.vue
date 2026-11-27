@@ -17,27 +17,25 @@
   <div class="sf-split">
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-4">
+        <div class="row g-2 g-md-3 align-items-start">
+          <div class="col-12 col-md-3">
             <label class="form-label small fw-semibold mb-1" for="mdb-q">礦物名稱</label>
             <input id="mdb-q" v-model="query" type="search" class="form-control form-control-sm"
               placeholder="中英文皆可" autocomplete="off">
           </div>
-          <div class="col-6 col-md-2">
+          <!-- 星系：選項少，直接列出來可複選（MultiSelectFilter 選項 ≤ 4 時自動變按鈕） -->
+          <div class="col-12 col-md-5">
             <label class="form-label small fw-semibold mb-1" for="mdb-system">星系</label>
-            <select id="mdb-system" v-model="system" class="form-select form-select-sm">
-              <option value="">全部</option>
-              <option v-for="s in systems" :key="s" :value="s">{{ systemLabel(s) }}</option>
-            </select>
+            <MultiSelectFilter id="mdb-system" v-model="system" :options="systemOptions" label="星系" placeholder="全部" block />
           </div>
-          <div class="col-6 col-md-3">
+          <div class="col-6 col-md-2">
             <label class="form-label small fw-semibold mb-1" for="mdb-place">地點</label>
             <select id="mdb-place" v-model="place" class="form-select form-select-sm">
               <option value="">全部</option>
               <option v-for="p in placeOptions" :key="p.key" :value="p.key">{{ p.label }}</option>
             </select>
           </div>
-          <div class="col-12 col-md-3">
+          <div class="col-6 col-md-2">
             <label class="form-label small fw-semibold mb-1" for="mdb-method">採集方式</label>
             <select id="mdb-method" v-model="method" class="form-select form-select-sm">
               <option value="">全部</option>
@@ -238,6 +236,7 @@
 import { filterByName } from '@/utils/nameSearch'
 import { computed, reactive, ref, watch } from 'vue'
 import SfState from '@/components/SfState.vue'
+import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import BlueprintDetailModal from '@/components/BlueprintDetailModal.vue'
 import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import MineralPrices from '@/components/MineralPrices.vue'
@@ -376,24 +375,27 @@ const minerals = computed(() => {
 
 // ── 篩選 ──
 const query = ref('')
-const system = ref('')
+// 星系可複選（空陣列＝全部）
+const system = ref([])
 const place = ref('')
 const method = ref('')
 const systems = computed(() => [...new Set(locations.value.map(l => l.system).filter(Boolean))].sort())
+const systemOptions = computed(() => systems.value.map(s => ({ value: s, label: systemLabel(s) })))
+const inSystem = s => !system.value.length || system.value.includes(s)
 const placeOptions = computed(() => {
   const seen = new Map()
   for (const l of locations.value) {
-    if (!l.location_name || (system.value && l.system !== system.value)) continue
+    if (!l.location_name || !inSystem(l.system)) continue
     const key = `${l.system}|${l.location_name}`
     if (!seen.has(key)) seen.set(key, { key, label: placeLabel({ name: l.location_name, name_zh: l.location_name_zh }), system: l.system })
   }
   return [...seen.values()].sort((a, b) => a.system.localeCompare(b.system) || a.label.localeCompare(b.label))
 })
 watch(system, () => { if (place.value && !placeOptions.value.some(p => p.key === place.value)) place.value = '' })
-const hasFilter = computed(() => !!(query.value.trim() || system.value || place.value || method.value))
+const hasFilter = computed(() => !!(query.value.trim() || system.value.length || place.value || method.value))
 function clearFilters() {
   query.value = ''
-  system.value = ''
+  system.value = []
   place.value = ''
   method.value = ''
 }
@@ -404,11 +406,11 @@ const rows = computed(() => {
     // 「特殊取得」：只看後台補了取得方式的礦物（產地照常列）
     const bySource = method.value === SOURCE_FILTER
     if (bySource && !sources.value[m.key]) continue
-    const occ = m.all.filter(o => (!system.value || o.system === system.value)
+    const occ = m.all.filter(o => inSystem(o.system)
       && (!place.value || `${o.system}|${o.name}` === place.value)
       && (!method.value || bySource || o.method === method.value))
     // 沒有產地資料的：只在沒篩地點／方式時列（「特殊取得」篩選時也列）
-    if (!occ.length && (m.all.length || system.value || place.value || (method.value && !bySource))) continue
+    if (!occ.length && (m.all.length || system.value.length || place.value || (method.value && !bySource))) continue
     occ.sort((a, b) => b.chance - a.chance || (b.max ?? 0) - (a.max ?? 0))
     const placeKeys = new Set(occ.map(o => `${o.system}|${o.name}`))
     const top = []

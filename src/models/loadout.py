@@ -10,6 +10,7 @@
 import re
 
 from src.mongo import get_db
+from src.sync_version import LatestCache, run_ids
 from src.models.nav import _VARIANT_RE
 from src.models import uex_item_price
 
@@ -23,25 +24,17 @@ MAX_IDS = 500
 _TYPE_RE = re.compile(r'^[A-Za-z]+$')
 
 
-#: 船清單快取：「配裝」「載具」同步的 run_id 都沒變就用上次排好的（待辦 2-3）；沒有同步紀錄（測試）不快取
-_ships_cache: dict = {'key': None, 'rows': None}
+#: 船清單快取：「配裝」「載具」同步的 run_id 都沒變就用上次排好的（待辦 2-3、G1）；沒有同步紀錄（測試）不快取
+_ships_cache = LatestCache(lambda: _ships())
 
 
 def _sync_version() -> str:
-    runs = {d['_id']: d.get('last_run_id') or '' for d in get_db()['sync_jobs'].find(
-        {'_id': {'$in': ['loadout', 'vehicles']}}, {'last_run_id': 1})}
-    return f"{runs.get('loadout', '')}|{runs.get('vehicles', '')}"
+    return run_ids('loadout', 'vehicles')
 
 
 def ships() -> list:
     """可以配裝的船（快取，見 _ships_cache）。"""
-    key = _sync_version()
-    if key.strip('|') and _ships_cache['key'] == key and _ships_cache['rows'] is not None:
-        return _ships_cache['rows']
-    rows = _ships()
-    if key.strip('|'):
-        _ships_cache.update(key=key, rows=rows)
-    return rows
+    return _ships_cache.get(_sync_version())
 
 
 def _ships() -> list:
@@ -112,6 +105,16 @@ def ship(ship_id: str):
     doc['items'] = items_by_ids(ids)
     annotate(list(doc['items'].values()))
     return doc
+
+
+def item_types() -> list:
+    """資料庫 › 飛船組件的種類選單：[{type, count}]（現役配件依主類分組，數量多的在前）。"""
+    rows = get_db()[ITEM_COLLECTION].aggregate([
+        {'$match': {'is_current': {'$ne': False}}},
+        {'$group': {'_id': '$type', 'count': {'$sum': 1}}},
+    ])
+    return sorted(({'type': r['_id'], 'count': r['count']} for r in rows if r.get('_id')),
+                  key=lambda r: (-r['count'], r['type']))
 
 
 def items(types=None, ids=None) -> list:

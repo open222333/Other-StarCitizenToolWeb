@@ -505,6 +505,10 @@ def _sync_ccu(client, run_id: str, stamp: datetime) -> dict:
         rsi_store.map_upgrade_offers(raw['upgrades'], ship_index, raw.get('from_id'), exponent)
 
     _guard_count('ccu', len(ships), db[ccu.SHIPS].count_documents({'is_current': True}), unit='艘船')
+    # 商店確認過的單買數比上一輪少很多（商店改分類、只抓到一半）：照 3-1 的 80% 門檻擋下，免得一次下架一大批（I2）
+    before_confirmed = db[ccu.OFFERS].count_documents({'is_current': True, 'kind': 'ship', 'store_confirmed': True})
+    if before_confirmed:
+        _guard_count('ccu 商店確認的單買', len(confirmed), before_confirmed, action='判定商店清單不完整，不更新')
     before_ccu = db[ccu.OFFERS].count_documents({'is_current': True, 'kind': 'ccu'})
     if before_ccu >= 20 and not any(o['kind'] == 'ccu' for o in offers):
         raise ScDataError(f'ccu: 原本有 {before_ccu} 個升級 SKU，這次一個都沒抓到，判定抓取不完整，不更新')

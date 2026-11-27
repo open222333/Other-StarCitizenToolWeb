@@ -1,4 +1,4 @@
-// 新聞（玩家頁「新聞」分頁 NewsBoard.vue、「艦長室」上方 NewsBanner.vue 共用）：抓資料與日期格式。
+// 新聞（玩家頁「新聞」分頁 NewsBoard.vue）：抓資料與日期格式。
 // 後端見 app/news/view.py（GET /news/、/news/tags、/news/<id>，公開）。
 import { getJson } from '@/utils/getJson'
 
@@ -43,4 +43,9 @@ export function tagHue(tag) {
   let h = 0
   for (const ch of String(tag || '')) h = (h * 31 + ch.codePointAt(0)) >>> 0
   return TAG_HUES[h % TAG_HUES.length]
+}
+
+/** 開新聞全文的網址查詢參數：玩家頁 ?tab=news&news=<id>，其他參數照留 */
+export function newsQuery(query, id) {
+  return { ...query, tab: 'news', news: String(id) }
 }

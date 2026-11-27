@@ -13,9 +13,18 @@
   選項可以有一層子項目：{value, label, parent: 父選項的 value}（例如物品類型「附件」底下的「瞄具」）。
   子項目要緊接在父選項後面；勾了父選項＝整類都要，子項目顯示為已勾、不能單獨取消（勾父選項時會清掉已勾的子項目）。
   搜尋時子項目符合也會帶出它的父選項；群組標題整組勾選只勾父選項。
+
+  選項少（block 模式、1～4 個、沒有分組與子項目）時不做下拉：選項直接排成一列按鈕，點一下選、再點取消，可以複選
+  （inline-max 調門檻，設 0 關掉）。
 -->
 <template>
-  <div ref="rootEl" class="multi-select-filter" :class="{ 'multi-select-filter--block': block }">
+  <!-- 選項少：直接列出來的按鈕 -->
+  <div v-if="inline" :id="id" class="msf-chips sf-pills" role="group" :aria-label="label">
+    <button v-for="opt in normalizedOptions" :key="opt.value" type="button" class="msf-chip sf-pill"
+      :class="{ active: modelValue.includes(opt.value) }" :aria-pressed="modelValue.includes(opt.value) ? 'true' : 'false'"
+      @click="toggle(opt.value, !modelValue.includes(opt.value))">{{ opt.label }}</button>
+  </div>
+  <div v-else ref="rootEl" class="multi-select-filter" :class="{ 'multi-select-filter--block': block }">
     <button
       :id="id" type="button" class="btn btn-sm btn-outline-secondary multi-select-filter__btn"
       :aria-expanded="open ? 'true' : 'false'" :aria-label="label" @click="toggleOpen"
@@ -74,6 +83,8 @@ const props = defineProps({
   block:       { type: Boolean, default: false },
   placeholder: { type: String, default: '' },
   id:          { type: String, default: undefined },
+  // 選項不超過這個數（而且沒有分組、子項目）時直接列成按鈕，不做下拉；0＝一律下拉
+  inlineMax:   { type: Number, default: 4 },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -84,6 +95,10 @@ const query    = ref('')
 
 const normalizedOptions = computed(() => props.options.map((o) =>
   (o !== null && typeof o === 'object') ? o : { value: o, label: String(o) }))
+
+const inline = computed(() => props.block && props.inlineMax > 0 && normalizedOptions.value.length > 0
+  && normalizedOptions.value.length <= props.inlineMax
+  && !normalizedOptions.value.some(o => o.group || o.parent != null))
 
 const visibleOptions = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -173,6 +188,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <style scoped>
+/* 直接列出來的選項（後台用；玩家頁的樣式在 scifi-theme.css 的 .sf-pill，用 :where 壓低權重讓它蓋過去） */
+.msf-chips { display: flex; flex-wrap: wrap; gap: .3rem; min-height: calc(1.5em + .75rem + 2px); align-items: center; }
+:where(.msf-chip) {
+  --msf: var(--bs-primary-rgb, 13, 110, 253);
+  padding: .2rem .75rem; border-radius: 999px; font-size: .875rem; font-weight: 700; line-height: 1.4;
+  border: 1px solid rgba(var(--msf), .55); background: rgba(var(--msf), .1); color: var(--bs-body-color);
+}
+:where(.msf-chip:hover:not(.active)) { background: rgba(var(--msf), .22); border-color: rgb(var(--msf)); }
+:where(.msf-chip.active) { background: rgba(var(--msf), .5); border-color: rgb(var(--msf)); }
+
 .multi-select-filter { position: relative; display: inline-block; }
 
 .multi-select-filter--block { display: block; }

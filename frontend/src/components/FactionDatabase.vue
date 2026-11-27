@@ -8,7 +8,7 @@
   <div class="sf-split">
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
-        <div class="row g-2 align-items-end">
+        <div class="row g-2 g-md-3 align-items-start">
           <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold mb-1" for="fdb-q">勢力名稱</label>
             <input id="fdb-q" v-model="query" type="search" class="form-control form-control-sm"
@@ -24,11 +24,7 @@
           </div>
           <div class="col-12 col-md-2">
             <label class="form-label small fw-semibold mb-1" for="fdb-has">任務</label>
-            <select id="fdb-has" v-model="hasMissions" class="form-select form-select-sm">
-              <option value="">全部</option>
-              <option value="1">有任務</option>
-              <option value="0">沒有任務</option>
-            </select>
+            <MultiSelectFilter id="fdb-has" v-model="hasMissions" :options="HAS_MISSION_OPTIONS" label="任務" placeholder="全部" block />
           </div>
         </div>
         <div v-if="hasFilter" class="d-flex flex-wrap align-items-center gap-2 mt-2">
@@ -160,24 +156,26 @@ watch(() => props.active, on => { if (on && !loaded.value && !loading.value) loa
 const query = ref('')
 const scopeSel = ref([])
 const typeSel = ref([])
-const hasMissions = ref('1')
+// 任務：有任務／沒有任務（選項直接列出來，可複選；都選或都沒選＝全部），預設只列有任務的
+const HAS_MISSION_OPTIONS = [{ value: '1', label: '有任務' }, { value: '0', label: '沒有任務' }]
+const hasMissions = ref(['1'])
 const optionsOf = key => [...new Set(factions.value.flatMap(f => f[key] || []))]
   .map(v => ({ value: v, label: typeLabel(v) })).sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'))
 const scopeOptions = computed(() => optionsOf('scopes'))
 const typeOptions = computed(() => optionsOf('mission_types'))
-const hasFilter = computed(() => !!(query.value.trim() || scopeSel.value.length || typeSel.value.length || hasMissions.value))
+const hasFilter = computed(() => !!(query.value.trim() || scopeSel.value.length || typeSel.value.length || hasMissions.value.length))
 function clearFilters() {
   query.value = ''
   scopeSel.value = []
   typeSel.value = []
-  hasMissions.value = ''
+  hasMissions.value = []
 }
 const rows = computed(() => {
   const q = query.value.trim().toLowerCase()
   return factions.value.filter(f => (!q || [f.name, f.name_zh, translate('faction', f.name)].some(x => (x || '').toLowerCase().includes(q)))
     && (!scopeSel.value.length || scopeSel.value.some(s => (f.scopes || []).includes(s)))
     && (!typeSel.value.length || typeSel.value.some(t => (f.mission_types || []).includes(t)))
-    && (!hasMissions.value || (hasMissions.value === '1' ? f.mission_count > 0 : !f.mission_count)))
+    && (hasMissions.value.length !== 1 || (hasMissions.value[0] === '1' ? f.mission_count > 0 : !f.mission_count)))
 })
 
 // ── 排序、展開 ──

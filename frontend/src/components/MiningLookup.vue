@@ -171,15 +171,11 @@
           </ul>
         </div>
 
-        <!-- 勾選後每張礦物卡片多列「包含這種礦物的礦床」（只列機率 100% 的；含量、單顆訊號值） -->
-        <div class="form-check sf-check-btn mb-3">
-          <input :id="`${mineralListId}-containing`" v-model="showContaining" class="form-check-input" type="checkbox">
-          <label class="form-check-label" :for="`${mineralListId}-containing`">顯示包含此礦物的礦床</label>
-        </div>
-        <!-- 名稱有「小行星」「礦床」的（Asteroid／Deposit）預設不列，勾了才列 -->
-        <div v-if="showContaining" class="form-check sf-check-btn mb-3 ms-4">
-          <input :id="`${mineralListId}-generic`" v-model="showGenericDeposits" class="form-check-input" type="checkbox">
-          <label class="form-check-label" :for="`${mineralListId}-generic`">包含小行星、礦床</label>
+        <!-- 打開後每張礦物卡片多列「包含這種礦物的礦床」（只列機率 100% 的；含量、單顆訊號值）；
+             名稱有「小行星」「礦床」的（Asteroid／Deposit）預設不列，打開第二個才列 -->
+        <div class="sf-pills mb-2">
+          <SfToggle v-model="showContaining">顯示包含此礦物的礦床</SfToggle>
+          <SfToggle v-if="showContaining" v-model="showGenericDeposits">包含小行星、礦床</SfToggle>
         </div>
 
         <div v-if="loadingDeposits" class="mining-echo__panel text-center py-4">
@@ -253,8 +249,8 @@
                   </thead>
                   <tbody>
                     <tr v-for="r in sellRows(s)" :key="r.key">
-                      <td class="ps-2">{{ r.name }}<span v-if="r.place && r.place !== r.name" class="mining-echo__hint ms-1">{{ r.place }}</span></td>
-                      <td>{{ r.system || '—' }}</td>
+                      <td class="ps-2">{{ r.name }}<span v-if="r.place && r.place !== r.name" class="mining-echo__hint ms-1">{{ locationZh(r.place) }}</span></td>
+                      <td>{{ r.system ? locationZh(r.system) : '—' }}</td>
                       <td class="text-end fw-bold">{{ fmtPrice(r.price) }} <small class="mining-echo__hint">aUEC</small></td>
                       <td class="pe-2 text-end text-nowrap mining-echo__hint">{{ fmtDate(r.date) }}</td>
                     </tr>
@@ -285,8 +281,8 @@
                   </thead>
                   <tbody>
                     <tr v-for="y in c.refineryRows" :key="y.terminal + y.commodity">
-                      <td class="ps-2">{{ y.terminal }}<span v-if="y.place && y.place !== y.terminal" class="mining-echo__hint ms-1">{{ y.place }}</span></td>
-                      <td>{{ y.system || '—' }}</td>
+                      <td class="ps-2">{{ y.terminal }}<span v-if="y.place && y.place !== y.terminal" class="mining-echo__hint ms-1">{{ locationZh(y.place) }}</span></td>
+                      <td>{{ y.system ? locationZh(y.system) : '—' }}</td>
                       <td class="text-end fw-bold" :class="[y.value > 0 ? 'sf-good' : y.value < 0 ? 'sf-bad' : '', { 'pe-2': !refineryHasTrend && !refineryHasCapacity }]">{{ fmtYield(y.value) }}</td>
                       <template v-if="refineryHasTrend">
                         <td class="text-end" :class="y.week > 0 ? 'sf-good' : y.week < 0 ? 'sf-bad' : ''">{{ fmtYield(y.week) }}</td>
@@ -499,9 +495,12 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
 import { ref, computed, reactive, watch, effectScope, onScopeDispose } from 'vue'
 import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { getJson } from '@/utils/getJson'
+import { loadLocationZh, locationZh } from '@/utils/uexCommodity'
 import { mineralBaseName, ownSignatures as mineralOwnSignatures } from '@/utils/miningSignature'
 
 const props = defineProps({
@@ -553,6 +552,7 @@ async function loadData() {
     refineryVersion.value = methodData?.success ? (methodData.data?.version || '') : ''
     const yieldData = yieldRes ? await yieldRes.json().catch(() => null) : null
     refineryYields.value = yieldData?.success ? (yieldData.data || []) : []
+    loadLocationZh(refineryYields.value.flatMap(y => [y.place, y.system]))
     const depData = depRes ? await depRes.json().catch(() => null) : null
     deposits.value = depData?.success ? (depData.data || []) : []
     const locData = locRes ? await locRes.json().catch(() => null) : null
@@ -793,13 +793,13 @@ async function loadSellPrices(ids) {
   todo.forEach(id => { sellPrices[id] = null })
   for (let i = 0; i < todo.length; i += SELL_BATCH) {
     const chunk = todo.slice(i, i + SELL_BATCH)
-    const res = await props.fetcher(`/mining/sell-prices?${chunk.map(id => `id=${encodeURIComponent(id)}`).join('&')}`)
-    const body = res?.ok ? await res.json().catch(() => null) : null
+    const { ok, data } = await getJson(props.fetcher, `/mining/sell-prices?${chunk.map(id => `id=${encodeURIComponent(id)}`).join('&')}`)
     for (const id of chunk) {
-      sellPrices[id] = (body?.success ? (body.data?.[id] || []) : []).map(r => ({
+      sellPrices[id] = (ok ? (data?.[id] || []) : []).map(r => ({
         key: r.terminal?.id || r.terminal?.name, name: r.terminal?.name || '—', place: r.terminal?.place,
         system: r.terminal?.star_system, price: r.price_sell, date: r.date_modified,
       }))
+      loadLocationZh(sellPrices[id].flatMap(r => [r.place, r.system]))
     }
   }
 }

@@ -4,8 +4,7 @@
 // 傷害種類、追蹤方式不是遊戲物品資料的代碼，用這裡唯一的一份。
 import { itemClassZh, itemSubTypeZh, itemTypeZh, loadItemClassZh, loadItemTypeZh } from './itemType.js'
 
-export const DMG_LABEL = { physical: '物理', energy: '能量', distortion: '扭曲', thermal: '熱能', biochemical: '生化', stun: '暈眩' }
-export const TRACK_LABEL = { Electromagnetic: '電磁', Infrared: '紅外線', CrossSection: '截面' }
+export { DMG_LABEL, TRACK_LABEL } from './loadoutConst.js'
 
 /** 掛點可裝的類型（「Turret.GunTurret」這種 類型.子類型）→「雲台／武器」：子類型有中文用子類型，否則用類型 */
 export function typeLabel(types) {

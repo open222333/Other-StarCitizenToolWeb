@@ -79,7 +79,7 @@
           <div v-if="!filteredCommodities.length" class="small text-muted px-2 py-2">沒有符合的商品</div>
           <label v-for="c in filteredCommodities" :key="c.id" class="cbf-item"
             :class="{ 'is-checked': selectedSet.has(c.id) }" @mouseenter="hoverId = c.id" @focusin="hoverId = c.id">
-            <input type="checkbox" class="form-check-input me-2" :checked="selectedSet.has(c.id)"
+            <input type="checkbox" class="visually-hidden" :checked="selectedSet.has(c.id)"
               :disabled="!selectedSet.has(c.id) && selected.length >= maxSelected"
               @change="toggle(c.id, $event.target.checked)">
             <span class="cbf-item__name">{{ commodityZh(c.name) || c.name }}</span>
@@ -379,10 +379,17 @@ defineExpose({ refresh: () => { loadCommodities(); loadLocations() } })
   color: var(--sf-text);
   white-space: nowrap;
 }
-.cbf-item .form-check-input { margin-right: 0 !important; flex: 0 0 auto; }
+/* 不用勾選框（全站篩選選項統一，見 scifi-theme.css 的 .sf-pill）：整格就是按鈕，選了實心強調色＋外框 */
+.cbf-item { border: 1px solid transparent; }
 .cbf-item:hover,
-.cbf-item:focus-within { background: rgba(var(--sf-accent-rgb), .08); }
-.cbf-item.is-checked { background: rgba(var(--sf-accent-rgb), .16); }
+.cbf-item:focus-within { background: rgba(var(--sf-accent-rgb), .12); border-color: rgba(var(--sf-accent-rgb), .45); }
+.cbf-item:focus-within { outline: 2px solid var(--sf-accent); outline-offset: 1px; }
+.cbf-item.is-checked {
+  background: rgba(var(--sf-accent-rgb), .45); border-color: rgb(var(--sf-accent-rgb));
+  box-shadow: 0 0 .4rem rgba(var(--sf-accent-rgb), .3); color: var(--sf-text-strong); font-weight: 700;
+}
+.cbf-item.is-checked .cbf-item__en { color: var(--sf-text); }
+.cbf-item:has(input:disabled) { opacity: .5; cursor: default; }
 .cbf-item__name { flex: 0 0 auto; }
 .cbf-item__sub { display: flex; align-items: center; gap: .4rem; min-width: 0; }
 /* 英文全名：一行放不下才省略（上方細節區塊有完整名稱） */

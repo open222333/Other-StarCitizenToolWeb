@@ -134,7 +134,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import SfState from '@/components/SfState.vue'
 import NewsArticle from '@/components/NewsArticle.vue'
-import { fetchNews, fetchNewsFeatured, fetchNewsItem, fetchNewsTags, fmtNewsDate, tagHue } from '@/utils/news'
+import { fetchNews, fetchNewsFeatured, fetchNewsItem, fetchNewsTags, fmtNewsDate, newsQuery, tagHue } from '@/utils/news'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { DATE_FILTERS, dateRange } from '@/utils/newsDate'
 
@@ -285,7 +285,7 @@ const related = computed(() => {
 function openItem(n) {
   if (!n?._id) return
   pushedFromList = true
-  router.push({ query: { ...route.query, tab: 'news', news: n._id } })
+  router.push({ query: newsQuery(route.query, n._id) })
 }
 function closeArticle() {
   // 從列表點進來的：跟瀏覽器返回鍵一樣回上一頁；從分享連結直接進來的：把 news 拿掉
@@ -298,21 +298,20 @@ function closeArticle() {
   delete query.news
   router.replace({ query })
 }
-defineExpose({ openItem })
 </script>
 
 <style scoped>
 /* ── 文章頁：依螢幕寬度
      手機（< 576）：卡片貼齊左右、內距縮小、標題小一級
-     平板（576～1199）：一欄，文章最寬 54rem 置中，更多新聞排在下面（兩欄卡片）
-     桌機（≥ 1200）：文章＋右欄更多新聞（右欄跟著捲動）；超寬螢幕整體最寬 80rem 置中 ── */
-.nb-read { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem 1.5rem; max-width: 54rem; margin: 0 auto; }
+     平板（576～1199）：一欄，文章最寬 50rem 置中，更多新聞排在下面（兩欄卡片）
+     桌機（≥ 1200）：文章＋右欄更多新聞（右欄跟著捲動）；超寬螢幕整體最寬 76rem 置中 ── */
+.nb-read { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem 1.5rem; max-width: 50rem; margin: 0 auto; }
 .nb-read__bar { grid-column: 1 / -1; }
 .nb-article__body { padding: 1.25rem 1.5rem; }
 .nb-article__title { font-size: var(--sf-fs-xl); font-weight: 800; color: var(--sf-text-strong); line-height: 1.35; margin-bottom: .75rem;
   overflow-wrap: anywhere; }
-/* 內文一行不要太長（大約 40 個中文字），閱讀比較舒服；圖片、表格、程式碼照卡片寬度 */
-.nb-article :deep(.na-body) { max-width: 46rem; font-size: var(--sf-fs-md); }
+/* 內文跟著卡片寬度走（封面、日期列、表格同寬，不會右邊留一大塊空白）；一行的長度由外層 .nb-read 的最大寬度控制 */
+.nb-article :deep(.na-body) { font-size: var(--sf-fs-md); }
 .nb-article :deep(.na-body pre) { max-width: 100%; }
 .nb-related { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; align-content: start; }
 .nb-related__h { grid-column: 1 / -1; font-size: var(--sf-fs-md); font-weight: 800; color: var(--sf-text-strong); margin: .25rem 0; }
@@ -325,7 +324,7 @@ defineExpose({ openItem })
 .nb-related__title { font-weight: 700; color: var(--sf-text-strong); font-size: var(--sf-fs-sm); line-height: 1.35;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 @media (min-width: 1200px) {
-  .nb-read { grid-template-columns: minmax(0, 1fr) 20rem; max-width: 80rem; }
+  .nb-read { grid-template-columns: minmax(0, 1fr) 20rem; max-width: 76rem; }
   .nb-related { grid-template-columns: minmax(0, 1fr); position: sticky; top: 5rem; align-self: start; }
   .nb-article__body { padding: 1.75rem 2.25rem; }
 }

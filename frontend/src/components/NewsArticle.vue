@@ -1,5 +1,5 @@
 <!--
-  一則新聞的全文（NewsBoard.vue、NewsBanner.vue 的跳出視窗共用）：封面、標題、時間、標籤、
+  一則新聞的全文（NewsBoard.vue 的全文頁）：封面、標題、時間、標籤、
   Markdown 內文（utils/markdown.js：先跳脫 HTML 再轉，連結只接受 http/https；含表格）、來源連結、分享（複製 ?tab=news&news=<id> 連結）。
 -->
 <template>

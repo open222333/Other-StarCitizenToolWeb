@@ -287,6 +287,7 @@ UNGUARDED_ALLOWLIST = {
     'app_loadout.loadout_ships',
     'app_loadout.loadout_ship',
     'app_loadout.loadout_items',
+    'app_loadout.loadout_item_types',
     'app_item.search_items',
     'app_item.match_items',          # 倉庫「貼上清單」一次比對多個物品名稱（@jwt_required）
     'app_item.list_types',
@@ -604,7 +605,7 @@ def test_uex_token_admin_only(client, viewer_headers, operator_headers, player_h
 # ═══════════════════════════════════════════════════════════
 
 PUBLIC_TOOL_GETS = [
-    '/item/', '/item/vehicles', '/item/loadout/ships', '/mining/systems', '/mission/', '/mission/factions',
+    '/item/', '/item/vehicles', '/item/loadout/ships', '/item/loadout/item-types', '/mining/systems', '/mission/', '/mission/factions',
     '/blueprint/master', '/blueprint/master/types', '/starmap/nav/places', '/starmap/nav/ships',
     '/player/tool-links', '/player/tab-config', '/player/commodities/buyable',
 ]

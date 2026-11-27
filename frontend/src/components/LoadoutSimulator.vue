@@ -20,9 +20,8 @@
               <label class="form-label small fw-semibold mb-1" for="lo-ship">船艦</label>
               <AutocompleteField id="lo-ship" v-model="shipText" :search="searchShips" :get-label="shipLabel"
                 :get-meta="shipMeta" :min-chars="0" :debounce-ms="0" aria-label="選擇船艦" @select="pickShip" />
-              <div v-if="member" class="form-check sf-check-btn mt-2 mb-0">
-                <input id="lo-mine" v-model="mineOnly" class="form-check-input" type="checkbox" :disabled="!fleetSet.size">
-                <label class="form-check-label" for="lo-mine">只看我的機庫<span class="lo-muted ms-1">{{ fleetSet.size }}</span></label>
+              <div v-if="member" class="sf-pills mt-2">
+                <SfToggle v-model="mineOnly" :disabled="!fleetSet.size">只看我的機庫<span class="lo-muted">{{ fleetSet.size }}</span></SfToggle>
               </div>
               <!-- 跟資料庫 › 艦船一樣的條件（類型、尺寸、廠商、角色），選了之後上面的候選只列符合的船 -->
               <div class="row g-2 mt-1">
@@ -276,6 +275,7 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
 import { getJson as fetchJson } from '@/utils/getJson'
 import { computed, provide, reactive, ref, shallowReactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -290,7 +290,7 @@ import BlueprintMissionsModal from '@/components/BlueprintMissionsModal.vue'
 import { LOCKED_QUALITY, applyQuality, avgQuality, decodeQualities, encodeQualities, isDefault as isDefaultQuality, qualitiesOf } from '@/utils/loadoutCraft'
 import { clampQuality } from '@/utils/craftQuality'
 import { fmtAuec } from '@/utils/uexCommodity'
-import { manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel } from '@/utils/vehicle'
+import { groupRoleOptions, manufacturerLabel, vehicleRoleLabel, vehicleSizeLabel } from '@/utils/vehicle'
 import { fmtNum } from '@/utils/navFormat'
 import { DMG_LABEL, TRACK_LABEL, classLabel, loadLoadoutZh, typeLabel } from '@/utils/loadoutLabels'
 import {
@@ -375,7 +375,7 @@ const shipFacet = computed(() => {
     types: [...types].map(v => ({ value: v, label: SHIP_TYPE_LABEL[v] })),
     sizes: [...sizes].sort((a, b) => a - b).map(n => ({ value: String(n), label: vehicleSizeLabel(n) })),
     mfrs: [...mfrs].map(([value, label]) => ({ value, label })).sort(byLabel),
-    roles: [...roles].map(([value, label]) => ({ value, label })).sort(byLabel),
+    roles: groupRoleOptions([...roles].map(([value, label]) => ({ value, label }))),
   }
 })
 const shipFiltering = computed(() => mineOnly.value || Object.values(shipF).some(v => v.length))

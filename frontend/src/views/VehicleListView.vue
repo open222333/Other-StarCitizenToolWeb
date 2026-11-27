@@ -224,6 +224,7 @@
 </template>
 
 <script setup>
+import { groupRoleOptions } from '@/utils/vehicleRole'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
@@ -387,7 +388,7 @@ onMounted(async () => {
   ])
   if (careersRes?.ok) careerOptions.value = (await careersRes.json()).data || []
   // 角色選項用 facets 的 [{value, label}]，label 含中文（見 VehicleMaster.role_options）
-  if (rolesRes?.ok) roleOptions.value = ((await rolesRes.json()).data || {}).roles || []
+  if (rolesRes?.ok) roleOptions.value = groupRoleOptions(((await rolesRes.json()).data || {}).roles || [])
   if (manufacturersRes?.ok) manufacturerOptions.value = (await manufacturersRes.json()).data || []
   if (sizeClassesRes?.ok) {
     const sizes = (await sizeClassesRes.json()).data || []

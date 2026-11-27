@@ -229,6 +229,30 @@ def test_sync_fails_when_store_matches_nothing(app, monkeypatch):
     assert get_db().ccu_offers.count_documents({}) == 0
 
 
+def test_sync_fails_when_confirmed_drops(app, monkeypatch):
+    """I2：商店確認過的單買比上一輪少很多（只抓到一半）：整輪失敗，原本的不下架。"""
+    import tasks.scdata_sync as sync_mod
+    db = get_db()
+    db.ccu_offers.insert_many([{'_id': f'ship:{i}:9', 'kind': 'ship', 'is_current': True, 'store_confirmed': True}
+                               for i in range(10)])
+    real = sync_mod.build_client
+    monkeypatch.setattr(sync_mod, 'build_client', lambda **kw: real(transport=_transport()))
+    result = sync_mod._do_sync(jobs=['ccu'])
+    assert result['ok'] is False
+    assert db.ccu_offers.count_documents({'is_current': True}) == 10
+
+
+def test_store_listing_page_cap(monkeypatch):
+    """I2：翻到上限頁還是滿的（後面還有沒抓到的）：丟錯，不當成商店沒賣。"""
+    monkeypatch.setattr(rsi_store, 'STORE_MAX_PAGES', 2)
+    monkeypatch.setattr(rsi_store, 'STORE_PAGE_SIZE', 2)
+    client = httpx.Client(transport=_transport(store=STORE), base_url='https://robertsspaceindustries.com')
+    with pytest.raises(rsi_store.RsiStoreError, match='沒翻完'):
+        rsi_store.fetch_store_listing(client)
+    monkeypatch.setattr(rsi_store, 'STORE_PAGE_SIZE', 3)
+    assert len(rsi_store.fetch_store_listing(client)) == 2
+
+
 # ── Open Hangar 上架歷史 ─────────────────────────────────────────────
 # 結構照 https://openhangar.space/api/store/catalog 實際回傳（只留用到的欄位）
 OH_CATALOG = {
@@ -459,7 +483,6 @@ def test_price_rows_relink_unmatched_history(app):
 
 def test_ship_price_cache_and_etag(app, client):
     """船價列表：三個同步項目的 run_id 當版本，沒變就用快取、帶 ETag 回 304；明細只查那一艘。"""
-    ccu._list_cache.update(version=None, rows=None)   # 模組層快取，測試之間要清掉
     db = get_db()
     db.vehicle_master.insert_one({'_id': 'v-gal', 'name': 'Galaxy', 'is_current': True})
     db.ship_sale_history.insert_one({'_id': 'Galaxy', 'name': 'Galaxy', 'rsi_id': 7, 'vehicle_uuid': 'v-gal',
@@ -479,4 +502,27 @@ def test_ship_price_cache_and_etag(app, client):
     assert len(res2.get_json()['data']) == 2 and res2.headers['ETag'] != etag
     d = client.get('/item/ship-prices/detail?key=Galaxy')
     assert d.get_json()['data']['vehicle_uuid'] == 'v-gal' and 'max-age' in d.headers['Cache-Control']
-    ccu._list_cache.update(version=None, rows=None)
+
+
+def test_norm_ascii_shared():
+    """I1：船名比對的正規化只有一份（src/textnorm.py），商店、CCU、借用船都用它"""
+    from src import rsi_loaners
+    from src.textnorm import norm_ascii
+    assert norm_ascii('F7C-R  Hornet Mk-II') == 'f7c r hornet mk ii'
+    assert norm_ascii(None) == '' and norm_ascii('大力神 C2') == 'c2'
+    assert rsi_store._norm is norm_ascii and ccu._norm is norm_ascii and rsi_loaners._norm is norm_ascii
+
+
+def test_latest_cache():
+    """G1：只留最新一份的快取——版本一樣用快取、不一樣重算、全空不快取、回複本"""
+    from src.sync_version import LatestCache, run_ids
+    calls = []
+    cache = LatestCache(lambda: calls.append(1) or [1, 2])
+    assert cache.get('|') == [1, 2] and cache.get('|') == [1, 2] and len(calls) == 2, '全空不快取'
+    got = cache.get('a|b')
+    got.append(3)
+    assert cache.get('a|b') == [1, 2] and len(calls) == 3, '同版本用快取、改回傳值不影響快取'
+    cache.get('a|c')
+    assert len(calls) == 4
+    get_db().sync_jobs.insert_one({'_id': 'ccu', 'last_run_id': 'r1'})
+    assert run_ids('vehicles', 'ccu') == '|r1'

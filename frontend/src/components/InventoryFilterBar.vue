@@ -13,7 +13,7 @@
 <template>
   <div class="card scifi-card sf-search mb-2">
     <div class="card-body py-2">
-      <div class="row g-2 align-items-end">
+      <div class="row g-2 g-md-3 align-items-start">
         <div class="col col-md-6 col-lg-3">
           <label class="form-label small fw-semibold mb-1" for="wh-q">物品名稱</label>
           <input id="wh-q" type="search" class="form-control form-control-sm" placeholder="輸入物品名稱…"
@@ -34,38 +34,23 @@
               placeholder="全部" block searchable @update:model-value="$emit('update:dismantle', $event)" />
           </div>
 
-          <LocationAreaFilter v-if="showLocations" :names="locationNames" :loc-label="locLabel" col-class="col-12 col-sm-4 col-lg-2"
+          <LocationAreaFilter v-if="showLocations" :names="locationNames" :loc-label="locLabel" col-class="col-12 col-sm-4 col-lg-3"
             :systems="systems" :planets="planets" :locations="locations"
             @update:systems="$emit('update:systems', $event)"
             @update:planets="$emit('update:planets', $event)"
             @update:locations="$emit('update:locations', $event)" />
-          <template #more>
-            <div v-if="showBuyable" class="form-check sf-check-btn mt-3">
-              <input id="wh-buyable-m" class="form-check-input" type="checkbox" :checked="buyable"
-                @change="$emit('update:buyable', $event.target.checked)">
-              <label class="form-check-label" for="wh-buyable-m">只看買得到</label>
+          <!-- 條件：只看買得到、只看可拆解（有藍圖、藍圖有拆解回收）；只給物品資料用 -->
+          <div v-if="showBuyable" class="col-12 col-md-6 col-lg-3">
+            <span id="wh-more-l" class="form-label small fw-semibold mb-1 d-block">條件</span>
+            <div class="sf-pills sf-pills--field" role="group" aria-labelledby="wh-more-l">
+              <SfToggle :model-value="buyable" @update:model-value="$emit('update:buyable', $event)">只看買得到</SfToggle>
+              <SfToggle :model-value="dismantlable" @update:model-value="$emit('update:dismantlable', $event)">只看可拆解</SfToggle>
             </div>
-            <div v-if="showBuyable" class="form-check sf-check-btn mt-2">
-              <input id="wh-dismantlable-m" class="form-check-input" type="checkbox" :checked="dismantlable"
-                @change="$emit('update:dismantlable', $event.target.checked)">
-              <label class="form-check-label" for="wh-dismantlable-m">只看可拆解</label>
-            </div>
-          </template>
+          </div>
         </SfFilterSheet>
       </div>
 
       <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-        <div v-if="showBuyable && !isPhone" class="form-check sf-check-btn mb-0 me-2">
-          <input id="wh-buyable" class="form-check-input" type="checkbox" :checked="buyable"
-            @change="$emit('update:buyable', $event.target.checked)">
-          <label class="form-check-label" for="wh-buyable">只看買得到</label>
-        </div>
-        <!-- 只看可拆解：有藍圖、而且藍圖有拆解回收的物品（只給物品資料用，跟「只看買得到」一起出現） -->
-        <div v-if="showBuyable && !isPhone" class="form-check sf-check-btn mb-0 me-2">
-          <input id="wh-dismantlable" class="form-check-input" type="checkbox" :checked="dismantlable"
-            @change="$emit('update:dismantlable', $event.target.checked)">
-          <label class="form-check-label" for="wh-dismantlable">只看可拆解</label>
-        </div>
         <span v-if="active" class="form-text py-0 my-0">
           <template v-for="(c, i) in counts" :key="c.label">
             <template v-if="i"> · </template>{{ c.label }} {{ c.matched }} / {{ c.total }} 筆
@@ -78,6 +63,7 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
 import { computed } from 'vue'
 import LocationAreaFilter from '@/components/LocationAreaFilter.vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'

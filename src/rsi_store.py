@@ -27,6 +27,8 @@ from typing import Optional
 
 import httpx
 
+from src.textnorm import norm_ascii as _norm  # 船名比對的正規化（I1：共用一份）
+
 logger = logging.getLogger(__name__)
 
 RSI_BASE = 'https://robertsspaceindustries.com'
@@ -146,7 +148,8 @@ def fetch_store(client: httpx.Client) -> dict:
 
 
 def fetch_store_listing(client: httpx.Client) -> list:
-    """商店 Standalone Ships 分類現在列著的全部品項（原始欄位），一頁 100 筆翻到底；一筆都沒有丟 RsiStoreError。"""
+    """商店 Standalone Ships 分類現在列著的全部品項（原始欄位），一頁 100 筆翻到底。
+    一筆都沒有、或翻到 STORE_MAX_PAGES 頁還沒翻完都丟 RsiStoreError（不完整的清單會把沒抓到的當成下架）。"""
     out = []
     for page in range(1, STORE_MAX_PAGES + 1):
         data = graphql(client, 'StoreSkus', STORE_QUERY,
@@ -157,6 +160,10 @@ def fetch_store_listing(client: httpx.Client) -> list:
         out += rows
         if len(rows) < STORE_PAGE_SIZE:
             break
+    else:
+        # 翻到上限頁還是滿的：後面還有沒抓到的品項，照算會把它們當成商店沒賣、提早下架（I2）
+        raise RsiStoreError(f'商店的單買船清單超過 {STORE_MAX_PAGES} 頁（每頁 {STORE_PAGE_SIZE} 筆）沒翻完，'
+                            '不更新；品項真的變多就調高 STORE_MAX_PAGES')
     if not out:
         raise RsiStoreError('商店的單買船清單是空的（可能格式改了），不更新')
     return out
@@ -296,10 +303,6 @@ def map_upgrade_offers(raw_targets: list, ships_by_id: dict, from_id, exponent: 
 # ─────────────────────────────────────────────────────────── 商店確認
 
 _STORE_SUFFIX_RE = re.compile(r'\s+-\s+(\d+\s*(year|month)s?|lti|best in show.*|[^-]*edition)\s*$', re.I)
-
-
-def _norm(text) -> str:
-    return ' '.join(re.sub(r'[^0-9a-z]+', ' ', str(text or '').lower()).split())
 
 
 def store_base_name(name: str) -> str:

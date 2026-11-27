@@ -37,6 +37,8 @@ from datetime import datetime
 from pymongo import UpdateOne
 
 from src.mongo import get_db
+from src.sync_version import LatestCache, run_ids
+from src.textnorm import norm_ascii as _norm  # 船名比對的正規化（I1：共用一份）
 
 SHIPS = 'rsi_ships'
 OFFERS = 'ccu_offers'
@@ -49,11 +51,6 @@ def offer_id(offer: dict) -> str:
     # 商店補的（store_only）用商店的品項 id，跟升級工具的 SKU id 是不同的編號，加 s 前綴分開
     sku = f's{offer["sku_id"]}' if offer.get('store_only') else offer['sku_id']
     return f'{offer["kind"]}:{sku}:{offer["ship_rsi_id"]}'
-
-
-def _norm(text) -> str:
-    """比對用：小寫、只留英數字與空白（"Hercules Starlifter M2"、"M2  Hercules" 這種空白／標點差異不影響）。"""
-    return ' '.join(re.sub(r'[^0-9a-z]+', ' ', str(text or '').lower()).split())
 
 
 def _vehicle_index() -> dict:
@@ -331,27 +328,27 @@ def _price_rows(history_filter=None, ship_filter=None, offer_filter=None) -> lis
 #: 列表快取：資料只在「CCU」「Open Hangar 歷史」「艦船」三個同步項目跑完時才會變（艦船影響船名比對與中文名），
 #: 用這三項最後一次的 run_id 當版本；版本沒變就直接回上次組好的（每個 gunicorn worker 各一份，見待辦 A2）
 PRICE_LIST_JOBS = ('ccu', 'openhangar', 'vehicles')
-_list_cache: dict = {'version': None, 'rows': None}
 
 
 def price_list_version() -> str:
     """三個同步項目最後的 run_id 串起來（ETag 也用這個）。"""
-    runs = {d['_id']: d.get('last_run_id') or '' for d in get_db()['sync_jobs'].find(
-        {'_id': {'$in': list(PRICE_LIST_JOBS)}}, {'last_run_id': 1})}
-    return '|'.join(str(runs.get(k, '')) for k in PRICE_LIST_JOBS)
+    return run_ids(*PRICE_LIST_JOBS)
 
 
-def ship_price_list() -> list:
-    """每艘船一列（不含各段明細）。同一個版本（price_list_version）只組一次。"""
-    version = price_list_version()
-    if _list_cache['version'] == version and _list_cache['rows'] is not None and version.strip('|'):
-        return _list_cache['rows']
+def _price_list_rows() -> list:
     rows = _price_rows()
     for r in rows:
         r.pop('_periods')
     rows.sort(key=lambda r: (r['name'] or '').lower())
-    _list_cache.update(version=version, rows=rows)
     return rows
+
+
+_list_cache = LatestCache(_price_list_rows)
+
+
+def ship_price_list() -> list:
+    """每艘船一列（不含各段明細）。同一個版本（price_list_version）只組一次。"""
+    return _list_cache.get(price_list_version())
 
 
 def ship_price_detail(key: str):
@@ -397,7 +394,7 @@ def concept_status(flyable_status) -> str:
 
 
 #: 概念船清單快取：只留最新一份（key＝船價同步版本＋借用船同步＋翻譯版本），同 _list_cache 的做法
-_concept_cache: dict = {'key': None, 'rows': None}
+_concept_cache = LatestCache(lambda: _concept_ships())
 
 
 def concept_ships() -> list:
@@ -407,11 +404,7 @@ def concept_ships() -> list:
     version = price_list_version()
     if not version.strip('|'):
         return _concept_ships()
-    loaner_run = (get_db()['sync_jobs'].find_one({'_id': 'loaners'}, {'last_run_id': 1}) or {}).get('last_run_id') or ''
-    key = (version, loaner_run, T.cache_version())
-    if _concept_cache['key'] != key or _concept_cache['rows'] is None:
-        _concept_cache.update(key=key, rows=_concept_ships())
-    return list(_concept_cache['rows'])
+    return _concept_cache.get((version, run_ids('loaners'), T.cache_version()))
 
 
 def _concept_ships() -> list:

@@ -1,5 +1,5 @@
 /*!
- * Bootstrap Icons v1.13.1 子集（175 個，frontend/scripts/subset-icons.py 產生，不要手改）
+ * Bootstrap Icons v1.13.1 子集（181 個，frontend/scripts/subset-icons.py 產生，不要手改）
  * Copyright 2019-2024 The Bootstrap Authors
  * Licensed under MIT (https://github.com/twbs/icons/blob/main/LICENSE)
  */
@@ -44,11 +44,13 @@
 .bi-badge-3d::before { content: "\f15b"; }
 .bi-bookmark-plus::before { content: "\f19d"; }
 .bi-box::before { content: "\f1c8"; }
+.bi-box-arrow-down::before { content: "\f1b9"; }
 .bi-box-arrow-in-down::before { content: "\f1bc"; }
 .bi-box-arrow-in-right::before { content: "\f1be"; }
 .bi-box-arrow-right::before { content: "\f1c3"; }
 .bi-box-arrow-up::before { content: "\f1c6"; }
 .bi-box-arrow-up-right::before { content: "\f1c5"; }
+.bi-box-fill::before { content: "\f7d2"; }
 .bi-box-seam::before { content: "\f1c7"; }
 .bi-boxes::before { content: "\f685"; }
 .bi-braces::before { content: "\f1c9"; }
@@ -120,6 +122,7 @@
 .bi-globe2::before { content: "\f3ef"; }
 .bi-grid-3x3::before { content: "\f3fa"; }
 .bi-grid-3x3-gap::before { content: "\f3f9"; }
+.bi-grid-3x3-gap-fill::before { content: "\f3f8"; }
 .bi-grip-horizontal::before { content: "\f3fd"; }
 .bi-grip-vertical::before { content: "\f3fe"; }
 .bi-hammer::before { content: "\f3ff"; }
@@ -142,6 +145,7 @@
 .bi-list-ul::before { content: "\f478"; }
 .bi-lock-fill::before { content: "\f47a"; }
 .bi-magic::before { content: "\f675"; }
+.bi-magnet-fill::before { content: "\f778"; }
 .bi-megaphone-fill::before { content: "\f483"; }
 .bi-moon-stars::before { content: "\f496"; }
 .bi-newspaper::before { content: "\f4a3"; }
@@ -167,12 +171,14 @@
 .bi-plus-slash-minus::before { content: "\f6aa"; }
 .bi-power::before { content: "\f4ff"; }
 .bi-question-circle::before { content: "\f505"; }
+.bi-recycle::before { content: "\f64f"; }
 .bi-robot::before { content: "\f6b1"; }
 .bi-rocket::before { content: "\f846"; }
 .bi-rocket-takeoff::before { content: "\f845"; }
 .bi-rulers::before { content: "\f523"; }
 .bi-save::before { content: "\f525"; }
 .bi-search::before { content: "\f52a"; }
+.bi-send-fill::before { content: "\f6b9"; }
 .bi-share::before { content: "\f52e"; }
 .bi-shield-fill::before { content: "\f536"; }
 .bi-shield-fill-check::before { content: "\f531"; }

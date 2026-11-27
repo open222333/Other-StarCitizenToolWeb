@@ -71,7 +71,7 @@
             </div>
             <div class="col-12 col-md-3">
               <label class="form-label small mb-1" for="fl-role">角色</label>
-              <MultiSelectFilter id="fl-role" v-model="flSelectedRoles" :options="vehicleFacets.roles"
+              <MultiSelectFilter id="fl-role" v-model="flSelectedRoles" :options="roleOptions"
                 label="角色" placeholder="全部" block searchable />
             </div>
           </SfFilterSheet>
@@ -231,7 +231,7 @@ import { itemTypeLabel, loadItemTypeZh } from '@/utils/itemType'
 import { nameLabel, searchBlueprintNames, searchItemNames, searchVehicleNames } from '@/utils/nameLookup'
 import { SEARCH_URL_KEYS } from '@/utils/playerTabs'
 import { loadTranslations } from '@/utils/translations'
-import { manufacturerLabel, scuLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
+import { groupRoleOptions, manufacturerLabel, scuLabel, vehicleRoleLabel, vehicleSizeLabel, vehicleTypeLabel } from '@/utils/vehicle'
 
 /** 第一次顯示過了沒（之前條件變了也不查） */
 let loaded = false
@@ -248,6 +248,9 @@ const props = defineProps({
   vehicleSizeOptions: { type: Array, default: () => [] },
   manufacturerOptions: { type: Array, default: () => [] },
 })
+
+// 角色選項依大類分組（utils/vehicleRole.js）
+const roleOptions = computed(() => groupRoleOptions(props.vehicleFacets.roles))
 
 const route = useRoute()
 const router = useRouter()

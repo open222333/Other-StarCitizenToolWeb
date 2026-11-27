@@ -54,6 +54,21 @@ def loadout_ship(ship_id):
     return jsonify({'success': True, 'data': doc})
 
 
+@app_loadout.route('/item-types', methods=['GET'])
+@public_api
+def loadout_item_types():
+    """飛船組件的種類與數量（資料庫 › 飛船組件的種類選單）。
+    ---
+    tags: [Loadout]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: 成功
+    """
+    return jsonify({'success': True, 'data': loadout.item_types()})
+
+
 @app_loadout.route('/items', methods=['GET'])
 @public_api
 @limiter.limit('120 per minute')

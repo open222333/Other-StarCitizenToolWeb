@@ -203,6 +203,16 @@ def test_items_by_type(app):
     assert loadout.items(types=['$where']) == []
 
 
+def test_item_types(app, client):
+    """資料庫 › 飛船組件的種類選單：現役配件依主類計數，數量多的在前；下架的不算；不用登入"""
+    get_db().ship_item_master.insert_many([
+        {'_id': 'a', 'type': 'Shield'}, {'_id': 'b', 'type': 'Shield'}, {'_id': 'c', 'type': 'Cooler'},
+        {'_id': 'd', 'type': 'Cooler', 'is_current': False}])
+    res = client.get('/item/loadout/item-types')
+    assert res.status_code == 200
+    assert res.get_json()['data'] == [{'type': 'Shield', 'count': 2}, {'type': 'Cooler', 'count': 1}]
+
+
 def test_items_buyable_flag(app):
     """更換視窗的「可購買／可製作」：UEX 有販售價格的帶 price（最低價）、buyable；有藍圖的帶 blueprint。"""
     from src.mongo import get_db

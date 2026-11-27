@@ -14,6 +14,8 @@ import re
 from html.parser import HTMLParser
 from typing import Optional
 
+from src.textnorm import norm_ascii as _norm  # 船名比對的正規化（I1：共用一份）
+
 ARTICLE_ID = '360003093114'
 ARTICLE_API = f'https://support.robertsspaceindustries.com/api/v2/help_center/en-us/articles/{ARTICLE_ID}.json'
 ARTICLE_URL = f'https://support.robertsspaceindustries.com/hc/en-us/articles/{ARTICLE_ID}-Loaner-Ship-Matrix'
@@ -77,10 +79,6 @@ def parse_matrix(html: str) -> list:
         names = [n.strip() for n in re.split(r'\s*,\s*', loaners) if n.strip()]
         out.append({'ship': ship, 'loaners': names})
     return out
-
-
-def _norm(text) -> str:
-    return ' '.join(re.sub(r'[^0-9a-z]+', ' ', str(text or '').lower()).split())
 
 
 def _swap_last(left: str, right: str) -> str:
