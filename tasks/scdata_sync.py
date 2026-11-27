@@ -939,8 +939,10 @@ def sync_scdata(self, jobs=None):
         logger.error('scdata_sync: 上游 API 不可用: %s', exc)
         raise self.retry(exc=exc, countdown=600)
     finally:
-        # 沒拿到鎖而略過的項目也要把「排隊中」標記清掉
-        for key in order_jobs(JOB_KEYS if jobs is None else jobs):
+        # 沒拿到鎖而略過的項目也要把「排隊中」標記清掉。
+        # 不能經過 order_jobs：它會丟掉這個 worker 不認得的 key（api 比 worker 新、
+        # 派了新項目時），那筆就會一直卡在「排隊中」直到 QUEUE_STALE_MIN 過期。
+        for key in dict.fromkeys(JOB_KEYS if jobs is None else jobs):
             SyncJobs.clear_queued(key, getattr(self.request, 'id', None))
 
 
