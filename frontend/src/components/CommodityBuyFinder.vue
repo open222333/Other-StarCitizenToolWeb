@@ -15,7 +15,7 @@
 -->
 <template>
   <!-- sf-split：超寬螢幕搜尋卡放左邊、列表放右邊（跟資料庫其他子分頁一致，見 scifi-theme.css） -->
-  <div ref="rootEl" class="sf-split" :style="{ '--cbf-subtabs-h': `${subtabsH}px` }">
+  <div class="sf-split">
     <div :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -144,7 +144,7 @@
 
 <script setup>
 import { getJson } from '@/utils/getJson'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import SfFilterSheet from '@/components/SfFilterSheet.vue'
 import SfState from '@/components/SfState.vue'
@@ -219,20 +219,7 @@ const filteredCommodities = computed(() => {
     && (!q || [c.name, c.code, commodityZh(c.name)].some(t => (t || '').toLowerCase().includes(q))))
 })
 
-// 細節區塊黏在頂端時要讓出下層分頁列（.scifi-subtabs，也是 sticky）的高度；
-// 工具列、主分頁列的高度由 MyPlayerView 量好放在 --sf-topbar-h／--sf-tabs-h
-const rootEl = ref(null)
-const subtabsH = ref(0)
-let subtabsObserver = null
-onMounted(() => {
-  const el = document.querySelector('.scifi-subtabs')
-  if (!el || typeof ResizeObserver === 'undefined') return
-  const sync = () => { subtabsH.value = Math.round(el.getBoundingClientRect().height) }
-  sync()
-  subtabsObserver = new ResizeObserver(sync)
-  subtabsObserver.observe(el)
-})
-onBeforeUnmount(() => subtabsObserver?.disconnect())
+// 細節區塊黏在頂端時要讓出的高度（工具列＋主分頁列＋下層分頁列）由 MyPlayerView 量好放在 --sf-sticky-top
 
 // 上方細節區塊顯示的商品（滑鼠移到／聚焦的那一項）
 const hoverId = ref('')
@@ -398,7 +385,7 @@ defineExpose({ refresh: () => { loadCommodities(); loadLocations() } })
 /* 上方細節區塊：固定高度，換項目時版面不跳；往下捲時黏在固定的工具列＋分頁列＋下層分頁列下面 */
 .cbf-info {
   position: sticky;
-  top: calc(var(--sf-topbar-h, 52px) + var(--sf-tabs-h, 42px) + var(--cbf-subtabs-h, 0px) + .35rem);
+  top: calc(var(--sf-sticky-top) + .35rem);
   z-index: 5;
   box-shadow: 0 .3rem .6rem rgba(0, 0, 0, .3);
   display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .6rem;

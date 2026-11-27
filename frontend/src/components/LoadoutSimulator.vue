@@ -346,6 +346,11 @@ async function loadShips() {
   if (id && ships.value.some(s => s.id === id)) loadShip(id, lo, lq)
 }
 watch(() => props.active, on => { if (on && !loaded.value && !loading.value) loadShips() }, { immediate: true })
+// 已經載入過之後才從別的地方帶 ?ship= 過來（例如資料庫 › 艦船的「預設配件」→「在配裝模擬打開」）：換成那艘船的預設配裝
+watch(() => route.query.ship, (id) => {
+  if (!loaded.value || !id || !onLoadoutUrl() || String(id) === ship.value?.id) return
+  if (ships.value.some(s => s.id === String(id))) loadShip(String(id), String(route.query.lo || ''), String(route.query.lq || ''))
+})
 // 網址是不是配裝模擬（工具箱 › 配裝模擬；舊網址 ?tab=loadout 會被玩家頁改寫成新的）
 function onLoadoutUrl() {
   const q = route.query
@@ -932,7 +937,7 @@ provide('loadout', { itemOf, open: openPicker, primary, secondary, itemLabel, ty
 .lo-card { margin: 0; }
 @media (min-width: 1400px) {
   .lo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; }
-  .lo-side { grid-column: 2; grid-row: 1; position: sticky; top: calc(var(--sf-topbar-h, 52px) + var(--sf-tabs-h, 42px) + .75rem); }
+  .lo-side { grid-column: 2; grid-row: 1; position: sticky; top: calc(var(--sf-sticky-top) + .75rem); }
   .lo-main { grid-column: 1; grid-row: 1; }
 }
 @media (min-width: 768px) and (max-width: 1399.98px) {

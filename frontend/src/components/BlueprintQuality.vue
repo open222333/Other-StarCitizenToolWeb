@@ -569,6 +569,6 @@ function betterClass(m, value) {
 .bq-toolbar__count { flex: 0 0 auto; }
 .bq-mat__total { font-size: 1.15rem; font-weight: 700; color: var(--sf-accent-text, var(--sf-accent)); }
 @media (min-width: 1200px) {
-  .bq-sticky { position: sticky; top: calc(var(--sf-topbar-h, 53px) + var(--sf-tabs-h, 53px) + .5rem); }
+  .bq-sticky { position: sticky; top: calc(var(--sf-sticky-top) + .5rem); }
 }
 </style>

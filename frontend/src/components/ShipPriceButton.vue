@@ -85,7 +85,7 @@
           </div>
 
           <div style="overflow-x: auto">
-          <table class="table table-sm align-middle mb-0 spb-sub">
+          <table class="table table-sm align-middle mb-0 spb-sub sf-stack">
             <thead>
               <tr>
                 <th>開始</th><th>結束</th><th>販售方式</th>

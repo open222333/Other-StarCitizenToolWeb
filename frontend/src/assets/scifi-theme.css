@@ -9,6 +9,8 @@
  */
 
 :root {
+  /* 黏在頂端的東西要讓出的高度：工具列＋主分頁列＋下層分頁列（MyPlayerView 的 trackStickyHeights 量好寫進來） */
+  --sf-sticky-top: calc(var(--sf-topbar-h, 52px) + var(--sf-tabs-h, 42px) + var(--sf-subtabs-h, 0px));
   --sf-bg-1:       #0a0e17;
   --sf-bg-2:       #0e1524;
   --sf-panel:      #121a2b;
@@ -1087,7 +1089,11 @@ html:has(.scifi-page) { color-scheme: dark; }
     width: 24rem;
     margin-right: 1.25rem;
     position: sticky;
-    top: calc(var(--sf-topbar-h, 52px) + var(--sf-tabs-h, 42px) + .75rem);
+    top: calc(var(--sf-sticky-top) + .75rem);
+    /* 比畫面高的搜尋卡：卡片自己捲，下面的欄位也拉得到 */
+    max-height: calc(100dvh - var(--sf-sticky-top) - 1.5rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .scifi-page .sf-split > .sf-search:not(.sf-search--inline) .row > *,
   .scifi-page .sf-split > .sf-split__side .sf-search .row > * {
@@ -1296,27 +1302,27 @@ html:has(.scifi-page) { color-scheme: dark; }
 }
 
 /* ── 搜尋卡、列表卡半透明：透出後面的星雲／格線背景 ──
- * 只動頁面上的卡片；跳出視窗（.sfm-dialog）、底部面板不動，維持不透明好閱讀。
+ * 只動頁面上的卡片；跳出視窗（.sfm-dialog，以及自己做的 role="dialog"：藍圖解鎖任務、新增／異動精靈）、底部面板不動，維持不透明好閱讀。
  * 用 rgba(var(--sf-panel-rgb)) 而不是 color-mix()：舊一點的瀏覽器不支援 color-mix，整條會失效變回不透明。
  * 不加 backdrop-filter：它會讓卡片變成 position:fixed 子元素的定位基準，
  * 手機上表格展開的詳細面板（.sf-stack__detail，fixed 底部面板）會被關在卡片裡。 */
-.scifi-page .scifi-card:not(.sfm-dialog) {
+.scifi-page .scifi-card:not(.sfm-dialog):not([role='dialog']) {
   background: linear-gradient(165deg,
     rgba(var(--sf-panel-rgb, 18, 26, 43), .55) 0%,
     rgba(var(--sf-panel-2-rgb, 12, 18, 32), .45) 100%);
 }
 /* 搜尋卡保留強調色的淡底，一樣半透明 */
-.scifi-page .scifi-card.sf-search:not(.sfm-dialog) {
+.scifi-page .scifi-card.sf-search:not(.sfm-dialog):not([role='dialog']) {
   background:
     linear-gradient(165deg, rgba(var(--sf-accent-rgb), .14) 0%, rgba(var(--sf-accent-rgb), .05) 100%),
     linear-gradient(165deg, rgba(var(--sf-panel-rgb, 18, 26, 43), .55) 0%, rgba(var(--sf-panel-2-rgb, 12, 18, 32), .45) 100%);
 }
-:root[data-sf-mode='light'] .scifi-page .scifi-card:not(.sfm-dialog) {
+:root[data-sf-mode='light'] .scifi-page .scifi-card:not(.sfm-dialog):not([role='dialog']) {
   background: linear-gradient(165deg,
     rgba(var(--sf-panel-rgb, 255, 255, 255), .78) 0%,
     rgba(var(--sf-panel-2-rgb, 246, 248, 252), .70) 100%);
 }
-:root[data-sf-mode='light'] .scifi-page .scifi-card.sf-search:not(.sfm-dialog) {
+:root[data-sf-mode='light'] .scifi-page .scifi-card.sf-search:not(.sfm-dialog):not([role='dialog']) {
   background:
     linear-gradient(165deg, rgba(var(--sf-accent-rgb), .10) 0%, rgba(var(--sf-accent-rgb), .03) 100%),
     linear-gradient(165deg, rgba(var(--sf-panel-rgb, 255, 255, 255), .78) 0%, rgba(var(--sf-panel-2-rgb, 246, 248, 252), .70) 100%);

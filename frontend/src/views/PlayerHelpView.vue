@@ -65,12 +65,14 @@
       <button type="button" class="btn btn-sm btn-info w-100 mt-2" @click="jump('top')"><i class="bi bi-arrow-up me-1"></i>回到最上面</button>
     </aside>
     </div>
+    <SfBackToTop />
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import SiteFooter from '@/components/SiteFooter.vue'
+import SfBackToTop from '@/components/SfBackToTop.vue'
 import { scrollBehavior } from '@/utils/motion'
 import { PLAYER_HOME } from '@/router'
 import { PLAYER_TABS, isTabClosed, normalizeTabAccess, openSubTabs, orderTabs } from '@/utils/playerTabs'
@@ -203,6 +205,7 @@ const ALL_SECTIONS = [
       { title: '藍圖、艦船', sub: ['bpdata', 'vehicles'], items: [
         '藍圖：遊戲藍圖資料庫，看配方、品質試算、解鎖任務；搜尋條件跟「艦長室 › 藍圖」一樣，登入後多一個「只顯示未登記」。',
         '艦船：官網價、遊戲內購買價、租船價、貨艙網格；搜尋條件跟「艦長室 › 艦隊」一樣。',
+        '艦船的「配件」按鈕：跳出視窗看這艘船出廠的預設配件，依駕駛武器、砲塔、飛彈、護盾、電源、冷卻、量子引擎、雷達、反制分區列出，同款的合併成「× 數量」，砲塔、飛彈架上裝的東西縮排列在下面；按「在配裝模擬打開」可以接著換配件。有配裝資料的船才有按鈕。',
         '艦船的「船價」按鈕：跳出視窗看 RSI 商店的美金價（真錢贊助價，不是遊戲內 aUEC）、現在有沒有在賣、上次 Warbond，以及 2021 年 11 月以來每次上架的時間軸與明細；有資料的船才有按鈕。現況來自 RSI 官方商店，歷史來自 Open Hangar（CC BY 4.0）。',
       ] },
       { title: '飛船組件', sub: 'components', items: [
@@ -215,7 +218,7 @@ const ALL_SECTIONS = [
         '藍圖欄顯示這個任務會給的藍圖中，你已登記幾張／共幾張；點一列看說明、條件、每個獎勵池的藍圖與掉落機率。',
       ] },
       { title: '勢力聲望', sub: 'missions', items: [
-        '按「勢力聲望」跳出視窗，選一個勢力，列出它的聲望階級與門檻分數，以及每個階級才能接的任務；有好幾種聲望時可以切換。',
+        '任務列表的「勢力」欄點勢力名稱，跳出那個勢力的聲望階級與門檻分數，以及每個階級才能接的任務；有好幾種聲望時可以切換。',
       ] },
       { title: '勢力', sub: 'factions', items: [
         '全部勢力一張表：合法性、聲望種類（例如紅風物流有立場與貨運兩種）、任務類型、任務數、有藍圖的任務數。',

@@ -86,6 +86,7 @@
               <ShipPriceButton :fetcher="fetcher" :price-key="v.price_key" :name="v.name_zh || v.name" />
             </td>
             <td v-else class="text-end text-nowrap pe-3 sf-stack__actions">
+              <DefaultLoadoutButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <CargoGridButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <ShipPriceButton :fetcher="fetcher" :vehicle-uuid="v._id" :name="v.name_zh || v.name" button-class="me-2" />
               <button type="button" class="btn btn-sm btn-info me-2" :aria-expanded="openId === v._id ? 'true' : 'false'"
@@ -171,6 +172,7 @@ import SfPager from '@/components/SfPager.vue'
 import SfState from '@/components/SfState.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
 import CargoGridButton from '@/components/CargoGridButton.vue'
+import DefaultLoadoutButton from '@/components/DefaultLoadoutButton.vue'
 import ShipPriceButton from '@/components/ShipPriceButton.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { fmtAuec, fmtUsd, auecPerUsd, fmtAuecPerUsd, vehicleRangeParams } from '@/utils/uexCommodity'

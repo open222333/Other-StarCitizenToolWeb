@@ -231,8 +231,11 @@
         :registered-uuids="myBlueprintUuids" @registered="onBulkRegistered" />
     </SfModal>
     <!-- 任務 › 勢力聲望：勢力的聲望階級與每一階解鎖的任務（見 components/FactionReputation.vue） -->
-    <SfModal id="faction-rep" v-model:open="factionRepOpen" title="勢力聲望" icon="bi bi-award" width="1100px">
-      <FactionReputation :fetcher="playerAuth.playerFetch" :active="activePane === 'missions' && factionRepOpen"
+    <!-- 任務列表點勢力名稱打開（repFaction＝那個勢力，直接顯示、不出現搜尋卡）；舊網址 ?open=reputation 沒指定勢力時照舊可以搜尋 -->
+    <SfModal id="faction-rep" v-model:open="factionRepOpen" :title="repFaction.name ? `勢力聲望 · ${repFaction.name}` : '勢力聲望'"
+      icon="bi bi-award" width="1100px">
+      <FactionReputation :key="repFaction.id" :faction-id="repFaction.id" :fetcher="playerAuth.playerFetch"
+        :active="activePane === 'missions' && factionRepOpen"
         :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest" @registered="onBulkRegistered" />
     </SfModal>
     <!-- 艦隊 › 編輯：數量（多艘同款）、每一艘的識別名稱與配件網址 -->
@@ -433,15 +436,11 @@
 
     <!-- ══════════ 物品 › 物品資料：瀏覽物品主檔（唯讀），自己的搜尋卡（不含地點） ══════════ -->
     <div v-show="activeTab === 'items' && activeSub === 'data'" id="panel-items-data" class="sf-split">
-      <div class="sf-toolbar">
-        <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="itemDataRef?.refresh()">
-          <i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
-      </div>
       <InventoryFilterBar :rows="[]" :show-locations="false" show-buyable :type-options="itemTypeTreeOpts"
         v-model:q="itemDataFilter.q" v-model:types="itemDataFilter.types" v-model:buyable="itemDataFilter.buyable"
         v-model:dismantlable="itemDataFilter.dismantlable" v-model:dismantle="itemDataFilter.dismantle"
         :dismantle-options="dismantleOptions" />
-      <ItemDataBrowser ref="itemDataRef" :fetcher="playerAuth.playerFetch" :filters="itemDataFilters"
+      <ItemDataBrowser :fetcher="playerAuth.playerFetch" :filters="itemDataFilters"
         :active="activeTab === 'items' && activeSub === 'data'" />
     </div>
 
@@ -713,12 +712,6 @@
     </div>
 
     <!-- ══════════ 任務（唯讀任務資料庫；藍圖欄標出自己已登記幾張，見 components/MissionBrowser.vue）══════════ -->
-    <div v-show="activePane === 'missions'" class="sf-toolbar">
-      <button aria-label="勢力聲望" aria-haspopup="dialog" class="btn btn-sm btn-success" @click="factionRepOpen = true">
-        <i class="bi bi-award me-1"></i><span class="sf-btn-text">勢力聲望</span>
-      </button>
-      <button class="btn btn-sm btn-primary" aria-label="重新整理" @click="missionBrowserRef?.reload()"><i class="bi bi-arrow-clockwise me-1"></i><span class="sf-btn-text">重新整理</span></button>
-    </div>
     <!-- 任務 › 共用搜尋：名稱即時篩；類型／勢力／星系／合法性／條件手機收進「篩選」面板。
          排版：第一列名稱＋類型＋勢力（下拉，選項多），第二列星系／合法性／條件（選項少，直接列出來） -->
     <div v-show="activePane === 'missions'" class="card scifi-card sf-search mb-3">
@@ -765,9 +758,9 @@
       </div>
     </div>
     <div v-show="activePane === 'missions'" role="tabpanel" id="panel-missions" :aria-labelledby="'tab-missions'">
-      <MissionBrowser ref="missionBrowserRef" :fetcher="playerAuth.playerFetch" :active="activePane === 'missions'"
+      <MissionBrowser :fetcher="playerAuth.playerFetch" :active="activePane === 'missions'"
         :filters="msFilter" :registered-uuids="isGuest ? null : myBlueprintUuids" :can-register="!isGuest"
-        @registered="onBulkRegistered" />
+        @registered="onBulkRegistered" @faction="openFactionRep" />
     </div>
 
     <!-- ══════════ 艦隊（我的艦隊＋登記船艦資料／JSON 匯入） ══════════ -->
@@ -1079,12 +1072,15 @@
       </button>
     </div>
   </template>
+
+  <!-- 回到頂部（右下角；往下捲超過一個畫面才出現，手機避開底部導覽列） -->
+  <SfBackToTop />
   </div>
 </template>
 
 <script setup>
 import { toast } from '@/utils/toast'
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import NewsBoard from '@/components/NewsBoard.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerAuthStore } from '@/stores/playerAuth'
@@ -1113,6 +1109,7 @@ import VehicleDataBrowser from '@/components/VehicleDataBrowser.vue'
 import { auecPerUsd, emptyVehicleRange, fmtAuec, fmtAuecPerUsd, fmtUsd, PRICE_CURRENCIES, SCU_RANGE, vehicleInRanges, vehicleRangeCount, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
 import SfRangeFilter from '@/components/SfRangeFilter.vue'
 import SfToggle from '@/components/SfToggle.vue'
+import SfBackToTop from '@/components/SfBackToTop.vue'
 import GameLogReader from '@/components/GameLogReader.vue'
 import PayoutCalculator from '@/components/PayoutCalculator.vue'
 import CargoLoader from '@/components/CargoLoader.vue'
@@ -1802,7 +1799,6 @@ function refreshWarehouse() {
   loadMyInventory()
   if (historyOpen.value) loadHistory()
 }
-const itemDataRef = ref(null)
 
 // ── 定居點（玩家自己設定，只能選可選居住地）＋全部物品轉移到定居點 ────────
 const homeOpen = ref(false)
@@ -1943,9 +1939,13 @@ function clearBpFilter() {
   if (itemsBpUnregShown.value) itemsBpUnregisteredOnly.value = false
 }
 // ── 任務分頁：共用搜尋卡（條件直接傳給 MissionBrowser）；「只看有藍圖」預設勾選 ──
-const missionBrowserRef = ref(null)
 // 任務 › 勢力聲望（?tab=missions&sub=reputation 直接展開）
 const factionRepOpen = ref(initPane === 'missions' && openOnMount === 'reputation')
+const repFaction = ref({ id: '', name: '' })
+function openFactionRep(f) {
+  repFaction.value = { id: f?.id || '', name: f?.name || '' }
+  factionRepOpen.value = true
+}
 const MS_LEGALITY_OPTIONS = [{ value: 'legal', label: '合法' }, { value: 'illegal', label: '違法' }]
 const msFilter = reactive({ q: '', scopes: [], systems: [], factions: [], legality: [], hasBlueprints: true, hasReward: false })
 const msFacets = ref({ reward_scopes: [], star_systems: [], factions: [] })
@@ -2037,11 +2037,15 @@ async function removeBlueprint(bp) {
   }
 }
 
-// sticky 分頁列的 top 偏移必須等於上方固定元素的實際高度：
+// sticky 元素的 top 偏移必須等於上方固定元素的實際高度：
 //   主分頁列 top = 工具列高度
 //   下層分頁 top = 工具列 + 主分頁列高度
-// 兩者在窄螢幕都會變（工具列會折行），所以不能寫死 —— 用 ResizeObserver 量。
+//   其他黏在頂端的東西（超寬螢幕左欄的搜尋卡、配裝模擬側欄、商品細節…）top = 三者加總（--sf-sticky-top，見 scifi-theme.css）
+// 三者在窄螢幕都會變（工具列會折行），下層分頁列還會隨分頁出現／消失，所以不能寫死 —— 用 ResizeObserver 量，
+// 換分頁時再量一次下層分頁列（它是 v-if，每次換分頁都是新的元素）。
 let stickyObserver = null
+let observedSubtabs = null
+let syncSticky = () => {}
 
 function trackStickyHeights() {
   if (typeof ResizeObserver === 'undefined') return
@@ -2049,7 +2053,7 @@ function trackStickyHeights() {
   const tabsEl = document.querySelector('.scifi-tabs')
   if (!bar) return
 
-  const sync = () => {
+  syncSticky = () => {
     const root = document.documentElement
     root.style.setProperty(
       '--sf-topbar-h', `${Math.round(bar.getBoundingClientRect().height)}px`)
@@ -2057,12 +2061,20 @@ function trackStickyHeights() {
       root.style.setProperty(
         '--sf-tabs-h', `${Math.round(tabsEl.getBoundingClientRect().height)}px`)
     }
+    const sub = document.querySelector('.scifi-subtabs')
+    root.style.setProperty('--sf-subtabs-h', `${sub ? Math.round(sub.getBoundingClientRect().height) : 0}px`)
+    if (sub !== observedSubtabs) {
+      if (observedSubtabs) stickyObserver?.unobserve(observedSubtabs)
+      if (sub) stickyObserver?.observe(sub)
+      observedSubtabs = sub
+    }
   }
-  sync()
-  stickyObserver = new ResizeObserver(sync)
+  stickyObserver = new ResizeObserver(() => syncSticky())
   stickyObserver.observe(bar)
   if (tabsEl) stickyObserver.observe(tabsEl)
+  syncSticky()
 }
+watch([activeTab, activeSub], () => nextTick(() => syncSticky()))
 
 // ── 查詢持有資訊、艦隊、資料庫共用的選項（藍圖類型、船艦類型／尺寸／廠商／角色）──
 const blueprintTypeOptions = computed(() => blueprintTypeOptionsOf(blueprintOutputTypes.value))

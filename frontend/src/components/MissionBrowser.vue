@@ -57,7 +57,13 @@
                       </span>
                     </td>
                     <td data-label="類型">{{ m.reward_scope ? typeLabel(m.reward_scope) : '—' }}</td>
-                    <td class="d-none d-md-table-cell" data-label="勢力">{{ factionLabel(m) }}</td>
+                    <!-- 勢力：點名稱跳出那個勢力的聲望階級（MyPlayerView 的「勢力聲望」視窗） -->
+                    <td class="d-none d-md-table-cell" data-label="勢力">
+                      <button v-if="m.faction_uuid" type="button" class="btn btn-sm btn-info ms-faction"
+                        :aria-label="`${factionLabel(m)} 勢力聲望`" @click.stop="$emit('faction', { id: m.faction_uuid, name: factionLabel(m) })"
+                        @keydown.stop><i class="bi bi-award me-1" aria-hidden="true"></i>{{ factionLabel(m) }}</button>
+                      <template v-else>{{ factionLabel(m) }}</template>
+                    </td>
                     <td class="d-none d-lg-table-cell" data-label="星系">{{ (m.star_systems || []).map(systemLabel).join('、') || '—' }}</td>
                     <td class="text-end text-nowrap" data-label="報酬">{{ rewardLabel(m) }}</td>
                     <td class="text-end" data-label="聲望">
@@ -111,7 +117,7 @@ import { missionPool, registeredInPool } from '@/utils/missionBlueprints'
 import { loadTranslations, translate } from '@/utils/translations'
 import { scrollToListTop } from '@/utils/scrollAnchor'
 
-defineEmits(['registered'])
+defineEmits(['registered', 'faction'])
 const props = defineProps({
   /** 帶身分的 fetch（玩家頁傳 playerFetch），回傳 Response 或 null */
   fetcher: { type: Function, required: true },
@@ -237,6 +243,7 @@ defineExpose({ reload: () => reload(offset.value) })
 </script>
 
 <style scoped>
+.ms-faction { text-align: left; white-space: normal; }
 .ms-row { cursor: pointer; }
 .ms-detail { background: var(--sf-inset); }
 .ms-count { color: var(--sf-text-strong); }

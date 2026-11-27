@@ -325,7 +325,7 @@ function closeArticle() {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 @media (min-width: 1200px) {
   .nb-read { grid-template-columns: minmax(0, 1fr) 20rem; max-width: 76rem; }
-  .nb-related { grid-template-columns: minmax(0, 1fr); position: sticky; top: 5rem; align-self: start; }
+  .nb-related { grid-template-columns: minmax(0, 1fr); position: sticky; top: calc(var(--sf-sticky-top) + .75rem); align-self: start; }
   .nb-article__body { padding: 1.75rem 2.25rem; }
 }
 @media (max-width: 767.98px) { .nb-related { grid-template-columns: minmax(0, 1fr); } }

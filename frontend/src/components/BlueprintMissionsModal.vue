@@ -25,6 +25,7 @@
         <div class="small text-muted mb-2">{{ heading }}</div>
         <SfState :loading="loading" :error="failed ? '讀取失敗。' : ''" :empty="!missions.length" empty-text="沒有任務資料。"
           @retry="fetchMissions">
+        <div class="bpm-list" :class="{ 'bpm-list--multi': missions.length > 1 }">
         <div v-for="m in missions" :key="m._id" class="bpm-mission">
           <div class="d-flex justify-content-between flex-wrap gap-1">
             <div class="fw-semibold">
@@ -62,6 +63,7 @@
             <summary class="small text-muted">任務說明</summary>
             <div class="small mt-1 text-muted bpm-desc">{{ m.description_zh || m.description }}</div>
           </details>
+        </div>
         </div>
         </SfState>
       </div>
@@ -182,19 +184,32 @@ defineExpose({ open, showMissions, close })
 .bpm-backdrop {
   position: fixed; inset: 0; z-index: 1080;
   display: flex; align-items: flex-start; justify-content: center;
-  padding: 4rem 1rem 1rem;
+  padding: 2rem 1rem 1rem;
   background: rgba(2, 6, 15, .72);
 }
-.bpm-dialog { width: 100%; max-width: 640px; outline: none; }
+/* 版面跟 SfModal 一致：視窗高度不超過畫面、內容區自己捲；寬螢幕放寬、任務兩欄；手機全螢幕 */
+.bpm-dialog {
+  width: 100%; max-width: min(1000px, 100%); max-height: calc(100dvh - 3rem);
+  display: flex; flex-direction: column; outline: none;
+}
 .bpm-head {
-  display: flex; justify-content: space-between; align-items: center; gap: .5rem;
+  flex: none; display: flex; justify-content: space-between; align-items: center; gap: .5rem;
   padding: .8rem 1rem; border-bottom: 1px solid var(--sf-border);
 }
 .min-w-0 { min-width: 0; }
-.bpm-body { padding: 1rem; max-height: calc(100dvh - 10rem); overflow-y: auto; }
+.bpm-body { flex: 1 1 auto; min-height: 0; padding: 1rem; overflow-y: auto; }
+.bpm-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: .6rem; align-items: start; }
+@media (min-width: 992px) {
+  .bpm-list--multi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 767.98px) {
+  .bpm-backdrop { padding: 0; }
+  .bpm-dialog { max-width: none; max-height: 100dvh; height: 100dvh; border-radius: 0; }
+  .bpm-body { padding: .75rem; }
+}
 .bpm-mission {
-  border: 1px solid var(--sf-border); border-radius: 8px;
-  padding: .6rem .75rem; margin-bottom: .6rem; background: var(--sf-inset);
+  min-width: 0; border: 1px solid var(--sf-border); border-radius: 8px;
+  padding: .6rem .75rem; background: var(--sf-inset); overflow-wrap: anywhere;
 }
 .bpm-chance { color: var(--sf-accent-2-text, var(--sf-accent-2)); font-weight: 600; }
 .bpm-desc { white-space: pre-line; }

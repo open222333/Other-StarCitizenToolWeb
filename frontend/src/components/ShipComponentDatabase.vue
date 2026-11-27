@@ -13,17 +13,16 @@
         <template v-if="isPhone">
           <label class="form-label small fw-semibold mb-1" for="scd-type">種類</label>
           <select id="scd-type" v-model="type" class="form-select mb-2">
-            <option v-for="t in types" :key="t.type" :value="t.type">{{ typeName(t.type) }}（{{ t.count }}）</option>
+            <option v-for="t in types" :key="t.type" :value="t.type">{{ typeName(t.type) }}</option>
           </select>
         </template>
-        <span v-if="!isPhone" id="scd-type-l" class="form-label small fw-semibold mb-1 d-block">種類</span>
-        <!-- 種類：一格一張小卡（圖示＋名稱＋數量），選中的實心強調色 -->
+        <span v-if="!isPhone" id="scd-type-l" class="form-label small fw-semibold mb-1 d-block text-center">種類</span>
+        <!-- 種類：一格一張小卡（圖示＋名稱，置中、寬度照內容），選中的實心強調色 -->
         <div v-if="!isPhone" class="scd-types mb-3" role="group" aria-labelledby="scd-type-l">
           <button v-for="t in types" :key="t.type" type="button" class="scd-type"
             :class="{ active: type === t.type }" :aria-pressed="type === t.type ? 'true' : 'false'" @click="type = t.type">
             <i :class="typeIcon(t.type)" class="scd-type__icon" aria-hidden="true"></i>
             <span class="scd-type__name">{{ typeName(t.type) }}</span>
-            <span class="scd-type__n">{{ t.count }}</span>
           </button>
         </div>
         <div class="row g-2 align-items-end">
@@ -50,7 +49,7 @@
               <div class="sf-pills" role="group" :aria-labelledby="`scd-${g.key}-l`">
                 <button v-for="o in g.options" :key="o.value" type="button" class="sf-pill scd-opt"
                   :class="[`scd-opt--${g.key}`, { active: g.model.value.includes(o.value) }]" :aria-pressed="g.model.value.includes(o.value) ? 'true' : 'false'"
-                  @click="toggleOpt(g.model, o.value)">{{ o.label }}<span class="scd-count">{{ o.count }}</span></button>
+                  @click="toggleOpt(g.model, o.value)">{{ o.label }}</button>
               </div>
             </div>
           </SfFilterSheet>
@@ -207,7 +206,7 @@ watch(type, (t) => {
   loadItems(t)
 })
 
-// 選項：目前種類的組件實際有的值（附數量），數字照大小、文字照字母排
+// 選項：目前種類的組件實際有的值，數字照大小、文字照字母排
 function option(values, label) {
   const counts = new Map()
   for (const v of values) if (v != null && v !== '') counts.set(v, (counts.get(v) || 0) + 1)
@@ -266,12 +265,11 @@ const sortOptions = computed(() => cols.value.map(c => ({ field: c.key, label: c
 </script>
 
 <style scoped>
-.scd-count { margin-left: .35rem; opacity: .75; }
-/* 種類小卡：自動排滿一列，圖示＋名稱＋數量膠囊；hover 微亮、選中實心強調色加光暈 */
-.scd-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: .5rem; }
+/* 種類小卡：寬度照內容、整排置中，圖示＋名稱；hover 微亮、選中實心強調色加光暈 */
+.scd-types { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; }
 .scd-type {
-  display: flex; align-items: center; gap: .55rem; min-width: 0; padding: .55rem .75rem; text-align: left;
-  border: 1px solid rgba(var(--sf-accent-rgb), .35); border-radius: .65rem;
+  display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .7rem .3rem .35rem; text-align: left;
+  border: 1px solid rgba(var(--sf-accent-rgb), .35); border-radius: .55rem;
   background: linear-gradient(135deg, rgba(var(--sf-accent-rgb), .1), rgba(var(--sf-accent-rgb), .02));
   color: var(--sf-text-strong); font-weight: 600; font-size: var(--sf-fs-sm);
   transition: border-color .15s, background .15s, box-shadow .15s, transform .15s;
@@ -285,21 +283,18 @@ const sortOptions = computed(() => cols.value.map(c => ({ field: c.key, label: c
   box-shadow: 0 0 0 1px rgb(var(--sf-accent-rgb)), 0 .25rem .9rem rgba(var(--sf-accent-rgb), .4);
 }
 .scd-type__icon {
-  flex: none; display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: .5rem;
-  background: rgba(var(--sf-accent-rgb), .2); color: rgb(var(--sf-accent-rgb)); font-size: 1rem;
+  flex: none; display: grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: .4rem;
+  background: rgba(var(--sf-accent-rgb), .2); color: rgb(var(--sf-accent-rgb)); font-size: .8rem;
 }
 .scd-type.active .scd-type__icon { background: rgba(255, 255, 255, .18); color: var(--sf-text-strong); }
-.scd-type__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scd-type__n {
-  flex: none; padding: .05rem .5rem; border-radius: 999px; font-size: var(--sf-fs-xs); font-weight: 700;
-  background: rgba(var(--sf-accent-rgb), .18); color: var(--sf-text);
-}
-.scd-type.active .scd-type__n { background: rgba(0, 0, 0, .25); color: var(--sf-text-strong); }
+.scd-type__name { white-space: nowrap; }
+/* 平板觸控：小卡至少 44px 高 */
+@media (pointer: coarse) { .scd-type { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .scd-type { transition: none; } .scd-type:hover:not(.active) { transform: none; } }
 /* 尺寸／等級／分類的選項：全站膠囊樣式（scifi-theme.css 的 .sf-pill），每組換一個顏色（尺寸＝主強調色、等級＝黃、分類＝綠） */
 .scd-opt--grade { --sf-accent-rgb: var(--bs-warning-rgb); }
 .scd-opt--class { --sf-accent-rgb: var(--bs-success-rgb); }
-.scd-opt .scd-count { margin-left: 0; opacity: .85; }
+
 /* 購買地點：比一般按鈕更醒目的綠色（實心底、粗體） */
 .scifi-page .btn.scd-buy {
   font-weight: 700; color: var(--sf-text-strong);
