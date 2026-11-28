@@ -11,11 +11,9 @@
   <div class="ssf">
     <div class="row g-2 align-items-end">
       <div class="col-12 col-md-6">
-        <label class="form-label small fw-semibold mb-1" :for="`${id}-system`">星系</label>
-        <select :id="`${id}-system`" v-model="system" class="form-select form-select-sm">
-          <option value="">選擇星系</option>
-          <option v-for="s in systems" :key="s.key" :value="s.key">{{ s.label }}</option>
-        </select>
+        <span class="form-label small fw-semibold mb-1 d-block">星系</span>
+        <!-- 星系只有幾個：膠囊單選（再點一次取消） -->
+        <SfChoice :id="`${id}-system`" v-model="system" label="星系" :options="systems.map(x => ({ value: x.key, label: x.label }))" />
       </div>
       <div class="col-12 col-md-6">
         <label class="form-label small fw-semibold mb-1" :for="`${id}-group`">行星</label>
@@ -45,6 +43,7 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
 import SfToggle from '@/components/SfToggle.vue'
 import { computed, ref, watch } from 'vue'
 

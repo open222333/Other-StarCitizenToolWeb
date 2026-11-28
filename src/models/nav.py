@@ -139,6 +139,8 @@ class World:
                 'xl_hangar': 'XL' in (r.get('hangar_sizes') or []),
                 # 有對接口（星圖設施 Docking，或 UEX 交易終端的 has_docking_port）
                 'docking': bool(r.get('has_docking') or r.get('uex_has_docking_port')),
+                # 貨梯（貨物從機庫／貨運電梯進出）：UEX 交易終端的 has_freight_elevator，或星圖設施有商品交易
+                'freight_elevator': bool(r.get('uex_has_freight_elevator') or r.get('has_commodity_trading')),
             }
         # 還沒有任何外部貨運資料（舊資料、還沒同步）時，外掛貨櫃退回「不能停地表」的判斷
         self.has_dock_data = any(n['loading_dock'] for n in self.nodes.values())
@@ -240,7 +242,7 @@ def world(visible_only: bool = False) -> World:
               'system_name_zh': 1, 'path_zh': 1, 'pos': 1, 'qt_valid': 1, 'quantum_travel': 1,
               'size': 1, 'obstruction_radius': 1, 'jump_links': 1, 'parent_uuid': 1, 'is_named': 1,
               'has_vehicle_services': 1, 'has_loading_dock': 1, 'uex_has_loading_dock': 1, 'hangar_sizes': 1,
-              'has_docking': 1, 'uex_has_docking_port': 1}
+              'has_docking': 1, 'uex_has_docking_port': 1, 'uex_has_freight_elevator': 1, 'has_commodity_trading': 1}
     w = World(list(get_db()['starmap_master'].find(filt, fields)))
     with _lock:
         _cache[key] = (time.time(), w)
@@ -319,7 +321,7 @@ def node_brief(n: dict, pos: bool = False) -> dict:
             'group': n.get('group'), 'group_name': n.get('group_name'), 'group_name_zh': n.get('group_name_zh'),
             'group_type': n.get('group_type'), 'services': bool(n.get('services')),
             'loading_dock': bool(n.get('loading_dock')), 'xl_hangar': bool(n.get('xl_hangar')),
-            'docking': bool(n.get('docking')),
+            'docking': bool(n.get('docking')), 'freight_elevator': bool(n.get('freight_elevator')),
             'jump': bool(n.get('jump_links'))}
     if pos:
         out['p'] = [round(v, 1) for v in n['p']]

@@ -1,12 +1,13 @@
 <!--
   航線規劃的站點欄（起點、途經站點、終點同一種顯示）：選好地點後收成一行「名稱＋所屬星系／行星」，
-  點一下（或鉛筆）回到地點選擇器（PlacePicker.vue）改；還沒選地點時直接是選擇器。v-model＝{ id, text }。
+  後面標貨運設施（外部貨運、貨梯，PlaceCargoTags）；點一下（或鉛筆）回到地點選擇器（PlacePicker.vue）改；還沒選地點時直接是選擇器。v-model＝{ id, text }。
 -->
 <template>
   <div v-if="place && !editing" class="ps-show" role="button" tabindex="0" :aria-label="`${label}：${placeLabel(place)}，按一下更改`"
     @click="edit" @keydown.enter.prevent="edit" @keydown.space.prevent="edit">
     <span class="fw-semibold">{{ placeLabel(place) }}</span>
     <span class="ps-path">{{ placePath(place) }}</span>
+    <PlaceCargoTags :place="place" />
     <i class="bi bi-pencil ps-edit ms-auto" aria-hidden="true"></i>
   </div>
   <PlacePicker v-else :id="id" :label="label" :places="places" :model-value="modelValue"
@@ -15,6 +16,7 @@
 
 <script setup>
 import { computed, nextTick, ref } from 'vue'
+import PlaceCargoTags from '@/components/PlaceCargoTags.vue'
 import PlacePicker from '@/components/PlacePicker.vue'
 import { placeLabel, placePath } from '@/utils/navFormat'
 

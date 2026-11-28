@@ -107,6 +107,7 @@
                 <div v-if="s.auto && placeOf(s)" class="rp-auto">
                   <span class="fw-semibold">{{ placeLabel(placeOf(s)) }}</span>
                   <span class="rp-path">{{ placePath(placeOf(s)) }}</span>
+                  <PlaceCargoTags :place="placeOf(s)" />
                 </div>
                 <PlaceSlot v-else :id="`rp-stop-${s.key}`" :label="`站點 ${i + 1} `" :places="base.places.value" :model-value="s"
                   @update:model-value="v => Object.assign(s, v)" />
@@ -132,6 +133,7 @@
                 <div v-else-if="endMode === 'start'" class="rp-auto">
                   <span class="fw-semibold">{{ placeOf(start) ? placeLabel(placeOf(start)) : '（還沒選起點）' }}</span>
                   <span v-if="placeOf(start)" class="rp-path">{{ placePath(placeOf(start)) }}</span>
+                  <PlaceCargoTags :place="placeOf(start)" />
                 </div>
                 <div v-else class="small text-muted">最後一個途經站點就是終點</div>
               </div>
@@ -277,6 +279,7 @@
 </template>
 
 <script setup>
+import PlaceCargoTags from '@/components/PlaceCargoTags.vue'
 import SfChoice from '@/components/SfChoice.vue'
 import SfToggle from '@/components/SfToggle.vue'
 import { computed, reactive, ref, watch } from 'vue'

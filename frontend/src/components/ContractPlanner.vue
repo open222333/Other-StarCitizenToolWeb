@@ -174,6 +174,7 @@
                       <template v-if="placeOfId(pt.place.id)">
                         <span class="fw-semibold">{{ placeLabel(placeOfId(pt.place.id)) }}</span>
                         <span class="cp-path">{{ placePath(placeOfId(pt.place.id)) }}</span>
+                        <PlaceCargoTags :place="placeOfId(pt.place.id)" />
                       </template>
                       <template v-else>{{ pt.place.text || `共同送貨點 ${pi + 1}` }}</template>
                     </div>
@@ -330,6 +331,7 @@ import SfToggle from '@/components/SfToggle.vue'
 import { scrollBehavior } from '@/utils/motion'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
+import PlaceCargoTags from '@/components/PlaceCargoTags.vue'
 import PlaceSlot from '@/components/PlaceSlot.vue'
 import RouteLegsTable from '@/components/RouteLegsTable.vue'
 import { SIZES as CRATE_SIZES_ASC } from '@/utils/cargoPack'
