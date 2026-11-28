@@ -6,6 +6,7 @@
     - GET /mining/locations：各地點（星系、類型）的礦床群組（船載／地面載具／手持／採集）與各礦床的佔比
   兩份合起來：礦物 → 有哪些地點的哪一種採集方式會出現含有它的礦床。
   遊戲資料有礦床、但沒有放到任何地點的礦物（例如 Carinite）也列出來，標「遊戲資料未標出產地」（有篩選地點／方式時不列）。
+  focus：只看一種礦物（跳出視窗用，例如維克洛需要的礦物），不顯示搜尋卡、第一筆直接展開。
   取得方式：要先完成特殊行動、任務、活動才挖得到的礦物，後台手動填寫（GET /mining/sources，src/models/mineral_source.py），
   列表標出來、展開「詳細」最上面顯示說明；「採集方式」篩選多一個「特殊取得」。
   展開「詳細」另外列「用在哪些藍圖」：GET /blueprint/master/by-material（名稱去掉 (Ore)／(Raw) 後綴比對）。
@@ -15,7 +16,7 @@
 <template>
   <!-- sf-split：超寬螢幕搜尋卡放左邊、列表放右邊（跟資料庫其他子分頁一致，見 scifi-theme.css） -->
   <div class="sf-split">
-    <div :class="[cardClass, 'sf-search', 'mb-3']">
+    <div v-if="!focus" :class="[cardClass, 'sf-search', 'mb-3']">
       <div class="card-body py-3">
         <div class="row g-2 g-md-3 align-items-start">
           <div class="col-12 col-md-3">
@@ -256,6 +257,8 @@ const props = defineProps({
   cardClass: { type: String, default: 'card' },
   /** 站內「到礦物頁找這個」帶進來的名稱（MyPlayerView 的 ?find=） */
   find: { type: Object, default: null },
+  /** 只看這一種礦物（跳出視窗用，例如維克洛需要的礦物）：不顯示搜尋卡、載入後直接展開「詳細」 */
+  focus: { type: String, default: '' },
 })
 
 /** 地點的礦床群組 → 採集方式（其餘群組：打撈、殘骸、化石、戰利品箱不列） */
@@ -443,6 +446,11 @@ function toggle(m) {
   bpAll.value = false
   if (openKey.value) { loadBlueprints(m); loadMissions(m) }
 }
+// 只看一種礦物（focus）：名稱帶進搜尋，第一筆自動展開
+watch(() => props.focus, (v) => { if (v) { query.value = v; openKey.value = '' } }, { immediate: true })
+watch(rows, (list) => {
+  if (props.focus && !openKey.value && list.length) toggle(list[0])
+})
 
 // ── 用在哪些藍圖（展開時才抓，抓過的記著） ──
 const bpCache = reactive({})

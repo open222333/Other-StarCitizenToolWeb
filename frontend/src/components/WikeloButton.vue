@@ -21,7 +21,7 @@
                 {{ t.title_zh || t.title }}
                 <span v-if="t.title_zh" class="sf-name__en">{{ t.title }}</span>
               </h5>
-              <WikeloTradePanel :trade="t" :highlight="uuids" @leave="open = false" />
+              <WikeloTradePanel :trade="t" :highlight="uuids" />
             </article>
           </section>
           <SfState v-if="!data.reward.length && !data.requirement.length" empty empty-text="沒有相關的維克洛交易" />

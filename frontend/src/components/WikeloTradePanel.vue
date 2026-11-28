@@ -1,9 +1,9 @@
 <!--
   一筆維克洛交易的內容（資料庫 › 維克洛的「需要」視窗、物品／藍圖／艦船的「維克洛」視窗共用）：
   需要的物品表（數量、登入時「我有」、取得方式按鈕）＋獎勵＋前置條件。
-  取得方式：購買地點＝UEX 在表格裡展開；物品＝物品詳細、藍圖＝配方與品質試算，都再跳出一層視窗（Teleport 到 body）；
-  礦物＝跳到礦物分頁找；維克洛換＝這東西也是別的維克洛交易的獎勵（例如維克洛人情），跳到維克洛分頁搜尋它。
-  跳到別的分頁前 emit('leave')，外層把自己的視窗關掉。
+  取得方式的按鈕一律再跳出一層視窗顯示那筆資料（Teleport 到 body，疊在上面，關掉回到原本的視窗）：
+    購買地點＝UEX 哪裡買得到、物品＝物品詳細、藍圖＝配方與品質試算、礦物＝礦物資料庫只看這一種（MineralDatabase focus）、
+    維克洛換＝換得到它的其他維克洛交易（同一個面板，可以一層層點下去）。
   highlight＝要標出來的物品 uuid（從某個物品的「維克洛」按鈕打開時，標出就是它的那一行）。
 -->
 <template>
@@ -32,19 +32,12 @@
               </td>
               <td class="pe-2 sf-stack__actions" data-label="取得方式">
                 <div class="wtp-acts">
-                  <button v-if="r.buyable" type="button" class="btn btn-sm btn-success"
-                    :aria-expanded="buyOpen === r.item_uuid ? 'true' : 'false'"
-                    @click="buyOpen = buyOpen === r.item_uuid ? '' : r.item_uuid">購買地點</button>
+                  <button v-if="r.buyable" type="button" class="btn btn-sm btn-success" aria-haspopup="dialog" @click="openBuy(r)">購買地點</button>
                   <button v-if="r.source === 'item'" type="button" class="btn btn-sm btn-info" aria-haspopup="dialog" @click="openItem(r)">物品</button>
                   <button v-if="r.blueprint" type="button" class="btn btn-sm btn-info" aria-haspopup="dialog" @click="openBlueprint(r)">藍圖</button>
-                  <button v-if="isWikeloReward(r)" type="button" class="btn btn-sm btn-info" @click="go('wikelo', r.name_zh || r.name)">維克洛換</button>
-                  <button v-if="r.source === 'commodity'" type="button" class="btn btn-sm btn-info" @click="go('minerals', r.master_name || r.name)">礦物</button>
+                  <button v-if="isWikeloReward(r)" type="button" class="btn btn-sm btn-info" aria-haspopup="dialog" @click="openExchange(r)">維克洛換</button>
+                  <button v-if="r.source === 'commodity'" type="button" class="btn btn-sm btn-info" aria-haspopup="dialog" @click="openMineral(r)">礦物</button>
                 </div>
-              </td>
-            </tr>
-            <tr v-if="buyOpen && buyOpen === r.item_uuid">
-              <td :colspan="hasInventory ? 4 : 3" class="wtp-buy">
-                <ItemPriceDetail :key="r.item_uuid" :item-uuid="r.item_uuid" :fetcher="fetcher" player buy-only />
               </td>
             </tr>
           </template>
@@ -80,6 +73,22 @@
             <ItemDetail v-if="itemRow && itemOpen" :key="itemRow._id" :item="itemRow" :fetcher="fetcher" player buy-only />
           </SfState>
         </SfModal>
+        <SfModal :id="`${uid}-mineral`" v-model:open="mineralOpen" :title="mineralName ? `${mineralName} · 哪裡挖得到` : '礦物'" width="1100px">
+          <MineralDatabase v-if="mineralOpen" :key="mineralQuery" :focus="mineralQuery" :fetcher="fetcher" card-class="card scifi-card" />
+        </SfModal>
+        <SfModal :id="`${uid}-buy`" v-model:open="buyOpen" :title="buyRow ? `${buyRow.name_zh || buyRow.name} · 購買地點` : '購買地點'" width="900px">
+          <ItemPriceDetail v-if="buyOpen && buyRow" :key="buyRow.item_uuid" :item-uuid="buyRow.item_uuid" :fetcher="fetcher" player buy-only />
+        </SfModal>
+        <!-- 維克洛換：換得到這個物品的其他維克洛交易（同一個面板，可以一層層點下去） -->
+        <SfModal :id="`${uid}-ex`" v-model:open="exOpen" :title="exRow ? `${exRow.name_zh || exRow.name} · 跟維克洛換` : '跟維克洛換'" width="1000px">
+          <SfState :loading="exLoading" :error="exError" :empty="!exLoading && !exError && !exTrades.length"
+            empty-text="沒有換得到它的維克洛交易" @retry="loadExchange">
+            <article v-for="t in exTrades" :key="t._id" class="wtp-trade">
+              <h5 class="wtp-title">{{ t.title_zh || t.title }}<span v-if="t.title_zh" class="sf-name__en">{{ t.title }}</span></h5>
+              <WikeloTradePanel :trade="t" :fetcher="fetcher" :inventory="inventory" :highlight="[exRow.item_uuid]" />
+            </article>
+          </SfState>
+        </SfModal>
         <BlueprintDetailModal ref="bpDetailRef" :fetcher="fetcher" />
       </div>
     </Teleport>
@@ -87,8 +96,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import BlueprintDetailModal from '@/components/BlueprintDetailModal.vue'
 import ItemDetail from '@/components/ItemDetail.vue'
 import ItemPriceDetail from '@/components/ItemPriceDetail.vue'
@@ -97,6 +105,8 @@ import SfState from '@/components/SfState.vue'
 import { getJson } from '@/utils/getJson'
 import { KIND_LABEL, loadWikeloIndex, rewardKind, wikeloAmount, wikeloIndex } from '@/utils/wikelo'
 
+const MineralDatabase = defineAsyncComponent(() => import('@/components/MineralDatabase.vue'))
+
 const props = defineProps({
   trade: { type: Object, required: true },
   fetcher: { type: Function, default: (...a) => fetch(...a) },
@@ -104,8 +114,6 @@ const props = defineProps({
   inventory: { type: Array, default: null },
   highlight: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['leave'])
-const router = useRouter()
 const uid = `wtp-${Math.random().toString(36).slice(2, 8)}`
 onMounted(() => { loadWikeloIndex(props.fetcher) })
 
@@ -124,11 +132,31 @@ const stock = computed(() => {
 const needOf = r => (r.amount !== null && r.amount !== undefined ? r.amount : null)
 const haveOf = r => stock.value[r.item_uuid] || 0
 
-const buyOpen = ref('')
+// 購買地點（UEX）
+const buyOpen = ref(false)
+const buyRow = ref(null)
+function openBuy(r) { buyRow.value = r; buyOpen.value = true }
+
+// 維克洛換：GET /mission/wikelo/by-item 的 reward（換得到它的交易）
 const isWikeloReward = r => !!r.item_uuid && (wikeloIndex.uuids[r.item_uuid]?.reward || 0) > 0
-function go(sub, name) {
-  emit('leave')
-  router.push({ query: { tab: 'items', sub, find: name } })
+const exOpen = ref(false)
+const exRow = ref(null)
+const exTrades = ref([])
+const exLoading = ref(false)
+const exError = ref('')
+async function loadExchange() {
+  exLoading.value = true
+  exError.value = ''
+  const res = await getJson(props.fetcher, `/mission/wikelo/by-item?uuid=${encodeURIComponent(exRow.value.item_uuid)}`, undefined, '讀取維克洛交易失敗')
+  exLoading.value = false
+  if (!res.ok) { exError.value = res.message; return }
+  exTrades.value = res.data?.reward || []
+}
+function openExchange(r) {
+  exRow.value = r
+  exTrades.value = []
+  exOpen.value = true
+  loadExchange()
 }
 
 // 物品詳細（GET /item/<uuid>，跟資料庫 › 物品展開的一樣）
@@ -151,6 +179,15 @@ function openItem(r) {
   itemOpen.value = true
   loadItem()
 }
+// 礦物：跳出礦物資料庫只看這一種（哪裡挖得到、用在哪些藍圖／任務）
+const mineralOpen = ref(false)
+const mineralQuery = ref('')
+const mineralName = ref('')
+function openMineral(r) {
+  mineralQuery.value = r.master_name || r.name
+  mineralName.value = r.name_zh || r.name
+  mineralOpen.value = true
+}
 const bpDetailRef = ref(null)
 const openBlueprint = r => bpDetailRef.value?.open({ uuid: r.blueprint, name: r.master_name || r.name, name_zh: r.name_zh })
 </script>
@@ -159,7 +196,10 @@ const openBlueprint = r => bpDetailRef.value?.open({ uuid: r.blueprint, name: r.
 .wtp-label { margin: 0 0 .3rem; color: var(--sf-text-muted); font-size: var(--sf-fs-sm); font-weight: 700; }
 .wtp-amount { font-weight: 700; color: var(--sf-accent-2-text, var(--sf-accent-2)); white-space: nowrap; }
 .wtp-acts { display: flex; flex-wrap: wrap; gap: .3rem; }
-.wtp-buy { background: var(--sf-inset); }
+.wtp-trade { padding: .75rem; border: 1px solid var(--sf-border); border-radius: .5rem; background: var(--sf-inset); }
+.wtp-trade + .wtp-trade { margin-top: .75rem; }
+.wtp-title { margin: 0 0 .6rem; font-size: var(--sf-fs-md); font-weight: 700; color: var(--sf-text-strong); }
+.wtp-title .sf-name__en { display: block; font-size: var(--sf-fs-sm); font-weight: 400; }
 .wtp-hit > td, .wtp-reward.wtp-hit { background: rgba(var(--sf-accent-rgb), .16); }
 .wtp-reward { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; border-radius: .35rem; padding: .1rem .2rem; }
 .wtp-reward + .wtp-reward { margin-top: .25rem; }

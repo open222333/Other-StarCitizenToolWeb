@@ -80,8 +80,7 @@
 
     <!-- 需要的物品：數量、我有幾個、取得方式；下面是獎勵與前置條件（WikeloTradePanel，跟物品／藍圖／艦船的維克洛視窗共用） -->
     <SfModal id="wk-trade" v-model:open="tradeOpen" :title="trade ? (trade.title_zh || trade.title) : '維克洛交易'" width="1000px">
-      <WikeloTradePanel v-if="trade && tradeOpen" :key="trade._id" :trade="trade" :fetcher="fetcher" :inventory="inventory"
-        @leave="tradeOpen = false" />
+      <WikeloTradePanel v-if="trade && tradeOpen" :key="trade._id" :trade="trade" :fetcher="fetcher" :inventory="inventory" />
     </SfModal>
   </div>
 </template>
