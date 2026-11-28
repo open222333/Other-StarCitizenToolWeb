@@ -71,8 +71,7 @@ Star Citizen 公會工具網站：玩家頁（艦長室、資料庫、規劃工�
   - 分頁：`SfPager`（`total`／`offset`／`limit`／`loading`，`@page(newOffset)`；後台頁加 `admin` 變 outline 樣式）。
   - 標籤膠囊 `.sf-chip`（`--warn` 紅、`--ok` 綠、`--todo` 虛線、`--accent` 強調色；裡面的小字 `.sf-chip__state`、
     小按鈕 `btn btn-sm btn-* sf-chip__btn`）；正負數值文字 `.sf-good`／`.sf-bad`；「標籤：值」清單 `<dl class="sf-facts">`。
-  - 有文字的勾選框與開關（「只看買得到」「只看我建立的」「結果用跳出視窗」這類）一律在 `.form-check` 外層加 `.sf-check-btn`
-    （不用 `.form-switch`、不加 `role="switch"`），顯示成切換按鈕（未選暗底空方框、已選主強調色實心＋打勾）；
+  - 篩選的選項、開關、級距一律用膠囊 `.sf-pill`（不用勾選框、不用 `.form-switch`；詳見下面「搜尋欄位與列表的通用格式」）。
     只有列表每一列前面沒有文字的「加入規劃」開關（航線站點、合約）維持 `.form-switch`。
   - 自訂下拉／浮出面板用 `.sf-popover`（項目 `.sf-popover__item`，作用中加 `.is-active`）。會同時用在後台的共用元件
     （AutocompleteField、MultiSelectFilter）底色／邊框／文字改用 `--bs-body-bg`／`--bs-border-color`／
@@ -102,6 +101,54 @@ Star Citizen 公會工具網站：玩家頁（艦長室、資料庫、規劃工�
   公開分頁用到的後端端點掛 `@public_api`（唯讀、不含個人或公會私有資料，會耗運算的另加 `@limiter.limit`），
   並在 `tests/test_permissions.py` 的 `UNGUARDED_ALLOWLIST` 註明。公開分頁裡的「登記」類按鈕只在登入時顯示。
 - 畫面上的範例值用通用的假資料（例如分享代碼寫 `abcd1234`），不要用真實的代碼或帳號。
+
+## 搜尋欄位與列表的通用格式（玩家頁與後台共用，新頁面照這裡做）
+
+### 區塊外觀
+- **搜尋卡**：玩家頁 `<div class="card scifi-card sf-search">`（只有一排欄位的加 `sf-search--inline`）；
+  後台用 `AdminSearchCard`＋`AdminSearchField`（見下）。搜尋卡一個分頁只有一張，條件同時套用到下面的列表與展開區塊。
+- **半透明卡片**：玩家頁的 `.scifi-card`（搜尋卡、列表卡）是半透明的，透出背景星雲（`scifi-theme.css`「搜尋卡、列表卡半透明」）。
+  - 搜尋卡多疊一層強調色淡底，比列表卡亮一階。
+  - 跳出視窗（`.sfm-dialog`、自己做的 `role="dialog"`）與底部面板維持不透明，不要拿掉那兩個 `:not()`。
+  - 卡片不要加 `backdrop-filter`：它會變成 `position: fixed` 子元素的定位基準，手機上的底部面板會被關在卡片裡。
+  - 不要在各頁另外寫卡片底色；亮底模式（`data-sf-mode='light'`）也在同一段處理。
+- **列表卡**：`card scifi-card` → `card-body p-0` → `overflow-x: auto` → `table table-hover align-middle mb-0 sf-stack`，表頭 `table-light`，
+  第一欄 `ps-3`、最後一欄 `pe-3`；名稱欄用 `.sf-name`（中文 `fw-semibold`＋英文 `.sf-name__en` 換到第二行），
+  每個 td 帶 `data-label`（手機變卡片）；排序用 `SortTh`（手機另放 `SortSelect`）、狀態 `SfState`、分頁 `SfPager`。
+- **黏在頂端的東西**（超寬螢幕左欄搜尋卡、配裝側欄、品質面板…）的 `top` 一律用 `var(--sf-sticky-top)`
+  （工具列＋主分頁列＋下層分頁列，`MyPlayerView` 的 `trackStickyHeights` 量好寫進來）再加一點間距，不要寫死高度。
+  比畫面高的黏頂區塊加 `max-height: calc(100dvh - var(--sf-sticky-top) - …)` 與 `overflow-y: auto`。
+- **回到頂部**：長頁面放 `<SfBackToTop />`（右下角，捲超過約一個畫面高才出現，手機避開底部導覽列）。
+- **跳出視窗**：一律 `SfModal`（手機全螢幕、寬度用 `width` prop）。從表格列、或可能已經在別的視窗裡的元件開視窗時，
+  `<Teleport to="body">` 外面包 `<div class="scifi-page xxx-host">`（才吃得到主題）；`body > .scifi-page` 已在主題設成
+  `display: contents`，不會佔版面（少了它，每一列都會在頁尾下面多出一個畫面高的空白）。
+
+### 搜尋欄位
+- 每格上方是欄位名稱（跟列表欄位名稱一致），下面是輸入元件；名稱搜尋打字停 300ms 才查。
+- **選項多的多選**：`MultiSelectFilter`（`block`，選項多加 `searchable`；有分組用 `group`）。
+- **選項少的多選**（≤ 4 個，沒有分組）：同一個 `MultiSelectFilter` 會自動直接列出膠囊按鈕（`inline-max` 調門檻），不用另寫。
+- **單選「全部／A／B」**：`SfChoice`（`:options="[{ value, label, count? }]"`），點一下選、再點一次取消＝全部（空字串）。
+  選項超過 5、6 個的單選（例如商品「屬性」）維持下拉 `<select>`。
+- **單一條件的開關**（「只看買得到」「只看有藍圖」「只看沒有中文」）：`SfToggle`（`v-model` 布林）。不要用勾選框。
+- **數值範圍**（價格、貨物量…）：`SfRangeFilter`——雙頭拉條（預設對數刻度，`utils/rangeScale.js`）＋最低／最高雙輸入框（含單位）
+  ＋預設級距膠囊；`v-model` 是 `{ min, max }`，空字串＝那一邊不限。只有下限的用 `single`。
+  好幾種貨幣的價格：先用膠囊選貨幣，選了哪幾種就出現哪幾條範圍（條件之間 AND；`utils/uexCommodity.js` 的
+  `PRICE_CURRENCIES`、`emptyVehicleRange`、`vehicleRangeParams`、`vehicleRangeCount`）。
+- **膠囊樣式 `.sf-pill`／`.sf-pills`** 在 `scifi-theme.css`，只有一套 class、兩種外觀：
+  - 後台：淺色底、選中是 Bootstrap 主色實心。
+  - 玩家頁（`.scifi-page`）：主題強調色，選中加外框光暈。
+  - 選項、開關、級距都是這一個 class，不要各頁另寫按鈕樣式。
+  - 數量用 `<span class="sf-pill__count">`。
+  - 一排膠囊當成一個欄位時加 `.sf-pills--field`，高度跟旁邊的輸入框對齊。
+- **手機**：名稱以外的條件包 `SfFilterSheet`（手機收進「篩選」底部面板，按鈕上有已套用數）；觸控時膠囊、拉條圓點自動放大到 44px。
+- **超寬螢幕**：搜尋卡要是 `.sf-split` 的直接子層，才會放到左欄並黏在畫面上（見上面「玩家頁超寬螢幕」）。
+- **後台搜尋卡**：
+  - 容器用 `AdminSearchCard`（`:active` 控制「清除篩選」，`@clear`）。
+  - 欄位用 `AdminSearchField`（`label`／`for-id`，名稱搜尋加 `wide`）。
+  - 欄位自動換行、寬度一致、標籤對齊在同一條線上；裡面是膠囊的欄位照內容寬。
+  - 不對應列表欄位的開關（例如「只看沒有中文」）放 `#options` slot（下面一排），筆數放 `#summary`。
+  - 範圍拉條等玩家頁元件可以直接用，搜尋卡已把 `--sf-accent`／`--sf-border` 換成後台色。
+  - 玩家頁有的篩選功能，後台對應的列表也要有（例如艦船的價格／貨艙範圍）。
 
 ## UI 規則（可用性與無障礙，配色維持現有主題）
 

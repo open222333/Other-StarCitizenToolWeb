@@ -15,17 +15,15 @@
           :empty="base.loaded.value && !base.places.value.length" empty-text="尚無地點座標資料。" @retry="base.load">
           <div class="row g-2">
             <div class="col-12">
-              <div class="form-check mb-1">
-                <input id="cp-common-start" v-model="commonStart" class="form-check-input" type="checkbox">
-                <label class="form-check-label fw-semibold" for="cp-common-start">共同起點</label>
+              <div class="sf-pills mb-1">
+                <SfToggle v-model="commonStart">共同起點</SfToggle>
               </div>
               <PlaceSlot v-if="commonStart" id="cp-start" class="cp-fit" label="共同起點" :places="base.places.value" :model-value="start"
                 :class="{ 'cp-invalid': isBad('start') }" @update:model-value="v => Object.assign(start, v)" />
             </div>
             <div class="col-12">
-              <div class="form-check mb-1">
-                <input id="cp-common-drop" v-model="commonDrop" class="form-check-input" type="checkbox">
-                <label class="form-check-label fw-semibold" for="cp-common-drop">共同送貨點</label>
+              <div class="sf-pills mb-1">
+                <SfToggle v-model="commonDrop">共同送貨點</SfToggle>
               </div>
               <template v-if="commonDrop">
                 <div class="cp-side-head">
@@ -59,11 +57,9 @@
               </template>
             </div>
             <div class="col-12 col-md-4">
-              <label class="form-label small fw-semibold mb-1" for="cp-end">結束</label>
-              <select id="cp-end" v-model="endMode" class="form-select form-select-sm">
-                <option value="none">停在最後一站</option>
-                <option value="start">回到起點</option>
-              </select>
+              <span class="form-label small fw-semibold mb-1 d-block">結束</span>
+              <SfChoice id="cp-end" v-model="endMode" required label="結束"
+                :options="[{ value: 'none', label: '停在最後一站' }, { value: 'start', label: '回到起點' }]" />
             </div>
             <div class="w-100 m-0"></div>
             <div class="col-12">
@@ -87,14 +83,8 @@
                 <span class="cp-squad-no">{{ i + 1 }}</span>
                 <input v-model="sq.name" type="text" maxlength="30" class="form-control form-control-sm cp-squad-name"
                   :placeholder="`小隊 ${i + 1}`" :aria-label="`小隊 ${i + 1} 名稱`">
-                <div class="form-check mb-0">
-                  <input :id="`cp-mine-${sq.key}`" v-model="sq.mine" class="form-check-input" type="checkbox">
-                  <label class="form-check-label" :for="`cp-mine-${sq.key}`">我的小隊</label>
-                </div>
-                <div v-if="commonStart" class="form-check mb-0">
-                  <input :id="`cp-own-start-${sq.key}`" v-model="sq.ownStart" class="form-check-input" type="checkbox">
-                  <label class="form-check-label" :for="`cp-own-start-${sq.key}`">另設起點</label>
-                </div>
+                <SfToggle v-model="sq.mine">我的小隊</SfToggle>
+                <SfToggle v-if="commonStart" v-model="sq.ownStart">另設起點</SfToggle>
                 <button v-if="squads.length > 1" type="button" class="btn btn-sm btn-danger ms-auto"
                   :aria-label="`移除${squadName(sq, i)}`" @click="squads.splice(i, 1)"><i class="bi bi-trash"></i></button>
               </div>
@@ -335,6 +325,8 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
+import SfToggle from '@/components/SfToggle.vue'
 import { scrollBehavior } from '@/utils/motion'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'

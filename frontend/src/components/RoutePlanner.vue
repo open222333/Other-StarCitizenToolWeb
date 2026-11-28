@@ -28,9 +28,8 @@
               <FuelStartInput id="rp-fuel" v-model="startFuel" />
             </div>
             <div class="col-12">
-              <div class="form-check mb-1">
-                <input id="rp-hub-on" v-model="hubOn" class="form-check-input" type="checkbox">
-                <label class="form-check-label small fw-semibold" for="rp-hub-on">定期回指定站</label>
+              <div class="sf-pills mb-1">
+                <SfToggle v-model="hubOn">定期回指定站</SfToggle>
               </div>
               <div v-if="hubOn" class="row g-1">
                 <div class="col-12 col-md-3">
@@ -125,11 +124,8 @@
             <!-- 終點：最後一站／回到起點／指定地點 -->
             <div class="d-flex gap-2 mb-2 align-items-center rp-row">
               <span class="rp-index rp-index--tag">終</span>
-              <select id="rp-end-mode" v-model="endMode" class="form-select form-select-sm rp-end-mode" aria-label="終點">
-                <option value="none">最後一站</option>
-                <option value="start">回到起點</option>
-                <option value="fixed">指定地點</option>
-              </select>
+              <SfChoice id="rp-end-mode" v-model="endMode" required label="終點" class="rp-end-mode"
+                :options="[{ value: 'none', label: '最後一站' }, { value: 'start', label: '回到起點' }, { value: 'fixed', label: '指定地點' }]" />
               <div class="rp-place">
                 <PlaceSlot v-if="endMode === 'fixed'" id="rp-end" label="終點" :places="base.places.value" :model-value="endPlace"
                   @update:model-value="v => Object.assign(endPlace, v)" />
@@ -188,17 +184,10 @@
           </div>
 
           <div class="d-flex flex-wrap align-items-center gap-3 mt-2 rp-actions">
-            <div class="form-check mb-0">
-              <input id="rp-auto" v-model="autoOrder" class="form-check-input" type="checkbox">
-              <label class="form-check-label" for="rp-auto">自動排序</label>
-            </div>
-            <div v-if="SHOW_CARGO" class="form-check mb-0">
-              <input id="rp-external" v-model="externalCargo" class="form-check-input" type="checkbox">
-              <label class="form-check-label" for="rp-external">外掛貨櫃（只停外部貨運站）</label>
-            </div>
-            <div class="form-check sf-check-btn mb-0">
-              <input id="rp-popup" v-model="popupResult" class="form-check-input" type="checkbox">
-              <label class="form-check-label" for="rp-popup">結果用跳出視窗</label>
+            <div class="sf-pills">
+              <SfToggle v-model="autoOrder">自動排序</SfToggle>
+              <SfToggle v-if="SHOW_CARGO" v-model="externalCargo">外掛貨櫃（只停外部貨運站）</SfToggle>
+              <SfToggle v-model="popupResult">結果用跳出視窗</SfToggle>
             </div>
             <div class="ms-auto d-flex gap-2">
               <button v-if="popupResult && result && !resultOpen" type="button" class="btn btn-sm btn-info"
@@ -288,6 +277,8 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
+import SfToggle from '@/components/SfToggle.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import PlacePicker from '@/components/PlacePicker.vue'
 import FuelStartInput from '@/components/FuelStartInput.vue'

@@ -18,11 +18,9 @@
     <div v-for="(e, i) in list" :key="e.key" class="scg-row mb-2">
       <div class="row g-2 align-items-end">
         <div class="col-6 col-md-2">
-          <label class="form-label small mb-1" :for="`${id}-act-${e.key}`">動作</label>
-          <select :id="`${id}-act-${e.key}`" v-model="e.action" class="form-select form-select-sm">
-            <option value="load">裝貨</option>
-            <option value="unload">卸貨</option>
-          </select>
+          <span class="form-label small mb-1 d-block">動作</span>
+          <SfChoice :id="`${id}-act-${e.key}`" v-model="e.action" required :label="`第 ${i + 1} 筆動作`"
+            :options="[{ value: 'load', label: '裝貨' }, { value: 'unload', label: '卸貨' }]" />
         </div>
         <div class="col-6 col-md-4">
           <label class="form-label small mb-1" :for="`${id}-item-${e.key}`">貨物<span class="text-muted ms-1">（選填）</span></label>
@@ -79,6 +77,7 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
 import { computed, reactive, watch } from 'vue'
 import AutocompleteField from '@/components/AutocompleteField.vue'
 import { splitCrates } from '@/utils/crateCombos'
