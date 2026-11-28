@@ -24,24 +24,13 @@
         <MultiSelectFilter id="faction-type" v-model="types" label="類型" :options="typeOptions" block placeholder="全部" />
       </AdminSearchField>
       <AdminSearchField label="聲望" for-id="faction-has-rep" col="col-6 col-md-3 col-xl">
-        <select id="faction-has-rep" v-model="hasReputation" class="form-select form-select-sm">
-          <option value="">全部</option>
-          <option value="1">有</option>
-          <option value="0">無</option>
-        </select>
+        <SfChoice id="faction-has-rep" v-model="hasReputation" :options="[{ value: '1', label: '有' }, { value: '0', label: '無' }]" label="有" />
       </AdminSearchField>
       <AdminSearchField label="任務數" for-id="faction-has-missions" col="col-6 col-md-3 col-xl">
-        <select id="faction-has-missions" v-model="hasMissions" class="form-select form-select-sm">
-          <option value="">全部</option>
-          <option value="1">有任務</option>
-          <option value="0">沒有任務</option>
-        </select>
+        <SfChoice id="faction-has-missions" v-model="hasMissions" :options="[{ value: '1', label: '有任務' }, { value: '0', label: '沒有任務' }]" label="有任務" />
       </AdminSearchField>
       <template #options>
-        <div class="form-check form-check-inline mb-0">
-          <input id="faction-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox">
-          <label class="form-check-label small" for="faction-missing-zh">只看沒有中文</label>
-        </div>
+        <SfToggle v-model="missingZh">只看沒有中文</SfToggle>
       </template>
     </AdminSearchCard>
 
@@ -166,6 +155,8 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
+import SfChoice from '@/components/SfChoice.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { missionApi } from '@/api'

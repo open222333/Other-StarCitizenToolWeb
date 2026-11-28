@@ -988,6 +988,8 @@ def _serialize_job(job: dict, running: set, counts: dict) -> dict:
         'last_stats': job.get('last_stats') or {},
         'last_requests': job.get('last_requests') or {},
         'consecutive_failures': job.get('consecutive_failures') or 0,
+        'last_cancelled': bool(job.get('last_cancelled')),
+        'cancel_requested': is_running and bool(job.get('cancel_requested')),
         'updated_at': job.get('updated_at'),
         'updated_by': job.get('updated_by'),
     }
@@ -1182,6 +1184,37 @@ def trigger_sync():
     Log.create(get_jwt_identity(), 'trigger_sync', f'手動同步：{"、".join(sent)}')
     return jsonify({'success': True, 'dispatched': sent, 'skipped': skipped,
                     'message': '已排入同步佇列'}), 202
+
+
+@app_item.route('/sync-jobs/<key>/cancel', methods=['POST'])
+@jwt_required()
+@require_role(*WRITE_ROLES)
+def cancel_sync_job(key):
+    """終止同步：正在跑的會在下次回報進度時停下（已寫入的保留，這輪不下架）；排隊中的直接取消。
+    ---
+    tags: [Item]
+    security:
+      - Bearer: []
+    parameters:
+      - {in: path, name: key, type: string, required: true}
+    responses:
+      200:
+        description: "已終止（state: running＝已要求停止、queued＝已取消排隊）"
+      404:
+        description: 沒有這個同步項目
+      409:
+        description: 這一項沒有在跑也沒有在排隊
+    """
+    from tasks.scdata_sync import cancel_job
+
+    if key not in JOB_KEYS:
+        return jsonify({'success': False, 'message': f'沒有這個同步項目：{key}'}), 404
+    state = cancel_job(key, by=get_jwt_identity())
+    if not state:
+        return jsonify({'success': False, 'message': '這一項沒有在同步或排隊中'}), 409
+    Log.create(get_jwt_identity(), 'cancel_sync', f'終止同步：{key}（{"執行中" if state == "running" else "排隊中"}）')
+    return jsonify({'success': True, 'state': state,
+                    'message': '已要求停止，跑到下一個進度點就會停下' if state == 'running' else '已取消排隊'})
 
 
 # ── 玩家頁面顯示（藍圖、任務、礦床、礦物、採礦地點、艦船、地點共用，見 src/models/visibility.py）──

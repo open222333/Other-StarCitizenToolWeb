@@ -86,12 +86,24 @@
         <MultiSelectFilter id="vehicle-acquire" :model-value="selectedAcquire" label="取得方式" :options="VEHICLE_ACQUIRE_OPTIONS"
           block placeholder="全部" @update:model-value="onAcquireChange" />
       </AdminSearchField>
+      <!-- 價格、貨艙：跟玩家頁「資料庫 › 艦船」同一套（選貨幣出現那種的範圍；拉條＋輸入框＋級距，SfRangeFilter） -->
+      <AdminSearchField label="價格" for-id="vehicle-price" wide>
+        <div class="vl-ranges">
+          <MultiSelectFilter id="vehicle-price" v-model="range.priceOn" :options="PRICE_CURRENCY_OPTIONS" label="價格貨幣" block />
+          <div v-for="c in PRICE_CURRENCIES.filter(x => range.priceOn.includes(x.key))" :key="c.key" class="vl-range">
+            <span class="vl-range__label">{{ c.label }}</span>
+            <SfRangeFilter v-model="range.price[c.key]" :max="c.max" :presets="c.presets" :unit="c.unit" :label="`${c.label}價格`" />
+          </div>
+        </div>
+      </AdminSearchField>
+      <AdminSearchField label="貨艙（SCU）" for-id="vehicle-scu" wide>
+        <div>
+          <SfRangeFilter id="vehicle-scu" v-model="range.scu" :max="SCU_RANGE.max" :presets="SCU_RANGE.presets" unit="SCU" label="貨艙" />
+        </div>
+      </AdminSearchField>
       <AdminSearchField label="玩家頁面" for-id="vehicle-visible" col="col-6 col-md-3 col-xl">
-        <select id="vehicle-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
-          <option value="">全部</option>
-          <option value="1">顯示</option>
-          <option value="0">不顯示</option>
-        </select>
+        <SfChoice id="vehicle-visible" :model-value="playerVisible" :options="VISIBLE_CHOICES" label="玩家頁面"
+          @update:model-value="v => { playerVisible = v; reload(0) }" />
       </AdminSearchField>
     </AdminSearchCard>
 
@@ -224,8 +236,9 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
 import { groupRoleOptions } from '@/utils/vehicleRole'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { vehicleApi } from '@/api'
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
@@ -236,8 +249,11 @@ import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import FleetOwnersBrowser from '@/components/FleetOwnersBrowser.vue'
 import UexVehiclePriceTable from '@/components/UexVehiclePriceTable.vue'
 import VehiclePriceDetail from '@/components/VehiclePriceDetail.vue'
-import { fmtAuec, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
+import { emptyVehicleRange, fmtAuec, PRICE_CURRENCIES, SCU_RANGE, vehicleRangeCount, vehicleRangeParams, VEHICLE_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
+import SfRangeFilter from '@/components/SfRangeFilter.vue'
 import { useAuthStore } from '@/stores/auth'
+// 玩家頁面：膠囊單選（再點一次取消＝全部）
+const VISIBLE_CHOICES = [{ value: '1', label: '顯示' }, { value: '0', label: '不顯示' }]
 
 const vehicles   = ref([])
 const total      = ref(0)
@@ -263,6 +279,11 @@ const sort = useTableSort(null, { key: 'name', dir: 'asc', cycle: false, onChang
 const sortBy = sort.sortKey
 const sortDir = sort.sortDir
 const playerVisible = ref('')
+// 價格（勾了哪幾種貨幣、每種一條範圍）、貨艙範圍；改了停 300ms 再查
+const PRICE_CURRENCY_OPTIONS = PRICE_CURRENCIES.map(c => ({ value: c.key, label: c.label }))
+const range = reactive(emptyVehicleRange())
+let rangeTimer = null
+watch(range, () => { clearTimeout(rangeTimer); rangeTimer = setTimeout(() => reload(0), 300) }, { deep: true })
 // 分頁：艦船資料庫／玩家擁有艦船（components/FleetOwnersBrowser.vue）／購買價格／租船價格
 const tab = ref('master')
 
@@ -310,7 +331,7 @@ async function saveNote(v) {
 const hasActiveFilters = computed(() =>
   selectedCareers.value.length || selectedRoles.value.length ||
   selectedManufacturers.value.length || selectedSizeClasses.value.length || nameQuery.value
-  || selectedAcquire.value.length
+  || selectedAcquire.value.length || vehicleRangeCount(range)
   || playerVisible.value)
 
 function crewLabel(v) {
@@ -340,6 +361,7 @@ function resetFilters() {
   selectedSizeClasses.value = []
   nameQuery.value = ''
   playerVisible.value = ''
+  Object.assign(range, emptyVehicleRange())
   reload(0)
 }
 
@@ -359,6 +381,7 @@ async function reload(newOffset = 0) {
     sort_dir: sortDir.value,
     player_visible: playerVisible.value,
     with_prices: 1,
+    ...vehicleRangeParams(range),
     limit, offset: newOffset,
   })
   if (res && res.ok) {
@@ -379,6 +402,7 @@ watch(nameQuery, () => {
   clearTimeout(queryTimer)
   queryTimer = setTimeout(() => { if (nameQuery.value.trim() !== loadedQuery) reload(0) }, 300)
 })
+onBeforeUnmount(() => clearTimeout(rangeTimer))
 onBeforeUnmount(() => clearTimeout(queryTimer))
 
 onMounted(async () => {
@@ -402,4 +426,8 @@ onMounted(async () => {
 .note-text { display: inline-block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; vertical-align: bottom; }
 .edit-cell { background: var(--bs-tertiary-bg); }
+.vl-ranges { display: flex; flex-direction: column; gap: .5rem; }
+.vl-range { display: flex; gap: .6rem; align-items: flex-start; }
+.vl-range__label { flex: 0 0 3rem; padding-top: .1rem; font-size: .875rem; font-weight: 600; }
+.vl-range > .srf { flex: 1 1 auto; min-width: 0; }
 </style>

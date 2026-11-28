@@ -300,6 +300,7 @@ export const itemApi = {
   syncNow:       (data)      => apiFetch('/item/sync', { method: 'POST', body: JSON.stringify(data || {}) }),
   syncJobs:      ()          => apiFetch('/item/sync-jobs'),
   updateSyncJob: (key, data) => apiFetch(`/item/sync-jobs/${key}`, { method: 'PUT', body: JSON.stringify(data || {}) }),
+  cancelSyncJob: (key)       => apiFetch(`/item/sync-jobs/${key}/cancel`, { method: 'POST' }),
   // UEX API token（只有 admin）：GET 只回有沒有設定與末 4 碼；PUT {token}，空字串 = 清掉改用環境變數
   uexToken:      ()          => apiFetch('/item/sync-uex-token'),
   setUexToken:   (token)     => apiFetch('/item/sync-uex-token', { method: 'PUT', body: JSON.stringify({ token }) }),

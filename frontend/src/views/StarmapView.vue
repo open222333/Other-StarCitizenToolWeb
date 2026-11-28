@@ -52,35 +52,22 @@
           @update:model-value="v => { features = v; reload(0) }" />
       </AdminSearchField>
       <AdminSearchField label="可存放" for-id="sm-can-store" col="col-6 col-md-3 col-xl">
-        <select id="sm-can-store" v-model="canStore" class="form-select form-select-sm" @change="reload(0)">
-          <option value="">全部</option>
-          <option value="1">可存放（{{ facets.can_store?.yes ?? 0 }}）</option>
-          <option value="0">不可存放（{{ facets.can_store?.no ?? 0 }}）</option>
-        </select>
+        <SfChoice id="sm-can-store" :model-value="canStore" label="可存放"
+          :options="[{ value: '1', label: '可存放', count: facets.can_store?.yes ?? 0 }, { value: '0', label: '不可存放', count: facets.can_store?.no ?? 0 }]"
+          @update:model-value="v => { canStore = v; reload(0) }" />
       </AdminSearchField>
       <AdminSearchField label="居住地" for-id="sm-home" col="col-6 col-md-3 col-xl">
-        <select id="sm-home" v-model="home" class="form-select form-select-sm" @change="reload(0)">
-          <option value="">全部</option>
-          <option value="1">可選居住地（{{ facets.home?.yes ?? 0 }}）</option>
-          <option value="0">不是居住地（{{ facets.home?.no ?? 0 }}）</option>
-        </select>
+        <SfChoice id="sm-home" :model-value="home" label="可選居住地"
+          :options="[{ value: '1', label: '可選居住地', count: facets.home?.yes ?? 0 }, { value: '0', label: '不是居住地', count: facets.home?.no ?? 0 }]"
+          @update:model-value="v => { home = v; reload(0) }" />
       </AdminSearchField>
       <AdminSearchField label="玩家頁面" for-id="sm-visible" col="col-6 col-md-3 col-xl">
-        <select id="sm-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
-          <option value="">全部</option>
-          <option value="1">顯示</option>
-          <option value="0">不顯示</option>
-        </select>
+        <SfChoice id="sm-visible" :model-value="playerVisible" :options="VISIBLE_CHOICES" label="玩家頁面"
+          @update:model-value="v => { playerVisible = v; reload(0) }" />
       </AdminSearchField>
       <template #options>
-        <div class="form-check form-check-inline mb-0">
-          <input id="sm-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox" @change="reload(0)">
-          <label class="form-check-label small" for="sm-missing-zh">只看沒有中文</label>
-        </div>
-        <div class="form-check form-check-inline mb-0">
-          <input id="sm-unnamed" v-model="includeUnnamed" class="form-check-input" type="checkbox" @change="reload(0)">
-          <label class="form-check-label small" for="sm-unnamed">顯示未命名</label>
-        </div>
+        <SfToggle :model-value="missingZh" @update:model-value="v => { missingZh = v; reload(0) }">只看沒有中文</SfToggle>
+        <SfToggle :model-value="includeUnnamed" @update:model-value="v => { includeUnnamed = v; reload(0) }">顯示未命名</SfToggle>
       </template>
     </AdminSearchCard>
 
@@ -317,6 +304,8 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
+import SfChoice from '@/components/SfChoice.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { starmapApi } from '@/api'
@@ -328,6 +317,8 @@ import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
 import { zhPair } from '@/utils/mission'
+// 玩家頁面：膠囊單選（再點一次取消＝全部）
+const VISIBLE_CHOICES = [{ value: '1', label: '顯示' }, { value: '0', label: '不顯示' }]
 
 const route = useRoute()
 const router = useRouter()

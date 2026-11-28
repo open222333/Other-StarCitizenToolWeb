@@ -64,17 +64,10 @@
         <MultiSelectFilter id="mining-locations-system" v-model="systems" label="星系" :options="systemOptions" block placeholder="全部" />
       </AdminSearchField>
       <AdminSearchField label="玩家頁面" :for-id="`mining-${tab}-visible`" col="col-6 col-md-3 col-xl">
-        <select :id="`mining-${tab}-visible`" v-model="playerVisible" class="form-select form-select-sm">
-          <option value="">全部</option>
-          <option value="1">顯示</option>
-          <option value="0">不顯示</option>
-        </select>
+        <SfChoice :id="`mining-${tab}-visible`" v-model="playerVisible" :options="VISIBLE_CHOICES" label="玩家頁面" />
       </AdminSearchField>
       <template #options>
-        <div class="form-check form-check-inline mb-0">
-          <input :id="`mining-${tab}-missing-zh`" v-model="missingZhOnly" class="form-check-input" type="checkbox">
-          <label class="form-check-label small" :for="`mining-${tab}-missing-zh`">只看沒有中文</label>
-        </div>
+        <SfToggle v-model="missingZhOnly">只看沒有中文</SfToggle>
       </template>
     </AdminSearchCard>
 
@@ -297,6 +290,8 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
+import SfChoice from '@/components/SfChoice.vue'
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { miningApi, visibilityApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -309,6 +304,8 @@ import DataCollectionTable from '@/components/DataCollectionTable.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { loadTranslations, translate } from '@/utils/translations'
 import { ownSignatures } from '@/utils/miningSignature'
+// 玩家頁面：膠囊單選（再點一次取消＝全部）
+const VISIBLE_CHOICES = [{ value: '1', label: '顯示' }, { value: '0', label: '不顯示' }]
 
 const TABS = [
   { key: 'minerals',  label: '礦物' },

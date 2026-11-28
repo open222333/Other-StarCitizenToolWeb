@@ -344,3 +344,63 @@ def test_version_snapshot_drops_raw(app, sync_mod, monkeypatch):
     assert 'raw' not in snapshot, '版本快照仍帶著 raw'
     # 主檔本身要保留 raw
     assert 'raw' in db['item_master'].find_one({'_id': 'u1'})
+
+
+# ═══════════════════════════════════════════════════════════
+#  終止（後台「終止」按鈕）
+# ═══════════════════════════════════════════════════════════
+
+def test_cancel_running_job_stops_at_next_report(app, sync_mod, monkeypatch):
+    """正在跑的按終止：下次回報進度時停下，記成「已終止」（不算失敗、不擋到下一個項目）。"""
+    ran = []
+
+    def fake_run(key, *a):
+        ran.append(key)
+        if key == 'items':
+            assert sync_mod.cancel_job('items', by='admin') == 'running'
+            sync_mod._report(force=True, phase='x')
+            pytest.fail('按了終止還在跑')
+        return [], [], True
+    monkeypatch.setattr(sync_mod, '_run_job', fake_run)
+    result = sync_mod._do_sync(jobs=['items', 'missions'])
+    assert ran == ['items', 'missions'] and result['jobs'] == ['items', 'missions']
+    job = SyncJobs.get('items')
+    assert job['last_cancelled'] is True and job['last_ok'] is None and job['last_error'] == '已手動終止'
+    assert job['cancel_requested'] is False and job['consecutive_failures'] == 0
+    assert SyncJobs.get('missions')['last_ok'] is True
+
+    # 下一輪重新開始時不會被舊的終止要求擋住
+    monkeypatch.setattr(sync_mod, '_run_job', lambda key, *a: (sync_mod._report(force=True), ([], [], True))[1])
+    sync_mod._do_sync(jobs=['items'])
+    assert SyncJobs.get('items')['last_ok'] is True and SyncJobs.get('items')['last_cancelled'] is False
+
+
+def test_cancel_queued_job(app, sync_mod, monkeypatch):
+    """排隊中的按終止：清掉排隊、revoke；worker 之後才接到同一個任務也會略過。"""
+    fake = _FakeAsync()
+    monkeypatch.setattr(sync_mod.sync_scdata, 'apply_async', fake)
+    revoked = []
+    monkeypatch.setattr(sync_mod.celery_app.control, 'revoke', lambda task_id, **kw: revoked.append(task_id))
+    sync_mod.dispatch_jobs(['vehicles'])
+    assert sync_mod.cancel_job('vehicles', by='admin') == 'queued'
+    assert revoked == ['task-1'] and SyncJobs.get('vehicles')['queued'] is False
+    assert sync_mod.cancel_job('vehicles') == ''
+
+    ran = []
+    monkeypatch.setattr(sync_mod, '_run_job', lambda key, *a: ran.append(key) or ([], [], True))
+    result = sync_mod.sync_scdata.apply(kwargs={'jobs': ['vehicles']}, task_id='task-1').get()
+    assert result == {'skipped': True, 'reason': 'cancelled', 'jobs': ['vehicles']} and ran == []
+    # 記號只用一次：重新派送的任務照常跑
+    sync_mod.sync_scdata.apply(kwargs={'jobs': ['vehicles']}, task_id='task-1').get()
+    assert ran == ['vehicles']
+
+
+def test_cancel_endpoint(client, auth_headers, sync_mod, monkeypatch):
+    monkeypatch.setattr(sync_mod.sync_scdata, 'apply_async', _FakeAsync())
+    monkeypatch.setattr(sync_mod.celery_app.control, 'revoke', lambda *a, **kw: None)
+    assert client.post('/item/sync-jobs/nope/cancel', headers=auth_headers).status_code == 404
+    assert client.post('/item/sync-jobs/items/cancel', headers=auth_headers).status_code == 409
+    sync_mod.dispatch_jobs(['items'])
+    body = client.post('/item/sync-jobs/items/cancel', headers=auth_headers).get_json()
+    assert body['success'] and body['state'] == 'queued'
+    assert client.post('/item/sync-jobs/items/cancel').status_code == 401

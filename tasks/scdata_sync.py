@@ -175,7 +175,13 @@ _progress_last = 0.0
 PROGRESS_INTERVAL_S = 2.0
 
 
+class SyncCancelled(BaseException):
+    """後台按了「終止」。繼承 BaseException：各資源外層的 `except Exception`（記錯誤、接著跑下一個）攔不到，
+    一路退到 _do_sync 記成「已終止」。下架（_retire_missing 等）都在抓完之後，中途停下不會誤下架。"""
+
+
 def _report(force: bool = False, **fields):
+    """寫入目前進度（最多每 PROGRESS_INTERVAL_S 秒一次），順便看後台有沒有按「終止」。"""
     global _progress_last
     if not _progress_job:
         return
@@ -185,8 +191,12 @@ def _report(force: bool = False, **fields):
     _progress_last = now
     try:
         SyncJobs.set_progress(_progress_job, fields)
+        cancel = SyncJobs.is_cancel_requested(_progress_job)
     except Exception:
         logger.debug('scdata_sync: 寫入進度失敗', exc_info=True)
+        return
+    if cancel:
+        raise SyncCancelled(_progress_job)
 
 
 def _flush(collection_name: str, ops: list) -> int:
@@ -871,8 +881,14 @@ def _do_sync(jobs=None, translations_only: bool = False) -> dict:
                 SyncJobs.mark_started(key, run_id, job_started)
                 _progress_job = key
                 before = request_counts(clients)
+                cancelled = False
                 try:
                     job_stats, job_errors, ok = _run_job(key, run_id, job_started, clients)
+                except SyncCancelled:
+                    # 後台按「終止」：已寫入的不回滾（都是 upsert），只是這輪不做下架等收尾
+                    logger.info('scdata_sync: %s 已手動終止', key)
+                    cancelled = True
+                    job_stats, job_errors, ok = [], ['已手動終止'], None
                 finally:
                     _progress_job = None
                 stats += job_stats
@@ -882,7 +898,8 @@ def _do_sync(jobs=None, translations_only: bool = False) -> dict:
                     errors += job_errors
                 SyncJobs.record_result(key, run_id, job_started, datetime.utcnow(), ok,
                                        error='；'.join(job_errors), stats=_sum_stats(job_stats),
-                                       requests=requests_used(before, request_counts(clients)))
+                                       requests=requests_used(before, request_counts(clients)),
+                                       cancelled=cancelled)
         # 整輪打了各上游幾次（clients 在 finally 裡關掉，先取快照）
         upstream_requests = requests_used({}, request_counts(clients))
     finally:
@@ -930,6 +947,15 @@ def sync_scdata(self, jobs=None):
 
     :param jobs: 同步項目 key 清單，預設全部（見 src/models/sync_schedule.py 的 SYNC_JOBS）
     """
+    task_id = getattr(self.request, 'id', None)
+    requested = order_jobs(JOB_KEYS if jobs is None else jobs)
+    # 排隊時就在後台按了「終止」的項目不跑（worker 沒收到 revoke 的情況，例如當時 worker 沒開）
+    cancelled = [k for k in requested if SyncJobs.take_cancelled_task(k, task_id)]
+    if cancelled:
+        logger.info('scdata_sync: %s 排隊時已終止，略過', cancelled)
+        jobs = [k for k in requested if k not in cancelled]
+        if not jobs:
+            return {'skipped': True, 'reason': 'cancelled', 'jobs': cancelled}
     try:
         return _do_sync(jobs=jobs)
     except ScDataError as exc:
@@ -939,11 +965,28 @@ def sync_scdata(self, jobs=None):
         logger.error('scdata_sync: 上游 API 不可用: %s', exc)
         raise self.retry(exc=exc, countdown=600)
     finally:
-        # 沒拿到鎖而略過的項目也要把「排隊中」標記清掉。
-        # 不能經過 order_jobs：它會丟掉這個 worker 不認得的 key（api 比 worker 新、
-        # 派了新項目時），那筆就會一直卡在「排隊中」直到 QUEUE_STALE_MIN 過期。
-        for key in dict.fromkeys(JOB_KEYS if jobs is None else jobs):
+        # 沒拿到鎖而略過的項目也要把「排隊中」標記清掉
+        for key in order_jobs(JOB_KEYS if jobs is None else jobs):
             SyncJobs.clear_queued(key, getattr(self.request, 'id', None))
+
+
+def cancel_job(key: str, by: str = None) -> str:
+    """後台「終止」：正在跑的請它停下（下次回報進度時中止）→ 'running'；排隊中的直接取消並 revoke → 'queued'；
+    都不是 → ''。"""
+    if key in set(running_jobs()):
+        SyncJobs.request_cancel(key, by)
+        return 'running'
+    job = next((j for j in SyncJobs.all() if j['key'] == key), None) or {}
+    if job.get('queued'):
+        task_id = SyncJobs.cancel_queued(key, by)
+        if task_id:
+            try:
+                celery_app.control.revoke(task_id)
+            except Exception:
+                # broker 連不上也沒關係：worker 之後接到時看 cancel_task_id 會略過
+                logger.warning('cancel_job: revoke %s 失敗', task_id, exc_info=True)
+        return 'queued'
+    return ''
 
 
 def dispatch_jobs(keys, by: str = None) -> tuple:

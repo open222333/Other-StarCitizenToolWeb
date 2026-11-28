@@ -29,6 +29,7 @@ cron 一律以 **SCHEDULE_TZ（Asia/Taipei）** 解讀，跟 celeryconfig.py 的
 `0` 與 `7` 都代表週日。不支援 `@daily` 這類別名與 `L`/`W`/`#` 等擴充語法。
 """
 
+from typing import Optional
 from datetime import datetime, timedelta, timezone
 
 from src.mongo import get_db
@@ -248,6 +249,7 @@ class SyncJobs:
       last_requests / consecutive_failures            上次執行結果（同步時寫入）
       running / running_since / progress / progress_at  這項正在跑、跑到哪（搭配該項的鎖判斷）
       queued / queued_at / queued_task_id / queued_by    已派送、等 worker 接手
+      cancel_requested / cancel_task_id / cancel_by / cancel_at  後台按「終止」（跑到一半的／排隊中的）
 
     心跳（tasks/scdata_sync.py 的 check_and_run_scheduled_sync）每 5 分鐘把到期的
     項目挑出來一起跑；手動同步可以只跑其中幾項。
@@ -469,7 +471,35 @@ class SyncJobs:
     def mark_started(cls, key: str, run_id: str, at: datetime):
         cls._col().update_one({'_id': key}, {'$set': {
             'running': True, 'running_run_id': run_id, 'running_since': at,
-            'queued': False, 'progress': {}, 'progress_at': at}}, upsert=True)
+            'queued': False, 'progress': {}, 'progress_at': at, 'cancel_requested': False}}, upsert=True)
+
+    @classmethod
+    def cancel_queued(cls, key: str, by: str = None) -> Optional[str]:
+        """取消排隊中（還沒開始跑）的：清掉排隊標記，記下那個 Celery 任務 id（worker 之後才接到也會略過）。
+        回傳被取消的任務 id（沒有就 None）。"""
+        job = cls._col().find_one({'_id': key}, {'queued_task_id': 1}) or {}
+        task_id = job.get('queued_task_id')
+        cls._col().update_one({'_id': key}, {'$set': {
+            'queued': False, 'cancel_task_id': task_id, 'cancel_by': by, 'cancel_at': datetime.utcnow()}})
+        return task_id
+
+    @classmethod
+    def request_cancel(cls, key: str, by: str = None):
+        """要求正在跑的停下來：同步程式回報進度時看到就中止（tasks/scdata_sync.py 的 _report）。"""
+        cls._col().update_one({'_id': key}, {'$set': {
+            'cancel_requested': True, 'cancel_by': by, 'cancel_at': datetime.utcnow()}})
+
+    @classmethod
+    def is_cancel_requested(cls, key: str) -> bool:
+        return bool((cls._col().find_one({'_id': key}, {'cancel_requested': 1}) or {}).get('cancel_requested'))
+
+    @classmethod
+    def take_cancelled_task(cls, key: str, task_id) -> bool:
+        """這個 Celery 任務是不是在排隊時就被取消了（是的話順便清掉記號）。"""
+        if not task_id:
+            return False
+        return cls._col().update_one({'_id': key, 'cancel_task_id': task_id},
+                                     {'$set': {'cancel_task_id': None}}).modified_count > 0
 
     @classmethod
     def set_progress(cls, key: str, progress: dict):
@@ -480,7 +510,7 @@ class SyncJobs:
 
     @classmethod
     def record_result(cls, key: str, run_id: str, started: datetime, finished: datetime,
-                      ok, error: str = '', stats: dict = None, requests: dict = None):
+                      ok, error: str = '', stats: dict = None, requests: dict = None, cancelled: bool = False):
         """寫入這一項這次的結果。ok=None 代表略過（例如沒設定 UEX token），不算失敗。
 
         requests：這次打了各上游幾次 {'wiki': {'requests': n, 'rate_limited': m}, ...}
@@ -504,6 +534,9 @@ class SyncJobs:
             'last_stats': stats or {},
             'last_requests': requests or {},
             'consecutive_failures': fails,
+            # 後台按「終止」停下來的（ok=None，不算失敗、不觸發失敗重試）
+            'last_cancelled': cancelled,
+            'cancel_requested': False,
         }}, upsert=True)
 
     @classmethod

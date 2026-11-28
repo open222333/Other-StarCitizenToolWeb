@@ -47,11 +47,7 @@
         </select>
       </AdminSearchField>
       <AdminSearchField label="關聯礦物" for-id="commodity-linked" col="col-6 col-md-3 col-xl">
-        <select id="commodity-linked" v-model="linked" class="form-select form-select-sm">
-          <option value="">全部</option>
-          <option value="1">有</option>
-          <option value="0">無</option>
-        </select>
+        <SfChoice id="commodity-linked" v-model="linked" :options="[{ value: '1', label: '有' }, { value: '0', label: '無' }]" label="關聯礦物" />
       </AdminSearchField>
       <template #summary>
         <template v-if="hasActiveFilters">符合 {{ filtered.length }} 筆 · </template>共 {{ rows.length }} 筆
@@ -120,6 +116,7 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { miningApi } from '@/api'

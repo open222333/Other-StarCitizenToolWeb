@@ -188,15 +188,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <style scoped>
-/* 直接列出來的選項（後台用；玩家頁的樣式在 scifi-theme.css 的 .sf-pill，用 :where 壓低權重讓它蓋過去） */
-.msf-chips { display: flex; flex-wrap: wrap; gap: .3rem; min-height: calc(1.5em + .75rem + 2px); align-items: center; }
-:where(.msf-chip) {
-  --msf: var(--bs-primary-rgb, 13, 110, 253);
-  padding: .2rem .75rem; border-radius: 999px; font-size: .875rem; font-weight: 700; line-height: 1.4;
-  border: 1px solid rgba(var(--msf), .55); background: rgba(var(--msf), .1); color: var(--bs-body-color);
-}
-:where(.msf-chip:hover:not(.active)) { background: rgba(var(--msf), .22); border-color: rgb(var(--msf)); }
-:where(.msf-chip.active) { background: rgba(var(--msf), .5); border-color: rgb(var(--msf)); }
+/* 直接列出來的選項：樣式是 scifi-theme.css 的 .sf-pill（後台淺色、玩家頁主題色兩套） */
+.msf-chips { min-height: calc(1.5em + .5rem + 2px); }
 
 .multi-select-filter { position: relative; display: inline-block; }
 

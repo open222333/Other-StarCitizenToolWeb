@@ -20,11 +20,8 @@
         <input id="item-q" v-model="nameQuery" type="search" class="form-control form-control-sm" placeholder="輸入物品名稱">
       </AdminSearchField>
       <AdminSearchField label="來源" for-id="item-source" col="col-6 col-md-3 col-xl">
-        <select id="item-source" v-model="source" class="form-select form-select-sm" @change="reload(0)">
-          <option value="">全部</option>
-          <option value="personal">個人物品</option>
-          <option value="vehicle">飛船組件</option>
-        </select>
+        <SfChoice id="item-source" :model-value="source" :options="[{ value: 'personal', label: '個人物品' }, { value: 'vehicle', label: '飛船組件' }]"
+          label="來源" @update:model-value="v => { source = v; reload(0) }" />
       </AdminSearchField>
       <AdminSearchField label="類型" for-id="item-type" col="col-6 col-md-3 col-xl">
         <MultiSelectFilter id="item-type" :model-value="selectedTypes" label="類型" :options="typeOptions" searchable block placeholder="全部"
@@ -55,11 +52,8 @@
           @update:model-value="v => { selectedAcquire = v; reload(0) }" />
       </AdminSearchField>
       <AdminSearchField label="玩家頁面" for-id="item-visible" col="col-6 col-md-3 col-xl">
-        <select id="item-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
-          <option value="">全部</option>
-          <option value="1">顯示</option>
-          <option value="0">不顯示</option>
-        </select>
+        <SfChoice id="item-visible" :model-value="playerVisible" :options="VISIBLE_CHOICES" label="玩家頁面"
+          @update:model-value="v => { playerVisible = v; reload(0) }" />
       </AdminSearchField>
     </AdminSearchCard>
 
@@ -146,6 +140,7 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { itemApi } from '@/api'
 import AdminSearchCard from '@/components/AdminSearchCard.vue'
@@ -159,6 +154,8 @@ import PlayerVisibleToggle from '@/components/PlayerVisibleToggle.vue'
 import { itemClassOption, itemClassZh, itemSubTypeOption, itemSubTypeZh, itemTypeOption, itemTypeZh, loadItemClassZh,
   loadItemTypeZh } from '@/utils/itemType'
 import { fmtAuec, ITEM_ACQUIRE_OPTIONS } from '@/utils/uexCommodity'
+// 玩家頁面：膠囊單選（再點一次取消＝全部）
+const VISIBLE_CHOICES = [{ value: '1', label: '顯示' }, { value: '0', label: '不顯示' }]
 
 const COLUMNS = [
   { label: '名稱', cls: 'ps-3', sort: 'name' },

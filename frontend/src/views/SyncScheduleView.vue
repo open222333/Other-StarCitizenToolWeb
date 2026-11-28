@@ -12,7 +12,7 @@
 
   不同項目可以同時同步（每一項各自一個 Celery 任務、各自一把鎖；同時跑幾個看
   worker 的 concurrency，超過的會排隊）。上方「進行中」區塊即時顯示正在跑與排隊中
-  的項目、目前階段與進度，每 3 秒更新一次；「正在跑」以該項的鎖為準（後端 running
+  的項目、目前階段與進度，每 3 秒更新一次，可以按「終止」（正在跑的跑到下一個進度點停下，排隊中的直接取消）；「正在跑」以該項的鎖為準（後端 running
   欄位），worker 被砍掉也不會一直顯示。
 -->
 <template>
@@ -50,6 +50,10 @@
                 <span class="small text-muted ms-auto text-nowrap">
                   {{ job.running ? `已執行 ${elapsed(job.running_since)}` : `排隊 ${elapsed(job.queued_at)}` }}
                 </span>
+                <button v-if="canSync" type="button" class="btn btn-sm btn-outline-danger py-0"
+                  :disabled="job.cancel_requested || cancelling[job.key]" :aria-label="`終止 ${job.label} 同步`" @click="cancel(job)">
+                  {{ job.cancel_requested ? '終止中…' : '終止' }}
+                </button>
               </div>
               <template v-if="job.running">
                 <div class="small mt-1">{{ job.progress?.phase || '準備中' }}</div>
@@ -204,7 +208,7 @@
                     <span v-if="statsLabel(job)" class="text-muted"> · {{ statsLabel(job) }}</span>
                     <span v-if="requestsLabel(job)" class="text-muted"> · {{ requestsLabel(job) }}</span>
                     <span v-if="rateLimited(job)" class="badge bg-danger ms-1">429 ×{{ rateLimited(job) }}</span>
-                    <div v-if="job.last_error" class="text-danger last-error" :title="job.last_error">{{ job.last_error }}</div>
+                    <div v-if="job.last_error" class="last-error" :class="job.last_cancelled ? 'text-muted' : 'text-danger'" :title="job.last_error">{{ job.last_error }}</div>
                   </template>
                   <span v-else class="text-muted">尚未執行</span>
                 </td>
@@ -218,7 +222,11 @@
                       :aria-expanded="uexEditing ? 'true' : 'false'" @click="toggleUexEdit">
                       <i class="bi bi-key me-1"></i>設定 token
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary" :disabled="job.running || job.queued || triggering"
+                    <button v-if="job.running || job.queued" class="btn btn-sm btn-outline-danger"
+                      :disabled="job.cancel_requested || cancelling[job.key]" @click="cancel(job)">
+                      <i class="bi bi-stop-circle me-1"></i>{{ job.cancel_requested ? '終止中…' : '終止' }}
+                    </button>
+                    <button v-else class="btn btn-sm btn-outline-secondary" :disabled="triggering"
                       @click="trigger([job.key])">
                       <i class="bi bi-arrow-repeat me-1"></i>立即同步
                     </button>
@@ -557,12 +565,33 @@ async function trigger(keys) {
   }
 }
 
+// 終止：正在跑的跑到下一個進度點停下（已寫入的保留、這輪不下架），排隊中的直接取消
+const cancelling = reactive({})
+async function cancel(job) {
+  if (cancelling[job.key]) return
+  cancelling[job.key] = true
+  try {
+    const res = await itemApi.cancelSyncJob(job.key)
+    const body = res ? await res.json().catch(() => null) : null
+    if (!res?.ok || !body?.success) {
+      flash(body?.message || '終止失敗', 'danger')
+      return
+    }
+    flash(`${job.label}：${body.message}`)
+    fetchJobs()
+  } finally {
+    cancelling[job.key] = false
+  }
+}
+
 function resultLabel(job) {
+  if (job.last_cancelled) return '已終止'
   if (job.last_ok === true) return '成功'
   if (job.last_ok === false) return job.consecutive_failures > 1 ? `失敗 ×${job.consecutive_failures}` : '失敗'
   return '略過'
 }
 function resultClass(job) {
+  if (job.last_cancelled) return 'bg-secondary'
   if (job.last_ok === true) return 'bg-success'
   if (job.last_ok === false) return 'bg-danger'
   return 'bg-secondary'

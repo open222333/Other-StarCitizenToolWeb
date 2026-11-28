@@ -36,24 +36,13 @@
         <MultiSelectFilter id="mission-legality" :model-value="legality" label="合法性" :options="LEGALITY_OPTIONS" block placeholder="全部"
           @update:model-value="v => { legality = v; reload(0) }" />
       </AdminSearchField>
-      <AdminSearchField label="藍圖" for-id="mission-has-bp" col="col-6 col-md-3 col-xl">
-        <select id="mission-has-bp" v-model="hasBlueprints" class="form-select form-select-sm" @change="reload(0)">
-          <option :value="false">全部</option>
-          <option :value="true">有藍圖</option>
-        </select>
-      </AdminSearchField>
       <AdminSearchField label="玩家頁面" for-id="mission-visible" col="col-6 col-md-3 col-xl">
-        <select id="mission-visible" v-model="playerVisible" class="form-select form-select-sm" @change="reload(0)">
-          <option value="">全部</option>
-          <option value="1">顯示</option>
-          <option value="0">不顯示</option>
-        </select>
+        <SfChoice id="mission-visible" :model-value="playerVisible" :options="VISIBLE_CHOICES" label="玩家頁面"
+          @update:model-value="v => { playerVisible = v; reload(0) }" />
       </AdminSearchField>
       <template #options>
-        <div class="form-check form-check-inline mb-0">
-          <input id="mission-missing-zh" v-model="missingZh" class="form-check-input" type="checkbox" @change="reload(0)">
-          <label class="form-check-label small" for="mission-missing-zh">只看沒有中文</label>
-        </div>
+        <SfToggle :model-value="hasBlueprints" @update:model-value="v => { hasBlueprints = v; reload(0) }">只看有藍圖</SfToggle>
+        <SfToggle :model-value="missingZh" @update:model-value="v => { missingZh = v; reload(0) }">只看沒有中文</SfToggle>
       </template>
     </AdminSearchCard>
 
@@ -190,6 +179,8 @@
 </template>
 
 <script setup>
+import SfToggle from '@/components/SfToggle.vue'
+import SfChoice from '@/components/SfChoice.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { missionApi } from '@/api'
@@ -201,6 +192,8 @@ import SortTh from '@/components/SortTh.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { adminPath } from '@/router'
 import { fmtChance, fmtInt, reputationLabel, rewardLabel, zhPair } from '@/utils/mission'
+// 玩家頁面：膠囊單選（再點一次取消＝全部）
+const VISIBLE_CHOICES = [{ value: '1', label: '顯示' }, { value: '0', label: '不顯示' }]
 
 const LEGALITY_OPTIONS = [
   { value: 'legal', label: '合法' },

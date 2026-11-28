@@ -120,6 +120,8 @@ const sections = computed(() => {
 </script>
 
 <style scoped>
+/* Teleport 到 body 的外框只為了吃 .scifi-page 主題，本身不佔版面（.scifi-page 有 min-height: 100vh） */
+.dlb-host { display: contents; }
 /* 區塊：寬螢幕兩欄、窄螢幕一欄 */
 .dlb-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
 @media (min-width: 992px) { .dlb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
