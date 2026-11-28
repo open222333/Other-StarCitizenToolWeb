@@ -28,12 +28,9 @@
           </div>
           <div class="col-12">
             <span class="form-label small mb-1 d-block">種類</span>
-            <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="種類">
-              <button v-for="k in whoKinds" :key="k.key" type="button" class="btn btn-subtab"
-                :class="{ active: whoKind === k.key }" :aria-pressed="whoKind === k.key ? 'true' : 'false'"
-                @click="whoKind = k.key"><i v-if="k.icon" :class="[k.icon, `who-kind-icon--${k.key}`]" class="me-1"></i>{{ k.label }}
-                <span class="who-count">{{ k.count }}</span></button>
-            </div>
+            <!-- 全部／物品／藍圖／船艦：膠囊單選，數量標在後面 -->
+            <SfChoice v-model="whoKind" required label="種類"
+              :options="whoKinds.map(k => ({ value: k.key, label: k.label, count: k.count }))" />
           </div>
           <!-- 選了單一種類才出現它專用的條件（手機收進「篩選」面板） -->
           <SfFilterSheet v-if="whoKind === 'items'" :count="itemsSheetCount" title="物品篩選" @clear="clearItemsSheet">
@@ -206,6 +203,7 @@
 </template>
 
 <script setup>
+import SfChoice from '@/components/SfChoice.vue'
 /**
  * 查詢持有資訊（從 views/MyPlayerView.vue 拆出來，待辦 3-6）：別人的東西，唯讀。
  * 一張搜尋卡（共同條件：名稱、玩家；種類；選了單一種類才出現它專用的條件），
@@ -717,17 +715,16 @@ applySearchQuery(route.query)
 <style scoped>
 /* 「詳細」：持有者小表（底色跟我的艦隊的詳細一樣） */
 .holder-detail { background: var(--sf-panel-2); }
-/* 整合列表：種類按鈕上的數量、種類膠囊 */
-.who-count { margin-left: .35rem; opacity: .75; }
+/* 整合列表：種類膠囊 */
 /* 種類三種顏色，跟著網站配色：物品＝主強調色、船艦＝次要強調色（跟配件網址按鈕同色）、藍圖＝綠色（亮底模式 Bootstrap 自動換深） */
-.who-kind--items, .who-kind-icon--items { --who-kind: var(--sf-accent-rgb); }
-.who-kind--fleet, .who-kind-icon--fleet { --who-kind: var(--sf-accent-2-rgb); }
-.who-kind--blueprints, .who-kind-icon--blueprints { --who-kind: var(--bs-success-rgb); }
+.who-kind--items { --who-kind: var(--sf-accent-rgb); }
+.who-kind--fleet { --who-kind: var(--sf-accent-2-rgb); }
+.who-kind--blueprints { --who-kind: var(--bs-success-rgb); }
 .scifi-page .sf-chip.who-kind { white-space: nowrap;
   color: var(--sf-text-strong); font-weight: 600;
   background: rgba(var(--who-kind), .2); border-color: rgba(var(--who-kind), .75);
 }
-.who-kind .bi, [class*="who-kind-icon--"] { color: rgb(var(--who-kind)); }
+.who-kind .bi { color: rgb(var(--who-kind)); }
 /* 手機卡片：不屬於那一類的欄位（空的）整格不顯示，免得只剩標籤 */
 @media (max-width: 767.98px) {
   .scifi-page table.sf-stack.who-table tr:not(.sf-stack__detail) > td.who-na[data-label] { display: none !important; }

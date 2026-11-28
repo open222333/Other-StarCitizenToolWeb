@@ -16,6 +16,8 @@
 
   選項少（block 模式、1～4 個、沒有分組與子項目）時不做下拉：選項直接排成一列按鈕，點一下選、再點取消，可以複選
   （inline-max 調門檻，設 0 關掉）。
+  有 searchable 的不會變成按鈕：那種是選項會跟著其他條件變動的清單（例如選了星系之後的行星、地點），
+  選項剛好變少時維持下拉，版面才不會跳來跳去。
 -->
 <template>
   <!-- 選項少：直接列出來的按鈕 -->
@@ -96,7 +98,7 @@ const query    = ref('')
 const normalizedOptions = computed(() => props.options.map((o) =>
   (o !== null && typeof o === 'object') ? o : { value: o, label: String(o) }))
 
-const inline = computed(() => props.block && props.inlineMax > 0 && normalizedOptions.value.length > 0
+const inline = computed(() => props.block && !props.searchable && props.inlineMax > 0 && normalizedOptions.value.length > 0
   && normalizedOptions.value.length <= props.inlineMax
   && !normalizedOptions.value.some(o => o.group || o.parent != null))
 
