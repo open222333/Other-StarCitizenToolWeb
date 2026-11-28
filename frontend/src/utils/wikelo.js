@@ -34,3 +34,20 @@ export function wikeloAmount(r) {
   }
   return ''
 }
+
+// 獎勵種類：載具主檔的＝艦船；物品看主檔 type（武器、護甲），其餘＝其他
+export const WIKELO_KINDS = [
+  { value: 'ship', label: '艦船' },
+  { value: 'weapon', label: '武器' },
+  { value: 'armor', label: '護甲' },
+  { value: 'other', label: '其他' },
+]
+export const KIND_LABEL = Object.fromEntries(WIKELO_KINDS.map(k => [k.value, k.label]))
+export function rewardKind(r) {
+  if (r.source === 'vehicle') return 'ship'
+  const t = r.type || ''
+  if (/^Weapon/i.test(t)) return 'weapon'
+  if (/^Char_Armor|^Suit/i.test(t)) return 'armor'
+  if (!t && !r.source && !/favor|scrip/i.test(r.name || '')) return 'ship'   // 主檔還沒對到的船
+  return 'other'
+}

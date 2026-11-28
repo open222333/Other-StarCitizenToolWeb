@@ -469,7 +469,7 @@
 
     <!-- ══════════ 資料庫 › 維克洛：維克洛的交易（獎勵、要交的物品與數量，見 components/WikeloDatabase.vue）══════════ -->
     <div v-if="paneOnce('wikelo')" v-show="activePane === 'wikelo'" id="panel-items-wikelo">
-      <WikeloDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'wikelo'" />
+      <WikeloDatabase :fetcher="playerAuth.playerFetch" :active="activePane === 'wikelo'" :inventory="isGuest ? null : myInventory" :find="wikeloFind" />
     </div>
 
     <!-- ══════════ 資料庫 › 飛船組件：選種類列出全部組件與參數（components/ShipComponentDatabase.vue）══════════ -->
@@ -479,7 +479,7 @@
 
     <!-- ══════════ 資料庫 › 礦物：每種礦物可以在哪裡挖到（scunpacked 的礦床與地點資料，見 components/MineralDatabase.vue）══════════ -->
     <div v-if="paneOnce('minerals')" v-show="activeTab === 'items' && activeSub === 'minerals'" id="panel-items-minerals">
-      <MineralDatabase :fetcher="playerAuth.playerFetch" :active="activeTab === 'items' && activeSub === 'minerals'"
+      <MineralDatabase :find="mineralFind" :fetcher="playerAuth.playerFetch" :active="activeTab === 'items' && activeSub === 'minerals'"
         card-class="card scifi-card" />
     </div>
 
@@ -2452,6 +2452,24 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stickyObserver?.disconnect()
 })
+
+// 站內「到資料庫找這個」（例如維克洛的獎勵、需要的物品）：?find=名稱 帶進那個下層分頁的名稱搜尋，套用後從網址拿掉
+// 帶進子元件的「找這個」：每次都是新物件（同一個名稱再點一次也會重新套用）
+const mineralFind = ref(null)
+const wikeloFind = ref(null)
+watch(() => route.query.find, (f) => {
+  if (!f) return
+  const name = String(f)
+  const sub = route.query.sub
+  if (sub === 'data') itemDataFilter.q = name
+  else if (sub === 'vehicles') myFleetQuery.value = name
+  else if (sub === 'bpdata') bpFilterQuery.value = name
+  else if (sub === 'minerals') mineralFind.value = { q: name, at: Date.now() }
+  else if (sub === 'wikelo') wikeloFind.value = { q: name, at: Date.now() }
+  const query = { ...route.query }
+  delete query.find
+  router.replace({ query })
+}, { immediate: true })
 </script>
 
 <style scoped>

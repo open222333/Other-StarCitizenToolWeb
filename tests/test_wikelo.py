@@ -147,3 +147,25 @@ def test_index_and_for_item(client, trades):
     body = client.get(f'/mission/wikelo/by-item?uuid={ASGARD}').get_json()['data']
     assert [r['_id'] for r in body['reward']] == [ROW['uuid']] and body['requirement'] == []
     assert client.get('/mission/wikelo/index').get_json()['data']['uuids'][FAVOR]['requirement'] == 1
+
+
+def test_attach_source_and_acquire(app, trades):
+    get_db()['vehicle_master'].insert_one({'_id': ASGARD, 'name': 'Asgard Wikelo War Special', 'name_zh': '阿斯加德'})
+    get_db()['blueprint_master'].insert_one({'_id': 'bp-fav', 'output_item_uuid': FAVOR, 'is_current': True})
+    row = wikelo.get(ROW['uuid'])
+    fav = row['requirements'][0]
+    assert fav['source'] == 'item' and fav['blueprint'] == 'bp-fav' and fav['buyable'] is False
+    assert fav['master_name'] == 'Wikelo Favor'
+    assert row['requirements'][1]['source'] is None and 'buyable' not in row['requirements'][1]
+    assert row['rewards'][0]['source'] == 'vehicle' and row['rewards'][0]['name_zh'] == '阿斯加德'
+
+
+def test_title_zh_from_mission_master_and_name_fallback(app, trades, monkeypatch):
+    get_db()['mission_master'].update_one({'_id': ROW['uuid']}, {'$set': {'title_zh': '阿斯加德戰鬥改裝'}}, upsert=True)
+    from src import sc_zh
+    monkeypatch.setattr(sc_zh, 'item_name_zh', lambda en_name='', class_name='', lang=None: '固態硬碟' if en_name == 'ASD Secure Drive' else None)
+    monkeypatch.setattr(sc_zh, 'vehicle_name_zh', lambda **kw: None)
+    row = wikelo.get(ROW['uuid'])
+    assert row['title_zh'] == '阿斯加德戰鬥改裝'
+    assert row['requirements'][1]['name_zh'] == '固態硬碟'
+    assert row['requirements'][0]['name_zh'] == '維克洛人情'

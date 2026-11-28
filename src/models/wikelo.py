@@ -57,20 +57,53 @@ def _hidden_ids(ids: list) -> set:
         {'_id': {'$in': ids}, 'player_visible': False}, {'_id': 1})}
 
 
+def _zh_by_name(name: str):
+    """主檔對不到（uuid 不同、或主檔還沒翻好）時，用英文名稱直接查翻譯：物品名稱、再試載具名稱。"""
+    from src.sc_zh import item_name_zh, vehicle_name_zh
+    name = (name or '').strip()
+    if not name:
+        return None
+    return item_name_zh(name) or vehicle_name_zh(name=name, game_name=name)
+
+
 def _attach_names(rows: list) -> list:
-    """需求／獎勵的物品補上主檔中文名稱（name_zh）與種類（type），找不到的維持英文。"""
+    """需求／獎勵的物品補上主檔資料（找不到的維持英文、source=None）：
+    name_zh、type、source（vehicle 艦船／item 物品／commodity 商品）、master_name（主檔英文名，給站內「找這個」連結）；
+    需求的物品另外標 buyable（UEX 買得到）、blueprint（做得出它的藍圖 uuid），視窗裡的「購買地點」「藍圖」按鈕用。"""
+    from src.models import uex_item_price
     from src.models.item import CommodityMaster, ItemMaster, VehicleMaster
     ids = {e.get('item_uuid') for r in rows for k in ('requirements', 'rewards') for e in (r.get(k) or [])
            if e.get('item_uuid')}
     names = {}
-    for master in (CommodityMaster, VehicleMaster, ItemMaster):
-        names.update(master.names_by_ids(ids))
+    for source, master in (('commodity', CommodityMaster), ('item', ItemMaster), ('vehicle', VehicleMaster)):
+        for k, v in master.names_by_ids(ids).items():
+            names[k] = {**v, 'source': source}
+    item_ids = [k for k, v in names.items() if v['source'] == 'item']
+    price, blueprint = {}, {}
+    if item_ids:
+        tmp = [{'_id': i} for i in item_ids]
+        uex_item_price.attach_summaries(tmp)
+        price = {t['_id']: (t.get('uex_price') or {}).get('buy_min') for t in tmp}
+        for b in get_db()['blueprint_master'].find({'output_item_uuid': {'$in': item_ids}, 'is_current': True},
+                                                   {'_id': 1, 'output_item_uuid': 1}).sort('_id', 1):
+            blueprint.setdefault(b['output_item_uuid'], b['_id'])
+    # 交易標題：任務主檔的中文（翻譯同步後會重新比對，見 Mission.refresh_translations）比同步當下的快照新
+    mission_zh = {d['_id']: d for d in get_db()['mission_master'].find(
+        {'_id': {'$in': [r['_id'] for r in rows if r.get('_id')]}}, {'title_zh': 1, 'description_zh': 1})}
     for r in rows:
+        m = mission_zh.get(r.get('_id')) or {}
+        r['title_zh'] = m.get('title_zh') or r.get('title_zh')
+        r['description_zh'] = m.get('description_zh') or r.get('description_zh')
         for k in ('requirements', 'rewards'):
             for e in r.get(k) or []:
                 hit = names.get(e.get('item_uuid')) or {}
-                e['name_zh'] = hit.get('name_zh')
+                e['name_zh'] = hit.get('name_zh') or _zh_by_name(e.get('name'))
                 e['type'] = hit.get('type')
+                e['source'] = hit.get('source')
+                e['master_name'] = hit.get('name')
+                if k == 'requirements' and hit.get('source') == 'item':
+                    e['buyable'] = price.get(e['item_uuid']) is not None
+                    e['blueprint'] = blueprint.get(e['item_uuid'])
     return rows
 
 

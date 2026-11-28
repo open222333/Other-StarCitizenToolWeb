@@ -254,6 +254,8 @@ const props = defineProps({
   /** 分頁第一次變成可見才載入 */
   active: { type: Boolean, default: true },
   cardClass: { type: String, default: 'card' },
+  /** 站內「到礦物頁找這個」帶進來的名稱（MyPlayerView 的 ?find=） */
+  find: { type: Object, default: null },
 })
 
 /** 地點的礦床群組 → 採集方式（其餘群組：打撈、殘骸、化石、戰利品箱不列） */
@@ -375,6 +377,7 @@ const minerals = computed(() => {
 
 // ── 篩選 ──
 const query = ref('')
+watch(() => props.find, (v) => { if (v?.q) query.value = v.q }, { immediate: true })
 // 星系可複選（空陣列＝全部）
 const system = ref([])
 const place = ref('')
